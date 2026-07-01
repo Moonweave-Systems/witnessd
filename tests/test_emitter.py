@@ -13,7 +13,6 @@ from depone.agent_fabric.observer_provenance import (
 from depone.agent_fabric.reference_adapter import build_reference_adapter_fixture
 
 from witnessd.adapters.shell import run_shell_lane
-from witnessd.canonical import canonical_hash
 from witnessd.emitter import EmitterError, emit_lane_evidence
 
 ARTIFACT_NAMES = {
@@ -151,7 +150,7 @@ class TestEmitter(unittest.TestCase):
             events = result["runlog"]
             self.assertIsNone(events[0]["prev_event_hash"])
             for prev, cur in zip(events, events[1:]):
-                self.assertEqual(cur["prev_event_hash"], canonical_hash(prev))
+                self.assertEqual(cur["prev_event_hash"], prev["event_hash"])
 
     def test_runlog_persisted_and_covers_events(self):
         with tempfile.TemporaryDirectory() as tmp:

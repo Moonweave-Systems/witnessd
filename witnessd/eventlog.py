@@ -28,9 +28,23 @@ class EventLog:
         record = dict(event)
         record["seq"] = self._seq
         record["prev_event_hash"] = self._prev_event_hash
+        record["event_hash"] = canonical_hash(
+            {key: value for key, value in record.items() if key != "event_hash"}
+        )
         line = json.dumps(record, sort_keys=True, separators=(",", ":"))
         with open(self.path, "a", encoding="utf-8") as handle:
             handle.write(line + "\n")
         self._seq += 1
-        self._prev_event_hash = canonical_hash(record)
+        self._prev_event_hash = record["event_hash"]
         return record
+
+    def read(self) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        try:
+            with open(self.path, "r", encoding="utf-8") as handle:
+                for line in handle:
+                    if line.strip():
+                        records.append(json.loads(line))
+        except FileNotFoundError:
+            return []
+        return records
