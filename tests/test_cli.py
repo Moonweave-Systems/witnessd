@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import shutil
 import tempfile
@@ -93,6 +94,48 @@ class TestSelfTest(unittest.TestCase):
             code = main(["self-test", "--all"])
         self.assertEqual(code, 0)
         self.assertIn("passed", out.getvalue())
+
+
+class TestRunDeponeValid(unittest.TestCase):
+    """`witnessd run` must emit a capture-manifest Depone accepts and re-derives
+    to A1 — not merely a well-shaped file. Guards gap#1 (placeholder fixture)."""
+
+    @unittest.skipUnless(_HAS_OPENSSL, "openssl required to sign emitted evidence")
+    def test_run_emits_depone_valid_a1_manifest(self):
+        from depone.agent_fabric.capture_bridge import validate_capture_manifest
+
+        with tempfile.TemporaryDirectory() as base:
+            sandbox = os.path.join(base, "sandbox")
+            out_dir = os.path.join(base, "evidence")
+            os.makedirs(sandbox)
+            os.makedirs(out_dir)
+            code = main(
+                [
+                    "run",
+                    "--adapter",
+                    "shell",
+                    "--runner-sandbox",
+                    sandbox,
+                    "--out",
+                    os.path.join(out_dir, "observer-capture.json"),
+                    "--log",
+                    os.path.join(out_dir, "verify.log"),
+                    "--task-id",
+                    "cli-demo",
+                    "--allow",
+                    "out.txt",
+                    "--",
+                    "sh",
+                    "-c",
+                    "echo hi > out.txt",
+                ]
+            )
+            self.assertEqual(code, 0)
+            with open(os.path.join(out_dir, "capture-manifest.json")) as handle:
+                manifest = json.load(handle)
+            errors = validate_capture_manifest(manifest)
+            self.assertEqual(errors, [], f"CLI manifest must be Depone-valid: {errors}")
+            self.assertEqual(manifest["assurance"], "A1-local-observed")
 
 
 if __name__ == "__main__":

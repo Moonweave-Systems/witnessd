@@ -47,6 +47,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     from witnessd.adapters.shell import run_shell_lane
     from witnessd.emitter import emit_lane_evidence
+    from witnessd.fixture import (
+        build_reference_adapter_fixture,
+        build_shell_invocation,
+    )
     from witnessd.signing import gen_operator_keypair
 
     evidence_dir = os.path.dirname(out_path)
@@ -59,12 +63,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
     commands = [list(args.command)]
     lane_result = run_shell_lane(sandbox=sandbox, commands=commands)
 
-    fixture = {
-        "kind": "witnessd-lane-fixture",
-        "adapter": args.adapter,
-        "task_id": args.task_id,
-        "commands": commands,
-    }
+    # The source fixture is the declared (A0) side; Depone requires a proper
+    # agent-fabric-reference-adapter-fixture, not a placeholder.
+    fixture = build_reference_adapter_fixture(build_shell_invocation(args.task_id))
 
     result = emit_lane_evidence(
         lane_result,
