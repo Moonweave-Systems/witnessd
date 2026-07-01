@@ -1,0 +1,3 @@
+# A2 fixture: demonstration only
+
+`capture-manifest-a2.json` is a demonstration of the A2 isolation gate, not a real isolated run. This host has no uid isolation for the witnessd runtime (the shell adapter runs in-process as the observer uid), so there is no uid-separated runner to observe. The manifest records real isolation facts probed via Depone's `probe_isolation_facts` (mode-0700 observer dir, distinct runner uid 65534); Depone validates it as A2. `scripts/revalidate_w1.py` treats the strict A2 assert as uid-host-conditional and only enforces `assurance == "A2-isolated-observed"` on a host that produced a genuinely uid-isolated run.
