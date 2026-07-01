@@ -22,6 +22,7 @@ throwaway temp dir. Run with:
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import shutil
@@ -120,6 +121,47 @@ def _a2_demonstration_manifest(work: Path) -> dict:
     return manifest
 
 
+def _write_negative_fixtures() -> None:
+    """Derive tamper fixtures from the just-written valid A1 artifacts.
+
+    Each is a single targeted forgery that Depone must detect: a manifest with a
+    stale ``observer_capture_hash``, a stale ``observer_capture.source_fixture_hash``,
+    an out-of-envelope touched file, and a bundle whose top-level assurance is
+    inflated to a forged ``A3`` the signature does not cover.
+    """
+
+    neg = FIX / "negative"
+    neg.mkdir(exist_ok=True)
+    manifest = json.loads((FIX / "capture-manifest.json").read_text(encoding="utf-8"))
+
+    hash_mismatch = copy.deepcopy(manifest)
+    good_hash = hash_mismatch["observer_capture_hash"]
+    hash_mismatch["observer_capture_hash"] = (
+        "0" if good_hash[0] != "0" else "1"
+    ) + good_hash[1:]
+    _write_json(neg / "observer_capture_hash_mismatch.json", hash_mismatch)
+
+    stale_source = copy.deepcopy(manifest)
+    stale_source["observer_capture"]["source_fixture_hash"] = "0" * 64
+    stale_source["observer_capture_hash"] = canonical_hash(
+        stale_source["observer_capture"]
+    )
+    _write_json(neg / "stale_source_fixture_hash.json", stale_source)
+
+    unexpected_touched = copy.deepcopy(manifest)
+    unexpected_touched["observer_capture"]["touched_files"] = ["f.txt", "secret.py"]
+    unexpected_touched["observer_capture_hash"] = canonical_hash(
+        unexpected_touched["observer_capture"]
+    )
+    _write_json(neg / "unexpected_touched_files.json", unexpected_touched)
+
+    bundle = json.loads((FIX / "bundle.json").read_text(encoding="utf-8"))
+    forged = copy.deepcopy(bundle)
+    forged["assurance"] = "A3-fabricated-observed"
+    forged["statement"]["predicate"]["assurance"] = "A3-fabricated-observed"
+    _write_json(neg / "forged_a3.json", forged)
+
+
 def main() -> None:
     FIX.mkdir(parents=True, exist_ok=True)
     (FIX / "chain").mkdir(exist_ok=True)
@@ -186,6 +228,7 @@ def main() -> None:
         "on a host that produced a genuinely uid-isolated run.\n",
         encoding="utf-8",
     )
+    _write_negative_fixtures()
     print(f"W1 fixtures written to {FIX}")
 
 

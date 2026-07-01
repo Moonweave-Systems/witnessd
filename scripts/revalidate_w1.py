@@ -44,6 +44,7 @@ from depone.verify.evidence_contract import validate_evidence_contract
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIX = REPO_ROOT / "fixtures" / "w1"
+NEG = FIX / "negative"
 PROVENANCE_EVIDENCE_PATH = "fixtures/w1/capture-manifest.json"
 CONTRACT_FILES = (
     "evidence-contract.json",
@@ -55,6 +56,10 @@ CONTRACT_FILES = (
 
 def _load(name: str) -> dict:
     return json.loads((FIX / name).read_text(encoding="utf-8"))
+
+
+def _load_negative(name: str) -> dict:
+    return json.loads((NEG / name).read_text(encoding="utf-8"))
 
 
 def _require(condition: bool, message: str) -> None:
@@ -189,6 +194,44 @@ def _revalidate_contract() -> None:
     )
 
 
+def _revalidate_negatives(public_key_path: str) -> None:
+    """Each committed tamper fixture must be rejected by Depone, not witnessd.
+
+    A single forged byte-group per fixture: a stale observer_capture_hash, a stale
+    observer_capture.source_fixture_hash, an out-of-envelope touched file, and a
+    bundle whose top-level assurance is inflated to a forged A3 the signature does
+    not cover. Depone surfaces the first three as manifest errors and the last as a
+    failed signature.
+    """
+
+    hash_mismatch = validate_capture_manifest(
+        _load_negative("observer_capture_hash_mismatch.json")
+    )
+    _require(
+        "observer_capture_hash mismatch" in hash_mismatch,
+        f"tampered observer_capture_hash must be detected, got {hash_mismatch!r}",
+    )
+    stale = validate_capture_manifest(_load_negative("stale_source_fixture_hash.json"))
+    _require(
+        "observer_capture.source_fixture_hash is stale" in stale,
+        f"stale observer source_fixture_hash must be detected, got {stale!r}",
+    )
+    touched = validate_capture_manifest(_load_negative("unexpected_touched_files.json"))
+    _require(
+        any("unexpected touched files" in error for error in touched),
+        f"out-of-envelope touched file must be detected, got {touched!r}",
+    )
+    forged = _load_negative("forged_a3.json")
+    _require(
+        forged["assurance"] == "A3-fabricated-observed",
+        "forged_a3 fixture must actually claim a forged A3 assurance",
+    )
+    _require(
+        not verify_signed_bundle(forged, public_key_path),
+        "forged A3 bundle must fail signature verification",
+    )
+
+
 def main() -> int:
     public_key_path = str(FIX / "keys" / "operator.pub")
     _revalidate_a1(public_key_path)
@@ -197,6 +240,7 @@ def main() -> int:
     _revalidate_bundle(public_key_path)
     _revalidate_receipt()
     _revalidate_contract()
+    _revalidate_negatives(public_key_path)
     print("W1 revalidate: PASS")
     return 0
 
