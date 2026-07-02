@@ -300,6 +300,35 @@ class TestPlannerPlanRunCli(unittest.TestCase):
                 self.assertEqual(code, 0)
                 self.assertIn("evidence-pending", stdout.getvalue())
 
+    def test_team_plan_run_can_reuse_same_out_dir(self):
+        with tempfile.TemporaryDirectory() as root:
+            repo = Path(root) / "repo"
+            out_dir = Path(root) / "out"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "w@x.invalid"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "w11"], cwd=repo, check=True)
+            (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
+
+            for _ in range(2):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    code = main(
+                        [
+                            "team",
+                            "plan-run",
+                            "repeatable goal",
+                            "--repo",
+                            str(repo),
+                            "--out",
+                            str(out_dir),
+                        ]
+                    )
+                self.assertEqual(code, 0)
+                self.assertIn("evidence-pending", stdout.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

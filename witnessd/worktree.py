@@ -35,7 +35,7 @@ def create_lane_worktree(
 ) -> str:
     root = Path(repo_root).resolve()
     lane_slug = _lane_slug(lane_id)
-    target = (Path(worktrees_dir) / lane_slug).resolve()
+    target = _worktree_target(Path(worktrees_dir), lane_slug)
     target.parent.mkdir(parents=True, exist_ok=True)
     branch = _worktree_branch(root, lane_slug, target)
     command = [
@@ -60,6 +60,19 @@ def create_lane_worktree(
             completed.stderr.strip() or completed.stdout.strip(),
         )
     return os.path.abspath(target)
+
+
+def _worktree_target(worktrees_dir: Path, lane_slug: str) -> Path:
+    base_target = (worktrees_dir / lane_slug).resolve()
+    if not base_target.exists():
+        return base_target
+    suffix = hashlib.sha256(str(base_target).encode("utf-8")).hexdigest()[:12]
+    target = (worktrees_dir / f"{lane_slug}-{suffix}").resolve()
+    counter = 2
+    while target.exists():
+        target = (worktrees_dir / f"{lane_slug}-{suffix}-{counter}").resolve()
+        counter += 1
+    return target
 
 
 def _worktree_branch(root: Path, lane_slug: str, target: Path) -> str:
