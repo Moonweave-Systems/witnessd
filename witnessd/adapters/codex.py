@@ -167,3 +167,38 @@ def run_codex_lane(
         touched_files=touched_files,
         test_output={"status": TEST_STATUS_NOT_RUN},
     )
+
+
+def _self_test() -> None:
+    import stat
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+        fake = Path(bindir) / "codex"
+        fake.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+            "out=\"\"\n"
+            "while [ $# -gt 0 ]; do\n"
+            "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
+            "  shift\n"
+            "done\n"
+            ": > \"$out\"\n"
+            "echo done >> \"$out\"\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+        transcript = Path(bindir) / "transcript.txt"
+        result = run_codex_lane(
+            sandbox=sandbox,
+            prompt="self test",
+            codex_binary=str(fake),
+            transcript_path=str(transcript),
+        )
+        if result.runner_kind != "codex-cli":
+            raise AssertionError("codex adapter must emit runner_kind=codex-cli")
+        if "exec" not in result.invocation:
+            raise AssertionError("codex invocation must use exec")
+        if not transcript.exists():
+            raise AssertionError("codex transcript must be written")

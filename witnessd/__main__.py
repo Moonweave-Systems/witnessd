@@ -360,20 +360,26 @@ def _default_team_lane_command(lane_id: str, region: list[str]) -> list[str]:
 
 def _cmd_self_test(args: argparse.Namespace) -> int:
     from witnessd import (
+        budget,
         emitter,
         fanin,
         faultkit,
         isolation,
         lock,
         liveness,
+        preflight,
+        router,
         scheduler,
         session,
         signing,
+        state,
         substrate,
         supervisor,
         team_ledger,
         worktree,
     )
+    from witnessd.adapters import base as adapter_base
+    from witnessd.adapters import codex as codex_adapter
 
     checks = [
         ("signing", signing._self_test),
@@ -389,11 +395,27 @@ def _cmd_self_test(args: argparse.Namespace) -> int:
         ("worktree", worktree._self_test),
         ("team_ledger", team_ledger._self_test),
         ("fanin", fanin._self_test),
+        ("adapter_base", adapter_base._self_test),
+        ("codex_adapter", codex_adapter._self_test),
+        ("preflight", preflight._self_test),
+        ("router", router._self_test),
+        ("budget", budget._self_test),
+        ("state", state._self_test),
     ]
+    report_pass_names = {
+        "adapter_base",
+        "codex_adapter",
+        "preflight",
+        "router",
+        "budget",
+        "state",
+    }
     passed = 0
     for name, check in checks:
         try:
             check()
+            if name in report_pass_names:
+                print(f"witnessd {name} --self-test: pass")
             passed += 1
         except Exception as exc:  # noqa: BLE001 — report which self-test failed
             print(f"witnessd {name} --self-test: FAIL ({exc})", file=sys.stderr)
