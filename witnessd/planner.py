@@ -194,8 +194,8 @@ def dispatch(sealed_plan: dict[str, Any]) -> list[dict[str, Any]]:
 def _root_fingerprint(root: str) -> list[str]:
     try:
         return sorted(name for name in os.listdir(root) if not name.startswith("."))
-    except FileNotFoundError:
-        return []
+    except FileNotFoundError as exc:
+        raise PlannerError("ERR_PLAN_ROOT_MISSING") from exc
 
 
 def _assert_region_disjoint_or_explicit_merge(packets: list[dict[str, Any]]) -> None:

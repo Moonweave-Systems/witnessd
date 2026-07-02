@@ -99,6 +99,10 @@ class TestHeuristicPlanner(unittest.TestCase):
         self.assertEqual(packets_a[0]["adapter"], "shell")
         self.assertEqual(packets_a[0]["stop_rule"], "evidence-pending")
 
+    def test_missing_root_is_explicit_error(self):
+        with self.assertRaisesRegex(PlannerError, "ERR_PLAN_ROOT_MISSING"):
+            plan_heuristic("ship W11 planner", seed="w11", root="/definitely/missing")
+
 
 class TestDispatch(unittest.TestCase):
     def test_dispatch_is_pure_for_same_sealed_plan(self):
