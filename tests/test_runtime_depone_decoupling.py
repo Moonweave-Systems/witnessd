@@ -11,10 +11,21 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WITNESSD_ROOT = ROOT / "witnessd"
+IGNORED_SCAN_DIRS = {".git", ".omx", ".pytest_cache", ".ruff_cache", "__pycache__"}
 
 
 def _witnessd_python_files() -> list[Path]:
     return sorted(path for path in WITNESSD_ROOT.rglob("*.py") if path.is_file())
+
+
+def _source_python_files() -> list[Path]:
+    files: list[Path] = []
+    for path in sorted(ROOT.rglob("*.py")):
+        rel = path.relative_to(ROOT)
+        if any(part in IGNORED_SCAN_DIRS for part in rel.parts):
+            continue
+        files.append(path)
+    return files
 
 
 def _top_level(name: str) -> str:
@@ -39,7 +50,7 @@ class TestRuntimeDeponeDecoupling(unittest.TestCase):
 
     def test_depone_imports_are_limited_to_tests_and_revalidation_scripts(self):
         offenders: list[str] = []
-        for path in sorted(ROOT.rglob("*.py")):
+        for path in _source_python_files():
             rel = path.relative_to(ROOT)
             if rel.parts[0] == "tests":
                 continue
