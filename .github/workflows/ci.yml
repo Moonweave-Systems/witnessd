@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit:
+    name: unit / python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Clone Depone verifier
+        env:
+          DEPONE_TOKEN: ${{ secrets.DEPONE_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p .ci
+          # If Depone is private, add a DEPONE_TOKEN repository secret with
+          # read access to Moonweave-Systems/Depone. Public clones use no token.
+          if [ -n "${DEPONE_TOKEN:-}" ]; then
+            git clone "https://x-access-token:${DEPONE_TOKEN}@github.com/Moonweave-Systems/Depone.git" .ci/depone
+          else
+            git clone https://github.com/Moonweave-Systems/Depone.git .ci/depone
+          fi
+      - name: Run unit tests
+        run: PYTHONPATH="$PWD/.ci/depone" python3 -m unittest discover -s tests
+
+  revalidate:
+    name: revalidate committed fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Clone Depone verifier
+        env:
+          DEPONE_TOKEN: ${{ secrets.DEPONE_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p .ci
+          if [ -n "${DEPONE_TOKEN:-}" ]; then
+            git clone "https://x-access-token:${DEPONE_TOKEN}@github.com/Moonweave-Systems/Depone.git" .ci/depone
+          else
+            git clone https://github.com/Moonweave-Systems/Depone.git .ci/depone
+          fi
+      - name: Revalidate all fixture waves
+        run: |
+          set -euo pipefail
+          for script in scripts/revalidate_*.py; do
+            PYTHONPATH="$PWD/.ci/depone" python3 "$script"
+          done
+
+  decoupling-guard:
+    name: runtime depone-free guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Import runtime without Depone
+        run: |
+          set -euo pipefail
+          PYTHONPATH="$PWD" python3 - <<'PY'
+          import importlib.util
+          assert importlib.util.find_spec("depone") is None
+          import witnessd.emitter  # noqa: F401
+          import witnessd.__main__  # noqa: F401
+          PY
+      - name: Shell lane emits evidence-pending without Depone
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          mkdir -p "$tmp/sandbox" "$tmp/evidence"
+          PYTHONPATH="$PWD" python3 -m witnessd run \
+            --adapter shell \
+            --runner-sandbox "$tmp/sandbox" \
+            --out "$tmp/evidence/capture-manifest.json" \
+            --log "$tmp/evidence/runlog.jsonl" \
+            --allow out.txt \
+            -- sh -c 'echo hi > out.txt' | tee "$tmp/stdout"
+          grep -q "evidence-pending" "$tmp/stdout"
+          ! grep -Eq "VERIFIED|DONE|COMPLETE" "$tmp/stdout"
+          test -f "$tmp/evidence/capture-manifest.json"
+
+  no-overclaim:
+    name: no overclaim strings in runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runtime status wording gate
+        run: |
+          set -euo pipefail
+          if grep -RInE '(^|[^[:alnum:]_-])(VERIFIED|DONE|COMPLETE|ORCHESTRATION COMPLETE)([^[:alnum:]_-]|$)' witnessd \
+            | grep -v '^witnessd/status.py:'; then
+            echo "Forbidden standalone completion wording outside witnessd/status.py" >&2
+            exit 1
+          fi

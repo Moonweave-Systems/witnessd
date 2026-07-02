@@ -44,8 +44,8 @@ Key rotation and operator-key handling are documented in
 
 | witnessd field | OVERT field/concept | Encoding |
 | --- | --- | --- |
-| `evidence_mode: "contemporaneous"` | receipt flags `0x00` | string enum |
-| `evidence_mode: "post_hoc"` | reconstructed receipt class | string enum |
+| `evidence_mode: "contemporaneous"` | receipt flags `0x00` | self-declared string enum |
+| `evidence_mode: "post_hoc"` | reconstructed receipt class | self-declared string enum |
 | `epoch_seconds` | co-epoch duration | positive integer, default `300` |
 | `monotonic_counter` | receipt monotonic counter | positive integer |
 | `parent_attestation_id` | cross-boundary parent reference | optional 64-character lowercase SHA-256 hex |
@@ -53,6 +53,11 @@ Key rotation and operator-key handling are documented in
 `epoch_seconds` is based on the operator clock and does not represent an
 independent timestamp authority. `parent_attestation_id` is content-free: only
 the hash reference crosses the boundary.
+
+`evidence_mode` is not enforced by bytes in W8/W9. witnessd has no live notary
+co-signature, co-epoch anchor, transparency-log timestamp, or independent
+timestamp authority that can prove `contemporaneous` versus `post_hoc`.
+`DELAYED_NOTARY` (`0x01`) is not modeled.
 
 ## Validation
 

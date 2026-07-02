@@ -49,7 +49,7 @@ def _assert_overt_fields(manifest: dict[str, Any]) -> None:
     )
 
 
-def _assert_negative_post_hoc_detected() -> None:
+def _document_unenforced_evidence_mode_self_attestation() -> None:
     negative = _load(NEGATIVE / "post_hoc_marked_contemporaneous.json")
     _require(
         negative.get("w8_reconstruction_source") == "post_hoc",
@@ -57,7 +57,11 @@ def _assert_negative_post_hoc_detected() -> None:
     )
     _require(
         negative.get("evidence_mode") != "post_hoc",
-        "negative fixture must be mislabeled to prove the guard",
+        "negative fixture must be mislabeled to document self-attestation risk",
+    )
+    _require(
+        negative.get("evidence_mode") == "contemporaneous",
+        "negative fixture documents that contemporaneous/post_hoc is not enforced",
     )
 
 
@@ -117,7 +121,7 @@ def main() -> int:
         f"W8 bundle ingest must pass, got {verdict!r}",
     )
 
-    _assert_negative_post_hoc_detected()
+    _document_unenforced_evidence_mode_self_attestation()
     print("W8 revalidate: PASS")
     return 0
 

@@ -21,7 +21,7 @@
 | 웨이브 | 계획 파일 | 산출(working software) | 핵심 Depone validator(재도출) | 의존 |
 |---|---|---|---|---|
 | **W1** | `2026-07-01-w1-evidence-substrate.md` | shell lane 1개를 실행→관측자 분리 캡처→capture-manifest+DSSE 서명→A1/(uid 호스트)A2를 Depone이 바이트에서 재도출 | `enforce_observer_separation`, `validate_capture_manifest`, `verify_capture_chain`, `verify_signed_bundle`, `ingest_signed_evidence_bundle`, `validate_runner_receipt`, `validate_trusted_observer_provenance`, `validate_evidence_contract` | — |
-| **W2** | `2026-07-01-w2-supervised-liveness.md` | supervised 자식 프로세스 + 서명된 heartbeat 기반 liveness(죽은 팀 구조적 탐지) + durable session ID 재개 + spawn별 uid isolation → A2 상시화 | `verify_isolation_boundary`, `_check_a2_manifest`(재도출), W1 전부 | W1 |
+| **W2** | `2026-07-01-w2-supervised-liveness.md` | supervised 자식 프로세스 + 서명된 heartbeat 기반 liveness(죽은 팀 구조적 탐지) + durable session ID 재개 + uid isolation 계약/fixture 재도출(실제 A2는 uid-isolated host 필요) | `verify_isolation_boundary`, `_check_a2_manifest`(재도출), W1 전부 | W1 |
 | **W3** | `2026-07-01-w3-team-fanin.md` | auto worktree + ownership-region lock + worktree lane receipt + team-ledger fan-in(overlap→merge receipt 필수) | `build_team_ledger_verdict`, `validate_worktree_receipt`, W1/W2 전부 | W2 |
 | **W4** | `2026-07-01-w4-adapters-routing-cost.md` | Codex→Claude/OpenCode 어댑터(동일 runner-receipt 스키마) + 모델 라우팅 solved abstraction + 비용 서킷브레이커 | `validate_runner_receipt`(`VALID_RUNNERS`), W1–W3 전부 | W3 |
 | **W5** | `2026-07-01-w5-autonomy-safety.md` | 자동 학습 캡처(provenance 링크) + hard pause(auto-continuation override) + 테스트된 kill-switch + atomic installer | W1–W4 전부 + 학습 provenance 재도출 | W4 |
