@@ -1,0 +1,18 @@
+{
+  "arm": "direct",
+  "ended_at": "2026-07-01T00:00:01Z",
+  "exit_code": 0,
+  "human_intervened": false,
+  "invocation": [],
+  "kind": "agent-fabric-runner-receipt",
+  "runner_kind": "codex-cli",
+  "schema_version": "1.0",
+  "source_hashes": {
+    "receipt": "dacb2d795b7cc7658ed4be3517f1b84183843120ba799684b6246c145ed5a676"
+  },
+  "started_at": "2026-07-01T00:00:00Z",
+  "task_id": "w4-codex-fixture",
+  "touched_files": [],
+  "transcript_path": "/home/ubuntu/moonweave/witnessd/fixtures/w4/transcripts/codex.txt",
+  "worktree": "/home/ubuntu/moonweave/witnessd/fixtures/w4/sandbox"
+}

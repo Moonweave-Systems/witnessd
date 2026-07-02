@@ -16,7 +16,12 @@ from depone.agent_fabric.paired_run import VALID_RUNNERS, validate_runner_receip
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from witnessd.canonical import canonical_hash  # noqa: E402
+
 FIXTURES = ROOT / "fixtures" / "w4"
+NEGATIVE = FIXTURES / "negative"
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -95,11 +100,45 @@ def _assert_state_isolation() -> None:
     assert snapshot["codex_home"].startswith("state-isolation/witnessd-root/")
 
 
+def _receipt_hash(receipt: dict[str, Any]) -> str:
+    return canonical_hash(
+        {key: value for key, value in receipt.items() if key != "source_hashes"}
+    )
+
+
+def _has_fabricated_usage(bundle: dict[str, Any]) -> bool:
+    for span in bundle.get("otel_spans", []):
+        attributes = span.get("attributes", {}) if isinstance(span, dict) else {}
+        if any(str(key).startswith("gen_ai.usage.") for key in attributes):
+            return True
+    return False
+
+
+def _assert_negative_fixtures_detected() -> None:
+    forged = _load_json(NEGATIVE / "forged_runner_kind.json")
+    assert validate_runner_receipt(forged), "forged runner_kind must be rejected"
+
+    empty = _load_json(NEGATIVE / "empty_invocation.json")
+    assert validate_runner_receipt(empty), "empty invocation must be rejected"
+
+    mismatch = _load_json(NEGATIVE / "source_hash_mismatch.json")
+    assert mismatch.get("source_hashes", {}).get("receipt") != _receipt_hash(mismatch)
+
+    fabricated = _load_json(NEGATIVE / "fabricated_usage.json")
+    assert _has_fabricated_usage(fabricated), "fabricated usage was not detected"
+
+    budget_bypass = _load_json(NEGATIVE / "budget_bypass.json")
+    event_names = [event.get("event") for event in budget_bypass["events"]]
+    assert "spawn" in event_names
+    assert "budget_exceeded" not in event_names
+
+
 def main() -> int:
     _assert_runner_receipts()
     _assert_route_and_budget_events()
     _assert_bundle()
     _assert_state_isolation()
+    _assert_negative_fixtures_detected()
     print("W4 revalidate: PASS")
     return 0
 
