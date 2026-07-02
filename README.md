@@ -69,6 +69,12 @@ Start with [`fixtures/w1/`](fixtures/w1/) and [`scripts/revalidate_w1.py`](scrip
 - W8 OVERT field alignment:
   [`docs/conformance/OVERT.md`](docs/conformance/OVERT.md),
   [`fixtures/w8/`](fixtures/w8/), and [`scripts/revalidate_w8.py`](scripts/revalidate_w8.py).
+- W10 live-agent E2E, Part II:
+  one real Codex CLI lane generated code in a temporary sandbox; the sealed
+  fixture in [`fixtures/w10/`](fixtures/w10/) is re-derived offline by
+  [`scripts/revalidate_w10.py`](scripts/revalidate_w10.py). This is one
+  committed real-agent attestation, not a claim that every agent path is
+  verified.
 
 The runtime dependency target is intentionally small: Python standard library plus
 the `openssl` CLI. Depone is a development/test verifier dependency, not a
@@ -92,6 +98,14 @@ For the W1 n=1 proof directly:
 ```bash
 cd /home/ubuntu/moonweave/witnessd
 PYTHONPATH=/home/ubuntu/moonweave/depone uv run python3 scripts/revalidate_w1.py
+```
+
+For the W10 live-agent fixture, no API key is needed to re-check the committed
+bytes:
+
+```bash
+cd /home/ubuntu/moonweave/witnessd
+PYTHONPATH=/home/ubuntu/moonweave/depone uv run python3 scripts/revalidate_w10.py
 ```
 
 For a depone-free runtime smoke test, run in an environment where Depone is not on
