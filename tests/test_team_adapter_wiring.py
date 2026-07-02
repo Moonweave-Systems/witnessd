@@ -1,6 +1,16 @@
+import json
+import os
+import shutil
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from witnessd.__main__ import _parse_team_lane
+from witnessd.adapter_run import LaneBlocked
+from witnessd.fanin import run_team
+from witnessd.signing import gen_operator_keypair
 
 
 class TestTeamAdapterLaneParsing(unittest.TestCase):
@@ -33,22 +43,6 @@ class TestTeamAdapterLaneParsing(unittest.TestCase):
     def test_parse_rejects_adapter_without_prompt(self):
         with self.assertRaisesRegex(ValueError, "ERR_TEAM_LANE_PROMPT"):
             _parse_team_lane("L1:adapter=codex:tier=agentic:region=a.txt")
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-import json
-import os
-import shutil
-import subprocess
-import tempfile
-from pathlib import Path
-from unittest import mock
-
-from witnessd.adapter_run import LaneBlocked
-from witnessd.fanin import run_team
-from witnessd.signing import gen_operator_keypair
 
 
 def _seed_repo(repo: Path) -> str:
@@ -230,3 +224,7 @@ class TestTeamAdapterLedgerContract(unittest.TestCase):
             )
             self.assertEqual(validate_runner_receipt(receipt), [])
             self.assertEqual(receipt["runner_kind"], "codex-cli")
+
+
+if __name__ == "__main__":
+    unittest.main()
