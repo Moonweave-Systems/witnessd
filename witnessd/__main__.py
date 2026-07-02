@@ -529,6 +529,69 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_team_plan_run(args: argparse.Namespace) -> int:
+    from witnessd.eventlog import EventLog
+    from witnessd.fanin import run_team
+    from witnessd.planner import dispatch, plan_heuristic, seal_plan
+    from witnessd.signing import gen_operator_keypair
+
+    out_dir = Path(args.out).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    sealed = seal_plan(
+        plan_heuristic(args.goal, seed=args.seed, root=args.repo),
+        goal=args.goal,
+    )
+    sealed_path = out_dir / "sealed-plan.json"
+    sealed_path.write_text(
+        json.dumps(sealed, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+    dispatch_log = EventLog(str(out_dir / "dispatch-log.jsonl"))
+    for event in dispatch(sealed):
+        dispatch_log.append(event)
+
+    keys_dir = Path(args.keys_dir or (str(out_dir).rstrip(os.sep) + "-keys")).resolve()
+    keys_dir.mkdir(parents=True, exist_ok=True)
+    private_key_path, public_key_path = gen_operator_keypair(str(keys_dir))
+    lane_specs = [_lane_packet_to_run_team_spec(packet) for packet in sealed["packets"]]
+    result = run_team(
+        lane_specs,
+        repo_root=args.repo,
+        out_dir=str(out_dir),
+        private_key_path=private_key_path,
+        public_key_path=public_key_path,
+        leader_objective=args.goal,
+        stop_rule="evidence-pending",
+    )
+    pending = len(result["ledger"]["lanes"])
+    print(
+        f"{pending} planned team lane(s) pending Depone verification "
+        f"({render_status(pending=pending, verdict=None)})"
+    )
+    print(f"sealed_plan: {sealed_path}")
+    print(f"dispatch_log: {out_dir / 'dispatch-log.jsonl'}")
+    print(f"team_ledger: {out_dir / 'team-ledger.json'}")
+    return 0
+
+
+def _lane_packet_to_run_team_spec(packet: dict) -> dict:
+    if packet["adapter"] == "shell":
+        return {
+            "lane_id": packet["lane_id"],
+            "region": list(packet["region"]),
+            "commands": [_default_team_lane_command(packet["lane_id"], packet["region"])],
+        }
+    return {
+        "lane_id": packet["lane_id"],
+        "adapter": packet["adapter"],
+        "tier": packet["tier"],
+        "region": list(packet["region"]),
+        "prompt": packet["prompt"],
+        "budget": dict(packet["budget"]),
+    }
+
+
 def _cmd_team_ledger(args: argparse.Namespace) -> int:
     ledger_path = Path(args.ledger)
     ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
@@ -796,6 +859,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="lane_id:file[,file...] or lane_id:adapter=codex:tier=quick:region=file[,file...]:prompt=...",
     )
     team_run.set_defaults(func=_cmd_team_run)
+
+    team_plan_run = team_sub.add_parser(
+        "plan-run", help="plan a goal and run the resulting team lanes"
+    )
+    team_plan_run.add_argument("goal")
+    team_plan_run.add_argument("--repo", required=True)
+    team_plan_run.add_argument("--out", required=True)
+    team_plan_run.add_argument("--keys-dir", default=None)
+    team_plan_run.add_argument("--seed", default="w11")
+    team_plan_run.set_defaults(func=_cmd_team_plan_run)
 
     team_ledger = sub.add_parser("team-ledger", help="verify a team ledger")
     team_ledger.add_argument("--ledger", required=True)

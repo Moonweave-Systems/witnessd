@@ -12,6 +12,7 @@ from witnessd.__main__ import _parse_team_lane, main
 from witnessd.canonical import canonical_hash
 from witnessd.planner import (
     PlannerError,
+    dispatch,
     lane_packet_from_team_lane,
     lane_packet_to_team_lane,
     plan_heuristic,
@@ -99,6 +100,20 @@ class TestHeuristicPlanner(unittest.TestCase):
         self.assertEqual(packets_a[0]["stop_rule"], "evidence-pending")
 
 
+class TestDispatch(unittest.TestCase):
+    def test_dispatch_is_pure_for_same_sealed_plan(self):
+        packets = plan_heuristic("ship W11 planner", seed="w11", root=".")
+        sealed = seal_plan(packets, goal="ship W11 planner")
+
+        events_a = dispatch(sealed)
+        events_b = dispatch(sealed)
+
+        self.assertEqual(events_a, events_b)
+        self.assertEqual(events_a[0]["kind"], "witnessd-dispatch-event")
+        self.assertEqual(events_a[0]["plan_hash"], sealed["plan_hash"])
+        self.assertIn("idempotency_key", events_a[0])
+
+
 def _fake_codex_invalid_draft(directory: Path) -> str:
     path = directory / "codex"
     path.write_text(
@@ -153,6 +168,42 @@ class TestPlannerCliDraft(unittest.TestCase):
             self.assertEqual(rendered["draft_events"][0]["status"], "fallback")
             self.assertEqual(rendered["draft_events"][0]["reason"], "ERR_PLAN_DRAFT_PARSE")
             self.assertTrue((draft_dir / "adapter-command.json").exists())
+
+
+@unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
+class TestPlannerPlanRunCli(unittest.TestCase):
+    def test_team_plan_run_uses_heuristic_shell_lane_and_prints_pending_status(self):
+        with tempfile.TemporaryDirectory() as root:
+            repo = Path(root) / "repo"
+            out_dir = Path(root) / "out"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "w@x.invalid"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "w11"], cwd=repo, check=True)
+            (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "team",
+                        "plan-run",
+                        "smoke goal",
+                        "--repo",
+                        str(repo),
+                        "--out",
+                        str(out_dir),
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            self.assertIn("evidence-pending", stdout.getvalue())
+            self.assertTrue((out_dir / "sealed-plan.json").exists())
+            self.assertTrue((out_dir / "dispatch-log.jsonl").exists())
+            ledger = json.loads((out_dir / "team-ledger.json").read_text())
+            self.assertEqual(ledger["lanes"][0]["runner_adapter_kind"], "shell")
 
 
 if __name__ == "__main__":

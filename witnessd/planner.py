@@ -156,6 +156,41 @@ def parse_draft_packets(text: str) -> list[dict[str, Any]]:
     return [validate_lane_packet(packet) for packet in packets]
 
 
+def dispatch(sealed_plan: dict[str, Any]) -> list[dict[str, Any]]:
+    if sealed_plan.get("kind") != SEALED_PLAN_KIND:
+        raise PlannerError("ERR_PLAN_SEALED_KIND")
+    packets = sealed_plan.get("packets")
+    if not isinstance(packets, list):
+        raise PlannerError("ERR_PLAN_SEALED_PACKETS")
+    normalized = [validate_lane_packet(packet) for packet in packets]
+    plan_hash = sealed_plan.get("plan_hash")
+    if plan_hash != canonical_hash(normalized):
+        raise PlannerError("ERR_PLAN_HASH_MISMATCH")
+
+    events: list[dict[str, Any]] = []
+    for index, packet in enumerate(normalized):
+        packet_hash = canonical_hash(packet)
+        idempotency_key = canonical_hash(
+            {
+                "index": index,
+                "lane_id": packet["lane_id"],
+                "packet_hash": packet_hash,
+                "plan_hash": plan_hash,
+            }
+        )
+        events.append(
+            {
+                "kind": "witnessd-dispatch-event",
+                "schema_version": SCHEMA_VERSION,
+                "plan_hash": plan_hash,
+                "lane_id": packet["lane_id"],
+                "packet_hash": packet_hash,
+                "idempotency_key": idempotency_key,
+            }
+        )
+    return events
+
+
 def _root_fingerprint(root: str) -> list[str]:
     try:
         return sorted(name for name in os.listdir(root) if not name.startswith("."))
