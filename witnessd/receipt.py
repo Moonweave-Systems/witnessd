@@ -31,12 +31,13 @@ def build_runner_receipt(
     started_at: str,
     ended_at: str,
     arm: str = ARM_GOVERNED,
+    runner_kind: str = RUNNER_KIND_MANUAL,
     human_intervened: bool = False,
 ) -> dict[str, Any]:
     receipt: dict[str, Any] = {
         "kind": RUNNER_RECEIPT_KIND,
         "schema_version": RUNNER_RECEIPT_VERSION,
-        "runner_kind": RUNNER_KIND_MANUAL,
+        "runner_kind": runner_kind,
         "arm": arm,
         "task_id": task_id,
         "worktree": worktree,

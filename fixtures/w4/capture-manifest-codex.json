@@ -1,0 +1,113 @@
+{
+  "allowed_touched_files": [],
+  "assurance": "A1-local-observed",
+  "decision": "observed-local-capture",
+  "fixture": {
+    "adapter": {
+      "executes_commands": false,
+      "harness": "codex",
+      "mode": "fixture-only",
+      "name": "shell-reference-fixture"
+    },
+    "capture": {
+      "command_receipts": [],
+      "diff_summary": {
+        "added_files": [],
+        "changed_files": [],
+        "deleted_files": [],
+        "modified_files": [],
+        "summary": "fixture-only adapter did not observe a diff"
+      },
+      "self_report": {
+        "agent_role": "runner",
+        "command_receipts": [],
+        "errors": [
+          "fixture-only adapter did not execute work"
+        ],
+        "output_files": [],
+        "profile": "w4-fixture",
+        "result_version": "1.0",
+        "self_reported_claims": [],
+        "status": "partial"
+      },
+      "test_output": {
+        "command": null,
+        "status": "not-run",
+        "summary": "fixture-only adapter did not run tests"
+      },
+      "touched_files": [],
+      "trust_level": "A0-claims-only"
+    },
+    "invocation": {
+      "context_policy": "local-code-only",
+      "evidence_obligations": [
+        "command_receipt",
+        "runner_receipt"
+      ],
+      "instructions": "Fixture lane; fake CLI only.",
+      "packet_version": "1.0",
+      "profile": "w4-fixture",
+      "role": "runner",
+      "target_harness": "codex",
+      "toolbelt": {
+        "allowed_mcp": [],
+        "allowed_tools": [
+          "codex"
+        ],
+        "context_policy": "local-code-only",
+        "evidence_obligations": [
+          "command_receipt",
+          "runner_receipt"
+        ],
+        "forbidden_tools": [],
+        "output_schema": "adapter-result-v1"
+      }
+    },
+    "kind": "agent-fabric-reference-adapter-fixture",
+    "schema_version": "1.0"
+  },
+  "kind": "agent-fabric-capture-manifest",
+  "observer_capture": {
+    "command_receipts": [
+      {
+        "command": [
+          "/home/ubuntu/moonweave/witnessd/fixtures/w4/bin/codex",
+          "--sandbox",
+          "workspace-write",
+          "exec",
+          "--skip-git-repo-check",
+          "--cd",
+          "/home/ubuntu/moonweave/witnessd/fixtures/w4/sandbox",
+          "--output-last-message",
+          "/home/ubuntu/moonweave/witnessd/fixtures/w4/transcripts/codex.txt",
+          "-"
+        ],
+        "cwd": "/home/ubuntu/moonweave/witnessd/fixtures/w4/sandbox",
+        "exit_code": 0,
+        "stderr": "",
+        "stdout": ""
+      }
+    ],
+    "diff_summary": {
+      "changed_files": []
+    },
+    "observed_by": "depone-observer",
+    "source_fixture_hash": "a4400e486adc3730dec811631aca2edf43b4c6f94693f86a7c5ef6be28f0d2a8",
+    "test_output": {
+      "status": "not-run"
+    },
+    "touched_files": []
+  },
+  "observer_capture_hash": "6967222738afc09c9ab0f17f6947d6b6cd8c55a3985f6fd40a134981de6a7bed",
+  "prev_capture_hash": null,
+  "required_observer_fields": [
+    "command_receipts",
+    "diff_summary",
+    "observed_by",
+    "source_fixture_hash",
+    "test_output",
+    "touched_files"
+  ],
+  "schema_version": "1.0",
+  "source_fixture_hash": "a4400e486adc3730dec811631aca2edf43b4c6f94693f86a7c5ef6be28f0d2a8"
+}

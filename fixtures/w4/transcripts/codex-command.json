@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/home/ubuntu/moonweave/witnessd/fixtures/w4/bin/codex",
+    "--sandbox",
+    "workspace-write",
+    "exec",
+    "--skip-git-repo-check",
+    "--cd",
+    "/home/ubuntu/moonweave/witnessd/fixtures/w4/sandbox",
+    "--output-last-message",
+    "/home/ubuntu/moonweave/witnessd/fixtures/w4/transcripts/codex.txt",
+    "-"
+  ],
+  "cwd": "/home/ubuntu/moonweave/witnessd/fixtures/w4/sandbox",
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": ""
+}

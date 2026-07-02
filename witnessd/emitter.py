@@ -93,6 +93,7 @@ def emit_lane_evidence(
     runner_sandbox: str = "",
     prev_capture_hash: str | None = None,
     isolation: dict[str, Any] | None = None,
+    runner_kind: str | None = None,
     key_id: str = "witnessd-operator",
     started_at: str | None = None,
     ended_at: str | None = None,
@@ -179,6 +180,7 @@ def emit_lane_evidence(
         touched_files=lane_result["touched_files"],
         started_at=started_at or _now_iso(),
         ended_at=ended_at or _now_iso(),
+        runner_kind=runner_kind or "manual",
     )
 
     manifest_path = _emit_artifact("capture-manifest.json", json.dumps(manifest))
@@ -190,8 +192,18 @@ def emit_lane_evidence(
         "observer-capture": os.path.join(evidence_dir, "observer-capture.json"),
         "runner-receipt": os.path.join(evidence_dir, "runner-receipt.json"),
     }
+    otel_spans = None
+    if runner_kind is not None:
+        from depone.agent_fabric.evidence_substrate import build_otel_genai_spans
+
+        otel_spans = build_otel_genai_spans(manifest, runner_receipt=receipt)
     bundle = build_bundle(
-        manifest, artifacts, private_key_path, public_key_path, key_id=key_id
+        manifest,
+        artifacts,
+        private_key_path,
+        public_key_path,
+        key_id=key_id,
+        otel_spans=otel_spans,
     )
     _emit_artifact("bundle.json", json.dumps(bundle))
 
@@ -239,6 +251,7 @@ def emit_supervised_lane(
     invocation: list[str] | None = None,
     runner_sandbox: str = "",
     prev_capture_hash: str | None = None,
+    runner_kind: str | None = None,
     key_id: str = "witnessd-operator",
     started_at: str | None = None,
     ended_at: str | None = None,
@@ -268,6 +281,7 @@ def emit_supervised_lane(
         runner_sandbox=runner_sandbox,
         prev_capture_hash=prev_capture_hash,
         isolation=isolation,
+        runner_kind=runner_kind,
         key_id=key_id,
         started_at=started_at,
         ended_at=ended_at,

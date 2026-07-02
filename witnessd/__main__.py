@@ -28,7 +28,13 @@ from witnessd.status import render_status
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
+    if args.adapter != "shell":
+        return _cmd_run_adapter(args)
+
     sandbox = os.path.abspath(args.runner_sandbox)
+    if not args.out or not args.log:
+        print("ERR_OBSERVER_OUTPUT_REQUIRED", file=sys.stderr)
+        return 2
     out_path = os.path.abspath(args.out)
     log_path = os.path.abspath(args.log)
 
@@ -39,10 +45,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
         assert_separated(runner_sandbox=sandbox, out_path=log_path)
     except ObserverSeparationError as exc:
         print(str(exc), file=sys.stderr)
-        return 2
-
-    if args.adapter != "shell":
-        print(f"ERR_UNKNOWN_ADAPTER: {args.adapter}", file=sys.stderr)
         return 2
 
     if not args.command:
@@ -90,6 +92,48 @@ def _cmd_run(args: argparse.Namespace) -> int:
     print(f"evidence_dir: {evidence_dir}")
     print(f"assurance (candidate, unverified): {result['assurance']}")
     print(f"trusted-observer public key (out-of-band): {result['public_key_path']}")
+    return 0
+
+
+def _cmd_run_adapter(args: argparse.Namespace) -> int:
+    if not args.command:
+        print("ERR_NO_PROMPT", file=sys.stderr)
+        return 2
+
+    from witnessd.adapter_run import LaneBlocked, run_adapter_lane
+
+    try:
+        result = run_adapter_lane(
+            root=os.path.abspath(args.root),
+            sandbox=os.path.abspath(args.runner_sandbox),
+            adapter=args.adapter,
+            task_id=args.task_id,
+            prompt=" ".join(args.command),
+            arm=args.arm,
+            tier=args.tier,
+            is_supported=lambda _model: True,
+            budget={
+                "max_tokens": args.max_tokens,
+                "max_usd": args.max_usd,
+                "max_depth": args.max_depth,
+            },
+            predicted_tokens=args.predicted_tokens,
+            predicted_usd=args.predicted_usd,
+            codex_binary=args.codex_binary,
+            claude_binary=args.claude_binary,
+            opencode_binary=args.opencode_binary,
+        )
+    except LaneBlocked as exc:
+        print(exc.reason, file=sys.stderr)
+        return 1
+
+    pending = 1
+    print(
+        f"{pending} adapter lane(s) pending Depone verification "
+        f"({render_status(pending=pending, verdict=None)})"
+    )
+    print(f"evidence_dir: {result['evidence_dir']}")
+    print(f"runner_kind: {result['runner_receipt']['runner_kind']}")
     return 0
 
 
@@ -145,6 +189,20 @@ def _cmd_verify(args: argparse.Namespace) -> int:
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
+    if args.external_worktree:
+        from witnessd.state import detect_state_contention
+
+        errors = detect_state_contention(
+            witnessd_worktree=os.path.abspath(args.root),
+            external_active_worktrees=[
+                os.path.abspath(path) for path in args.external_worktree
+            ],
+        )
+        for error in errors:
+            print(error, file=sys.stderr)
+        return 3 if errors else 0
+    if not args.runlog:
+        return 0
     states = _derive_runlog_liveness(args.runlog)
     bad = {lane_id: state for lane_id, state in states.items() if state != "active"}
     for lane_id in sorted(states):
@@ -163,6 +221,33 @@ def _cmd_isolation(args: argparse.Namespace) -> int:
 
 
 def _cmd_faultkit(args: argparse.Namespace) -> int:
+    if args.fault == "budget-blowout":
+        from witnessd.adapter_run import LaneBlocked, run_adapter_lane
+
+        try:
+            run_adapter_lane(
+                root=os.path.abspath(args.root),
+                sandbox=os.path.abspath(args.runner_sandbox),
+                adapter="codex",
+                task_id=args.task_id,
+                prompt=args.prompt,
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={
+                    "max_tokens": args.max_tokens,
+                    "max_usd": args.max_usd,
+                    "max_depth": args.max_depth,
+                },
+                predicted_tokens=args.max_tokens + 1,
+                predicted_usd=0.0,
+                codex_binary=args.codex_binary,
+            )
+        except LaneBlocked as exc:
+            print(exc.reason)
+            return 1 if exc.reason == "budget_exceeded" else 2
+        print("budget_blowout_not_reproduced", file=sys.stderr)
+        return 2
     if args.fault == "zombie-hang":
         from witnessd.faultkit import zombie_hang
 
@@ -185,6 +270,29 @@ def _cmd_faultkit(args: argparse.Namespace) -> int:
         return 0
     print(f"ERR_UNKNOWN_FAULT: {args.fault}", file=sys.stderr)
     return 2
+
+
+def _cmd_route(args: argparse.Namespace) -> int:
+    from witnessd.eventlog import EventLog
+    from witnessd.router import RouteExhaustedError, route_model
+
+    root = Path(args.root).resolve()
+    runlog_path = Path(args.runlog) if args.runlog else root / ".witnessd" / "route-runlog.jsonl"
+    runlog_path.parent.mkdir(parents=True, exist_ok=True)
+    unsupported = set(args.unsupported_model or [])
+    log = EventLog(str(runlog_path))
+    try:
+        decision = route_model(
+            task_id=args.task_id,
+            tier=args.tier,
+            log=log,
+            is_supported=lambda model: model not in unsupported,
+        )
+    except RouteExhaustedError as exc:
+        print(exc.code, file=sys.stderr)
+        return 1
+    print(json.dumps(decision, sort_keys=True))
+    return 0
 
 
 def _cmd_team_run(args: argparse.Namespace) -> int:
@@ -252,20 +360,26 @@ def _default_team_lane_command(lane_id: str, region: list[str]) -> list[str]:
 
 def _cmd_self_test(args: argparse.Namespace) -> int:
     from witnessd import (
+        budget,
         emitter,
         fanin,
         faultkit,
         isolation,
         lock,
         liveness,
+        preflight,
+        router,
         scheduler,
         session,
         signing,
+        state,
         substrate,
         supervisor,
         team_ledger,
         worktree,
     )
+    from witnessd.adapters import base as adapter_base
+    from witnessd.adapters import codex as codex_adapter
 
     checks = [
         ("signing", signing._self_test),
@@ -281,11 +395,27 @@ def _cmd_self_test(args: argparse.Namespace) -> int:
         ("worktree", worktree._self_test),
         ("team_ledger", team_ledger._self_test),
         ("fanin", fanin._self_test),
+        ("adapter_base", adapter_base._self_test),
+        ("codex_adapter", codex_adapter._self_test),
+        ("preflight", preflight._self_test),
+        ("router", router._self_test),
+        ("budget", budget._self_test),
+        ("state", state._self_test),
     ]
+    report_pass_names = {
+        "adapter_base",
+        "codex_adapter",
+        "preflight",
+        "router",
+        "budget",
+        "state",
+    }
     passed = 0
     for name, check in checks:
         try:
             check()
+            if name in report_pass_names:
+                print(f"witnessd {name} --self-test: pass")
             passed += 1
         except Exception as exc:  # noqa: BLE001 — report which self-test failed
             print(f"witnessd {name} --self-test: FAIL ({exc})", file=sys.stderr)
@@ -299,14 +429,29 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     run = sub.add_parser("run", help="observe a lane and emit signed evidence")
-    run.add_argument("--adapter", default="shell", choices=["shell"])
+    run.add_argument(
+        "--adapter",
+        default="shell",
+        choices=["shell", "codex", "claude", "opencode"],
+    )
+    run.add_argument("--root", default=".")
     run.add_argument("--runner-sandbox", required=True)
     run.add_argument(
-        "--out", required=True, help="observer output path (outside sandbox)"
+        "--out", default=None, help="observer output path (outside sandbox)"
     )
-    run.add_argument("--log", required=True, help="observer log path (outside sandbox)")
+    run.add_argument("--log", default=None, help="observer log path (outside sandbox)")
     run.add_argument("--keys-dir", default=None)
     run.add_argument("--task-id", default="witnessd-lane")
+    run.add_argument("--arm", default="direct", choices=["direct", "governed"])
+    run.add_argument("--tier", default="agentic", choices=["quick", "agentic", "frontier"])
+    run.add_argument("--codex-binary", default="codex")
+    run.add_argument("--claude-binary", default="claude")
+    run.add_argument("--opencode-binary", default="opencode")
+    run.add_argument("--max-tokens", type=int, default=10**9)
+    run.add_argument("--max-usd", type=float, default=10**9)
+    run.add_argument("--max-depth", type=int, default=3)
+    run.add_argument("--predicted-tokens", type=int, default=0)
+    run.add_argument("--predicted-usd", type=float, default=0.0)
     run.add_argument(
         "--allow", action="append", default=[], help="allowed touched file"
     )
@@ -322,8 +467,18 @@ def _build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--runlog", required=True)
     verify.set_defaults(func=_cmd_verify)
 
+    route = sub.add_parser("route", help="dry-run W4 model routing")
+    route.add_argument("--root", default=".")
+    route.add_argument("--runlog", default=None)
+    route.add_argument("--task-id", default="witnessd-route")
+    route.add_argument("--tier", required=True, choices=["quick", "agentic", "frontier"])
+    route.add_argument("--unsupported-model", action="append", default=[])
+    route.set_defaults(func=_cmd_route)
+
     doctor = sub.add_parser("doctor", help="report runlog-derived lane health")
-    doctor.add_argument("--runlog", required=True)
+    doctor.add_argument("--runlog", default=None)
+    doctor.add_argument("--root", default=".")
+    doctor.add_argument("--external-worktree", action="append", default=[])
     doctor.set_defaults(func=_cmd_doctor)
 
     isolation = sub.add_parser("isolation", help="isolation contract checks")
@@ -340,6 +495,16 @@ def _build_parser() -> argparse.ArgumentParser:
     crash.add_argument("--runlog-after", required=True)
     crash.add_argument("--session", required=True)
     crash.set_defaults(func=_cmd_faultkit)
+    budget = faultkit_sub.add_parser("budget-blowout")
+    budget.add_argument("--root", required=True)
+    budget.add_argument("--runner-sandbox", required=True)
+    budget.add_argument("--codex-binary", default="codex")
+    budget.add_argument("--task-id", default="budget-blowout")
+    budget.add_argument("--prompt", default="trigger budget blowout")
+    budget.add_argument("--max-tokens", type=int, default=1)
+    budget.add_argument("--max-usd", type=float, default=10**9)
+    budget.add_argument("--max-depth", type=int, default=3)
+    budget.set_defaults(func=_cmd_faultkit)
 
     team = sub.add_parser("team", help="run a local team fan-in")
     team_sub = team.add_subparsers(dest="team_cmd", required=True)

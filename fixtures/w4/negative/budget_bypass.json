@@ -1,0 +1,10 @@
+{
+  "events": [
+    {
+      "event": "spawn",
+      "kind": "witnessd-runlog-event",
+      "note": "tampered spawn without budget gate",
+      "task_id": "w4-budget-fixture"
+    }
+  ]
+}

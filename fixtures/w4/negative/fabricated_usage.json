@@ -1,0 +1,105 @@
+{
+  "assurance": "A1-local-observed",
+  "boundary": {
+    "approves_public_claim": false,
+    "raises_assurance": false,
+    "signed": true
+  },
+  "dsse_envelope": {
+    "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsiYXNzdXJhbmNlIjoiQTEtbG9jYWwtb2JzZXJ2ZWQiLCJib3VuZGFyeSI6eyJhcHByb3Zlc19wdWJsaWNfY2xhaW0iOmZhbHNlLCJyYWlzZXNfYXNzdXJhbmNlIjpmYWxzZSwic2lnbmVkIjp0cnVlfSwiZGVjaXNpb24iOiJvYnNlcnZlZC1sb2NhbC1jYXB0dXJlIiwicHJldl9jYXB0dXJlX2hhc2giOm51bGwsInNjaGVtYV92ZXJzaW9uIjoiMS4wIiwic291cmNlX2tpbmQiOiJhZ2VudC1mYWJyaWMtY2FwdHVyZS1tYW5pZmVzdCJ9LCJwcmVkaWNhdGVUeXBlIjoiaHR0cHM6Ly9kZXBvbmUuZGV2L2F0dGVzdGF0aW9ucy9ldmlkZW5jZS92MSIsInN1YmplY3QiOlt7ImRpZ2VzdCI6eyJzaGEyNTYiOiI0MzExNTYyYmQ2NTgzNGMyMTJjYzI5NTY1YzI5OTY1OGU4NmRlNTU1OGY4MmJhODJkYTdkMGRmNDdjMTI0YzYyIn0sIm5hbWUiOiJjYXB0dXJlLW1hbmlmZXN0In0seyJkaWdlc3QiOnsic2hhMjU2IjoiYjkyYzMxYzg2NDMyNjBiNmYxYjk2MzJhZTZkNmI1YTcyY2FiMjdjZTcyYzgwNzIxYzgzNzQxMTdhYmQwNTljYyJ9LCJuYW1lIjoib2JzZXJ2ZXItY2FwdHVyZSJ9LHsiZGlnZXN0Ijp7InNoYTI1NiI6IjA5ZmM3NjQ0ZmMzYzRkMTRiM2M1YmIwYjA2ODJjNjhlZmZhNjI2YTgyNGY1YmVmNzYxNmE3NjJjZWIwOTc5YWUifSwibmFtZSI6InJ1bm5lci1yZWNlaXB0In1dfQ==",
+    "payloadType": "application/vnd.in-toto+json",
+    "signatures": [
+      {
+        "keyid": "w4-fixture-operator",
+        "sig": "hriaSZ+3HCqBttgL+jARvhsNsId+nHS4Q31mByhXmUUM8vWJY6/+KiQrBlqsg/MuFRc2i7p+SlvgaawO+l6gCw=="
+      }
+    ]
+  },
+  "kind": "depone-evidence-substrate-bundle",
+  "otel_spans": [
+    {
+      "attributes": {
+        "depone.arm": "direct",
+        "depone.assurance": "A1-local-observed",
+        "depone.decision": "observed-local-capture",
+        "gen_ai.agent.name": "codex-cli",
+        "gen_ai.operation.name": "invoke_agent",
+        "gen_ai.usage.output_tokens": 999
+      },
+      "name": "invoke_agent",
+      "parent_span_id": null,
+      "span_id": "38b0611a471ab45f",
+      "trace_id": "d7dbee2e1a37333ba93d201c67d5812b"
+    },
+    {
+      "attributes": {
+        "depone.command": [
+          "/home/ubuntu/moonweave/witnessd/fixtures/w4/bin/codex",
+          "--sandbox",
+          "workspace-write",
+          "exec",
+          "--skip-git-repo-check",
+          "--cd",
+          "/home/ubuntu/moonweave/witnessd/fixtures/w4/sandbox",
+          "--output-last-message",
+          "/home/ubuntu/moonweave/witnessd/fixtures/w4/transcripts/codex.txt",
+          "-"
+        ],
+        "depone.exit_code": 0,
+        "depone.status": null,
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": "verification_command"
+      },
+      "name": "execute_tool",
+      "parent_span_id": "38b0611a471ab45f",
+      "span_id": "53d1aa8958bd70e6",
+      "trace_id": "d7dbee2e1a37333ba93d201c67d5812b"
+    }
+  ],
+  "schema_version": "1.0",
+  "signature_boundary": {
+    "keyless_identity": false,
+    "note": "Trust is rooted in the operator-held key and distributed public key; this is not Fulcio keyless identity or Rekor logging.",
+    "operator_key": true,
+    "public_verifiable": true,
+    "scheme": "DSSE-Ed25519-openssl-cli",
+    "transparency_logged": false
+  },
+  "signing_status": "signed-ed25519-operator-key",
+  "statement": {
+    "_type": "https://in-toto.io/Statement/v1",
+    "predicate": {
+      "assurance": "A1-local-observed",
+      "boundary": {
+        "approves_public_claim": false,
+        "raises_assurance": false,
+        "signed": true
+      },
+      "decision": "observed-local-capture",
+      "prev_capture_hash": null,
+      "schema_version": "1.0",
+      "source_kind": "agent-fabric-capture-manifest"
+    },
+    "predicateType": "https://depone.dev/attestations/evidence/v1",
+    "subject": [
+      {
+        "digest": {
+          "sha256": "4311562bd65834c212cc29565c299658e86de5558f82ba82da7d0df47c124c62"
+        },
+        "name": "capture-manifest"
+      },
+      {
+        "digest": {
+          "sha256": "b92c31c8643260b6f1b9632ae6d6b5a72cab27ce72c80721c8374117abd059cc"
+        },
+        "name": "observer-capture"
+      },
+      {
+        "digest": {
+          "sha256": "09fc7644fc3c4d14b3c5bb0b0682c68effa626a824f5bef7616a762ceb0979ae"
+        },
+        "name": "runner-receipt"
+      }
+    ]
+  }
+}

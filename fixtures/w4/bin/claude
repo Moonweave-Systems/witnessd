@@ -1,0 +1,3 @@
+#!/bin/sh
+echo claude-fixture >&2
+exit 0
