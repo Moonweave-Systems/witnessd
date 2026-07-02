@@ -55,6 +55,20 @@ class TestLanePacket(unittest.TestCase):
                 }
             )
 
+    def test_lane_packet_rejects_adapter_not_supported_by_w7_parser(self):
+        with self.assertRaisesRegex(PlannerError, "ERR_PLAN_PACKET_ADAPTER"):
+            lane_packet_to_team_lane(
+                {
+                    "lane_id": "L1",
+                    "adapter": "frobnicate",
+                    "tier": "agentic",
+                    "region": ["pkg/a.py"],
+                    "prompt": "bad adapter",
+                    "budget": {"max_tokens": 1000, "max_usd": 0.0, "max_depth": 2},
+                    "stop_rule": "evidence-pending",
+                }
+            )
+
 
 class TestSealPlan(unittest.TestCase):
     def _packet(self, lane_id: str, region: list[str]) -> dict:
@@ -87,6 +101,38 @@ class TestSealPlan(unittest.TestCase):
 
         with self.assertRaisesRegex(PlannerError, "ERR_PLAN_REGION_OVERLAP"):
             seal_plan(packets, goal="ship W11")
+
+    def test_seal_plan_rejects_normalized_region_overlap(self):
+        packets = [
+            self._packet("L1", ["pkg/shared.py"]),
+            self._packet("L2", ["./pkg/shared.py"]),
+        ]
+
+        with self.assertRaisesRegex(PlannerError, "ERR_PLAN_REGION_OVERLAP"):
+            seal_plan(packets, goal="ship W11")
+
+    def test_unrelated_merge_lane_does_not_bypass_region_overlap(self):
+        merge = self._packet("merge", ["pkg/merge.py"])
+        merge["merge_lane"] = True
+        packets = [
+            self._packet("L1", ["pkg/shared.py"]),
+            self._packet("L2", ["pkg/shared.py"]),
+            merge,
+        ]
+
+        with self.assertRaisesRegex(PlannerError, "ERR_PLAN_REGION_OVERLAP"):
+            seal_plan(packets, goal="ship W11")
+
+    def test_merge_lane_may_overlap_region_it_merges(self):
+        merge = self._packet("merge", ["pkg/shared.py"])
+        merge["merge_lane"] = True
+
+        sealed = seal_plan(
+            [self._packet("L1", ["pkg/shared.py"]), merge],
+            goal="ship W11",
+        )
+
+        self.assertEqual(sealed["packets"][1]["merge_lane"], True)
 
 
 class TestHeuristicPlanner(unittest.TestCase):

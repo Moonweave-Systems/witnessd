@@ -7,10 +7,12 @@ touch git, sign evidence, or decide completion.
 
 from __future__ import annotations
 
-import os
 import json
+import os
+import posixpath
 from typing import Any
 
+from witnessd.adapters.base import RUNNER_KIND_BY_ADAPTER
 from witnessd.canonical import canonical_hash
 
 
@@ -77,7 +79,7 @@ def validate_lane_packet(packet: dict[str, Any]) -> dict[str, Any]:
     if not lane_id:
         raise PlannerError("ERR_PLAN_PACKET_LANE_ID")
     adapter = str(packet["adapter"]).strip()
-    if not adapter:
+    if adapter not in _valid_adapters():
         raise PlannerError("ERR_PLAN_PACKET_ADAPTER")
     tier = str(packet["tier"]).strip()
     if not tier:
@@ -89,10 +91,11 @@ def validate_lane_packet(packet: dict[str, Any]) -> dict[str, Any]:
     if not stop_rule:
         raise PlannerError("ERR_PLAN_PACKET_STOP_RULE")
 
-    region = packet["region"]
-    if not isinstance(region, list) or not all(
-        isinstance(path, str) and path.strip() for path in region
-    ):
+    try:
+        region = _normalize_region(packet["region"])
+    except (TypeError, ValueError) as exc:
+        raise PlannerError("ERR_PLAN_PACKET_REGION") from exc
+    if not region:
         raise PlannerError("ERR_PLAN_PACKET_REGION")
     budget = packet["budget"]
     if not isinstance(budget, dict) or set(budget) != REQUIRED_BUDGET_KEYS:
@@ -102,7 +105,7 @@ def validate_lane_packet(packet: dict[str, Any]) -> dict[str, Any]:
         "lane_id": lane_id,
         "adapter": adapter,
         "tier": tier,
-        "region": [path.strip() for path in region],
+        "region": region,
         "prompt": prompt,
         "budget": {
             "max_tokens": int(budget["max_tokens"]),
@@ -114,6 +117,24 @@ def validate_lane_packet(packet: dict[str, Any]) -> dict[str, Any]:
     if packet.get("merge_lane") is True:
         normalized["merge_lane"] = True
     return normalized
+
+
+def _valid_adapters() -> set[str]:
+    return set(RUNNER_KIND_BY_ADAPTER) | {"shell"}
+
+
+def _normalize_region(raw_region: Any) -> list[str]:
+    if not isinstance(raw_region, list):
+        raise TypeError("region must be a list")
+    normalized: set[str] = set()
+    for raw_path in raw_region:
+        if not isinstance(raw_path, str):
+            raise TypeError("region path must be a string")
+        path = posixpath.normpath(raw_path.replace("\\", "/").strip())
+        if path in ("", ".") or path.startswith("../") or path == "..":
+            raise ValueError("region path escapes repository")
+        normalized.add(path)
+    return sorted(normalized)
 
 
 def seal_plan(packets: list[dict[str, Any]], *, goal: str) -> dict[str, Any]:
@@ -199,11 +220,14 @@ def _root_fingerprint(root: str) -> list[str]:
 
 
 def _assert_region_disjoint_or_explicit_merge(packets: list[dict[str, Any]]) -> None:
-    if any(packet.get("merge_lane") is True for packet in packets):
-        return
-    seen: set[str] = set()
+    seen: dict[str, bool] = {}
     for packet in packets:
+        is_merge_lane = packet.get("merge_lane") is True
         for path in packet["region"]:
-            if path in seen:
+            owner_is_merge_lane = seen.get(path)
+            if owner_is_merge_lane is not None and not (
+                owner_is_merge_lane or is_merge_lane
+            ):
                 raise PlannerError("ERR_PLAN_REGION_OVERLAP")
-            seen.add(path)
+            if owner_is_merge_lane is None:
+                seen[path] = is_merge_lane
