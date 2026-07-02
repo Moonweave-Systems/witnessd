@@ -120,6 +120,7 @@ def run_adapter_lane(
     claude_binary: str = "claude",
     opencode_binary: str = "opencode",
     timeout_seconds: int = 120,
+    evidence_dir: str | None = None,
 ) -> dict[str, Any]:
     worktree = str(Path(sandbox or root).resolve(strict=False))
 
@@ -163,16 +164,21 @@ def run_adapter_lane(
         except BudgetExceededError as exc:
             raise LaneBlocked("budget_exceeded", str(exc)) from exc
 
-        task_dir = namespace.state_dir / "lanes" / task_id
-        evidence_dir = task_dir / "evidence"
+        if evidence_dir is None:
+            task_dir = namespace.state_dir / "lanes" / task_id
+            lane_evidence_dir = task_dir / "evidence"
+        else:
+            lane_evidence_dir = Path(evidence_dir).resolve(strict=False)
+            task_dir = lane_evidence_dir.parent
         transcript_path = task_dir / "adapter-transcript.txt"
         log_path = task_dir / "adapter-command.json"
         key_dir = namespace.state_dir / "keys"
         task_dir.mkdir(parents=True, exist_ok=True)
+        lane_evidence_dir.mkdir(parents=True, exist_ok=True)
         key_dir.mkdir(parents=True, exist_ok=True)
         private_key, public_key = gen_operator_keypair(str(key_dir))
 
-        assert_separated(worktree, str(evidence_dir / "capture-manifest.json"))
+        assert_separated(worktree, str(lane_evidence_dir / "capture-manifest.json"))
         adapter_result = _run_adapter(
             adapter=adapter,
             sandbox=worktree,
@@ -193,7 +199,7 @@ def run_adapter_lane(
                 "touched_files": adapter_result.touched_files,
                 "test_output": adapter_result.test_output,
             },
-            str(evidence_dir),
+            str(lane_evidence_dir),
             private_key,
             fixture=_fixture(adapter, task_id, route_decision),
             allowed_touched_files=adapter_result.touched_files,
@@ -209,8 +215,8 @@ def run_adapter_lane(
         return {
             "runner_receipt": emitted["receipt"],
             "capture_manifest": emitted["manifest"],
-            "bundle_path": str(evidence_dir / "bundle.json"),
-            "evidence_dir": str(evidence_dir),
+            "bundle_path": str(lane_evidence_dir / "bundle.json"),
+            "evidence_dir": str(lane_evidence_dir),
             "route": route_decision,
             "status_axis": {
                 "assurance": render_status(pending=1, verdict=None),

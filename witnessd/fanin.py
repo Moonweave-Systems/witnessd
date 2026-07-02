@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from witnessd.adapter_run import LaneBlocked, run_adapter_lane
 from witnessd.adapters.shell import run_shell_lane
 from witnessd.emitter import emit_supervised_lane
 from witnessd.eventlog import EventLog
@@ -80,19 +81,41 @@ def run_team(
                 )
                 continue
 
-            lane = _run_write_lane(
-                lane_id=lane_id,
-                commands=commands,
-                repo_root=root,
-                base_commit=start_commit,
-                base_dir=base_dir,
-                observer_dir=observer_path,
-                allowed_touched_files=allowed_touched_files,
-                private_key_path=private_key_path,
-                public_key_path=public_key_path,
-                log=log,
-                run_id=run_id,
-            )
+            try:
+                if spec.get("adapter"):
+                    lane = _run_adapter_lane(
+                        lane_id=lane_id,
+                        spec=spec,
+                        repo_root=root,
+                        base_commit=start_commit,
+                        base_dir=base_dir,
+                        observer_dir=observer_path,
+                        allowed_touched_files=allowed_touched_files,
+                        log=log,
+                        run_id=run_id,
+                    )
+                else:
+                    lane = _run_write_lane(
+                        lane_id=lane_id,
+                        commands=commands,
+                        repo_root=root,
+                        base_commit=start_commit,
+                        base_dir=base_dir,
+                        observer_dir=observer_path,
+                        allowed_touched_files=allowed_touched_files,
+                        private_key_path=private_key_path,
+                        public_key_path=public_key_path,
+                        log=log,
+                        run_id=run_id,
+                    )
+            except LaneBlocked as exc:
+                lane = _blocked_adapter_lane(
+                    lane_id=lane_id,
+                    adapter=str(spec.get("adapter")),
+                    base_commit=start_commit,
+                    reason=exc.reason,
+                    message=exc.message,
+                )
             lanes.append(lane["ledger_lane"])
             lane_outputs.append(lane)
     finally:
@@ -206,6 +229,137 @@ def _run_write_lane(
         "worktree_receipt": receipt,
         "evidence_next_verdict": verdict,
     }
+
+
+def _run_adapter_lane(
+    *,
+    lane_id: str,
+    spec: dict[str, Any],
+    repo_root: Path,
+    base_commit: str,
+    base_dir: Path,
+    observer_dir: Path,
+    allowed_touched_files: list[str],
+    log: EventLog,
+    run_id: str,
+) -> dict[str, Any]:
+    worktree = create_lane_worktree(
+        repo_root=str(repo_root),
+        lane_id=lane_id,
+        base_commit=base_commit,
+        worktrees_dir=str(base_dir / "worktrees"),
+    )
+    evidence_dir = base_dir / lane_id
+    assert_separated(runner_sandbox=worktree, out_path=str(evidence_dir / "capture-manifest.json"))
+
+    result = run_adapter_lane(
+        root=str(repo_root),
+        sandbox=worktree,
+        adapter=str(spec["adapter"]),
+        task_id=lane_id,
+        prompt=str(spec["prompt"]),
+        arm=str(spec.get("arm", "direct")),
+        tier=str(spec.get("tier", "agentic")),
+        is_supported=spec.get("is_supported", lambda _model: True),
+        budget=spec.get(
+            "budget",
+            {"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+        ),
+        predicted_tokens=int(spec.get("predicted_tokens", 0)),
+        predicted_usd=float(spec.get("predicted_usd", 0.0)),
+        codex_binary=str(spec.get("codex_binary", "codex")),
+        claude_binary=str(spec.get("claude_binary", "claude")),
+        opencode_binary=str(spec.get("opencode_binary", "opencode")),
+        evidence_dir=str(evidence_dir),
+    )
+    _commit_lane(worktree, lane_id)
+
+    runner_receipt = result.get("runner_receipt", {})
+    receipt = build_worktree_lane_receipt(
+        worktree=worktree,
+        base_commit=base_commit,
+        evidence_dir=lane_id,
+        commands=runner_receipt.get("command_receipts", []),
+    )
+    _write_json_artifact(
+        log,
+        run_id,
+        evidence_dir / "worktree-lane-receipt.json",
+        receipt,
+        artifact_name=f"{lane_id}/worktree-lane-receipt.json",
+    )
+    verdict = build_evidence_next_verdict()
+    _write_json_artifact(
+        log,
+        run_id,
+        evidence_dir / "evidence-next-verdict.json",
+        verdict,
+        artifact_name=f"{lane_id}/evidence-next-verdict.json",
+    )
+
+    adapter = str(spec["adapter"])
+    ledger_lane = {
+        "lane_id": lane_id,
+        "objective": f"{lane_id} objective",
+        "start_commit": base_commit,
+        "end_commit": receipt["head_commit"],
+        "evidence_dir": lane_id,
+        "env_kind": "local",
+        "runner_adapter_kind": _ledger_adapter_kind(adapter),
+        "team_adapter_kind": _ledger_adapter_kind(adapter),
+        "verification_state": "pass",
+        "touched_files": receipt["changed_files"],
+        "worktree_receipt": f"{lane_id}/worktree-lane-receipt.json",
+        "evidence_next_verdict": f"{lane_id}/evidence-next-verdict.json",
+    }
+    return {
+        "lane_id": lane_id,
+        "worktree": worktree,
+        "evidence_dir": evidence_dir,
+        "adapter_result": result,
+        "manifest": result.get("capture_manifest"),
+        "ledger_lane": ledger_lane,
+        "worktree_receipt": receipt,
+        "evidence_next_verdict": verdict,
+    }
+
+
+def _blocked_adapter_lane(
+    *,
+    lane_id: str,
+    adapter: str,
+    base_commit: str,
+    reason: str,
+    message: str = "",
+) -> dict[str, Any]:
+    ledger_lane = {
+        "lane_id": lane_id,
+        "objective": f"{lane_id} objective",
+        "start_commit": base_commit,
+        "end_commit": base_commit,
+        "evidence_dir": lane_id,
+        "env_kind": "local",
+        "runner_adapter_kind": _ledger_adapter_kind(adapter),
+        "team_adapter_kind": _ledger_adapter_kind(adapter),
+        "verification_state": "blocked",
+        "blocked_reason": reason,
+        "touched_files": [],
+    }
+    if message:
+        ledger_lane["blocked_message"] = message
+    return {
+        "lane_id": lane_id,
+        "ledger_lane": ledger_lane,
+        "blocked_reason": reason,
+    }
+
+
+def _ledger_adapter_kind(adapter: str) -> str:
+    if adapter == "claude":
+        return "claude-code"
+    if adapter in {"codex", "opencode", "shell"}:
+        return adapter
+    return "external"
 
 
 def _lane_id(spec: dict[str, Any]) -> str:
