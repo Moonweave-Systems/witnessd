@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +17,14 @@ from depone.agent_fabric.sign import SIGNING_STATUS_OPERATOR_KEY, verify_signed_
 from witnessd.signing import DEFAULT_OPERATOR_KEY_ID
 
 ARCHIVE = ROOT / "fixtures" / "key-rotation" / "operator-key-archive.json"
+
+REQUIRED_PRODUCTION_GATE_EVIDENCE = (
+    "deployment_record",
+    "rotated_key_archive",
+    "canary_bundle",
+    "depone_verification",
+    "operator_review",
+)
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -50,10 +59,7 @@ def validate_archive(archive: dict[str, Any]) -> None:
     production_gate = archive.get("production_gate")
     if not isinstance(production_gate, dict):
         _fail("production_gate must be an object")
-    if production_gate.get("status") != "blocked":
-        _fail("production gate must stay blocked until real deployment evidence exists")
-    if "keyless" not in str(production_gate.get("blocks", "")).lower():
-        _fail("production gate must explicitly block keyless")
+    _validate_production_gate(production_gate)
     keys = archive.get("keys")
     if not isinstance(keys, list) or not keys:
         _fail("archive keys must be a non-empty list")
@@ -70,6 +76,62 @@ def validate_archive(archive: dict[str, Any]) -> None:
         _fail("current key must not have valid_until")
     for key in keys:
         _validate_key_record(key, current_key_id=current_key["key_id"], current_from=current_from)
+
+
+def _validate_production_gate(gate: dict[str, Any]) -> None:
+    status_value = gate.get("status")
+    if status_value not in {"blocked", "open"}:
+        _fail("production gate status must be blocked or open")
+    if status_value == "blocked" and "keyless" not in str(gate.get("blocks", "")).lower():
+        _fail("blocked production gate must explicitly block keyless")
+    if gate.get("rollout_stage") != "external-team-pilot":
+        _fail("production gate rollout_stage must be external-team-pilot")
+    deployments_min = gate.get("deployments_min")
+    if not isinstance(deployments_min, int) or deployments_min < 1:
+        _fail("production gate deployments_min must be at least 1")
+    required_evidence = gate.get("required_evidence")
+    if not isinstance(required_evidence, list):
+        _fail("production gate required_evidence must be a list")
+    evidence_ids = []
+    for item in required_evidence:
+        if not isinstance(item, dict):
+            _fail("production gate required_evidence entries must be objects")
+        evidence_id = item.get("id")
+        status = item.get("status")
+        if not isinstance(evidence_id, str):
+            _fail("production gate evidence id must be a string")
+        if status not in {"missing", "recorded"}:
+            _fail("production gate evidence status must be missing or recorded")
+        if status == "recorded":
+            _validate_gate_evidence_artifact(item)
+        evidence_ids.append(evidence_id)
+    if tuple(evidence_ids) != REQUIRED_PRODUCTION_GATE_EVIDENCE:
+        _fail("production gate required_evidence set mismatch")
+    if status_value == "open":
+        recorded = [item for item in required_evidence if item.get("status") == "recorded"]
+        if len(recorded) != len(REQUIRED_PRODUCTION_GATE_EVIDENCE):
+            _fail("production gate cannot open without all deployment evidence recorded")
+
+
+def _validate_gate_evidence_artifact(item: dict[str, Any]) -> None:
+    artifact_path = item.get("artifact_path")
+    artifact_sha256 = item.get("artifact_sha256")
+    if not isinstance(artifact_path, str) or not artifact_path:
+        _fail("recorded deployment evidence must include artifact_path")
+    if Path(artifact_path).is_absolute():
+        _fail("recorded deployment evidence artifact_path must be repo-relative")
+    if not isinstance(artifact_sha256, str) or len(artifact_sha256) != 64:
+        _fail("recorded deployment evidence must include artifact_sha256")
+    path = (ROOT / artifact_path).resolve()
+    try:
+        path.relative_to(ROOT)
+    except ValueError as exc:
+        raise AssertionError("recorded deployment evidence artifact_path escapes repo") from exc
+    if not path.is_file():
+        _fail(f"recorded deployment evidence artifact missing: {artifact_path}")
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if artifact_sha256 != actual:
+        _fail("recorded deployment evidence artifact_sha256 mismatch")
 
 
 def _validate_key_record(

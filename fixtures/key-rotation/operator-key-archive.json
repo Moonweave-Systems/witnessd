@@ -23,12 +23,41 @@
   "policy": {
     "compromise_response": "rotate immediately; reject post-compromise evidence for compromised key_id",
     "historical_evidence": "retain retired public keys so old evidence remains re-verifiable",
-    "keyless_gate": "keyless Fulcio/Rekor remains blocked until one production deployment exercises this runbook",
+    "keyless_gate": "keyless Fulcio/Rekor remains blocked until one external-team-pilot deployment records the required evidence for this runbook",
     "rotation_interval_days": 90
   },
   "production_gate": {
     "blocks": "keyless Fulcio/Rekor",
-    "reason": "local canary exists, but no production team deployment rotation evidence has been recorded",
+    "deployments_min": 1,
+    "reason": "local canary exists, but no external-team-pilot rotation evidence has been recorded",
+    "required_evidence": [
+      {
+        "description": "Named external-team-pilot deployment record with deployment_id, operator, team scope, start/end timestamps, and witnessd git SHA",
+        "id": "deployment_record",
+        "status": "missing"
+      },
+      {
+        "description": "Operator-key archive produced by the rotation procedure, including retired-to-current continuity and public key paths",
+        "id": "rotated_key_archive",
+        "status": "missing"
+      },
+      {
+        "description": "Canary bundle emitted by the current key with source_kind operator-key-rotation-canary and verified by scripts/revalidate_key_rotation.py",
+        "id": "canary_bundle",
+        "status": "missing"
+      },
+      {
+        "description": "Depone verification transcript for the production deployment bundle and canary bundle",
+        "id": "depone_verification",
+        "status": "missing"
+      },
+      {
+        "description": "Human operator review confirming the deployment was not local-only dogfood and that private keys were not committed or exposed",
+        "id": "operator_review",
+        "status": "missing"
+      }
+    ],
+    "rollout_stage": "external-team-pilot",
     "status": "blocked"
   },
   "schema_version": "1.0"

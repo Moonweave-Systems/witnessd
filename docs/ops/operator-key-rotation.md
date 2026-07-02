@@ -9,7 +9,8 @@ Operator-key DSSE remains a report-level trust axis with
 
 ## Policy
 
-- Generate a new Ed25519 operator key before first production team deployment.
+- Generate a new Ed25519 operator key before the first `external-team-pilot`
+  deployment.
 - Rotate operator keys at least every 90 days, and immediately on suspected
   private-key exposure.
 - Keep private keys only on the signing host or managed secret store with
@@ -44,8 +45,30 @@ Operator-key DSSE remains a report-level trust axis with
 ## Keyless Gate
 
 Sigstore Fulcio/Rekor keyless signing remains blocked until this runbook has
-been exercised in at least one production team deployment and the resulting
-archive/canary evidence is committed or otherwise durably retained.
+been exercised in at least one `external-team-pilot` deployment and the
+resulting archive/canary evidence is committed or otherwise durably retained.
+Local dogfood, local canaries, hand-authored fixtures, and CI-only runs do not
+count as production deployments for this gate.
+
+For this gate, `external-team-pilot` means a named team run outside local-only
+developer dogfood, executed with the deployed witnessd runtime, where Depone can
+re-derive the evidence from persisted bytes. Opening the gate requires all of
+the following evidence records:
+
+1. `deployment_record`: deployment id, operator, team scope, start/end
+   timestamps, and witnessd git SHA.
+2. `rotated_key_archive`: retired-to-current key continuity, public-key paths,
+   and the archive produced by this runbook.
+3. `canary_bundle`: current-key canary with
+   `source_kind == "operator-key-rotation-canary"` that passes
+   `scripts/revalidate_key_rotation.py`.
+4. `depone_verification`: Depone verification transcript for the production
+   deployment bundle and canary bundle.
+5. `operator_review`: human operator review that the run was not local-only
+   dogfood and that private keys were not committed or exposed.
 
 The committed `fixtures/key-rotation/operator-key-archive.json` records
-`production_gate.status = "blocked"` until that deployment evidence exists.
+`production_gate.status = "blocked"` and the required evidence entries as
+`missing` until that deployment evidence exists. The revalidation script rejects
+an `open` gate unless every required evidence entry is recorded with a stable
+repo-relative artifact path and matching SHA-256 hash.
