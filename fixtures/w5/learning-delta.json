@@ -2,7 +2,7 @@
   "delta_text": "Record W5 learning deltas only with capture and approval provenance.",
   "kind": "witnessd-learning-delta",
   "provenance": {
-    "approval_event_hash": "e099a58e2f0386362ce4482fd16b3bf1b435aefb8c0168298833db26d5596ff8",
+    "approval_event_hash": "f92762396e5ec5a927d33d46d1af11ebed23f17c40def5bd92dd70efccbff16b",
     "capture_hash": "868af1590829e7293f937da43bc7601beb787fc16dcda76408e16a3c0fd1b833",
     "provenance_manifest_hash": "868af1590829e7293f937da43bc7601beb787fc16dcda76408e16a3c0fd1b833"
   },

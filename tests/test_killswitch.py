@@ -10,6 +10,20 @@ from witnessd.supervisor import WorkerSupervisor
 
 
 class TestKillSwitch(unittest.TestCase):
+    def test_kill_all_without_known_children_does_not_claim_success(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = EventLog(os.path.join(d, "runlog.jsonl"))
+            supervisor = WorkerSupervisor(log, run_id="R1")
+
+            result = kill_all(supervisor, log, run_id="R1", grace=0.01)
+
+            self.assertFalse(result["killed"])
+            self.assertFalse(result["all_confirmed_dead"])
+            self.assertEqual(result["outcomes"], [])
+            kill_events = [record for record in log.read() if record.get("event") == "kill"]
+            self.assertEqual(len(kill_events), 1)
+            self.assertEqual(kill_events[0].get("error_code"), "ERR_WITNESSD_KILL_NO_TARGETS")
+
     def test_kill_all_terminates_and_derives_dead(self):
         with tempfile.TemporaryDirectory() as d:
             log = EventLog(os.path.join(d, "runlog.jsonl"))

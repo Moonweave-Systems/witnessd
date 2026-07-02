@@ -1,7 +1,9 @@
 # Operator Key Rotation Runbook
 
-This runbook closes the W1-W5 production gate in SPEC section 8.2-3. It does not
-introduce keyless signing and does not change the A0/A1/A2 assurance ladder.
+This runbook defines the W1-W5 production gate in SPEC section 8.2-3. The
+committed archive contains a local canary for revalidation, but it does not close
+the production-deployment gate by itself. It does not introduce keyless signing
+and does not change the A0/A1/A2 assurance ladder.
 Operator-key DSSE remains a report-level trust axis with
 `keyless_identity=false` and `transparency_logged=false`.
 
@@ -44,3 +46,6 @@ Operator-key DSSE remains a report-level trust axis with
 Sigstore Fulcio/Rekor keyless signing remains blocked until this runbook has
 been exercised in at least one production team deployment and the resulting
 archive/canary evidence is committed or otherwise durably retained.
+
+The committed `fixtures/key-rotation/operator-key-archive.json` records
+`production_gate.status = "blocked"` until that deployment evidence exists.

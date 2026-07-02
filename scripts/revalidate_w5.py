@@ -61,7 +61,7 @@ def _check_pause_override() -> list[dict]:
     _assert(verify_runlog(records)["ok"] is True, "pause runlog chain must verify")
     _assert(derive_pause_state(records) is True, "pause fixture must derive paused")
     pause_index = next(i for i, record in enumerate(records) if record.get("event") == PAUSE_EVENT)
-    side_effects = {"spawn", "dispatch", "edit", "commit"}
+    side_effects = {"spawn", "dispatch", "edit", "commit", "learning_delta"}
     after = records[pause_index + 1 :]
     _assert(
         not any(record.get("event") in side_effects for record in after),

@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from witnessd.canonical import canonical_hash
-from witnessd.signing import sign_dsse
+from witnessd.signing import DEFAULT_OPERATOR_KEY_ID, sign_dsse
 
 INTOTO_STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
 DEPONE_PREDICATE_TYPE = "https://depone.dev/attestations/evidence/v1"
@@ -119,7 +119,7 @@ def build_bundle(
     private_key_path: str | None = None,
     public_key_path: str | None = None,
     *,
-    key_id: str = "witnessd-operator",
+    key_id: str = DEFAULT_OPERATOR_KEY_ID,
     otel_spans: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Package on-disk artifacts as a signed in-toto/DSSE evidence bundle.

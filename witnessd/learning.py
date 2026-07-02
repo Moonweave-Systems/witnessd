@@ -82,6 +82,20 @@ def promote_learning_delta(
     approval_events: list[dict[str, Any]],
     evidence_dir: str,
 ) -> dict[str, Any]:
+    from witnessd.pause import PauseError, assert_not_paused
+
+    try:
+        assert_not_paused(log.read())
+    except PauseError as exc:
+        append_runlog(
+            log,
+            run_id,
+            "learning_delta",
+            error_code=exc.code,
+            payload={"blocked": True, "errors": [exc.code], "target": delta.get("target")},
+        )
+        return {"promoted": False, "errors": [exc.code]}
+
     errors = validate_learning_delta_provenance(
         delta,
         committed_captures=committed_captures,

@@ -123,9 +123,13 @@ def _assert_negative_fixtures_detected() -> None:
 
     mismatch = _load_json(NEGATIVE / "source_hash_mismatch.json")
     assert mismatch.get("source_hashes", {}).get("receipt") != _receipt_hash(mismatch)
+    assert "source_hashes.receipt mismatch" in validate_runner_receipt(mismatch)
 
     fabricated = _load_json(NEGATIVE / "fabricated_usage.json")
     assert _has_fabricated_usage(fabricated), "fabricated usage was not detected"
+    assert validate_external_otel_spans(fabricated.get("otel_spans", [])), (
+        "fabricated usage must be rejected by Depone OTel validation"
+    )
 
     budget_bypass = _load_json(NEGATIVE / "budget_bypass.json")
     event_names = [event.get("event") for event in budget_bypass["events"]]
