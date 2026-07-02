@@ -19,6 +19,13 @@ class TestLock(unittest.TestCase):
 
             self.assertEqual(allowed, ["pkg/a.py", "pkg/b.py"])
 
+    def test_claim_rejects_absolute_region_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            registry = self._reg(directory)
+
+            with self.assertRaisesRegex(ValueError, "ERR_REGION_INVALID_PATH"):
+                registry.claim(lane_id="lane-a", region=["/tmp/outside.py"])
+
     def test_conflicting_region_second_claim_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             registry = self._reg(directory)

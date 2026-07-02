@@ -19,8 +19,13 @@ def _normalize_region(region: Sequence[str]) -> list[str]:
     for raw_path in region:
         path = str(raw_path).replace("\\", "/")
         path = posixpath.normpath(path)
-        if path in ("", ".") or path.startswith("../") or path == "..":
-            continue
+        if (
+            path in ("", ".")
+            or path.startswith("/")
+            or path.startswith("../")
+            or path == ".."
+        ):
+            raise ValueError("ERR_REGION_INVALID_PATH")
         normalized.add(path)
     return sorted(normalized)
 

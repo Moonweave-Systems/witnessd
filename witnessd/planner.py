@@ -129,7 +129,12 @@ def _normalize_region(raw_region: Any) -> list[str]:
         if not isinstance(raw_path, str):
             raise TypeError("region path must be a string")
         path = posixpath.normpath(raw_path.replace("\\", "/").strip())
-        if path in ("", ".") or path.startswith("../") or path == "..":
+        if (
+            path in ("", ".")
+            or path.startswith("/")
+            or path.startswith("../")
+            or path == ".."
+        ):
             raise ValueError("region path escapes repository")
         normalized.add(path)
     return sorted(normalized)

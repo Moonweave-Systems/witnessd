@@ -111,6 +111,10 @@ class TestSealPlan(unittest.TestCase):
         with self.assertRaisesRegex(PlannerError, "ERR_PLAN_REGION_OVERLAP"):
             seal_plan(packets, goal="ship W11")
 
+    def test_seal_plan_rejects_absolute_region_path(self):
+        with self.assertRaisesRegex(PlannerError, "ERR_PLAN_PACKET_REGION"):
+            seal_plan([self._packet("L1", ["/tmp/outside.py"])], goal="ship W11")
+
     def test_unrelated_merge_lane_does_not_bypass_region_overlap(self):
         merge = self._packet("merge", ["pkg/merge.py"])
         merge["merge_lane"] = True
