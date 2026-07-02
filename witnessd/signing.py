@@ -145,14 +145,57 @@ def sign_dsse(
     return signed
 
 
+def verify_dsse(envelope: dict[str, Any], public_key_path: str) -> bool:
+    openssl = _openssl_path()
+    if openssl is None:
+        return False
+    signatures = envelope.get("signatures")
+    if not isinstance(signatures, list) or not signatures:
+        return False
+    signature = signatures[0]
+    if not isinstance(signature, dict) or not isinstance(signature.get("sig"), str):
+        return False
+    try:
+        signature_bytes = base64.b64decode(signature["sig"].encode("ascii"), validate=True)
+        payload_type, payload = _decode_payload(envelope)
+    except Exception:
+        return False
+    pae = dsse_pae(payload_type, payload)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        pae_path = os.path.join(temp_dir, "payload.pae")
+        sig_path = os.path.join(temp_dir, "payload.sig")
+        with open(pae_path, "wb") as handle:
+            handle.write(pae)
+        with open(sig_path, "wb") as handle:
+            handle.write(signature_bytes)
+        result = subprocess.run(
+            [
+                openssl,
+                "pkeyutl",
+                "-verify",
+                "-pubin",
+                "-inkey",
+                public_key_path,
+                "-rawin",
+                "-in",
+                pae_path,
+                "-sigfile",
+                sig_path,
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    return result.returncode == 0
+
+
 def _self_test() -> None:
     if _openssl_path() is None:
         print("witnessd signing --self-test: pass (openssl unavailable)")
         return
     if dsse_pae("x", b"abc") != b"DSSEv1 1 x 3 abc":
         raise AssertionError("DSSE PAE vector mismatch")
-    from depone.agent_fabric.sign import verify_dsse_envelope
-
     with tempfile.TemporaryDirectory() as temp_dir:
         priv, pub = gen_operator_keypair(temp_dir)
         env = sign_dsse(
@@ -160,9 +203,9 @@ def _self_test() -> None:
             priv,
             key_id="operator-self-test",
         )
-        if not verify_dsse_envelope(env, pub):
+        if not verify_dsse(env, pub):
             raise AssertionError("signed envelope should verify")
         env["payload"] = "eyJ4IjoxfQ=="
-        if verify_dsse_envelope(env, pub):
+        if verify_dsse(env, pub):
             raise AssertionError("tampered payload must not verify")
     print("witnessd signing --self-test: pass")

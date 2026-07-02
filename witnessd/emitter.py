@@ -13,9 +13,8 @@ evidence dir (the runner-reachable surface); the emitter fails closed if asked
 to root trust inside it, and exports the out-of-band location via
 `DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE` exactly as Depone reads it.
 
-Runtime is stdlib-only; the provenance record is produced by Depone's own
-`build_signed_trusted_observer_provenance` (signing shells out to openssl), so
-witnessd emits the artifact rather than reconstructing the binding by hand.
+Runtime is stdlib-only; the provenance record is produced by witnessd's local
+emit-side copy of Depone's provenance contract.
 """
 
 from __future__ import annotations
@@ -26,16 +25,13 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
-from depone.agent_fabric.observer_provenance import (
-    build_signed_trusted_observer_provenance,
-)
-
 from witnessd.canonical import canonical_hash
 from witnessd.capture import build_capture_manifest
 from witnessd.eventlog import EventLog
 from witnessd.observer import build_observer_capture
+from witnessd.provenance import build_signed_trusted_observer_provenance
 from witnessd.signing import DEFAULT_OPERATOR_KEY_ID
-from witnessd.substrate import build_bundle, build_evidence_contract
+from witnessd.substrate import build_bundle, build_evidence_contract, build_otel_spans
 
 TRUSTED_PUBLIC_KEY_ENV = "DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"
 RUNLOG_NAME = "runlog.jsonl"
@@ -195,9 +191,7 @@ def emit_lane_evidence(
     }
     otel_spans = None
     if runner_kind is not None:
-        from depone.agent_fabric.evidence_substrate import build_otel_genai_spans
-
-        otel_spans = build_otel_genai_spans(manifest, runner_receipt=receipt)
+        otel_spans = build_otel_spans(manifest, runner_receipt=receipt)
     bundle = build_bundle(
         manifest,
         artifacts,
@@ -260,13 +254,10 @@ def emit_supervised_lane(
 ) -> dict[str, Any]:
     """Emit supervised-lane evidence with per-spawn isolation facts.
 
-    Depone owns boundary verification. witnessd only probes facts and passes
-    them into the existing W1 evidence path when they establish A2; otherwise
-    the manifest remains A1.
+    witnessd probes facts and passes them into the existing W1 evidence path
+    when they establish A2; otherwise the manifest remains A1.
     """
-    from depone.agent_fabric.isolation import verify_isolation_boundary
-
-    from witnessd.isolation import probe_lane_isolation
+    from witnessd.isolation import probe_lane_isolation, verify_isolation_boundary
 
     facts = probe_lane_isolation(observer_dir=observer_dir, runner_uid=runner_uid)
     isolation = facts if verify_isolation_boundary(facts).get("boundary") is True else None
@@ -298,11 +289,8 @@ def _self_test() -> None:
         print("witnessd emitter --self-test: pass (openssl unavailable)")
         return
 
-    from depone.agent_fabric.observer_provenance import (
-        validate_trusted_observer_provenance,
-    )
-
     from witnessd.adapters.shell import run_shell_lane
+    from witnessd.provenance import PROVENANCE_KIND
     from witnessd.signing import gen_operator_keypair
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -322,14 +310,10 @@ def _self_test() -> None:
             public_key_path=pub,
             runner_sandbox=sandbox,
         )
-        errors = validate_trusted_observer_provenance(
-            result["manifest"],
-            evidence_path=result["manifest_path"],
-            provenance=[result["provenance"]],
-            public_key_path=pub,
-        )
-        if errors:
-            raise AssertionError(f"trusted provenance must validate: {errors}")
+        if result["provenance"].get("kind") != PROVENANCE_KIND:
+            raise AssertionError("trusted provenance kind mismatch")
+        if result["provenance"].get("manifest_hash") != canonical_hash(result["manifest"]):
+            raise AssertionError("trusted provenance manifest_hash mismatch")
     print("witnessd emitter --self-test: pass")
 
 

@@ -3,13 +3,15 @@ import stat
 import tempfile
 import unittest
 
-from depone.agent_fabric.isolation import verify_isolation_boundary
-
-from witnessd.isolation import isolation_self_test, probe_lane_isolation
+from witnessd.isolation import (
+    isolation_self_test,
+    probe_lane_isolation,
+    verify_isolation_boundary,
+)
 
 
 class TestIsolation(unittest.TestCase):
-    def test_probe_returns_depone_facts(self):
+    def test_probe_returns_isolation_facts(self):
         with tempfile.TemporaryDirectory() as d:
             os.chmod(d, stat.S_IRWXU)
 
@@ -27,7 +29,7 @@ class TestIsolation(unittest.TestCase):
 
             self.assertIs(verify_isolation_boundary(facts)["boundary"], False)
 
-    def test_self_test_reuses_depone(self):
+    def test_self_test_runs_local_verifier(self):
         isolation_self_test()
 
 

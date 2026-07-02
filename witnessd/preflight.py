@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import os
 import shutil
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
-import depone.agent_fabric.codex_local_capability as codex_capability
-from depone.agent_fabric.codex_local_capability import build_codex_local_capability
+from witnessd.codex_capability import (
+    build_codex_local_capability,
+    validate_codex_local_capability,
+)
 
 
 class PreflightError(RuntimeError):
@@ -17,19 +17,6 @@ class PreflightError(RuntimeError):
         super().__init__(f"{code}: {message}")
         self.code = code
         self.message = message
-
-
-@contextmanager
-def _depone_repo_cwd() -> Iterator[None]:
-    """Run Depone builders from their repo root for repo-local contract files."""
-
-    previous = os.getcwd()
-    depone_root = Path(codex_capability.__file__).resolve().parents[2]
-    os.chdir(depone_root)
-    try:
-        yield
-    finally:
-        os.chdir(previous)
 
 
 def _boundary() -> dict[str, bool]:
@@ -75,12 +62,11 @@ def probe_adapter_capability(
     **kwargs: object,
 ) -> dict[str, object]:
     if adapter == "codex":
-        with _depone_repo_cwd():
-            receipt = build_codex_local_capability(
-                repo=Path(repo),
-                codex_binary=codex_binary,
-                **kwargs,
-            )
+        receipt = build_codex_local_capability(
+            repo=Path(repo),
+            codex_binary=codex_binary,
+            **kwargs,
+        )
     elif adapter == "claude":
         receipt = _local_adapter_capability(
             "claude", binary=claude_binary, repo=repo
@@ -107,10 +93,6 @@ def probe_adapter_capability(
 def _self_test() -> None:
     import subprocess
     import tempfile
-
-    from depone.agent_fabric.codex_local_capability import (
-        validate_codex_local_capability,
-    )
 
     with tempfile.TemporaryDirectory() as repo:
         subprocess.run(["git", "init", "-q", repo], check=True)

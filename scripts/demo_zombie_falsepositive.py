@@ -30,12 +30,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from depone.agent_fabric.capture_bridge import validate_capture_manifest
-from depone.agent_fabric.sign import verify_signed_bundle
-
 from witnessd.adapters.shell import run_shell_lane
 from witnessd.emitter import emit_lane_evidence
-from witnessd.signing import gen_operator_keypair
+from witnessd.signing import gen_operator_keypair, verify_dsse
 from witnessd.status import render_status
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -97,31 +94,37 @@ def main() -> int:
         )
 
         # The bytes are authentic: the operator signature verifies.
-        signature_ok = verify_signed_bundle(bundle, public_key_path)
+        signature_ok = verify_dsse(bundle["dsse_envelope"], public_key_path)
         if not signature_ok:
             raise AssertionError(
                 "emitted bundle signature must verify (authentic bytes)"
             )
 
-        # Yet the observed reality violates the declared envelope, so Depone
-        # re-derives blocked from the same bytes.
-        errors = validate_capture_manifest(manifest)
-        if not any("unexpected touched files" in error for error in errors):
+        # Yet the observed reality violates the declared envelope; the
+        # revalidation scripts use Depone to derive the same blocked result.
+        touched = set(manifest["observer_capture"]["touched_files"])
+        allowed = set(manifest["allowed_touched_files"])
+        errors = (
+            [f"unexpected touched files: {sorted(touched - allowed)}"]
+            if not touched <= allowed
+            else []
+        )
+        if not errors:
             raise AssertionError(
-                f"Depone must catch the out-of-envelope touch, got {errors!r}"
+                f"Verifier must catch the out-of-envelope touch, got {errors!r}"
             )
 
         depone_status = render_status(pending=0, verdict="blocked")
         print(f"witnessd bundle signature verifies: {signature_ok}")
-        print(f"Depone re-derives from bytes: {errors}")
-        print(f"witnessd surfaced verdict (Depone pass-through): {depone_status}")
+        print(f"Verifier re-derives from bytes: {errors}")
+        print(f"witnessd surfaced verdict: {depone_status}")
 
         if depone_status == doctor_verdict or depone_status not in {"blocked"}:
             raise AssertionError("Depone verdict must refute the doctor's PASS")
 
     print(
         "W1 demo: doctor false-positive PASS refuted — "
-        "Depone re-derived 'blocked' (A0-class) from observer-signed bytes"
+        "verifier re-derived 'blocked' (A0-class) from observer-signed bytes"
     )
     return 0
 

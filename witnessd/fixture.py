@@ -77,11 +77,35 @@ def _default_test_output() -> dict[str, Any]:
     }
 
 
-def build_reference_adapter_fixture(invocation: dict[str, Any]) -> dict[str, Any]:
+def _object(value: dict[str, Any] | None) -> dict[str, Any]:
+    if value is None:
+        return {}
+    return deepcopy(value)
+
+
+def _string_list(value: list[str] | None) -> list[str]:
+    if value is None:
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def build_reference_adapter_fixture(
+    invocation: dict[str, Any],
+    *,
+    self_report: dict[str, Any] | None = None,
+    diff_summary: dict[str, Any] | None = None,
+    touched_files: list[str] | None = None,
+    test_output: dict[str, Any] | None = None,
+    command_receipts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """A deterministic, non-executing shell reference-adapter fixture matching
     depone's ``agent-fabric-reference-adapter-fixture`` contract."""
 
     harness = str(invocation.get("target_harness", "unknown"))
+    receipts = deepcopy(command_receipts) if command_receipts is not None else []
+    report = _object(self_report) or _default_result(invocation)
+    if receipts and "command_receipts" not in report:
+        report["command_receipts"] = deepcopy(receipts)
     return {
         "schema_version": REFERENCE_ADAPTER_FIXTURE_VERSION,
         "kind": FIXTURE_KIND,
@@ -94,10 +118,10 @@ def build_reference_adapter_fixture(invocation: dict[str, Any]) -> dict[str, Any
         "invocation": deepcopy(invocation),
         "capture": {
             "trust_level": FIXTURE_TRUST_LEVEL,
-            "self_report": _default_result(invocation),
-            "diff_summary": _default_diff_summary(),
-            "touched_files": [],
-            "test_output": _default_test_output(),
-            "command_receipts": [],
+            "self_report": report,
+            "diff_summary": _object(diff_summary) or _default_diff_summary(),
+            "touched_files": _string_list(touched_files),
+            "test_output": _object(test_output) or _default_test_output(),
+            "command_receipts": receipts,
         },
     }

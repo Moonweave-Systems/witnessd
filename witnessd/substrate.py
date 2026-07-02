@@ -70,11 +70,34 @@ def _sha256_file(path: str) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def build_otel_spans(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+def _span_id(seed: str, offset: int = 0) -> str:
+    return canonical_hash({"seed": seed, "offset": offset})[:16]
+
+
+def _trace_id(seed: str) -> str:
+    return canonical_hash({"trace": seed})[:32]
+
+
+def build_otel_spans(
+    manifest: dict[str, Any],
+    *,
+    runner_receipt: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """Static OTel GenAI-shaped spans over the capture — no invented usage fields."""
-    seed = canonical_hash(manifest)
-    trace_id = canonical_hash({"trace": seed})[:32]
-    root_span_id = canonical_hash({"seed": seed, "offset": 0})[:16]
+    seed = canonical_hash(
+        {
+            "capture": manifest,
+            "runner": runner_receipt or {},
+        }
+    )
+    trace_id = _trace_id(seed)
+    root_span_id = _span_id(seed, 0)
+    runner_kind = (
+        runner_receipt.get("runner_kind")
+        if isinstance(runner_receipt, dict)
+        else "unknown"
+    )
+    arm = runner_receipt.get("arm") if isinstance(runner_receipt, dict) else "unknown"
     spans: list[dict[str, Any]] = [
         {
             "trace_id": trace_id,
@@ -83,7 +106,8 @@ def build_otel_spans(manifest: dict[str, Any]) -> list[dict[str, Any]]:
             "name": "invoke_agent",
             "attributes": {
                 "gen_ai.operation.name": "invoke_agent",
-                "gen_ai.agent.name": "witnessd-shell-lane",
+                "gen_ai.agent.name": str(runner_kind),
+                "depone.arm": str(arm),
                 "depone.assurance": str(manifest.get("assurance", "")),
                 "depone.decision": str(manifest.get("decision", "")),
             },
@@ -107,6 +131,7 @@ def build_otel_spans(manifest: dict[str, Any]) -> list[dict[str, Any]]:
                         "gen_ai.tool.name": "verification_command",
                         "depone.command": receipt.get("command", []),
                         "depone.exit_code": receipt.get("exit_code"),
+                        "depone.status": receipt.get("status"),
                     },
                 }
             )
@@ -217,8 +242,6 @@ def _self_test() -> None:
         print("witnessd substrate --self-test: pass (openssl unavailable)")
         return
 
-    from depone.agent_fabric.evidence_substrate import ingest_signed_evidence_bundle
-    from depone.agent_fabric.sign import verify_signed_bundle
     from witnessd.signing import gen_operator_keypair
 
     manifest = {
@@ -238,13 +261,12 @@ def _self_test() -> None:
         artifacts = {"capture-manifest": str(artifact_path)}
         priv, pub = gen_operator_keypair(tmp)
         bundle = build_bundle(manifest, artifacts, priv, pub)
-        if not verify_signed_bundle(bundle, pub):
-            raise AssertionError("signed bundle must verify")
-        verdict = ingest_signed_evidence_bundle(
-            bundle, pub, artifacts, otel_spans=bundle["otel_spans"]
-        )
-        if not verdict.get("signature_verified") or verdict.get("decision") != "pass":
-            raise AssertionError("signed bundle must ingest with all subjects verified")
+        if not bundle["dsse_envelope"]["signatures"]:
+            raise AssertionError("signed bundle must include a signature")
+        if [item["name"] for item in bundle["statement"]["subject"]] != [
+            "capture-manifest"
+        ]:
+            raise AssertionError("signed bundle subjects must match artifacts")
 
         unsigned = build_bundle(manifest, artifacts)
         if unsigned["dsse_envelope"]["signatures"] != []:

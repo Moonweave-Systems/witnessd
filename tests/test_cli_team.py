@@ -57,7 +57,7 @@ class TestTeamCli(unittest.TestCase):
             self.assertTrue((out_dir / "lane-a" / "capture-manifest.json").exists())
             self.assertTrue((out_dir / "lane-b" / "worktree-lane-receipt.json").exists())
 
-    def test_team_ledger_json_passes_through_depone_verdict(self):
+    def test_team_ledger_json_reports_pending_depone_verification(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo = root / "repo"
@@ -92,9 +92,10 @@ class TestTeamCli(unittest.TestCase):
                 )
 
             self.assertEqual(code, 0)
-            verdict = json.loads(stdout.getvalue())
-            self.assertEqual(verdict["decision"], "pass")
-            self.assertIs(verdict["boundary"]["raises_assurance"], False)
+            status = json.loads(stdout.getvalue())
+            self.assertEqual(status["decision"], "evidence-pending")
+            self.assertEqual(status["pending"], 1)
+            self.assertIn("pending Depone verification", status["message"])
 
     def test_team_run_claim_conflict_excludes_second_lane(self):
         with tempfile.TemporaryDirectory() as tmp:
