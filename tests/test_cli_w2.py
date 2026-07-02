@@ -3,17 +3,21 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from witnessd.eventlog import EventLog
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
 class TestCliW2(unittest.TestCase):
     def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
         env = dict(os.environ)
         depone_path = "/home/ubuntu/moonweave/depone"
-        env["PYTHONPATH"] = (
-            depone_path
-            if not env.get("PYTHONPATH")
-            else depone_path + os.pathsep + env["PYTHONPATH"]
-        )
+        pythonpath = [str(ROOT), depone_path]
+        if env.get("PYTHONPATH"):
+            pythonpath.append(env["PYTHONPATH"])
+        env["PYTHONPATH"] = os.pathsep.join(pythonpath)
         return subprocess.run(
             [sys.executable, "-m", "witnessd", *args],
             capture_output=True,

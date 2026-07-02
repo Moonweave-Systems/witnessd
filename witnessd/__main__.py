@@ -311,12 +311,17 @@ def _cmd_kill(args: argparse.Namespace) -> int:
         print("ERR_KILL_SCOPE_REQUIRED", file=sys.stderr)
         return 2
     from witnessd.eventlog import EventLog
-    from witnessd.killswitch import kill_all
+    from witnessd.killswitch import active_targets_from_runlog, kill_all
     from witnessd.supervisor import WorkerSupervisor
 
     log = EventLog(args.runlog)
     supervisor = WorkerSupervisor(log, run_id=args.run_id)
-    result = kill_all(supervisor, log, args.run_id)
+    result = kill_all(
+        supervisor,
+        log,
+        args.run_id,
+        targets=active_targets_from_runlog(log.read()),
+    )
     print(json.dumps(result, sort_keys=True))
     return 0 if result["all_confirmed_dead"] else 1
 
@@ -361,12 +366,13 @@ def _cmd_learn(args: argparse.Namespace) -> int:
 def _cmd_install(args: argparse.Namespace) -> int:
     from witnessd.installer import InstallerError, atomic_install, atomic_upgrade
     from witnessd.pause import PauseError, assert_not_paused
+    from witnessd.state import StateNamespace
 
     try:
-        if args.runlog:
-            from witnessd.eventlog import EventLog
+        from witnessd.eventlog import EventLog
 
-            assert_not_paused(EventLog(args.runlog).read())
+        runlog = args.runlog or StateNamespace(args.root).runlog_path
+        assert_not_paused(EventLog(runlog).read())
         if args.cmd == "install":
             result = atomic_install(
                 payload_path=args.payload,
@@ -700,6 +706,7 @@ def _build_parser() -> argparse.ArgumentParser:
         install.add_argument("--config", required=True)
         install.add_argument("--shim-dir", required=True)
         install.add_argument("--version", required=True)
+        install.add_argument("--root", default=".")
         install.add_argument("--runlog", default=None)
         install.set_defaults(func=_cmd_install)
 

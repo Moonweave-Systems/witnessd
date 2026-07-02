@@ -12,6 +12,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Sequence
 
+from witnessd.process_identity import read_pid_start_time
 from witnessd.runlog import append_runlog
 
 
@@ -76,7 +77,12 @@ class WorkerSupervisor:
             self.event_log,
             self.run_id,
             "spawn",
-            payload={"lane_id": lane_id, "pid": handle.pid, "runner_uid": runner_uid},
+            payload={
+                "lane_id": lane_id,
+                "pid": handle.pid,
+                "pid_start_time": read_pid_start_time(handle.pid),
+                "runner_uid": runner_uid,
+            },
         )
         return handle
 

@@ -4,7 +4,7 @@ import time
 import unittest
 
 from witnessd.eventlog import EventLog
-from witnessd.killswitch import kill_all
+from witnessd.killswitch import active_targets_from_runlog, kill_all
 from witnessd.liveness import derive_liveness
 from witnessd.supervisor import WorkerSupervisor
 
@@ -41,6 +41,24 @@ class TestKillSwitch(unittest.TestCase):
             self.assertTrue(any(record.get("event") == "kill" for record in log.read()))
             state = derive_liveness(log.read(), now_monotonic=time.monotonic() + 10_000)
             self.assertEqual(state.get("L1"), "dead")
+
+    def test_active_targets_from_runlog_requires_pid_identity_match(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = EventLog(os.path.join(d, "runlog.jsonl"))
+            supervisor = WorkerSupervisor(log, run_id="R1")
+            handle = supervisor.spawn(
+                lane_id="L1",
+                argv=["sh", "-c", "sleep 60"],
+                runner_uid=os.getuid(),
+            )
+            try:
+                records = log.read()
+                records[-1]["payload"]["pid_start_time"] = "definitely-not-this-process"
+
+                self.assertEqual(active_targets_from_runlog(records), [])
+            finally:
+                handle.popen.terminate()
+                handle.popen.wait(timeout=1)
 
 
 if __name__ == "__main__":
