@@ -2,14 +2,14 @@
   "kind": "depone-team-ledger",
   "lanes": [
     {
-      "end_commit": "f98f36f4fe7c42bd8164aec62a78b6fd37eb1d93",
+      "end_commit": "0ca01e7641ab5897a8e6ad80fdd339fedcc3d68b",
       "env_kind": "local",
       "evidence_dir": "lanes/shell-lane",
       "evidence_next_verdict": "lanes/shell-lane/evidence-next-verdict.json",
       "lane_id": "shell-lane",
       "objective": "shell-lane objective",
       "runner_adapter_kind": "shell",
-      "start_commit": "a4269df988889ce6e627bc8ec374b09fe5d82020",
+      "start_commit": "e76bfa8500327c8c3f060708edbebed26214bf9e",
       "team_adapter_kind": "shell",
       "touched_files": [
         "pkg/shell.py"
@@ -18,14 +18,14 @@
       "worktree_receipt": "lanes/shell-lane/worktree-lane-receipt.json"
     },
     {
-      "end_commit": "a9df8cea22b8199eff9b3201f73b9027cb6f3bdb",
+      "end_commit": "d6e59469590da364737e4799f57c899799212b44",
       "env_kind": "local",
       "evidence_dir": "lanes/codex-lane",
       "evidence_next_verdict": "lanes/codex-lane/evidence-next-verdict.json",
       "lane_id": "codex-lane",
       "objective": "codex-lane objective",
       "runner_adapter_kind": "codex",
-      "start_commit": "a4269df988889ce6e627bc8ec374b09fe5d82020",
+      "start_commit": "e76bfa8500327c8c3f060708edbebed26214bf9e",
       "team_adapter_kind": "codex",
       "touched_files": [
         "pkg/adapter.py"
@@ -37,6 +37,6 @@
   "leader_id": "leader-fixed",
   "leader_objective": "W7 adapter team wiring fixture",
   "schema_version": "0.1",
-  "start_commit": "a4269df988889ce6e627bc8ec374b09fe5d82020",
+  "start_commit": "e76bfa8500327c8c3f060708edbebed26214bf9e",
   "stop_rule": "all write lanes pass or block"
 }
