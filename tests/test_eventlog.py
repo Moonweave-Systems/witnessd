@@ -3,7 +3,6 @@ import tempfile
 import unittest
 
 from witnessd.eventlog import EventLog
-from witnessd.canonical import canonical_hash
 
 
 class TestEventLog(unittest.TestCase):
@@ -13,7 +12,7 @@ class TestEventLog(unittest.TestCase):
             e1 = log.append({"kind": "witnessd-runlog-event", "event": "team-start"})
             e2 = log.append({"kind": "witnessd-runlog-event", "event": "dispatch"})
             self.assertIsNone(e1["prev_event_hash"])
-            self.assertEqual(e2["prev_event_hash"], canonical_hash(e1))
+            self.assertEqual(e2["prev_event_hash"], e1["event_hash"])
 
     def test_append_only_no_mutation(self):
         with tempfile.TemporaryDirectory() as d:

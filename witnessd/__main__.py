@@ -16,8 +16,12 @@ Depone verification returns a verdict.
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import shlex
 import sys
+import time
+from pathlib import Path
 
 from witnessd.observer import ObserverSeparationError, assert_separated
 from witnessd.status import render_status
@@ -99,6 +103,11 @@ def _count_pending(evidence_dir: str) -> int:
 
 
 def _cmd_status(args: argparse.Namespace) -> int:
+    if args.runlog:
+        states = _derive_runlog_liveness(args.runlog)
+        for lane_id in sorted(states):
+            print(f"lane {lane_id}: {states[lane_id]}")
+        return 0
     evidence_dir = os.path.abspath(args.evidence_dir)
     pending = _count_pending(evidence_dir)
     print(
@@ -108,13 +117,170 @@ def _cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_runlog(path: str) -> list[dict]:
+    records = []
+    with open(path, "r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                records.append(json.loads(line))
+    return records
+
+
+def _derive_runlog_liveness(path: str) -> dict[str, str]:
+    from witnessd.liveness import derive_liveness
+
+    records = _read_runlog(path)
+    return derive_liveness(records, now_monotonic=time.monotonic())
+
+
+def _cmd_verify(args: argparse.Namespace) -> int:
+    from witnessd.runlog import verify_runlog
+
+    result = verify_runlog(_read_runlog(args.runlog))
+    if result["ok"]:
+        print("runlog: ok")
+        return 0
+    print(f"runlog: broken_at={result['broken_at']}", file=sys.stderr)
+    return 1
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    states = _derive_runlog_liveness(args.runlog)
+    bad = {lane_id: state for lane_id, state in states.items() if state != "active"}
+    for lane_id in sorted(states):
+        print(f"lane {lane_id}: {states[lane_id]}")
+    return 1 if bad else 0
+
+
+def _cmd_isolation(args: argparse.Namespace) -> int:
+    if args.self_test:
+        from witnessd.isolation import isolation_self_test
+
+        isolation_self_test()
+        return 0
+    print("ERR_ISOLATION_COMMAND_REQUIRED", file=sys.stderr)
+    return 2
+
+
+def _cmd_faultkit(args: argparse.Namespace) -> int:
+    if args.fault == "zombie-hang":
+        from witnessd.faultkit import zombie_hang
+
+        zombie_hang(args.runlog)
+        print(f"faultkit zombie-hang: {args.runlog}")
+        return 0
+    if args.fault == "crash-mid-toolcall":
+        from witnessd.faultkit import crash_mid_toolcall
+
+        state = crash_mid_toolcall(
+            runlog_before_path=args.runlog_before,
+            runlog_after_path=args.runlog_after,
+            session_path=args.session,
+        )
+        print(
+            "faultkit crash-mid-toolcall: "
+            f"{state['run_state']} cursor={state['tool_call_cursor']} "
+            f"reapplied={state['idempotency_reapplied']}"
+        )
+        return 0
+    print(f"ERR_UNKNOWN_FAULT: {args.fault}", file=sys.stderr)
+    return 2
+
+
+def _cmd_team_run(args: argparse.Namespace) -> int:
+    from witnessd.fanin import run_team
+    from witnessd.signing import gen_operator_keypair
+
+    out_dir = os.path.abspath(args.out)
+    keys_dir = os.path.abspath(args.keys_dir or (out_dir.rstrip(os.sep) + "-keys"))
+    os.makedirs(keys_dir, exist_ok=True)
+    private_key_path, public_key_path = gen_operator_keypair(keys_dir)
+    lane_specs = [_parse_team_lane(text) for text in args.lane]
+    result = run_team(
+        lane_specs,
+        repo_root=args.repo,
+        out_dir=out_dir,
+        private_key_path=private_key_path,
+        public_key_path=public_key_path,
+    )
+    pending = len(result["ledger"]["lanes"])
+    print(
+        f"{pending} team lane(s) pending Depone verification "
+        f"({render_status(pending=pending, verdict=None)})"
+    )
+    print(f"team_ledger: {os.path.join(out_dir, 'team-ledger.json')}")
+    return 0
+
+
+def _cmd_team_ledger(args: argparse.Namespace) -> int:
+    from depone.agent_fabric.team_ledger import build_team_ledger_verdict
+
+    ledger_path = Path(args.ledger)
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    verdict = build_team_ledger_verdict(ledger, base_dir=ledger_path.parent)
+    if args.json:
+        print(json.dumps(verdict, sort_keys=True))
+    else:
+        print(verdict["decision"])
+    return 0
+
+
+def _parse_team_lane(text: str) -> dict:
+    lane_id, sep, region_text = text.partition(":")
+    lane_id = lane_id.strip()
+    region = [item.strip() for item in region_text.split(",") if item.strip()]
+    if not lane_id or sep != ":":
+        raise ValueError("ERR_TEAM_LANE_FORMAT")
+    return {
+        "lane_id": lane_id,
+        "region": region,
+        "commands": [_default_team_lane_command(lane_id, region)],
+    }
+
+
+def _default_team_lane_command(lane_id: str, region: list[str]) -> list[str]:
+    statements: list[str] = []
+    for path in region:
+        parent = os.path.dirname(path)
+        if parent:
+            statements.append(f"mkdir -p {shlex.quote(parent)}")
+        statements.append(
+            f"printf '%s\\n' {shlex.quote(lane_id)} > {shlex.quote(path)}"
+        )
+    return ["sh", "-c", " && ".join(statements) if statements else "true"]
+
+
 def _cmd_self_test(args: argparse.Namespace) -> int:
-    from witnessd import emitter, signing, substrate
+    from witnessd import (
+        emitter,
+        fanin,
+        faultkit,
+        isolation,
+        lock,
+        liveness,
+        scheduler,
+        session,
+        signing,
+        substrate,
+        supervisor,
+        team_ledger,
+        worktree,
+    )
 
     checks = [
         ("signing", signing._self_test),
         ("substrate", substrate._self_test),
         ("emitter", emitter._self_test),
+        ("liveness", liveness._self_test),
+        ("supervisor", supervisor._self_test),
+        ("scheduler", scheduler._self_test),
+        ("session", session._self_test),
+        ("isolation", isolation._self_test),
+        ("faultkit", faultkit._self_test),
+        ("lock", lock._self_test),
+        ("worktree", worktree._self_test),
+        ("team_ledger", team_ledger._self_test),
+        ("fanin", fanin._self_test),
     ]
     passed = 0
     for name, check in checks:
@@ -149,7 +315,50 @@ def _build_parser() -> argparse.ArgumentParser:
 
     status = sub.add_parser("status", help="render evidence-pending status")
     status.add_argument("--evidence-dir", default=".")
+    status.add_argument("--runlog", default=None)
     status.set_defaults(func=_cmd_status)
+
+    verify = sub.add_parser("verify", help="verify runlog integrity")
+    verify.add_argument("--runlog", required=True)
+    verify.set_defaults(func=_cmd_verify)
+
+    doctor = sub.add_parser("doctor", help="report runlog-derived lane health")
+    doctor.add_argument("--runlog", required=True)
+    doctor.set_defaults(func=_cmd_doctor)
+
+    isolation = sub.add_parser("isolation", help="isolation contract checks")
+    isolation.add_argument("--self-test", action="store_true")
+    isolation.set_defaults(func=_cmd_isolation)
+
+    faultkit = sub.add_parser("faultkit", help="deterministic fault injection")
+    faultkit_sub = faultkit.add_subparsers(dest="fault", required=True)
+    zombie = faultkit_sub.add_parser("zombie-hang")
+    zombie.add_argument("--runlog", required=True)
+    zombie.set_defaults(func=_cmd_faultkit)
+    crash = faultkit_sub.add_parser("crash-mid-toolcall")
+    crash.add_argument("--runlog-before", required=True)
+    crash.add_argument("--runlog-after", required=True)
+    crash.add_argument("--session", required=True)
+    crash.set_defaults(func=_cmd_faultkit)
+
+    team = sub.add_parser("team", help="run a local team fan-in")
+    team_sub = team.add_subparsers(dest="team_cmd", required=True)
+    team_run = team_sub.add_parser("run", help="emit team fan-in evidence")
+    team_run.add_argument("--repo", required=True)
+    team_run.add_argument("--out", required=True)
+    team_run.add_argument("--keys-dir", default=None)
+    team_run.add_argument(
+        "--lane",
+        action="append",
+        required=True,
+        help="lane_id:file[,file...]",
+    )
+    team_run.set_defaults(func=_cmd_team_run)
+
+    team_ledger = sub.add_parser("team-ledger", help="verify a team ledger")
+    team_ledger.add_argument("--ledger", required=True)
+    team_ledger.add_argument("--json", action="store_true")
+    team_ledger.set_defaults(func=_cmd_team_ledger)
 
     self_test = sub.add_parser("self-test", help="run module self-tests")
     self_test.add_argument("--all", action="store_true")
