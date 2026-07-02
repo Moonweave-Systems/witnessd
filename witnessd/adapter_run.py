@@ -108,6 +108,8 @@ def run_adapter_lane(
     opencode_binary: str = "opencode",
     timeout_seconds: int = 120,
     evidence_dir: str | None = None,
+    private_key_path: str | None = None,
+    public_key_path: str | None = None,
 ) -> dict[str, Any]:
     worktree = str(Path(sandbox or root).resolve(strict=False))
 
@@ -163,7 +165,10 @@ def run_adapter_lane(
         task_dir.mkdir(parents=True, exist_ok=True)
         lane_evidence_dir.mkdir(parents=True, exist_ok=True)
         key_dir.mkdir(parents=True, exist_ok=True)
-        private_key, public_key = gen_operator_keypair(str(key_dir))
+        if private_key_path is None or public_key_path is None:
+            private_key, public_key = gen_operator_keypair(str(key_dir))
+        else:
+            private_key, public_key = private_key_path, public_key_path
 
         assert_separated(worktree, str(lane_evidence_dir / "capture-manifest.json"))
         adapter_result = _run_adapter(

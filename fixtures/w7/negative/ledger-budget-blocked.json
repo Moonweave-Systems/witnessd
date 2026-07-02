@@ -3,13 +3,13 @@
   "lanes": [
     {
       "blocked_reason": "budget_exceeded",
-      "end_commit": "e76bfa8500327c8c3f060708edbebed26214bf9e",
+      "end_commit": "5604260f523b7cef902d35fa53193ffe377ce27a",
       "env_kind": "local",
       "evidence_dir": "lanes/budget-blocked",
       "lane_id": "budget-blocked",
       "objective": "budget-blocked objective",
       "runner_adapter_kind": "codex",
-      "start_commit": "e76bfa8500327c8c3f060708edbebed26214bf9e",
+      "start_commit": "5604260f523b7cef902d35fa53193ffe377ce27a",
       "team_adapter_kind": "codex",
       "touched_files": [],
       "verification_state": "blocked"
@@ -18,6 +18,6 @@
   "leader_id": "leader-fixed",
   "leader_objective": "W7 budget-blocked negative fixture",
   "schema_version": "0.1",
-  "start_commit": "e76bfa8500327c8c3f060708edbebed26214bf9e",
+  "start_commit": "5604260f523b7cef902d35fa53193ffe377ce27a",
   "stop_rule": "all write lanes pass or block"
 }
