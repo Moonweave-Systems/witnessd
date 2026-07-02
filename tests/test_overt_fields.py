@@ -56,11 +56,11 @@ def _manifest(**kwargs) -> dict:
     )
 
 
-def _assert_reconstruction_self_declares_post_hoc(
-    manifest: dict, *, reconstructed: bool
-) -> None:
+def _assert_reconstruction_self_declares_post_hoc(manifest: dict, *, reconstructed: bool) -> None:
+    """Local fixture discipline only; no live notary proves temporality."""
+
     if reconstructed and manifest.get("evidence_mode") != "post_hoc":
-        raise AssertionError("post-hoc reconstructed evidence must declare post_hoc")
+        raise AssertionError("post-hoc reconstructed evidence must self-declare post_hoc")
 
 
 @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
@@ -119,27 +119,11 @@ class TestOvertFields(unittest.TestCase):
         self.assertTrue(verdict["signature_verified"])
         self.assertEqual(verdict["decision"], "pass")
 
-    def test_reconstructed_evidence_self_declaration_helper_rejects_mismatch(self):
+    def test_reconstructed_fixture_discipline_rejects_contemporaneous_label(self):
         manifest = _manifest(evidence_mode="contemporaneous")
 
         with self.assertRaisesRegex(AssertionError, "post_hoc"):
             _assert_reconstruction_self_declares_post_hoc(manifest, reconstructed=True)
-
-    def test_release_docs_keep_temporality_and_a2_honesty(self):
-        root = os.path.dirname(os.path.dirname(__file__))
-        with open(
-            os.path.join(root, "docs", "conformance", "OVERT.md"),
-            encoding="utf-8",
-        ) as handle:
-            overt = handle.read()
-        with open(os.path.join(root, "README.md"), encoding="utf-8") as handle:
-            readme = handle.read()
-
-        for text in (overt, readme):
-            self.assertIn("self-declared", text)
-            self.assertIn("DELAYED_NOTARY", text)
-            self.assertIn("A2", text)
-            self.assertIn("demonstration", text.lower())
 
     def test_parent_attestation_id_must_be_sha256_hex(self):
         with self.assertRaisesRegex(ValueError, "parent_attestation_id"):

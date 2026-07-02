@@ -26,16 +26,34 @@ OVERT source checked for this statement:
 | ATT-1 content non-egress | Evidence binds hashes and metadata; protected content is not required for Depone ingest. | `witnessd/capture.py`, `witnessd/substrate.py`, `fixtures/w1/`, `fixtures/w8/` |
 | ATT-3 three-phase shape | Local observed capture, operator-key DSSE bundle, and Depone asynchronous re-derivation match the provisional-to-final shape, capped at AAL-3. | `witnessd/emitter.py`, `witnessd/signing.py`, `scripts/revalidate_w8.py` |
 | RES-1 crypto-gated control loop | W5 pause/kill/resume gates derive from signed runlog evidence and fail closed when evidence is missing. | `witnessd/pause.py`, `witnessd/killswitch.py`, `scripts/revalidate_w5.py` |
-| RES-5 failure-mode declaration | Reconstruction is represented by the self-declared field `evidence_mode: "post_hoc"`, mapped to OVERT `RECONSTRUCTED`; contemporaneous evidence self-declares `evidence_mode: "contemporaneous"`. witnessd does not prove this temporality from bytes. | `tests/test_overt_fields.py`, `fixtures/w8/negative/post_hoc_marked_contemporaneous.json`, `scripts/revalidate_w8.py` |
+| RES-5 failure-mode declaration | Reconstruction is self-declared as `evidence_mode: "post_hoc"`, mapped to OVERT `RECONSTRUCTED`; contemporaneous evidence is self-declared as `evidence_mode: "contemporaneous"`. witnessd does not byte-prove temporality. | `tests/test_overt_fields.py`, `fixtures/w8/negative/post_hoc_marked_contemporaneous.json`, `scripts/revalidate_w8.py` |
 
 ## OVERT Field Mapping
 
 | OVERT concept | witnessd field | Notes |
 | --- | --- | --- |
-| Receipt temporality flags | `evidence_mode` | Self-declared only. `contemporaneous` maps to flags `0x00`; `post_hoc` maps to OVERT 1.1 `RECONSTRUCTED` (`0x02`). |
+| Receipt temporality flags | `evidence_mode` | Self-declared only. `contemporaneous` maps to flags `0x00`; `post_hoc` maps to OVERT 1.1 `RECONSTRUCTED` (`0x02`). witnessd does not model OVERT `DELAYED_NOTARY` (`0x01`). |
 | Co-epoch duration | `epoch_seconds` | Default is 300 seconds. This is an operator clock interval, not independent timestamp authority. |
 | Receipt monotonic counter | `monotonic_counter` | Positive run-local counter emitted with the capture manifest and signed bundle. |
 | Cross-boundary parent reference | `parent_attestation_id` | Optional 64-character lowercase SHA-256 hex reference. Only the hash crosses the boundary. |
+
+
+## Temporality Honesty
+
+`evidence_mode` is a self-declared, unenforced field in witnessd v1.0. The
+current runtime has no live notary co-signature, independent co-epoch anchor, or
+transparency timestamp that can prove `contemporaneous` versus `post_hoc` from
+the bytes alone. The W8 negative fixture
+`fixtures/w8/negative/post_hoc_marked_contemporaneous.json` is therefore an
+honesty fixture: it documents that a post-hoc source can be mislabeled as
+`contemporaneous`; `scripts/revalidate_w8.py` preserves that fact instead of
+claiming to detect it. OVERT `DELAYED_NOTARY` (`0x01`) is not modeled.
+
+A2 evidence in this repository is also host-conditional.
+`fixtures/w1/A2-DEMONSTRATION.md` records that the committed A2 fixture is a
+demonstration captured for the Depone schema path, not proof that this host ran
+with a uid-separated runner. A real A2 claim requires a uid-isolated host that
+produces the runner/observer separation in the captured bytes.
 
 ## Exclusions
 

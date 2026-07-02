@@ -1,135 +1,150 @@
 # witnessd
 
-> Done is signed bytes, not a self-reported string.
+> **Done is signed bytes, not a self-reported string.**
 
-`witnessd` is the executing half of Moonweave's evidence runtime. It runs
-lanes, teams, adapters, retries, worktrees, pause/kill controls, and learning
-promotion, then emits observer-captured evidence for a separate verifier to
-re-derive. The verifier is
-[Depone](https://github.com/Moonweave-Systems/Depone): non-executing,
-offline, and limited to verdicts it can derive from bytes.
+`witnessd` is the executing half of Moonweave's evidence loop: it runs lanes and
+teams, supervises retries/worktrees/sessions, and emits observer-signed evidence
+bundles. [Depone](https://github.com/Moonweave-Systems/Depone) is the separate,
+non-executing verifier: it reads those bytes offline and re-derives the assurance
+verdict. The verifier can refuse or cap a claim; it cannot silently upgrade it.
 
 ## Why
 
-Agent runtimes can print success strings that are not evidence. `witnessd`
-exists to avoid treating a transcript tag, task-state update, or green local
-doctor message as completion. The design source of truth is
-[`SPEC.md`](SPEC.md): the runtime may execute aggressively, but final assurance
-belongs to the verifier and is capped at A2.
+Agent runtimes often collapse completion into self-reporting: a transcript says
+"done", a task row is marked complete, or an orchestrator prints a success tag.
+`witnessd` treats those strings as untrusted. The durable artifact is the signed
+capture: command receipts, observer output, runner receipt, runlog, and bundle
+hashes. The design source of truth is [`SPEC.md`](SPEC.md), especially the
+status discipline that keeps runtime output at `evidence-pending` until Depone
+re-derives a verdict.
 
-The anti-pattern is documented in code and fixtures:
-
-- status wording is constrained by [`witnessd/status.py`](witnessd/status.py)
-  and tested by [`tests/test_status.py`](tests/test_status.py).
-- CLI output stays `evidence-pending` until external verification; see
-  [`tests/test_cli.py`](tests/test_cli.py) and
-  [`tests/test_runtime_depone_decoupling.py`](tests/test_runtime_depone_decoupling.py).
-- a green self-report false-positive is demonstrated without using it as a
-  trust root in [`scripts/demo_zombie_falsepositive.py`](scripts/demo_zombie_falsepositive.py).
-
-## How
-
-The workspace has two independent repos, described in
-[`../CLAUDE.md`](../CLAUDE.md):
+## Two products, one evidence contract
 
 ```text
-witnessd  -> executes lanes and emits signed evidence
-Depone    -> does not execute lanes; re-derives verdicts from evidence bytes
+witnessd (runtime / arbiter)        Depone (verifier / non-executing)
+----------------------------       ---------------------------------
+spawn lane or team worker      ->   read committed evidence bytes
+observe command + files        ->   recompute canonical hashes
+emit signed bundle + runlog    ->   verify signature and schemas
+print evidence-pending         ->   derive A0 / A1 / A2 / blocked / refuted
 ```
 
-The evidence flow is:
+The repos are developed side by side under `moonweave/`, but they are not a
+monorepo. The only coupling is the evidence contract described in
+[`/home/ubuntu/moonweave/CLAUDE.md`](../CLAUDE.md): canonical JSON hashing,
+capture-manifest, runner-receipt, isolation, DSSE, and team-ledger schemas come
+from Depone. `witnessd` does not invent schema fields.
 
-```text
-lane run
-  -> observer capture
-  -> capture manifest
-  -> runner/worktree/team receipts
-  -> DSSE/in-toto evidence bundle
-  -> Depone offline re-derivation
-```
+## What is implemented
 
-The core implementation paths are
-[`witnessd/emitter.py`](witnessd/emitter.py),
-[`witnessd/capture.py`](witnessd/capture.py),
-[`witnessd/substrate.py`](witnessd/substrate.py),
-[`witnessd/signing.py`](witnessd/signing.py),
-[`witnessd/fanin.py`](witnessd/fanin.py), and
-[`witnessd/team_ledger.py`](witnessd/team_ledger.py). Committed examples live
-under [`fixtures/`](fixtures/). Negative fixtures such as
-[`fixtures/w1/negative/forged_a3.json`](fixtures/w1/negative/forged_a3.json),
-[`fixtures/w1/negative/observer_capture_hash_mismatch.json`](fixtures/w1/negative/observer_capture_hash_mismatch.json),
-and [`fixtures/w7/negative/ledger-budget-blocked.json`](fixtures/w7/negative/ledger-budget-blocked.json)
-show forged or blocked evidence failing re-derivation.
+- **W1 evidence substrate** — shell lane capture, signed bundle, and Depone
+  revalidation fixtures: [`fixtures/w1/`](fixtures/w1/),
+  [`scripts/revalidate_w1.py`](scripts/revalidate_w1.py).
+- **W2 supervised liveness** — durable runlog and liveness projection:
+  [`witnessd/liveness.py`](witnessd/liveness.py),
+  [`scripts/revalidate_w2.py`](scripts/revalidate_w2.py).
+- **W3 team fan-in** — team ledger and overlap/conflict evidence:
+  [`witnessd/team_ledger.py`](witnessd/team_ledger.py),
+  [`scripts/revalidate_w3.py`](scripts/revalidate_w3.py).
+- **W4 adapters/routing/cost** — shell/Codex/Claude/OpenCode adapter receipts,
+  routing, and budget controls: [`witnessd/adapters/`](witnessd/adapters/),
+  [`scripts/revalidate_w4.py`](scripts/revalidate_w4.py).
+- **W5 autonomy safety** — pause/resume/kill/learning gates backed by runlog
+  evidence: [`witnessd/pause.py`](witnessd/pause.py),
+  [`witnessd/killswitch.py`](witnessd/killswitch.py),
+  [`scripts/revalidate_w5.py`](scripts/revalidate_w5.py).
+- **W7 team adapter wiring** — team worker execution through adapter receipts:
+  [`tests/test_team_adapter_wiring.py`](tests/test_team_adapter_wiring.py),
+  [`scripts/revalidate_w7.py`](scripts/revalidate_w7.py).
+- **W8 OVERT alignment** — schema/documentation alignment for OVERT 1.1 AAL-3
+  Agentic scope: [`docs/conformance/OVERT.md`](docs/conformance/OVERT.md),
+  [`scripts/revalidate_w8.py`](scripts/revalidate_w8.py).
 
-## Reproduce The Baseline
+## Reproduce the local evidence loop
 
-From this repo:
+From this repo, with Depone checked out next to it:
 
 ```bash
 cd /home/ubuntu/moonweave/witnessd
-PYTHONPATH=/home/ubuntu/moonweave/depone uv run python3 scripts/revalidate_w1.py
-```
-
-That revalidates the committed W1 n=1 shell-lane evidence across the contract
-surfaces used by Depone: observer separation, capture manifest, capture chain,
-operator signature, evidence bundle ingest, runner receipt, trusted-observer
-provenance, and evidence-contract binding. On this host the A2 fixture is
-explicitly demonstration-only; see
-[`fixtures/w1/A2-DEMONSTRATION.md`](fixtures/w1/A2-DEMONSTRATION.md).
-
-To run the full local matrix:
-
-```bash
-cd /home/ubuntu/moonweave/witnessd
-PYTHONPATH=/home/ubuntu/moonweave/depone uv run python3 -m unittest discover -s tests
-for script in scripts/revalidate_*.py; do
-  PYTHONPATH=/home/ubuntu/moonweave/depone uv run python3 "$script"
+PYTHONPATH=/home/ubuntu/moonweave/depone python3 -m unittest discover -s tests
+for s in scripts/revalidate_*.py; do
+  PYTHONPATH=/home/ubuntu/moonweave/depone python3 "$s"
 done
-uv run python3 -m witnessd self-test --all
+python3 -m witnessd self-test --all
 ```
 
-From the co-dev workspace:
+A minimal shell lane emits evidence and prints only `evidence-pending`:
 
 ```bash
-cd /home/ubuntu/moonweave
-make dogfood
-make test
+cd /home/ubuntu/moonweave/witnessd
+tmp="$(mktemp -d)"
+mkdir -p "$tmp/sandbox" "$tmp/evidence"
+python3 -m witnessd run \
+  --adapter shell \
+  --runner-sandbox "$tmp/sandbox" \
+  --out "$tmp/evidence/capture-manifest.json" \
+  --log "$tmp/evidence/runlog.jsonl" \
+  --allow out.txt \
+  -- sh -c 'echo hi > out.txt'
+PYTHONPATH=/home/ubuntu/moonweave/depone python3 scripts/revalidate_w1.py
 ```
 
-## OVERT
+The negative fixture path is deliberately falsifiable: tampered W1 bytes and W4
+route/budget examples are rejected by Depone-backed revalidators in
+[`scripts/`](scripts/), not by trusting a runtime success string.
 
-[`docs/conformance/OVERT.md`](docs/conformance/OVERT.md) documents the
-self-declared OVERT 1.1 alignment: AAL-3, Agentic scope, with exclusions.
-[`docs/conformance/witnessd-protocol-profile.md`](docs/conformance/witnessd-protocol-profile.md)
-describes the local protocol profile.
+## OVERT profile
 
-Important limit: `evidence_mode` is self-declared in W8/W9. witnessd does not
-have a live notary co-signature, co-epoch anchor, transparency log timestamp, or
-independent timestamp authority that can prove `contemporaneous` versus
-`post_hoc` from bytes alone. OVERT `DELAYED_NOTARY` is not modeled.
+[`docs/conformance/OVERT.md`](docs/conformance/OVERT.md) records schema-level
+OVERT 1.1 alignment at **AAL-3 Agentic** scope. This is not a certification. The
+current profile excludes independent IAP notary, transparency-log inclusion, and
+OVERT `DELAYED_NOTARY` (`0x01`).
 
-## Honest Limits
+## Honest limits
 
-- A2 is supported by contract fixtures, but this host's W1 A2 example is a
-  demonstration fixture, not a real uid-isolated run:
-  [`fixtures/w1/A2-DEMONSTRATION.md`](fixtures/w1/A2-DEMONSTRATION.md).
-- Assurance is capped at A2. Operator signatures add report-level provenance;
-  they do not raise assurance. See [`SPEC.md`](SPEC.md).
-- There is no RFC 6962 transparency log, independent IAP notary, or public
-  timestamping service in v1.0. See
-  [`docs/conformance/OVERT.md`](docs/conformance/OVERT.md).
-- Sigstore/Fulcio/Rekor keyless signing is blocked until the production gate
-  evidence exists. See
-  [`docs/ops/operator-key-rotation.md`](docs/ops/operator-key-rotation.md) and
-  [`scripts/revalidate_key_rotation.py`](scripts/revalidate_key_rotation.py).
-- Depone is a dev/test verifier dependency for local revalidation. Runtime
-  code remains Python stdlib plus the `openssl` CLI; see
-  [`tests/test_runtime_depone_decoupling.py`](tests/test_runtime_depone_decoupling.py).
+- **Assurance ceiling is A2.** `witnessd` emits bytes; Depone re-derives at most
+  A2 in the current contract.
+- **A2 in this repo is demonstration-only unless captured on a uid-isolated
+  host.** See [`fixtures/w1/A2-DEMONSTRATION.md`](fixtures/w1/A2-DEMONSTRATION.md).
+- **Temporality is self-attested in v1.0.** `evidence_mode` distinguishes
+  `contemporaneous` from `post_hoc`, but without a live independent notary,
+  co-epoch anchor, or transparency timestamp, the bytes alone do not prove that
+  distinction. W8 preserves this as an honesty fixture rather than a detector.
+- **Keyless signing is not shipped.** The W6 keyless/production gate remains a
+  separate blocked track; this release uses operator key material and `openssl`.
+- **Runtime dependencies stay small.** `witnessd` runtime code is Python stdlib +
+  `openssl` CLI. Depone is a dev/test verifier dependency, not a runtime import.
 
-## Design Documents
+## CI and release validation
 
-- [`SPEC.md`](SPEC.md) - design source of truth
-- [`docs/plans/`](docs/plans/) - W1-W9 implementation plans
-- [`docs/ops/operator-key-rotation.md`](docs/ops/operator-key-rotation.md) -
-  operator-key rotation and production gate notes
-- [`docs/conformance/`](docs/conformance/) - OVERT and local protocol profile
+The GitHub Actions workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+runs unit tests on Python 3.10 and 3.12, fixture revalidators, a Depone-free
+runtime decoupling guard, and a no-overclaim grep gate. If Depone is private,
+configure a `DEPONE_TOKEN` repository secret as documented in the workflow.
+
+Before tagging a release locally:
+
+```bash
+PYTHONPATH=/home/ubuntu/moonweave/depone python3 -m unittest discover -s tests
+for s in scripts/revalidate_*.py; do PYTHONPATH=/home/ubuntu/moonweave/depone python3 "$s"; done
+python3 -m witnessd self-test --all
+```
+
+Suggested annotated tag message for `v1.0.0`:
+
+```text
+witnessd v1.0.0
+
+W1-W8 summary: signed evidence substrate; supervised liveness; team fan-in;
+adapter routing/cost controls; autonomy pause/kill/learning safety; team adapter
+wiring; OVERT 1.1 AAL-3 Agentic schema alignment.
+
+Conformance: Depone re-derives committed evidence bytes; witnessd remains the
+executing emitter and keeps runtime status at evidence-pending until verifier
+results exist.
+
+Known limits: A2 fixture is demo/host-conditional; no independent notary or
+transparency log; keyless production gate remains blocked/out of scope.
+```
+
+Do not push tags or branches without explicit operator approval.

@@ -49,19 +49,23 @@ def _assert_overt_fields(manifest: dict[str, Any]) -> None:
     )
 
 
-def _document_unenforced_evidence_mode_self_attestation() -> None:
+def _assert_self_attestation_unenforced_fixture() -> None:
+    """Document that W8 temporality is self-attested, not byte-proven.
+
+    The negative fixture intentionally labels a post-hoc reconstruction as
+    contemporaneous. witnessd has no live notary co-sign, co-epoch anchor, or
+    DELAYED_NOTARY byte to prove the temporal claim false. This check therefore
+    preserves the fixture shape as an honesty marker; it is not a detector.
+    """
+
     negative = _load(NEGATIVE / "post_hoc_marked_contemporaneous.json")
     _require(
         negative.get("w8_reconstruction_source") == "post_hoc",
-        "negative fixture must identify post_hoc source",
-    )
-    _require(
-        negative.get("evidence_mode") != "post_hoc",
-        "negative fixture must be mislabeled to document self-attestation risk",
+        "negative fixture must identify the post_hoc source",
     )
     _require(
         negative.get("evidence_mode") == "contemporaneous",
-        "negative fixture documents that contemporaneous/post_hoc is not enforced",
+        "negative fixture must show a self-declared contemporaneous label",
     )
 
 
@@ -121,8 +125,8 @@ def main() -> int:
         f"W8 bundle ingest must pass, got {verdict!r}",
     )
 
-    _document_unenforced_evidence_mode_self_attestation()
-    print("W8 revalidate: PASS")
+    _assert_self_attestation_unenforced_fixture()
+    print("W8 revalidate: PASS (evidence_mode is self-attested, not enforced)")
     return 0
 
 
