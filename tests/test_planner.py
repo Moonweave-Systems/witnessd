@@ -6,6 +6,7 @@ from witnessd.planner import (
     PlannerError,
     lane_packet_from_team_lane,
     lane_packet_to_team_lane,
+    plan_heuristic,
     seal_plan,
 )
 
@@ -77,6 +78,17 @@ class TestSealPlan(unittest.TestCase):
 
         with self.assertRaisesRegex(PlannerError, "ERR_PLAN_REGION_OVERLAP"):
             seal_plan(packets, goal="ship W11")
+
+
+class TestHeuristicPlanner(unittest.TestCase):
+    def test_same_goal_seed_and_root_produce_identical_packet_hash(self):
+        packets_a = plan_heuristic("ship W11 planner", seed="w11", root=".")
+        packets_b = plan_heuristic("ship W11 planner", seed="w11", root=".")
+
+        self.assertEqual(canonical_hash(packets_a), canonical_hash(packets_b))
+        self.assertEqual(packets_a, packets_b)
+        self.assertEqual(packets_a[0]["adapter"], "shell")
+        self.assertEqual(packets_a[0]["stop_rule"], "evidence-pending")
 
 
 if __name__ == "__main__":

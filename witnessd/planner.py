@@ -7,6 +7,7 @@ touch git, sign evidence, or decide completion.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from witnessd.canonical import canonical_hash
@@ -124,6 +125,30 @@ def seal_plan(packets: list[dict[str, Any]], *, goal: str) -> dict[str, Any]:
         "packets": normalized,
         "plan_hash": canonical_hash(normalized),
     }
+
+
+def plan_heuristic(goal: str, *, seed: str, root: str) -> list[dict[str, Any]]:
+    root_fingerprint = _root_fingerprint(root)
+    lane_hash = canonical_hash(
+        {"goal": str(goal), "seed": str(seed), "root": root_fingerprint}
+    )[:12]
+    packet = {
+        "lane_id": f"plan-{lane_hash}",
+        "adapter": "shell",
+        "tier": "quick",
+        "region": [f"w11/{lane_hash}.txt"],
+        "prompt": f"Record planner evidence for goal {goal}",
+        "budget": {"max_tokens": 0, "max_usd": 0.0, "max_depth": 1},
+        "stop_rule": "evidence-pending",
+    }
+    return [validate_lane_packet(packet)]
+
+
+def _root_fingerprint(root: str) -> list[str]:
+    try:
+        return sorted(name for name in os.listdir(root) if not name.startswith("."))
+    except FileNotFoundError:
+        return []
 
 
 def _assert_region_disjoint_or_explicit_merge(packets: list[dict[str, Any]]) -> None:
