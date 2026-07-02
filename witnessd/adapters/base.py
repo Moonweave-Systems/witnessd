@@ -10,11 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from depone.agent_fabric.paired_run import VALID_RUNNERS
-
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
 from witnessd.receipt import build_runner_receipt
 
+VALID_RUNNERS = frozenset({"codex-cli", "manual"})
 RUNNER_KIND_BY_ADAPTER = {
     "codex": "codex-cli",
     "claude": "manual",

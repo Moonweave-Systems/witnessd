@@ -451,15 +451,20 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
 
 
 def _cmd_team_ledger(args: argparse.Namespace) -> int:
-    from depone.agent_fabric.team_ledger import build_team_ledger_verdict
-
     ledger_path = Path(args.ledger)
     ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
-    verdict = build_team_ledger_verdict(ledger, base_dir=ledger_path.parent)
+    pending = len(ledger.get("lanes", [])) if isinstance(ledger.get("lanes"), list) else 0
+    status = render_status(pending=pending, verdict=None)
+    result = {
+        "decision": status,
+        "pending": pending,
+        "ledger": str(ledger_path),
+        "message": f"{pending} team lane(s) pending Depone verification",
+    }
     if args.json:
-        print(json.dumps(verdict, sort_keys=True))
+        print(json.dumps(result, sort_keys=True))
     else:
-        print(verdict["decision"])
+        print(f"{result['message']} ({status})")
     return 0
 
 

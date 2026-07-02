@@ -7,14 +7,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from depone.agent_fabric.reference_adapter import build_reference_adapter_fixture
-
 from witnessd.adapters.claude import run_claude_lane
 from witnessd.adapters.codex import run_codex_lane
 from witnessd.adapters.opencode import run_opencode_lane
 from witnessd.budget import BudgetExceededError, CostBreaker
 from witnessd.emitter import emit_lane_evidence
 from witnessd.eventlog import EventLog
+from witnessd.fixture import build_reference_adapter_fixture
 from witnessd.observer import assert_separated
 from witnessd.preflight import PreflightError, probe_adapter_capability
 from witnessd.router import RouteExhaustedError, route_model

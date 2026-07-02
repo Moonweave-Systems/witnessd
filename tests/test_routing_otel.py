@@ -1,9 +1,8 @@
 import unittest
 
-from depone.agent_fabric.evidence_substrate import (
-    build_otel_genai_spans,
-    validate_external_otel_spans,
-)
+from depone.agent_fabric.evidence_substrate import validate_external_otel_spans
+
+from witnessd.substrate import build_otel_spans
 
 
 class TestRoutingOtel(unittest.TestCase):
@@ -23,7 +22,7 @@ class TestRoutingOtel(unittest.TestCase):
         }
         receipt = {"runner_kind": "codex-cli", "arm": "direct"}
 
-        spans = build_otel_genai_spans(manifest, runner_receipt=receipt)
+        spans = build_otel_spans(manifest, runner_receipt=receipt)
 
         self.assertEqual(validate_external_otel_spans(spans), [])
         root = spans[0]["attributes"]

@@ -8,7 +8,7 @@ a stable, repo-relative evidence path so a checkout can re-derive it.
 
 A2 is a DEMONSTRATION only: this host runs the lane in-process as the observer
 uid, so there is no uid-isolated runner to observe. The A2 manifest records real
-isolation facts probed via Depone's ``probe_isolation_facts`` against a
+isolation facts probed via witnessd's local isolation probe against a
 mode-0700 observer dir with a distinct runner uid, which the isolation gate
 accepts as a boundary — it demonstrates the A2 path without claiming a real
 isolated run. ``scripts/revalidate_w1.py`` treats the strict A2 assert as
@@ -30,17 +30,14 @@ import stat
 import tempfile
 from pathlib import Path
 
-from depone.agent_fabric.isolation import probe_isolation_facts
-from depone.agent_fabric.observer_provenance import (
-    build_signed_trusted_observer_provenance,
-)
-from depone.agent_fabric.reference_adapter import build_reference_adapter_fixture
-
 from witnessd.adapters.shell import run_shell_lane
 from witnessd.canonical import canonical_hash
 from witnessd.capture import build_capture_manifest
 from witnessd.emitter import emit_lane_evidence
+from witnessd.fixture import build_reference_adapter_fixture
+from witnessd.isolation import probe_isolation_facts
 from witnessd.observer import build_observer_capture
+from witnessd.provenance import build_signed_trusted_observer_provenance
 from witnessd.signing import gen_operator_keypair
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

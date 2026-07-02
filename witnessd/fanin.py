@@ -280,8 +280,6 @@ def _self_test() -> None:
         print("witnessd fanin --self-test: pass (openssl unavailable)")
         return
 
-    from depone.agent_fabric.team_ledger import build_team_ledger_verdict
-
     from witnessd.signing import gen_operator_keypair
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -312,7 +310,5 @@ def _self_test() -> None:
             public_key_path=public_key_path,
             base_commit=base_commit,
         )
-        verdict = build_team_ledger_verdict(
-            result["ledger"], base_dir=result["base_dir"]
-        )
-        assert verdict["decision"] == "pass"
+        assert result["ledger"]["kind"] == "depone-team-ledger"
+        assert len(result["ledger"]["lanes"]) == 1

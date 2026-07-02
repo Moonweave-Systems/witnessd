@@ -8,10 +8,8 @@ canonical hash of the prior manifest. Genesis carries `prev_capture_hash=None`;
 the link is committed into this manifest's own canonical hash, so a dropped,
 reordered, or tampered predecessor breaks every downstream link.
 
-Runtime stays stdlib-only. The A2 branch alone imports Depone's
-`verify_isolation_boundary` to normalize probed isolation facts into the stored
-boundary object exactly as Depone would; same-uid or partial facts never upgrade
-past A1.
+Runtime stays stdlib-only. The A2 branch uses witnessd's local isolation
+verifier replica; same-uid or partial facts never upgrade past A1.
 """
 
 from __future__ import annotations
@@ -95,7 +93,7 @@ def build_capture_manifest(
     )
 
     if isolation is not None:
-        from depone.agent_fabric.isolation import verify_isolation_boundary
+        from witnessd.isolation import verify_isolation_boundary
 
         verified = verify_isolation_boundary(isolation)
         if verified.get("boundary") is True:
