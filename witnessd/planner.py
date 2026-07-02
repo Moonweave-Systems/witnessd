@@ -8,6 +8,7 @@ touch git, sign evidence, or decide completion.
 from __future__ import annotations
 
 import os
+import json
 from typing import Any
 
 from witnessd.canonical import canonical_hash
@@ -142,6 +143,17 @@ def plan_heuristic(goal: str, *, seed: str, root: str) -> list[dict[str, Any]]:
         "stop_rule": "evidence-pending",
     }
     return [validate_lane_packet(packet)]
+
+
+def parse_draft_packets(text: str) -> list[dict[str, Any]]:
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise PlannerError("ERR_PLAN_DRAFT_PARSE") from exc
+    packets = parsed.get("packets") if isinstance(parsed, dict) else parsed
+    if not isinstance(packets, list):
+        raise PlannerError("ERR_PLAN_DRAFT_SCHEMA")
+    return [validate_lane_packet(packet) for packet in packets]
 
 
 def _root_fingerprint(root: str) -> list[str]:

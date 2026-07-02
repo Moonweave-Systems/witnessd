@@ -1,6 +1,14 @@
+import io
+import json
 import unittest
+import shutil
+import stat
+import subprocess
+import tempfile
+from contextlib import redirect_stdout
+from pathlib import Path
 
-from witnessd.__main__ import _parse_team_lane
+from witnessd.__main__ import _parse_team_lane, main
 from witnessd.canonical import canonical_hash
 from witnessd.planner import (
     PlannerError,
@@ -89,6 +97,62 @@ class TestHeuristicPlanner(unittest.TestCase):
         self.assertEqual(packets_a, packets_b)
         self.assertEqual(packets_a[0]["adapter"], "shell")
         self.assertEqual(packets_a[0]["stop_rule"], "evidence-pending")
+
+
+def _fake_codex_invalid_draft(directory: Path) -> str:
+    path = directory / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        "out=\"\"\n"
+        "while [ $# -gt 0 ]; do\n"
+        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
+        "  shift\n"
+        "done\n"
+        "printf '%s\\n' 'not json' > \"$out\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
+@unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
+class TestPlannerCliDraft(unittest.TestCase):
+    def test_draft_adapter_parse_failure_falls_back_to_sealed_heuristic_plan(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+            repo = Path(root) / "repo"
+            draft_dir = Path(root) / "draft"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "plan",
+                        "ship W11 planner",
+                        "--root",
+                        str(repo),
+                        "--draft-adapter",
+                        "codex",
+                        "--draft-out",
+                        str(draft_dir / "evidence"),
+                        "--codex-binary",
+                        _fake_codex_invalid_draft(Path(bindir)),
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            rendered = json.loads(stdout.getvalue())
+            self.assertEqual(rendered["sealed_plan"]["kind"], "witnessd-sealed-plan")
+            self.assertEqual(
+                rendered["sealed_plan"]["plan_hash"],
+                canonical_hash(rendered["sealed_plan"]["packets"]),
+            )
+            self.assertEqual(rendered["draft_events"][0]["status"], "fallback")
+            self.assertEqual(rendered["draft_events"][0]["reason"], "ERR_PLAN_DRAFT_PARSE")
+            self.assertTrue((draft_dir / "adapter-command.json").exists())
 
 
 if __name__ == "__main__":

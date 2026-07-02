@@ -161,6 +161,85 @@ def _cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_plan(args: argparse.Namespace) -> int:
+    from witnessd.adapter_run import LaneBlocked, run_adapter_lane
+    from witnessd.planner import (
+        PlannerError,
+        parse_draft_packets,
+        plan_heuristic,
+        seal_plan,
+    )
+
+    draft_events: list[dict] = []
+    packets: list[dict] | None = None
+    root = os.path.abspath(args.root)
+
+    if args.draft_adapter:
+        try:
+            result = run_adapter_lane(
+                root=root,
+                sandbox=root,
+                adapter=args.draft_adapter,
+                task_id="w11-plan-draft",
+                prompt=_draft_prompt(args.goal),
+                arm="direct",
+                tier=args.tier,
+                is_supported=lambda _model: True,
+                budget={
+                    "max_tokens": args.max_tokens,
+                    "max_usd": args.max_usd,
+                    "max_depth": args.max_depth,
+                },
+                predicted_tokens=args.predicted_tokens,
+                predicted_usd=args.predicted_usd,
+                codex_binary=args.codex_binary,
+                claude_binary=args.claude_binary,
+                opencode_binary=args.opencode_binary,
+                evidence_dir=args.draft_out,
+            )
+            transcript = (
+                Path(result["evidence_dir"]).resolve(strict=False).parent
+                / "adapter-transcript.txt"
+            )
+            packets = parse_draft_packets(transcript.read_text(encoding="utf-8"))
+            draft_events.append(
+                {
+                    "adapter": args.draft_adapter,
+                    "status": "adopted",
+                    "evidence_dir": result["evidence_dir"],
+                }
+            )
+        except (LaneBlocked, PlannerError, OSError) as exc:
+            reason = str(exc).split(":", 1)[0]
+            draft_events.append(
+                {
+                    "adapter": args.draft_adapter,
+                    "status": "fallback",
+                    "reason": reason,
+                }
+            )
+
+    if packets is None:
+        packets = plan_heuristic(args.goal, seed=args.seed, root=root)
+
+    sealed = seal_plan(packets, goal=args.goal)
+    print(
+        json.dumps(
+            {"sealed_plan": sealed, "draft_events": draft_events},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    return 0
+
+
+def _draft_prompt(goal: str) -> str:
+    return (
+        "Return only JSON with a packets array of witnessd LanePacket objects for "
+        f"this goal: {goal}"
+    )
+
+
 def _read_runlog(path: str) -> list[dict]:
     records = []
     with open(path, "r", encoding="utf-8") as handle:
@@ -634,6 +713,23 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("command", nargs=argparse.REMAINDER)
     run.set_defaults(func=_cmd_run)
+
+    plan = sub.add_parser("plan", help="emit a sealed W11 plan")
+    plan.add_argument("goal")
+    plan.add_argument("--root", default=".")
+    plan.add_argument("--seed", default="w11")
+    plan.add_argument("--draft-adapter", choices=["codex", "claude", "opencode"])
+    plan.add_argument("--draft-out", default=None)
+    plan.add_argument("--tier", default="agentic", choices=["quick", "agentic", "frontier"])
+    plan.add_argument("--codex-binary", default="codex")
+    plan.add_argument("--claude-binary", default="claude")
+    plan.add_argument("--opencode-binary", default="opencode")
+    plan.add_argument("--max-tokens", type=int, default=10**9)
+    plan.add_argument("--max-usd", type=float, default=10**9)
+    plan.add_argument("--max-depth", type=int, default=3)
+    plan.add_argument("--predicted-tokens", type=int, default=0)
+    plan.add_argument("--predicted-usd", type=float, default=0.0)
+    plan.set_defaults(func=_cmd_plan)
 
     status = sub.add_parser("status", help="render evidence-pending status")
     status.add_argument("--evidence-dir", default=".")
