@@ -1,5 +1,5 @@
 {
-  "base_commit": "a4269df988889ce6e627bc8ec374b09fe5d82020",
+  "base_commit": "e76bfa8500327c8c3f060708edbebed26214bf9e",
   "boundary": {
     "executes_commands": false,
     "git_read_only": true,
@@ -14,8 +14,8 @@
   "dirty": false,
   "dirty_files": [],
   "evidence_dir": "lanes/codex-lane",
-  "head_commit": "a9df8cea22b8199eff9b3201f73b9027cb6f3bdb",
+  "head_commit": "d6e59469590da364737e4799f57c899799212b44",
   "kind": "depone-worktree-lane-receipt",
   "schema_version": "0.1",
-  "worktree": "/tmp/tmpme42hev5/out/worktrees/codex-lane"
+  "worktree": "/tmp/tmpi5_pb99n/out/worktrees/codex-lane"
 }

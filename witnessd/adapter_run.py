@@ -13,7 +13,7 @@ from witnessd.adapters.opencode import run_opencode_lane
 from witnessd.budget import BudgetExceededError, CostBreaker
 from witnessd.emitter import emit_lane_evidence
 from witnessd.eventlog import EventLog
-from witnessd.fixture import build_reference_adapter_fixture
+from witnessd.fixture import build_reference_adapter_fixture, build_shell_invocation
 from witnessd.observer import assert_separated
 from witnessd.preflight import PreflightError, probe_adapter_capability
 from witnessd.router import RouteExhaustedError, route_model
@@ -34,29 +34,16 @@ def _now_iso() -> str:
 
 
 def _fixture(adapter: str, task_id: str, route_decision: dict[str, Any]) -> dict[str, Any]:
-    invocation = {
-        "packet_version": "1.0",
-        "target_harness": adapter,
-        "profile": "w4-adapter-run",
-        "role": "runner",
-        "task_id": task_id,
-        "route": {
-            "tier": route_decision["tier"],
-            "model": route_decision["model"],
-            "degraded": route_decision["degraded"],
-        },
-        "toolbelt": {
-            "allowed_tools": [adapter],
-            "allowed_mcp": [],
-            "forbidden_tools": [],
-            "context_policy": "local-code-only",
-            "output_schema": "adapter-result-v1",
-            "evidence_obligations": ["command_receipt", "runner_receipt"],
-        },
-        "instructions": "Run the adapter lane and emit normalized evidence.",
-        "evidence_obligations": ["command_receipt", "runner_receipt"],
-        "context_policy": "local-code-only",
+    invocation = build_shell_invocation(task_id)
+    invocation["profile"] = "w4-adapter-run"
+    invocation["route"] = {
+        "tier": route_decision["tier"],
+        "model": route_decision["model"],
+        "degraded": route_decision["degraded"],
     }
+    invocation["toolbelt"]["allowed_tools"] = [adapter]
+    invocation["toolbelt"]["output_schema"] = "adapter-result-v1"
+    invocation["instructions"] = "Run the adapter lane and emit normalized evidence."
     return build_reference_adapter_fixture(invocation)
 
 
