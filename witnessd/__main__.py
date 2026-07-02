@@ -18,8 +18,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sys
 import time
+from pathlib import Path
 
 from witnessd.observer import ObserverSeparationError, assert_separated
 from witnessd.status import render_status
@@ -185,6 +187,69 @@ def _cmd_faultkit(args: argparse.Namespace) -> int:
     return 2
 
 
+def _cmd_team_run(args: argparse.Namespace) -> int:
+    from witnessd.fanin import run_team
+    from witnessd.signing import gen_operator_keypair
+
+    out_dir = os.path.abspath(args.out)
+    keys_dir = os.path.abspath(args.keys_dir or (out_dir.rstrip(os.sep) + "-keys"))
+    os.makedirs(keys_dir, exist_ok=True)
+    private_key_path, public_key_path = gen_operator_keypair(keys_dir)
+    lane_specs = [_parse_team_lane(text) for text in args.lane]
+    result = run_team(
+        lane_specs,
+        repo_root=args.repo,
+        out_dir=out_dir,
+        private_key_path=private_key_path,
+        public_key_path=public_key_path,
+    )
+    pending = len(result["ledger"]["lanes"])
+    print(
+        f"{pending} team lane(s) pending Depone verification "
+        f"({render_status(pending=pending, verdict=None)})"
+    )
+    print(f"team_ledger: {os.path.join(out_dir, 'team-ledger.json')}")
+    return 0
+
+
+def _cmd_team_ledger(args: argparse.Namespace) -> int:
+    from depone.agent_fabric.team_ledger import build_team_ledger_verdict
+
+    ledger_path = Path(args.ledger)
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    verdict = build_team_ledger_verdict(ledger, base_dir=ledger_path.parent)
+    if args.json:
+        print(json.dumps(verdict, sort_keys=True))
+    else:
+        print(verdict["decision"])
+    return 0
+
+
+def _parse_team_lane(text: str) -> dict:
+    lane_id, sep, region_text = text.partition(":")
+    lane_id = lane_id.strip()
+    region = [item.strip() for item in region_text.split(",") if item.strip()]
+    if not lane_id or sep != ":":
+        raise ValueError("ERR_TEAM_LANE_FORMAT")
+    return {
+        "lane_id": lane_id,
+        "region": region,
+        "commands": [_default_team_lane_command(lane_id, region)],
+    }
+
+
+def _default_team_lane_command(lane_id: str, region: list[str]) -> list[str]:
+    statements: list[str] = []
+    for path in region:
+        parent = os.path.dirname(path)
+        if parent:
+            statements.append(f"mkdir -p {shlex.quote(parent)}")
+        statements.append(
+            f"printf '%s\\n' {shlex.quote(lane_id)} > {shlex.quote(path)}"
+        )
+    return ["sh", "-c", " && ".join(statements) if statements else "true"]
+
+
 def _cmd_self_test(args: argparse.Namespace) -> int:
     from witnessd import (
         emitter,
@@ -267,6 +332,25 @@ def _build_parser() -> argparse.ArgumentParser:
     crash.add_argument("--runlog-after", required=True)
     crash.add_argument("--session", required=True)
     crash.set_defaults(func=_cmd_faultkit)
+
+    team = sub.add_parser("team", help="run a local team fan-in")
+    team_sub = team.add_subparsers(dest="team_cmd", required=True)
+    team_run = team_sub.add_parser("run", help="emit team fan-in evidence")
+    team_run.add_argument("--repo", required=True)
+    team_run.add_argument("--out", required=True)
+    team_run.add_argument("--keys-dir", default=None)
+    team_run.add_argument(
+        "--lane",
+        action="append",
+        required=True,
+        help="lane_id:file[,file...]",
+    )
+    team_run.set_defaults(func=_cmd_team_run)
+
+    team_ledger = sub.add_parser("team-ledger", help="verify a team ledger")
+    team_ledger.add_argument("--ledger", required=True)
+    team_ledger.add_argument("--json", action="store_true")
+    team_ledger.set_defaults(func=_cmd_team_ledger)
 
     self_test = sub.add_parser("self-test", help="run module self-tests")
     self_test.add_argument("--all", action="store_true")
