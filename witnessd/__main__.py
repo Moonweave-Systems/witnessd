@@ -469,16 +469,46 @@ def _cmd_team_ledger(args: argparse.Namespace) -> int:
 
 
 def _parse_team_lane(text: str) -> dict:
-    lane_id, sep, region_text = text.partition(":")
+    lane_id, sep, body = text.partition(":")
     lane_id = lane_id.strip()
-    region = [item.strip() for item in region_text.split(",") if item.strip()]
     if not lane_id or sep != ":":
         raise ValueError("ERR_TEAM_LANE_FORMAT")
-    return {
+
+    parts = body.split(":")
+    keyed = any(part.startswith("adapter=") for part in parts)
+    if not keyed:
+        region = [item.strip() for item in body.split(",") if item.strip()]
+        return {
+            "lane_id": lane_id,
+            "region": region,
+            "commands": [_default_team_lane_command(lane_id, region)],
+        }
+
+    fields: dict[str, str] = {}
+    for part in parts:
+        key, field_sep, value = part.partition("=")
+        if field_sep != "=" or not key.strip():
+            raise ValueError("ERR_TEAM_LANE_FORMAT")
+        fields[key.strip()] = value.strip()
+
+    from witnessd.adapters.base import RUNNER_KIND_BY_ADAPTER
+
+    adapter = fields.get("adapter", "")
+    valid_adapters = set(RUNNER_KIND_BY_ADAPTER) | {"shell"}
+    if adapter not in valid_adapters:
+        raise ValueError("ERR_TEAM_LANE_ADAPTER")
+    prompt = fields.get("prompt", "")
+    if not prompt:
+        raise ValueError("ERR_TEAM_LANE_PROMPT")
+
+    parsed = {
         "lane_id": lane_id,
-        "region": region,
-        "commands": [_default_team_lane_command(lane_id, region)],
+        "adapter": adapter,
+        "tier": fields.get("tier", "agentic"),
+        "region": [item.strip() for item in fields.get("region", "").split(",") if item.strip()],
+        "prompt": prompt,
     }
+    return parsed
 
 
 def _default_team_lane_command(lane_id: str, region: list[str]) -> list[str]:
