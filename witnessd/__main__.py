@@ -167,6 +167,20 @@ def _cmd_faultkit(args: argparse.Namespace) -> int:
         zombie_hang(args.runlog)
         print(f"faultkit zombie-hang: {args.runlog}")
         return 0
+    if args.fault == "crash-mid-toolcall":
+        from witnessd.faultkit import crash_mid_toolcall
+
+        state = crash_mid_toolcall(
+            runlog_before_path=args.runlog_before,
+            runlog_after_path=args.runlog_after,
+            session_path=args.session,
+        )
+        print(
+            "faultkit crash-mid-toolcall: "
+            f"{state['run_state']} cursor={state['tool_call_cursor']} "
+            f"reapplied={state['idempotency_reapplied']}"
+        )
+        return 0
     print(f"ERR_UNKNOWN_FAULT: {args.fault}", file=sys.stderr)
     return 2
 
@@ -248,6 +262,11 @@ def _build_parser() -> argparse.ArgumentParser:
     zombie = faultkit_sub.add_parser("zombie-hang")
     zombie.add_argument("--runlog", required=True)
     zombie.set_defaults(func=_cmd_faultkit)
+    crash = faultkit_sub.add_parser("crash-mid-toolcall")
+    crash.add_argument("--runlog-before", required=True)
+    crash.add_argument("--runlog-after", required=True)
+    crash.add_argument("--session", required=True)
+    crash.set_defaults(func=_cmd_faultkit)
 
     self_test = sub.add_parser("self-test", help="run module self-tests")
     self_test.add_argument("--all", action="store_true")

@@ -89,6 +89,31 @@ class TestCliW2(unittest.TestCase):
             self.assertEqual(generated.returncode, 0, generated.stderr)
             self.assertIn("zombie", status.stdout.lower())
 
+    def test_faultkit_crash_mid_toolcall_preserves_resume_cursor(self):
+        with tempfile.TemporaryDirectory() as d:
+            before = os.path.join(d, "runlog-before.jsonl")
+            after = os.path.join(d, "runlog-after.jsonl")
+            session = os.path.join(d, "session.json")
+
+            generated = self._run(
+                "faultkit",
+                "crash-mid-toolcall",
+                "--runlog-before",
+                before,
+                "--runlog-after",
+                after,
+                "--session",
+                session,
+            )
+
+            self.assertEqual(generated.returncode, 0, generated.stderr)
+            self.assertIn("evidence-pending", generated.stdout)
+            with open(session, "r", encoding="utf-8") as handle:
+                payload = __import__("json").load(handle)
+            self.assertEqual(payload["run_state"], "evidence-pending")
+            self.assertEqual(payload["idempotency_reapplied"], 0)
+            self.assertEqual(payload["tool_call_cursor"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
