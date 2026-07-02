@@ -27,6 +27,9 @@ ASSURANCE_A2 = "A2-isolated-observed"
 DECISION_CLAIMS_ONLY = "claims-only"
 DECISION_OBSERVED = "observed-local-capture"
 DECISION_ISOLATED = "isolated-observed"
+EVIDENCE_MODE_CONTEMPORANEOUS = "contemporaneous"
+EVIDENCE_MODE_POST_HOC = "post_hoc"
+DEFAULT_EPOCH_SECONDS = 300
 
 # sorted(REQUIRED_OBSERVER_FIELDS) from Depone capture_bridge — emitted verbatim
 # so the byte layout matches what Depone's own builder produces.
@@ -47,6 +50,10 @@ def build_capture_manifest(
     allowed_touched_files: list[str] | None = None,
     prev_capture_hash: str | None = None,
     isolation: dict[str, Any] | None = None,
+    evidence_mode: str = EVIDENCE_MODE_CONTEMPORANEOUS,
+    epoch_seconds: int = DEFAULT_EPOCH_SECONDS,
+    monotonic_counter: int = 1,
+    parent_attestation_id: str | None = None,
 ) -> dict[str, Any]:
     """Build a Depone-facing capture manifest from an adapter fixture.
 
@@ -56,18 +63,36 @@ def build_capture_manifest(
     privilege boundary; otherwise the manifest stays A1.
     """
 
+    if evidence_mode not in {EVIDENCE_MODE_CONTEMPORANEOUS, EVIDENCE_MODE_POST_HOC}:
+        raise ValueError("evidence_mode must be 'contemporaneous' or 'post_hoc'")
+    if not isinstance(epoch_seconds, int) or epoch_seconds <= 0:
+        raise ValueError("epoch_seconds must be a positive integer")
+    if not isinstance(monotonic_counter, int) or monotonic_counter <= 0:
+        raise ValueError("monotonic_counter must be a positive integer")
+    if parent_attestation_id is not None and not (
+        isinstance(parent_attestation_id, str)
+        and len(parent_attestation_id) == 64
+        and all(c in "0123456789abcdef" for c in parent_attestation_id)
+    ):
+        raise ValueError("parent_attestation_id must be a 64-char sha256 hex string")
+
     fixture_copy = deepcopy(fixture)
     fixture_hash = canonical_hash(fixture_copy)
     allowed = [item for item in (allowed_touched_files or []) if isinstance(item, str)]
     manifest: dict[str, Any] = {
         "schema_version": CAPTURE_MANIFEST_VERSION,
         "kind": CAPTURE_MANIFEST_KIND,
+        "evidence_mode": evidence_mode,
+        "epoch_seconds": epoch_seconds,
+        "monotonic_counter": monotonic_counter,
         "source_fixture_hash": fixture_hash,
         "fixture": fixture_copy,
         "allowed_touched_files": allowed,
         "prev_capture_hash": prev_capture_hash,
         "required_observer_fields": list(REQUIRED_OBSERVER_FIELDS),
     }
+    if parent_attestation_id is not None:
+        manifest["parent_attestation_id"] = parent_attestation_id
 
     if observer_capture is None:
         manifest.update(

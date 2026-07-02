@@ -95,6 +95,10 @@ def emit_lane_evidence(
     started_at: str | None = None,
     ended_at: str | None = None,
     diff_patch: str = "",
+    evidence_mode: str = "contemporaneous",
+    epoch_seconds: int = 300,
+    monotonic_counter: int = 1,
+    parent_attestation_id: str | None = None,
 ) -> dict[str, Any]:
     """Assemble and emit a lane's full evidence set through the runlog SoT.
 
@@ -122,6 +126,10 @@ def emit_lane_evidence(
         allowed_touched_files=allowed_touched_files,
         prev_capture_hash=prev_capture_hash,
         isolation=isolation,
+        evidence_mode=evidence_mode,
+        epoch_seconds=epoch_seconds,
+        monotonic_counter=monotonic_counter,
+        parent_attestation_id=parent_attestation_id,
     )
 
     exit_code = _lane_exit_code(lane_result)
@@ -142,6 +150,9 @@ def emit_lane_evidence(
                 "task_id": task_id,
                 "source_fixture_hash": source_fixture_hash,
                 "assurance": manifest["assurance"],
+                "evidence_mode": manifest["evidence_mode"],
+                "epoch_seconds": manifest["epoch_seconds"],
+                "monotonic_counter": manifest["monotonic_counter"],
             }
         )
     )
@@ -251,6 +262,10 @@ def emit_supervised_lane(
     started_at: str | None = None,
     ended_at: str | None = None,
     diff_patch: str = "",
+    evidence_mode: str = "contemporaneous",
+    epoch_seconds: int = 300,
+    monotonic_counter: int = 1,
+    parent_attestation_id: str | None = None,
 ) -> dict[str, Any]:
     """Emit supervised-lane evidence with per-spawn isolation facts.
 
@@ -278,6 +293,10 @@ def emit_supervised_lane(
         started_at=started_at,
         ended_at=ended_at,
         diff_patch=diff_patch,
+        evidence_mode=evidence_mode,
+        epoch_seconds=epoch_seconds,
+        monotonic_counter=monotonic_counter,
+        parent_attestation_id=parent_attestation_id,
     )
 
 

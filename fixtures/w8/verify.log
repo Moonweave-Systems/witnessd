@@ -1,0 +1,4 @@
+$ sh -c echo w8 > overt.txt
+exit=0
+$ sh -c true
+exit=0

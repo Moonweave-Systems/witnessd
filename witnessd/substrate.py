@@ -34,6 +34,9 @@ BUNDLE_SCHEMA_VERSION = "1.0"
 SIGNING_STATUS_UNSIGNED = "unsigned-content-addressed"
 SIGNING_STATUS_OPERATOR_KEY = "signed-ed25519-operator-key"
 EVIDENCE_CONTRACT_SCHEMA_VERSION = "v105.verify_wedge"
+EVIDENCE_MODE_CONTEMPORANEOUS = "contemporaneous"
+EVIDENCE_MODE_POST_HOC = "post_hoc"
+DEFAULT_EPOCH_SECONDS = 300
 
 # Assurance is a derived view over the capture manifest; the substrate is a
 # packaging/signing layer and must never claim more than A2.
@@ -158,6 +161,9 @@ def build_bundle(
     _ = public_key_path
     assurance = _cap_assurance(manifest.get("assurance"))
     signed = private_key_path is not None
+    evidence_mode = manifest.get("evidence_mode", EVIDENCE_MODE_CONTEMPORANEOUS)
+    epoch_seconds = manifest.get("epoch_seconds", DEFAULT_EPOCH_SECONDS)
+    monotonic_counter = manifest.get("monotonic_counter", 1)
     boundary = {
         "raises_assurance": False,
         "signed": signed,
@@ -174,8 +180,16 @@ def build_bundle(
         "predicate": {
             "schema_version": "1.0",
             "source_kind": manifest.get("kind"),
+            "evidence_mode": evidence_mode,
             "assurance": assurance,
             "decision": manifest.get("decision"),
+            "epoch_seconds": epoch_seconds,
+            "monotonic_counter": monotonic_counter,
+            **(
+                {"parent_attestation_id": manifest["parent_attestation_id"]}
+                if isinstance(manifest.get("parent_attestation_id"), str)
+                else {}
+            ),
             "prev_capture_hash": manifest.get("prev_capture_hash"),
             "boundary": boundary,
         },
@@ -195,10 +209,15 @@ def build_bundle(
         "otel_spans": otel_spans
         if otel_spans is not None
         else build_otel_spans(manifest),
+        "evidence_mode": evidence_mode,
+        "epoch_seconds": epoch_seconds,
+        "monotonic_counter": monotonic_counter,
         "assurance": assurance,
         "signing_status": SIGNING_STATUS_UNSIGNED,
         "boundary": boundary,
     }
+    if isinstance(manifest.get("parent_attestation_id"), str):
+        bundle["parent_attestation_id"] = manifest["parent_attestation_id"]
     if signed:
         bundle["dsse_envelope"] = sign_dsse(envelope, private_key_path, key_id=key_id)
         bundle["signing_status"] = SIGNING_STATUS_OPERATOR_KEY

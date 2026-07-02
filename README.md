@@ -18,6 +18,7 @@ about autonomy than tools that trust their own "VERIFIED" tags.
   fixtures via `scripts/revalidate_w1.py` through `scripts/revalidate_w5.py`.
 - **Deps:** Python stdlib + `openssl` CLI. No third-party runtime packages.
 - **Contract:** witnessd emits evidence per Depone's schemas; see [`CLAUDE.md`](CLAUDE.md).
+- **OVERT:** schema-level OVERT 1.1 alignment is documented in [`docs/conformance/OVERT.md`](docs/conformance/OVERT.md).
 
 Co-developed with Depone in the `moonweave/` workspace; run `make dogfood` /
 `make test` there for the cross-repo conformance loop.
