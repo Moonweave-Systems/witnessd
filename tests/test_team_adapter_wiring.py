@@ -160,3 +160,73 @@ class TestTeamAdapterFanin(unittest.TestCase):
         self.assertEqual(lanes["shell-lane"]["verification_state"], "pass")
         ledger = json.loads((result["base_dir"] / "team-ledger.json").read_text())
         self.assertEqual(len(ledger["lanes"]), 2)
+
+
+def _fake_codex(directory: str) -> str:
+    path = Path(directory) / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        "mkdir -p pkg\n"
+        "echo agent > pkg/agent.py\n"
+        "out=\"\"\n"
+        "while [ $# -gt 0 ]; do\n"
+        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
+        "  shift\n"
+        "done\n"
+        ": > \"$out\"\n"
+        "echo done >> \"$out\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | 0o111)
+    return str(path)
+
+
+@unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
+class TestTeamAdapterLedgerContract(unittest.TestCase):
+    def test_mixed_shell_and_codex_team_ledger_passes_depone_verdict(self):
+        from depone.agent_fabric.paired_run import validate_runner_receipt
+        from depone.agent_fabric.team_ledger import build_team_ledger_verdict
+
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as bindir:
+            root = Path(tmp)
+            repo = root / "repo"
+            out_dir = root / "evidence"
+            keys = root / "keys"
+            repo.mkdir()
+            keys.mkdir()
+            base_commit = _seed_repo(repo)
+            private_key_path, public_key_path = gen_operator_keypair(str(keys))
+            result = run_team(
+                [
+                    {
+                        "lane_id": "shell-lane",
+                        "region": ["pkg/shell.py"],
+                        "commands": [["sh", "-c", "mkdir -p pkg && echo shell > pkg/shell.py"]],
+                    },
+                    {
+                        "lane_id": "codex-lane",
+                        "adapter": "codex",
+                        "tier": "quick",
+                        "region": ["pkg/agent.py"],
+                        "prompt": "write agent",
+                        "codex_binary": _fake_codex(bindir),
+                    },
+                ],
+                repo_root=str(repo),
+                out_dir=str(out_dir),
+                private_key_path=private_key_path,
+                public_key_path=public_key_path,
+                base_commit=base_commit,
+            )
+
+            verdict = build_team_ledger_verdict(result["ledger"], base_dir=result["base_dir"])
+            self.assertEqual(verdict["decision"], "pass")
+            kinds = {lane["lane_id"]: lane["runner_adapter_kind"] for lane in result["ledger"]["lanes"]}
+            self.assertEqual(kinds, {"shell-lane": "shell", "codex-lane": "codex"})
+            receipt = json.loads(
+                (result["base_dir"] / "codex-lane" / "runner-receipt.json").read_text()
+            )
+            self.assertEqual(validate_runner_receipt(receipt), [])
+            self.assertEqual(receipt["runner_kind"], "codex-cli")
