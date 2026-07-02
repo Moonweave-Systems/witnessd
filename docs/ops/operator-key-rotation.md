@@ -71,4 +71,24 @@ The committed `fixtures/key-rotation/operator-key-archive.json` records
 `production_gate.status = "blocked"` and the required evidence entries as
 `missing` until that deployment evidence exists. The revalidation script rejects
 an `open` gate unless every required evidence entry is recorded with a stable
-repo-relative artifact path and matching SHA-256 hash.
+repo-relative artifact path and matching SHA-256 hash. Recorded evidence paths
+must be unique, and each artifact must have the expected JSON shape:
+
+- `deployment_record`: `kind =
+  "witnessd-external-team-pilot-deployment"`, `rollout_stage =
+  "external-team-pilot"`, deployment id/operator/team scope/timestamps,
+  witnessd git SHA, `deployed_runtime = true`, `local_dogfood = false`, and
+  `ci_only = false`.
+- `rotated_key_archive`: `kind =
+  "witnessd-operator-key-rotation-record"`, retired/current key ids,
+  `rotated_to` linking to the current runtime key id, and the current-key canary
+  bundle path.
+- `canary_bundle`: a signed Depone evidence bundle whose predicate
+  `source_kind` is `operator-key-rotation-canary` and whose single signature
+  key id matches the current witnessd runtime key id.
+- `depone_verification`: `kind = "depone-verification-transcript"`,
+  `verifier = "depone"`, `all_passed = true`, and passing
+  `production_bundle` plus `canary_bundle` results.
+- `operator_review`: `kind = "witnessd-operator-review"`, review timestamp,
+  `decision = "approve-keyless-gate"`, `local_dogfood = false`, and no committed
+  or exposed private keys.

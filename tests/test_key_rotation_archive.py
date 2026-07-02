@@ -1,5 +1,6 @@
 import copy
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -11,6 +12,14 @@ from scripts.revalidate_key_rotation import ARCHIVE, _load, validate_archive
 from witnessd.signing import DEFAULT_OPERATOR_KEY_ID
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_json(path: Path, body: dict[str, object]) -> None:
+    path.write_text(json.dumps(body, sort_keys=True), encoding="utf-8")
 
 
 class TestKeyRotationArchive(unittest.TestCase):
@@ -99,17 +108,133 @@ class TestKeyRotationArchive(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "artifact_sha256"):
             validate_archive(mutated)
 
-    def test_production_gate_can_open_with_hash_bound_required_evidence(self):
+    def test_production_gate_rejects_arbitrary_hash_bound_evidence_files(self):
         archive = _load(ARCHIVE)
         mutated = copy.deepcopy(archive)
-        artifact_path = "fixtures/key-rotation/operator-key-archive.json"
-        digest = hashlib.sha256((ROOT / artifact_path).read_bytes()).hexdigest()
+        artifact_path = "SPEC.md"
+        digest = _sha256(ROOT / artifact_path)
         mutated["production_gate"]["status"] = "open"
         for item in mutated["production_gate"]["required_evidence"]:
             item["status"] = "recorded"
             item["artifact_path"] = artifact_path
             item["artifact_sha256"] = digest
-        validate_archive(mutated)
+        with self.assertRaisesRegex(AssertionError, "wrong kind|duplicate artifact_path"):
+            validate_archive(mutated)
+
+    def test_production_gate_rejects_duplicate_recorded_artifact_paths(self):
+        archive = _load(ARCHIVE)
+        mutated = copy.deepcopy(archive)
+        with tempfile.TemporaryDirectory(dir=ROOT) as d:
+            artifact_path = Path(d).relative_to(ROOT) / "deployment.json"
+            _write_json(
+                ROOT / artifact_path,
+                {
+                    "kind": "witnessd-external-team-pilot-deployment",
+                    "schema_version": "1.0",
+                    "rollout_stage": "external-team-pilot",
+                    "deployment_id": "pilot-2026-07-02",
+                    "operator": "operator@example.invalid",
+                    "team_scope": "external-team:pilot",
+                    "started_at": "2026-07-02T05:00:00Z",
+                    "ended_at": "2026-07-02T05:30:00Z",
+                    "witnessd_git_sha": "79e84b5",
+                    "deployed_runtime": True,
+                    "local_dogfood": False,
+                    "ci_only": False,
+                },
+            )
+            digest = _sha256(ROOT / artifact_path)
+            mutated["production_gate"]["status"] = "open"
+            for item in mutated["production_gate"]["required_evidence"]:
+                item["status"] = "recorded"
+                item["artifact_path"] = str(artifact_path)
+                item["artifact_sha256"] = digest
+            with self.assertRaisesRegex(AssertionError, "duplicate artifact_path"):
+                validate_archive(mutated)
+
+    def test_production_gate_can_open_with_semantic_hash_bound_required_evidence(self):
+        archive = _load(ARCHIVE)
+        mutated = copy.deepcopy(archive)
+        with tempfile.TemporaryDirectory(dir=ROOT) as d:
+            base = Path(d)
+            rel_base = base.relative_to(ROOT)
+            artifacts = {
+                "deployment_record": rel_base / "deployment.json",
+                "rotated_key_archive": rel_base / "rotation.json",
+                "depone_verification": rel_base / "depone-verification.json",
+                "operator_review": rel_base / "operator-review.json",
+            }
+            _write_json(
+                ROOT / artifacts["deployment_record"],
+                {
+                    "kind": "witnessd-external-team-pilot-deployment",
+                    "schema_version": "1.0",
+                    "rollout_stage": "external-team-pilot",
+                    "deployment_id": "pilot-2026-07-02",
+                    "operator": "operator@example.invalid",
+                    "team_scope": "external-team:pilot",
+                    "started_at": "2026-07-02T05:00:00Z",
+                    "ended_at": "2026-07-02T05:30:00Z",
+                    "witnessd_git_sha": "79e84b5",
+                    "deployed_runtime": True,
+                    "local_dogfood": False,
+                    "ci_only": False,
+                },
+            )
+            _write_json(
+                ROOT / artifacts["rotated_key_archive"],
+                {
+                    "kind": "witnessd-operator-key-rotation-record",
+                    "schema_version": "1.0",
+                    "rollout_stage": "external-team-pilot",
+                    "retired_key_id": "witnessd-operator",
+                    "current_key_id": DEFAULT_OPERATOR_KEY_ID,
+                    "rotated_to": DEFAULT_OPERATOR_KEY_ID,
+                    "canary_bundle_path": "fixtures/key-rotation/operator-key-canary-bundle.json",
+                },
+            )
+            _write_json(
+                ROOT / artifacts["depone_verification"],
+                {
+                    "kind": "depone-verification-transcript",
+                    "schema_version": "1.0",
+                    "rollout_stage": "external-team-pilot",
+                    "deployment_id": "pilot-2026-07-02",
+                    "verifier": "depone",
+                    "all_passed": True,
+                    "results": [
+                        {"name": "production_bundle", "exit_code": 0},
+                        {"name": "canary_bundle", "exit_code": 0},
+                    ],
+                },
+            )
+            _write_json(
+                ROOT / artifacts["operator_review"],
+                {
+                    "kind": "witnessd-operator-review",
+                    "schema_version": "1.0",
+                    "rollout_stage": "external-team-pilot",
+                    "deployment_id": "pilot-2026-07-02",
+                    "reviewer": "operator@example.invalid",
+                    "reviewed_at": "2026-07-02T06:00:00Z",
+                    "decision": "approve-keyless-gate",
+                    "local_dogfood": False,
+                    "private_keys_committed": False,
+                    "private_keys_exposed": False,
+                },
+            )
+
+            mutated["production_gate"]["status"] = "open"
+            for item in mutated["production_gate"]["required_evidence"]:
+                item["status"] = "recorded"
+                if item["id"] == "canary_bundle":
+                    artifact_path = Path("fixtures/key-rotation/operator-key-canary-bundle.json")
+                else:
+                    artifact_path = artifacts[item["id"]]
+                item["artifact_path"] = str(artifact_path)
+                item["artifact_sha256"] = _sha256(ROOT / artifact_path)
+
+            validate_archive(mutated)
 
 
 if __name__ == "__main__":

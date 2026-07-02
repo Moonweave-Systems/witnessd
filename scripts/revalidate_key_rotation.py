@@ -93,6 +93,7 @@ def _validate_production_gate(gate: dict[str, Any]) -> None:
     if not isinstance(required_evidence, list):
         _fail("production gate required_evidence must be a list")
     evidence_ids = []
+    artifact_paths: set[Path] = set()
     for item in required_evidence:
         if not isinstance(item, dict):
             _fail("production gate required_evidence entries must be objects")
@@ -103,7 +104,11 @@ def _validate_production_gate(gate: dict[str, Any]) -> None:
         if status not in {"missing", "recorded"}:
             _fail("production gate evidence status must be missing or recorded")
         if status == "recorded":
-            _validate_gate_evidence_artifact(item)
+            artifact_path, body = _validate_gate_evidence_artifact(item)
+            if artifact_path in artifact_paths:
+                _fail("recorded deployment evidence duplicate artifact_path")
+            artifact_paths.add(artifact_path)
+            _validate_gate_evidence_semantics(evidence_id, body)
         evidence_ids.append(evidence_id)
     if tuple(evidence_ids) != REQUIRED_PRODUCTION_GATE_EVIDENCE:
         _fail("production gate required_evidence set mismatch")
@@ -113,7 +118,7 @@ def _validate_production_gate(gate: dict[str, Any]) -> None:
             _fail("production gate cannot open without all deployment evidence recorded")
 
 
-def _validate_gate_evidence_artifact(item: dict[str, Any]) -> None:
+def _validate_gate_evidence_artifact(item: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
     artifact_path = item.get("artifact_path")
     artifact_sha256 = item.get("artifact_sha256")
     if not isinstance(artifact_path, str) or not artifact_path:
@@ -132,6 +137,125 @@ def _validate_gate_evidence_artifact(item: dict[str, Any]) -> None:
     actual = hashlib.sha256(path.read_bytes()).hexdigest()
     if artifact_sha256 != actual:
         _fail("recorded deployment evidence artifact_sha256 mismatch")
+    try:
+        body = _load(path)
+    except (json.JSONDecodeError, OSError) as exc:
+        raise AssertionError("recorded deployment evidence wrong kind or invalid json") from exc
+    if not isinstance(body, dict):
+        _fail("recorded deployment evidence wrong kind")
+    return path, body
+
+
+def _validate_gate_evidence_semantics(evidence_id: str, body: dict[str, Any]) -> None:
+    if evidence_id == "deployment_record":
+        _validate_deployment_record(body)
+    elif evidence_id == "rotated_key_archive":
+        _validate_rotation_record(body)
+    elif evidence_id == "canary_bundle":
+        _validate_canary_bundle_record(body)
+    elif evidence_id == "depone_verification":
+        _validate_depone_verification_record(body)
+    elif evidence_id == "operator_review":
+        _validate_operator_review_record(body)
+    else:
+        _fail(f"unknown production gate evidence id: {evidence_id}")
+
+
+def _require_str(body: dict[str, Any], field: str) -> str:
+    value = body.get(field)
+    if not isinstance(value, str) or not value:
+        _fail(f"{field} must be a non-empty string")
+    return value
+
+
+def _require_bool(body: dict[str, Any], field: str, expected: bool) -> None:
+    if body.get(field) is not expected:
+        _fail(f"{field} must be {expected}")
+
+
+def _require_external_pilot(body: dict[str, Any], expected_kind: str) -> None:
+    if body.get("kind") != expected_kind:
+        _fail(f"{expected_kind} evidence wrong kind")
+    if body.get("schema_version") != "1.0":
+        _fail(f"{expected_kind} schema_version mismatch")
+    if body.get("rollout_stage") != "external-team-pilot":
+        _fail(f"{expected_kind} rollout_stage must be external-team-pilot")
+
+
+def _validate_deployment_record(body: dict[str, Any]) -> None:
+    _require_external_pilot(body, "witnessd-external-team-pilot-deployment")
+    _require_str(body, "deployment_id")
+    _require_str(body, "operator")
+    _require_str(body, "team_scope")
+    git_sha = _require_str(body, "witnessd_git_sha")
+    if not (7 <= len(git_sha) <= 40) or any(ch not in "0123456789abcdef" for ch in git_sha):
+        _fail("witnessd_git_sha must be a git hex sha")
+    started_at = _parse_utc(body.get("started_at"), "deployment started_at")
+    ended_at = _parse_utc(body.get("ended_at"), "deployment ended_at")
+    if ended_at < started_at:
+        _fail("deployment ended_at must not precede started_at")
+    _require_bool(body, "deployed_runtime", True)
+    _require_bool(body, "local_dogfood", False)
+    _require_bool(body, "ci_only", False)
+
+
+def _validate_rotation_record(body: dict[str, Any]) -> None:
+    _require_external_pilot(body, "witnessd-operator-key-rotation-record")
+    retired_key_id = _require_str(body, "retired_key_id")
+    current_key_id = _require_str(body, "current_key_id")
+    if retired_key_id == current_key_id:
+        _fail("rotation record retired_key_id must differ from current_key_id")
+    if current_key_id != DEFAULT_OPERATOR_KEY_ID:
+        _fail("rotation record current_key_id must match runtime default")
+    if body.get("rotated_to") != current_key_id:
+        _fail("rotation record rotated_to must link to current_key_id")
+    if body.get("canary_bundle_path") != "fixtures/key-rotation/operator-key-canary-bundle.json":
+        _fail("rotation record canary_bundle_path mismatch")
+
+
+def _validate_canary_bundle_record(body: dict[str, Any]) -> None:
+    if body.get("kind") != "depone-evidence-substrate-bundle":
+        _fail("canary_bundle evidence wrong kind")
+    if body.get("signing_status") != SIGNING_STATUS_OPERATOR_KEY:
+        _fail("canary_bundle signing_status mismatch")
+    signatures = body.get("dsse_envelope", {}).get("signatures")
+    if not isinstance(signatures, list) or len(signatures) != 1:
+        _fail("canary_bundle must contain exactly one signature")
+    if signatures[0].get("keyid") != DEFAULT_OPERATOR_KEY_ID:
+        _fail("canary_bundle signature keyid must match runtime default")
+    predicate = body.get("statement", {}).get("predicate", {})
+    if predicate.get("source_kind") != "operator-key-rotation-canary":
+        _fail("canary_bundle source_kind mismatch")
+
+
+def _validate_depone_verification_record(body: dict[str, Any]) -> None:
+    _require_external_pilot(body, "depone-verification-transcript")
+    _require_str(body, "deployment_id")
+    if body.get("verifier") != "depone":
+        _fail("depone_verification verifier must be depone")
+    _require_bool(body, "all_passed", True)
+    results = body.get("results")
+    if not isinstance(results, list) or not results:
+        _fail("depone_verification results must be a non-empty list")
+    passed = {
+        result.get("name")
+        for result in results
+        if isinstance(result, dict) and result.get("exit_code") == 0
+    }
+    if not {"production_bundle", "canary_bundle"}.issubset(passed):
+        _fail("depone_verification must pass production_bundle and canary_bundle")
+
+
+def _validate_operator_review_record(body: dict[str, Any]) -> None:
+    _require_external_pilot(body, "witnessd-operator-review")
+    _require_str(body, "deployment_id")
+    _require_str(body, "reviewer")
+    _parse_utc(body.get("reviewed_at"), "operator_review reviewed_at")
+    if body.get("decision") != "approve-keyless-gate":
+        _fail("operator_review decision must approve-keyless-gate")
+    _require_bool(body, "local_dogfood", False)
+    _require_bool(body, "private_keys_committed", False)
+    _require_bool(body, "private_keys_exposed", False)
 
 
 def _validate_key_record(
