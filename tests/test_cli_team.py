@@ -22,6 +22,27 @@ def _seed_repo(repo: Path) -> None:
     subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
 
 
+def _fake_codex(directory: Path) -> str:
+    path = directory / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        "mkdir -p pkg\n"
+        "echo adapter > pkg/adapter.py\n"
+        "out=\"\"\n"
+        "while [ $# -gt 0 ]; do\n"
+        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
+        "  shift\n"
+        "done\n"
+        ": > \"$out\"\n"
+        "echo done >> \"$out\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | 0o111)
+    return str(path)
+
+
 @unittest.skipUnless(_HAS_OPENSSL, "openssl required to sign emitted evidence")
 class TestTeamCli(unittest.TestCase):
     def test_team_run_emits_ledger_and_pending_status(self):
@@ -56,6 +77,47 @@ class TestTeamCli(unittest.TestCase):
             self.assertTrue((out_dir / "team-ledger.json").exists())
             self.assertTrue((out_dir / "lane-a" / "capture-manifest.json").exists())
             self.assertTrue((out_dir / "lane-b" / "worktree-lane-receipt.json").exists())
+
+
+    def test_team_run_accepts_adapter_lane_syntax(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            out_dir = root / "evidence"
+            bindir = root / "bin"
+            repo.mkdir()
+            bindir.mkdir()
+            _seed_repo(repo)
+            _fake_codex(bindir)
+            old_path = os.environ.get("PATH", "")
+            stdout = io.StringIO()
+
+            try:
+                os.environ["PATH"] = f"{bindir}{os.pathsep}{old_path}"
+                with redirect_stdout(stdout):
+                    code = main(
+                        [
+                            "team",
+                            "run",
+                            "--repo",
+                            str(repo),
+                            "--out",
+                            str(out_dir),
+                            "--lane",
+                            "shell-lane:pkg/shell.py",
+                            "--lane",
+                            "adapter-lane:adapter=codex:tier=quick:region=pkg/adapter.py:prompt=write adapter",
+                        ]
+                    )
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(code, 0)
+            self.assertIn("evidence-pending", stdout.getvalue())
+            ledger = json.loads((out_dir / "team-ledger.json").read_text())
+            kinds = {lane["lane_id"]: lane["runner_adapter_kind"] for lane in ledger["lanes"]}
+            self.assertEqual(kinds, {"shell-lane": "shell", "adapter-lane": "codex"})
+            self.assertTrue((out_dir / "adapter-lane" / "runner-receipt.json").exists())
 
     def test_team_ledger_json_reports_pending_depone_verification(self):
         with tempfile.TemporaryDirectory() as tmp:

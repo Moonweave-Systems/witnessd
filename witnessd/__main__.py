@@ -697,7 +697,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--lane",
         action="append",
         required=True,
-        help="lane_id:file[,file...]",
+        help="lane_id:file[,file...] or lane_id:adapter=codex:tier=quick:region=file[,file...]:prompt=...",
     )
     team_run.set_defaults(func=_cmd_team_run)
 
