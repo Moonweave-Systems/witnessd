@@ -16,8 +16,10 @@ Depone verification returns a verdict.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
+import time
 
 from witnessd.observer import ObserverSeparationError, assert_separated
 from witnessd.status import render_status
@@ -99,6 +101,11 @@ def _count_pending(evidence_dir: str) -> int:
 
 
 def _cmd_status(args: argparse.Namespace) -> int:
+    if args.runlog:
+        states = _derive_runlog_liveness(args.runlog)
+        for lane_id in sorted(states):
+            print(f"lane {lane_id}: {states[lane_id]}")
+        return 0
     evidence_dir = os.path.abspath(args.evidence_dir)
     pending = _count_pending(evidence_dir)
     print(
@@ -108,13 +115,85 @@ def _cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_runlog(path: str) -> list[dict]:
+    records = []
+    with open(path, "r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                records.append(json.loads(line))
+    return records
+
+
+def _derive_runlog_liveness(path: str) -> dict[str, str]:
+    from witnessd.liveness import derive_liveness
+
+    records = _read_runlog(path)
+    return derive_liveness(records, now_monotonic=time.monotonic())
+
+
+def _cmd_verify(args: argparse.Namespace) -> int:
+    from witnessd.runlog import verify_runlog
+
+    result = verify_runlog(_read_runlog(args.runlog))
+    if result["ok"]:
+        print("runlog: ok")
+        return 0
+    print(f"runlog: broken_at={result['broken_at']}", file=sys.stderr)
+    return 1
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    states = _derive_runlog_liveness(args.runlog)
+    bad = {lane_id: state for lane_id, state in states.items() if state != "active"}
+    for lane_id in sorted(states):
+        print(f"lane {lane_id}: {states[lane_id]}")
+    return 1 if bad else 0
+
+
+def _cmd_isolation(args: argparse.Namespace) -> int:
+    if args.self_test:
+        from witnessd.isolation import isolation_self_test
+
+        isolation_self_test()
+        return 0
+    print("ERR_ISOLATION_COMMAND_REQUIRED", file=sys.stderr)
+    return 2
+
+
+def _cmd_faultkit(args: argparse.Namespace) -> int:
+    if args.fault == "zombie-hang":
+        from witnessd.faultkit import zombie_hang
+
+        zombie_hang(args.runlog)
+        print(f"faultkit zombie-hang: {args.runlog}")
+        return 0
+    print(f"ERR_UNKNOWN_FAULT: {args.fault}", file=sys.stderr)
+    return 2
+
+
 def _cmd_self_test(args: argparse.Namespace) -> int:
-    from witnessd import emitter, signing, substrate
+    from witnessd import (
+        emitter,
+        faultkit,
+        isolation,
+        liveness,
+        scheduler,
+        session,
+        signing,
+        substrate,
+        supervisor,
+    )
 
     checks = [
         ("signing", signing._self_test),
         ("substrate", substrate._self_test),
         ("emitter", emitter._self_test),
+        ("liveness", liveness._self_test),
+        ("supervisor", supervisor._self_test),
+        ("scheduler", scheduler._self_test),
+        ("session", session._self_test),
+        ("isolation", isolation._self_test),
+        ("faultkit", faultkit._self_test),
     ]
     passed = 0
     for name, check in checks:
@@ -149,7 +228,26 @@ def _build_parser() -> argparse.ArgumentParser:
 
     status = sub.add_parser("status", help="render evidence-pending status")
     status.add_argument("--evidence-dir", default=".")
+    status.add_argument("--runlog", default=None)
     status.set_defaults(func=_cmd_status)
+
+    verify = sub.add_parser("verify", help="verify runlog integrity")
+    verify.add_argument("--runlog", required=True)
+    verify.set_defaults(func=_cmd_verify)
+
+    doctor = sub.add_parser("doctor", help="report runlog-derived lane health")
+    doctor.add_argument("--runlog", required=True)
+    doctor.set_defaults(func=_cmd_doctor)
+
+    isolation = sub.add_parser("isolation", help="isolation contract checks")
+    isolation.add_argument("--self-test", action="store_true")
+    isolation.set_defaults(func=_cmd_isolation)
+
+    faultkit = sub.add_parser("faultkit", help="deterministic fault injection")
+    faultkit_sub = faultkit.add_subparsers(dest="fault", required=True)
+    zombie = faultkit_sub.add_parser("zombie-hang")
+    zombie.add_argument("--runlog", required=True)
+    zombie.set_defaults(func=_cmd_faultkit)
 
     self_test = sub.add_parser("self-test", help="run module self-tests")
     self_test.add_argument("--all", action="store_true")
