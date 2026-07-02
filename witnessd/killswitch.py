@@ -38,19 +38,29 @@ def _target_from_handle(handle) -> KillTarget:
 
 
 def active_targets_from_runlog(records: list[dict[str, Any]]) -> list[KillTarget]:
-    active: dict[str, dict[str, Any]] = {}
+    active: dict[tuple[str, str, int, str], dict[str, Any]] = {}
     for record in records:
         payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+        run_id = record.get("run_id")
         lane_id = payload.get("lane_id")
-        if not isinstance(lane_id, str) or not lane_id:
+        if not isinstance(run_id, str) or not isinstance(lane_id, str) or not lane_id:
             continue
+        pid = payload.get("pid")
+        start_time = payload.get("pid_start_time")
         if record.get("event") == "spawn":
-            active[lane_id] = payload
+            if isinstance(pid, int) and isinstance(start_time, str):
+                active[(run_id, lane_id, pid, start_time)] = payload
         elif record.get("event") == "exit":
-            active.pop(lane_id, None)
+            for key in list(active):
+                key_run_id, key_lane_id, key_pid, _key_start_time = key
+                if key_run_id != run_id or key_lane_id != lane_id:
+                    continue
+                if isinstance(pid, int) and key_pid != pid:
+                    continue
+                active.pop(key, None)
 
     targets: list[KillTarget] = []
-    for lane_id, payload in active.items():
+    for (_run_id, lane_id, _pid, _start_time), payload in active.items():
         pid = payload.get("pid")
         start_time = payload.get("pid_start_time")
         if not isinstance(pid, int) or not isinstance(start_time, str):

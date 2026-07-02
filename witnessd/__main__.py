@@ -312,15 +312,21 @@ def _cmd_kill(args: argparse.Namespace) -> int:
         return 2
     from witnessd.eventlog import EventLog
     from witnessd.killswitch import active_targets_from_runlog, kill_all
+    from witnessd.runlog import verify_runlog
     from witnessd.supervisor import WorkerSupervisor
 
     log = EventLog(args.runlog)
+    records = log.read()
+    verification = verify_runlog(records)
+    if not verification["ok"]:
+        print(f"runlog: broken_at={verification['broken_at']}", file=sys.stderr)
+        return 1
     supervisor = WorkerSupervisor(log, run_id=args.run_id)
     result = kill_all(
         supervisor,
         log,
         args.run_id,
-        targets=active_targets_from_runlog(log.read()),
+        targets=active_targets_from_runlog(records),
     )
     print(json.dumps(result, sort_keys=True))
     return 0 if result["all_confirmed_dead"] else 1

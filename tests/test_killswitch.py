@@ -60,6 +60,40 @@ class TestKillSwitch(unittest.TestCase):
                 handle.popen.terminate()
                 handle.popen.wait(timeout=1)
 
+    def test_active_targets_from_runlog_is_scoped_by_run_id_and_pid_identity(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = EventLog(os.path.join(d, "runlog.jsonl"))
+            supervisor = WorkerSupervisor(log, run_id="R1")
+            handle = supervisor.spawn(
+                lane_id="L1",
+                argv=["sh", "-c", "sleep 60"],
+                runner_uid=os.getuid(),
+            )
+            try:
+                log.append(
+                    {
+                        "schema_version": "1.0",
+                        "kind": "witnessd-runlog-event",
+                        "run_id": "R2",
+                        "event": "exit",
+                        "error_code": None,
+                        "ts_wall": "2026-01-01T00:00:00Z",
+                        "ts_monotonic": 0.0,
+                        "payload": {
+                            "lane_id": "L1",
+                            "pid": handle.pid,
+                            "pid_start_time": "other-run",
+                        },
+                    }
+                )
+
+                targets = active_targets_from_runlog(log.read())
+
+                self.assertEqual([target.pid for target in targets], [handle.pid])
+            finally:
+                handle.popen.terminate()
+                handle.popen.wait(timeout=1)
+
 
 if __name__ == "__main__":
     unittest.main()

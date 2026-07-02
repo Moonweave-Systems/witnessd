@@ -184,6 +184,36 @@ class TestCliW5(unittest.TestCase):
             self.assertTrue(result["all_confirmed_dead"])
             self.assertEqual(handle.popen.wait(timeout=1), -15)
 
+    def test_kill_all_refuses_broken_runlog_before_targeting_pid(self):
+        from witnessd.eventlog import EventLog
+        from witnessd.supervisor import WorkerSupervisor
+
+        with tempfile.TemporaryDirectory() as d:
+            runlog = os.path.join(d, "runlog.jsonl")
+            log = EventLog(runlog)
+            supervisor = WorkerSupervisor(log, run_id="R1")
+            handle = supervisor.spawn(
+                lane_id="L1",
+                argv=["sh", "-c", "sleep 60"],
+                runner_uid=os.getuid(),
+            )
+            try:
+                lines = Path(runlog).read_text(encoding="utf-8").splitlines()
+                record = json.loads(lines[0])
+                record["event_hash"] = "0" * 64
+                Path(runlog).write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+                err = io.StringIO()
+                with redirect_stderr(err):
+                    code = main(["kill", "--all", "--runlog", runlog, "--run-id", "R1"])
+
+                self.assertNotEqual(code, 0)
+                self.assertIn("runlog: broken_at=0", err.getvalue())
+                self.assertIsNone(handle.popen.poll())
+            finally:
+                handle.popen.terminate()
+                handle.popen.wait(timeout=1)
+
 
 if __name__ == "__main__":
     unittest.main()
