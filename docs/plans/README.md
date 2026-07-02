@@ -34,7 +34,8 @@
 
 W1-W5 구현 및 committed fixture revalidation 완료. 2026-07-02에 런타임 depone 의존 제거
 (`ad5b9d5`, 이제 runtime은 진짜 stdlib+openssl only — depone 없는 환경에서 실행·방출 가능,
-parity 가드 `tests/test_depone_replica_conformance.py`). production keyless gate는 blocked 유지.
+parity 가드 `tests/test_depone_replica_conformance.py`). W7 team adapter wiring은 `fixtures/w7/` +
+`scripts/revalidate_w7.py`로 어댑터 레인 팀 fan-in 재도출을 고정했다. production keyless gate는 blocked 유지.
 
 ## 후속 로드맵 (2026-07-02 계획 확정 — 실행 순서 고정)
 
