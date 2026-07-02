@@ -113,7 +113,9 @@ def _git_diff_patch(worktree: str, touched_files: list[str]) -> str:
         return ""
 
     patch_parts: list[str] = []
-    tracked = run_git(["diff", "--no-ext-diff", "--", *touched_files])
+    tracked = run_git(["diff", "--no-ext-diff", "HEAD", "--", *touched_files])
+    if tracked.returncode != 0:
+        tracked = run_git(["diff", "--no-ext-diff", "--", *touched_files])
     if tracked.returncode == 0 and tracked.stdout:
         patch_parts.append(tracked.stdout)
 

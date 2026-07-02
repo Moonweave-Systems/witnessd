@@ -56,6 +56,27 @@ def _fake_codex_writes_env_and_code(directory: str) -> str:
     return str(path)
 
 
+def _fake_codex_stages_tracked_change(directory: str) -> str:
+    path = pathlib.Path(directory) / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        "printf 'updated\\n' > tracked.txt\n"
+        "git add tracked.txt\n"
+        "out=\"\"\n"
+        "while [ $# -gt 0 ]; do\n"
+        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
+        "  shift\n"
+        "done\n"
+        ": > \"$out\"\n"
+        "echo staged tracked change >> \"$out\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
 @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
 class TestAdapterRun(unittest.TestCase):
     def test_happy_path_emits_valid_receipt(self):
@@ -139,6 +160,37 @@ class TestAdapterRun(unittest.TestCase):
             )
             self.assertIn("+def generated():", patch)
             self.assertIn("pkg/agent.py", patch)
+
+    def test_adapter_evidence_includes_staged_tracked_diff_patch(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "evidence")
+            subprocess.run(["git", "init", "-q", sandbox], check=True)
+            pathlib.Path(sandbox, "tracked.txt").write_text("original\n", encoding="utf-8")
+            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=sandbox, check=True)
+            subprocess.run(["git", "config", "user.name", "test"], cwd=sandbox, check=True)
+            subprocess.run(["git", "add", "tracked.txt"], cwd=sandbox, check=True)
+            subprocess.run(["git", "commit", "-qm", "seed"], cwd=sandbox, check=True)
+
+            run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="t",
+                prompt="do X",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=_fake_codex_stages_tracked_change(bindir),
+                evidence_dir=evidence_dir,
+            )
+
+            patch = pathlib.Path(evidence_dir, "git-diff.patch").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("diff --git a/tracked.txt b/tracked.txt", patch)
+            self.assertIn("+updated", patch)
 
     def test_route_exhausted_ends_blocked_not_silent(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
