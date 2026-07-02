@@ -9,6 +9,7 @@ from typing import Any
 from witnessd.runlog import append_runlog
 
 ERR_WITNESSD_KILL_UNCONFIRMED = "ERR_WITNESSD_KILL_UNCONFIRMED"
+ERR_WITNESSD_KILL_NO_TARGETS = "ERR_WITNESSD_KILL_NO_TARGETS"
 _TERM_GRACE_SECONDS = 2.0
 
 
@@ -33,8 +34,23 @@ def _terminate(handle, grace: float) -> tuple[bool, int | None]:
 
 def kill_all(supervisor, log, run_id: str, grace: float = _TERM_GRACE_SECONDS) -> dict[str, Any]:
     outcomes: list[dict[str, Any]] = []
+    handles = list(supervisor.handles())
+    if not handles:
+        append_runlog(
+            log,
+            run_id,
+            "kill",
+            error_code=ERR_WITNESSD_KILL_NO_TARGETS,
+            payload={"outcomes": outcomes, "all_confirmed_dead": False},
+        )
+        return {
+            "killed": False,
+            "all_confirmed_dead": False,
+            "outcomes": outcomes,
+            "error_code": ERR_WITNESSD_KILL_NO_TARGETS,
+        }
     all_dead = True
-    for handle in list(supervisor.handles()):
+    for handle in handles:
         confirmed, code = _terminate(handle, grace)
         outcomes.append(
             {
@@ -64,7 +80,10 @@ def kill_all(supervisor, log, run_id: str, grace: float = _TERM_GRACE_SECONDS) -
         error_code=None if all_dead else ERR_WITNESSD_KILL_UNCONFIRMED,
         payload={"outcomes": outcomes, "all_confirmed_dead": all_dead},
     )
-    return {"killed": True, "all_confirmed_dead": all_dead, "outcomes": outcomes}
+    result = {"killed": True, "all_confirmed_dead": all_dead, "outcomes": outcomes}
+    if not all_dead:
+        result["error_code"] = ERR_WITNESSD_KILL_UNCONFIRMED
+    return result
 
 
 def _self_test() -> None:

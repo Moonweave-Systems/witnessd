@@ -28,7 +28,7 @@
 
 ## 열린 결정 (실행 중 정지 안 함 — SPEC §8.2)
 
-전부 W1–W5 **구현 경로 밖**이거나 기본값 있음. **key 회전 정책(§8.2-3)은 `docs/ops/operator-key-rotation.md` + `scripts/revalidate_key_rotation.py`로 프로덕션 전 hard gate가 됐다.** Codex 상태격리 메커니즘(§8.2-4)은 W4에서 별도 상태 디렉터리+lock으로 확정 적용했다.
+전부 W1–W5 **구현 경로 밖**이거나 기본값 있음. **key 회전 정책(§8.2-3)은 `docs/ops/operator-key-rotation.md` + `scripts/revalidate_key_rotation.py`로 로컬 canary/archive 재검증을 갖췄지만, production deployment 증거가 없으므로 keyless gate는 blocked 상태다.** Codex 상태격리 메커니즘(§8.2-4)은 W4에서 별도 상태 디렉터리+lock으로 확정 적용했다.
 
 ## 현재 상태
 

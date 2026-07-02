@@ -1,0 +1,54 @@
+{
+  "assurance": "A1-local-observed",
+  "boundary": {
+    "approves_public_claim": false,
+    "raises_assurance": false,
+    "signed": true
+  },
+  "dsse_envelope": {
+    "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsiYXNzdXJhbmNlIjoiQTEtbG9jYWwtb2JzZXJ2ZWQiLCJib3VuZGFyeSI6eyJhcHByb3Zlc19wdWJsaWNfY2xhaW0iOmZhbHNlLCJyYWlzZXNfYXNzdXJhbmNlIjpmYWxzZSwic2lnbmVkIjp0cnVlfSwiZGVjaXNpb24iOiJvcGVyYXRvci1rZXktcm90YXRpb24tY2FuYXJ5IiwicHJldl9jYXB0dXJlX2hhc2giOm51bGwsInNjaGVtYV92ZXJzaW9uIjoiMS4wIiwic291cmNlX2tpbmQiOiJvcGVyYXRvci1rZXktcm90YXRpb24tY2FuYXJ5In0sInByZWRpY2F0ZVR5cGUiOiJodHRwczovL2RlcG9uZS5kZXYvYXR0ZXN0YXRpb25zL2V2aWRlbmNlL3YxIiwic3ViamVjdCI6W3siZGlnZXN0Ijp7InNoYTI1NiI6Ijk4MTlhZmM5NWYyZWNlZWRkZDgyMTRkNmJiYjIxZmIyMGYzNzQ5ZmIzOTRlYjYzNzNhYjMzNTY5ZWJjNTQ4ZGMifSwibmFtZSI6Im9wZXJhdG9yLWtleS1jYW5hcnkifV19",
+    "payloadType": "application/vnd.in-toto+json",
+    "signatures": [
+      {
+        "keyid": "witnessd-operator-2026q3",
+        "sig": "Ln0x5x8CmttjnNxN8Fm1ug4aiI4Wui63ImRQMwerIrEaos73a3lZSkR8StKZJoroW1ECejMo5cZf1JqdEDYEAw=="
+      }
+    ]
+  },
+  "kind": "depone-evidence-substrate-bundle",
+  "otel_spans": [],
+  "schema_version": "1.0",
+  "signature_boundary": {
+    "keyless_identity": false,
+    "note": "Trust is rooted in the operator-held key and distributed public key; this is not Fulcio keyless identity or Rekor logging.",
+    "operator_key": true,
+    "public_verifiable": true,
+    "scheme": "DSSE-Ed25519-openssl-cli",
+    "transparency_logged": false
+  },
+  "signing_status": "signed-ed25519-operator-key",
+  "statement": {
+    "_type": "https://in-toto.io/Statement/v1",
+    "predicate": {
+      "assurance": "A1-local-observed",
+      "boundary": {
+        "approves_public_claim": false,
+        "raises_assurance": false,
+        "signed": true
+      },
+      "decision": "operator-key-rotation-canary",
+      "prev_capture_hash": null,
+      "schema_version": "1.0",
+      "source_kind": "operator-key-rotation-canary"
+    },
+    "predicateType": "https://depone.dev/attestations/evidence/v1",
+    "subject": [
+      {
+        "digest": {
+          "sha256": "9819afc95f2eceeddd8214d6bbb21fb20f3749fb394eb6373ab33569ebc548dc"
+        },
+        "name": "operator-key-canary"
+      }
+    ]
+  }
+}

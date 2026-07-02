@@ -21,6 +21,7 @@ from typing import Any
 
 ERR_OPENSSL_UNAVAILABLE = "ERR_OPENSSL_UNAVAILABLE"
 ERR_DSSE_SIGN_FAILED = "ERR_DSSE_SIGN_FAILED"
+DEFAULT_OPERATOR_KEY_ID = "witnessd-operator-2026q3"
 
 
 class DsseSigningError(Exception):

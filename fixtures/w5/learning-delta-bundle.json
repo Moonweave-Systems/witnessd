@@ -6,12 +6,12 @@
     "signed": true
   },
   "dsse_envelope": {
-    "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsiYXNzdXJhbmNlIjoiQTEtbG9jYWwtb2JzZXJ2ZWQiLCJib3VuZGFyeSI6eyJhcHByb3Zlc19wdWJsaWNfY2xhaW0iOmZhbHNlLCJyYWlzZXNfYXNzdXJhbmNlIjpmYWxzZSwic2lnbmVkIjp0cnVlfSwiZGVjaXNpb24iOiJsZWFybmluZy1kZWx0YS1wcm9tb3RlZCIsInByZXZfY2FwdHVyZV9oYXNoIjoiODY4YWYxNTkwODI5ZTcyOTNmOTM3ZGE0M2JjNzYwMWJlYjc4N2ZjMTZkY2RhNzY0MDhlMTZhM2MwZmQxYjgzMyIsInNjaGVtYV92ZXJzaW9uIjoiMS4wIiwic291cmNlX2tpbmQiOiJ3aXRuZXNzZC1sZWFybmluZy1kZWx0YSJ9LCJwcmVkaWNhdGVUeXBlIjoiaHR0cHM6Ly9kZXBvbmUuZGV2L2F0dGVzdGF0aW9ucy9ldmlkZW5jZS92MSIsInN1YmplY3QiOlt7ImRpZ2VzdCI6eyJzaGEyNTYiOiJmMzg1ZGM3N2FiZWZmMTkzZWExOWNlNDcxMzY4ZDI5NGU2YTZkMTZjY2ExNWYxN2M2MTc4ODgwZmI3OWYwZmVjIn0sIm5hbWUiOiJsZWFybmluZy1kZWx0YSJ9XX0=",
+    "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsiYXNzdXJhbmNlIjoiQTEtbG9jYWwtb2JzZXJ2ZWQiLCJib3VuZGFyeSI6eyJhcHByb3Zlc19wdWJsaWNfY2xhaW0iOmZhbHNlLCJyYWlzZXNfYXNzdXJhbmNlIjpmYWxzZSwic2lnbmVkIjp0cnVlfSwiZGVjaXNpb24iOiJsZWFybmluZy1kZWx0YS1wcm9tb3RlZCIsInByZXZfY2FwdHVyZV9oYXNoIjoiODY4YWYxNTkwODI5ZTcyOTNmOTM3ZGE0M2JjNzYwMWJlYjc4N2ZjMTZkY2RhNzY0MDhlMTZhM2MwZmQxYjgzMyIsInNjaGVtYV92ZXJzaW9uIjoiMS4wIiwic291cmNlX2tpbmQiOiJ3aXRuZXNzZC1sZWFybmluZy1kZWx0YSJ9LCJwcmVkaWNhdGVUeXBlIjoiaHR0cHM6Ly9kZXBvbmUuZGV2L2F0dGVzdGF0aW9ucy9ldmlkZW5jZS92MSIsInN1YmplY3QiOlt7ImRpZ2VzdCI6eyJzaGEyNTYiOiJmNmU0YWE3Y2NmNmU5M2MwMDM5YTBhYWQ5ZTkyYWJjYjU2MDI2NGE2MTJjN2FiNzg5YTllYmY4MTczNzFhMmNkIn0sIm5hbWUiOiJsZWFybmluZy1kZWx0YSJ9XX0=",
     "payloadType": "application/vnd.in-toto+json",
     "signatures": [
       {
         "keyid": "witnessd-learning-operator",
-        "sig": "pUNas7eHHWZWOWQcmmPBpoiqsYOqahs7uDJS+5X1SEtN6KznRaH2SZ9JZVPl8peYjuJuKsYq9rkKDhv4+RW7CQ=="
+        "sig": "zjujmqNbiDd2bNbm0Y+t+ixs+pJuIbmeRIVHVlOAB5/WPKj3cUTMpQ7G2izYimqKJPUpNJ4UegwPQxaopYP/Bg=="
       }
     ]
   },
@@ -45,7 +45,7 @@
     "subject": [
       {
         "digest": {
-          "sha256": "f385dc77abeff193ea19ce471368d294e6a6d16cca15f17c6178880fb79f0fec"
+          "sha256": "f6e4aa7ccf6e93c0039a0aad9e92abcb560264a612c7ab789a9ebf817371a2cd"
         },
         "name": "learning-delta"
       }

@@ -1,0 +1,8 @@
+{
+  "generated_at": "2026-07-02T04:45:00Z",
+  "key_id": "witnessd-operator-2026q3",
+  "kind": "operator-key-rotation-canary",
+  "note": "Local canary for archive revalidation; production deployment gate remains blocked.",
+  "runbook": "docs/ops/operator-key-rotation.md",
+  "schema_version": "1.0"
+}

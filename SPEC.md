@@ -1382,7 +1382,7 @@ depone repo CI (witnessd 연동 PR에 한함):
 
 1. **모노레포 vs 2-repo 최종안**: 현재는 2-repo(§8.1)로 확정했으나, 두 repo 간 계약(스키마 버전, canonical hashing 규약)을 유지보수하는 비용이 커지면(예: 스키마 변경이 매번 두 repo에서 조율돼야 하는 빈도가 릴리스당 2회를 넘으면) 계약을 별도 "contract" 패키지(pip/npm)로 추출해 두 repo가 그 패키지에만 의존하는 3-repo 구조를 재검토한다. 이는 모노레포로 되돌아가는 것이 아니라 계약을 더 명시적으로 물리 분리하는 방향이다.
 2. **A2 uid vs docker 1급 전환**: uid 모델을 1급으로 확정했으나, 멀티테넌트 SaaS 배포(다수 팀이 같은 호스트를 공유)가 로드맵에 오르면 docker 모델(또는 gVisor/Firecracker 등 강한 격리)을 1급으로 승격할지 재검토한다. 트리거: 단일 호스트에서 동시에 3개 이상의 독립 팀이 witnessd를 실행하는 배포 시나리오가 확정되는 시점.
-3. **key 회전 정책**: operator Ed25519 key는 90일 주기 또는 compromise 의심 즉시 회전한다. 과거 evidence는 retired public key archive로 계속 재검증 가능하게 유지하고, compromised key는 compromise 시점 이후 evidence를 신뢰 목록에서 제외한다. 첫 프로덕션 팀 배포 전 hard gate는 `docs/ops/operator-key-rotation.md`를 실제로 실행하고 `scripts/revalidate_key_rotation.py`가 archive/canary evidence를 통과하는 것이다. keyless(Fulcio/Rekor)는 이 gate가 운영 검증되기 전까지 착수 금지.
+3. **key 회전 정책**: operator Ed25519 key는 90일 주기 또는 compromise 의심 즉시 회전한다. 과거 evidence는 retired public key archive로 계속 재검증 가능하게 유지하고, compromised key는 compromise 시점 이후 evidence를 신뢰 목록에서 제외한다. 첫 프로덕션 팀 배포 전 hard gate는 `docs/ops/operator-key-rotation.md`를 실제로 실행하고 `scripts/revalidate_key_rotation.py`가 archive/canary evidence를 통과하는 것이다. 현재 committed archive는 로컬 canary만 증명하며 `production_gate.status="blocked"`로 남긴다. keyless(Fulcio/Rekor)는 실제 production team deployment에서 이 gate가 운영 검증되기 전까지 착수 금지.
 4. **첫 어댑터 세부 스펙**: Codex 어댑터가 OMX/LazyCodex와 동시 실행될 때 상태 격리를 어떤 메커니즘으로 보장할지(별도 상태 디렉터리 네임스페이스 vs 프로세스 그룹 격리 vs 파일 lock)는 W4 착수 시점에 Codex CLI의 실제 상태 저장 경로를 조사한 뒤 확정한다. 현재는 "격리가 필수"라는 요구만 확정이고 메커니즘은 미정.
 5. **포지셔닝 세그먼트 우선순위**: 개발자 툴과 규제/감사 wedge 중 어느 쪽을 초기 GTM 자원 배분에서 우선할지는 W1~W3 완료 후 실제 초기 채택 신호(개발자 커뮤니티 반응 vs 규제 산업 인바운드 문의)를 관측한 뒤 결정한다.
 

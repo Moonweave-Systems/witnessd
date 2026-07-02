@@ -360,8 +360,13 @@ def _cmd_learn(args: argparse.Namespace) -> int:
 
 def _cmd_install(args: argparse.Namespace) -> int:
     from witnessd.installer import InstallerError, atomic_install, atomic_upgrade
+    from witnessd.pause import PauseError, assert_not_paused
 
     try:
+        if args.runlog:
+            from witnessd.eventlog import EventLog
+
+            assert_not_paused(EventLog(args.runlog).read())
         if args.cmd == "install":
             result = atomic_install(
                 payload_path=args.payload,
@@ -378,7 +383,7 @@ def _cmd_install(args: argparse.Namespace) -> int:
                 shim_dir=args.shim_dir,
                 version=args.version,
             )
-    except InstallerError as exc:
+    except (InstallerError, PauseError) as exc:
         print(exc.code, file=sys.stderr)
         return 1
     print(json.dumps(result, sort_keys=True))
@@ -695,6 +700,7 @@ def _build_parser() -> argparse.ArgumentParser:
         install.add_argument("--config", required=True)
         install.add_argument("--shim-dir", required=True)
         install.add_argument("--version", required=True)
+        install.add_argument("--runlog", default=None)
         install.set_defaults(func=_cmd_install)
 
     self_test = sub.add_parser("self-test", help="run module self-tests")

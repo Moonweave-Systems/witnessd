@@ -34,6 +34,7 @@ from witnessd.canonical import canonical_hash
 from witnessd.capture import build_capture_manifest
 from witnessd.eventlog import EventLog
 from witnessd.observer import build_observer_capture
+from witnessd.signing import DEFAULT_OPERATOR_KEY_ID
 from witnessd.substrate import build_bundle, build_evidence_contract
 
 TRUSTED_PUBLIC_KEY_ENV = "DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"
@@ -94,7 +95,7 @@ def emit_lane_evidence(
     prev_capture_hash: str | None = None,
     isolation: dict[str, Any] | None = None,
     runner_kind: str | None = None,
-    key_id: str = "witnessd-operator",
+    key_id: str = DEFAULT_OPERATOR_KEY_ID,
     started_at: str | None = None,
     ended_at: str | None = None,
     diff_patch: str = "",
@@ -252,7 +253,7 @@ def emit_supervised_lane(
     runner_sandbox: str = "",
     prev_capture_hash: str | None = None,
     runner_kind: str | None = None,
-    key_id: str = "witnessd-operator",
+    key_id: str = DEFAULT_OPERATOR_KEY_ID,
     started_at: str | None = None,
     ended_at: str | None = None,
     diff_patch: str = "",
