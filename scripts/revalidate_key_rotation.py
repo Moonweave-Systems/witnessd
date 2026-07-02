@@ -56,10 +56,6 @@ def validate_archive(archive: dict[str, Any]) -> None:
         _fail("rotation interval must be 90 days")
     if "keyless" not in str(policy.get("keyless_gate", "")).lower():
         _fail("keyless gate must be explicit")
-    production_gate = archive.get("production_gate")
-    if not isinstance(production_gate, dict):
-        _fail("production_gate must be an object")
-    _validate_production_gate(production_gate)
     keys = archive.get("keys")
     if not isinstance(keys, list) or not keys:
         _fail("archive keys must be a non-empty list")
@@ -74,11 +70,15 @@ def validate_archive(archive: dict[str, Any]) -> None:
     current_from = _parse_utc(current_key.get("valid_from"), "current valid_from")
     if current_key.get("valid_until") is not None:
         _fail("current key must not have valid_until")
+    production_gate = archive.get("production_gate")
+    if not isinstance(production_gate, dict):
+        _fail("production_gate must be an object")
+    _validate_production_gate(production_gate, current_key=current_key)
     for key in keys:
         _validate_key_record(key, current_key_id=current_key["key_id"], current_from=current_from)
 
 
-def _validate_production_gate(gate: dict[str, Any]) -> None:
+def _validate_production_gate(gate: dict[str, Any], *, current_key: dict[str, Any]) -> None:
     status_value = gate.get("status")
     if status_value not in {"blocked", "open"}:
         _fail("production gate status must be blocked or open")
@@ -94,6 +94,7 @@ def _validate_production_gate(gate: dict[str, Any]) -> None:
         _fail("production gate required_evidence must be a list")
     evidence_ids = []
     artifact_paths: set[Path] = set()
+    evidence_artifacts: dict[str, tuple[Path, dict[str, Any]]] = {}
     for item in required_evidence:
         if not isinstance(item, dict):
             _fail("production gate required_evidence entries must be objects")
@@ -108,7 +109,7 @@ def _validate_production_gate(gate: dict[str, Any]) -> None:
             if artifact_path in artifact_paths:
                 _fail("recorded deployment evidence duplicate artifact_path")
             artifact_paths.add(artifact_path)
-            _validate_gate_evidence_semantics(evidence_id, body)
+            evidence_artifacts[evidence_id] = (artifact_path, body)
         evidence_ids.append(evidence_id)
     if tuple(evidence_ids) != REQUIRED_PRODUCTION_GATE_EVIDENCE:
         _fail("production gate required_evidence set mismatch")
@@ -116,6 +117,13 @@ def _validate_production_gate(gate: dict[str, Any]) -> None:
         recorded = [item for item in required_evidence if item.get("status") == "recorded"]
         if len(recorded) != len(REQUIRED_PRODUCTION_GATE_EVIDENCE):
             _fail("production gate cannot open without all deployment evidence recorded")
+    for evidence_id, (artifact_path, body) in evidence_artifacts.items():
+        _validate_gate_evidence_semantics(
+            evidence_id,
+            body,
+            artifact_path=artifact_path,
+            current_key=current_key,
+        )
 
 
 def _validate_gate_evidence_artifact(item: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
@@ -146,13 +154,19 @@ def _validate_gate_evidence_artifact(item: dict[str, Any]) -> tuple[Path, dict[s
     return path, body
 
 
-def _validate_gate_evidence_semantics(evidence_id: str, body: dict[str, Any]) -> None:
+def _validate_gate_evidence_semantics(
+    evidence_id: str,
+    body: dict[str, Any],
+    *,
+    artifact_path: Path,
+    current_key: dict[str, Any],
+) -> None:
     if evidence_id == "deployment_record":
         _validate_deployment_record(body)
     elif evidence_id == "rotated_key_archive":
-        _validate_rotation_record(body)
+        _validate_rotation_record(body, current_key=current_key)
     elif evidence_id == "canary_bundle":
-        _validate_canary_bundle_record(body)
+        _validate_canary_bundle_record(body, artifact_path=artifact_path, current_key=current_key)
     elif evidence_id == "depone_verification":
         _validate_depone_verification_record(body)
     elif evidence_id == "operator_review":
@@ -199,7 +213,7 @@ def _validate_deployment_record(body: dict[str, Any]) -> None:
     _require_bool(body, "ci_only", False)
 
 
-def _validate_rotation_record(body: dict[str, Any]) -> None:
+def _validate_rotation_record(body: dict[str, Any], *, current_key: dict[str, Any]) -> None:
     _require_external_pilot(body, "witnessd-operator-key-rotation-record")
     retired_key_id = _require_str(body, "retired_key_id")
     current_key_id = _require_str(body, "current_key_id")
@@ -209,11 +223,16 @@ def _validate_rotation_record(body: dict[str, Any]) -> None:
         _fail("rotation record current_key_id must match runtime default")
     if body.get("rotated_to") != current_key_id:
         _fail("rotation record rotated_to must link to current_key_id")
-    if body.get("canary_bundle_path") != "fixtures/key-rotation/operator-key-canary-bundle.json":
+    if body.get("canary_bundle_path") != current_key.get("bundle_path"):
         _fail("rotation record canary_bundle_path mismatch")
 
 
-def _validate_canary_bundle_record(body: dict[str, Any]) -> None:
+def _validate_canary_bundle_record(
+    body: dict[str, Any], *, artifact_path: Path, current_key: dict[str, Any]
+) -> None:
+    expected_path = (ROOT / str(current_key.get("bundle_path", ""))).resolve()
+    if artifact_path != expected_path:
+        _fail("canary_bundle artifact_path must match current key canary bundle")
     if body.get("kind") != "depone-evidence-substrate-bundle":
         _fail("canary_bundle evidence wrong kind")
     if body.get("signing_status") != SIGNING_STATUS_OPERATOR_KEY:
@@ -226,6 +245,11 @@ def _validate_canary_bundle_record(body: dict[str, Any]) -> None:
     predicate = body.get("statement", {}).get("predicate", {})
     if predicate.get("source_kind") != "operator-key-rotation-canary":
         _fail("canary_bundle source_kind mismatch")
+    public_key = ROOT / str(current_key.get("public_key_path", ""))
+    if not public_key.is_file():
+        _fail("canary_bundle public key missing")
+    if not verify_signed_bundle(body, str(public_key)):
+        _fail("canary_bundle signature verification failed")
 
 
 def _validate_depone_verification_record(body: dict[str, Any]) -> None:
