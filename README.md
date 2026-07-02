@@ -74,7 +74,9 @@ Start with [`fixtures/w1/`](fixtures/w1/) and [`scripts/revalidate_w1.py`](scrip
   fixture in [`fixtures/w10/`](fixtures/w10/) is re-derived offline by
   [`scripts/revalidate_w10.py`](scripts/revalidate_w10.py). This is one
   committed real-agent attestation, not a claim that every agent path is
-  verified.
+  verified. The fixture intentionally preserves the original absolute run paths;
+  revalidation checks those committed bytes as recorded, not path-independent
+  replay.
 
 The runtime dependency target is intentionally small: Python standard library plus
 the `openssl` CLI. Depone is a development/test verifier dependency, not a

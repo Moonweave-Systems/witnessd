@@ -10,6 +10,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from depone.agent_fabric.capture_bridge import validate_capture_manifest
 from depone.agent_fabric.evidence_substrate import (
     ingest_signed_evidence_bundle,
@@ -22,8 +26,8 @@ from depone.agent_fabric.paired_run import validate_runner_receipt
 from depone.agent_fabric.sign import verify_signed_bundle
 from depone.verify.adapters.base import EvidenceContext, EvidenceFile
 from depone.verify.evidence_contract import validate_evidence_contract
+from witnessd.runlog import verify_runlog
 
-ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "fixtures" / "w10"
 EVIDENCE = FIX / "evidence"
 PUBLIC_KEY = FIX / "keys" / "operator.pub"
@@ -156,6 +160,64 @@ def _assert_prompt_provenance() -> None:
     _require((FIX / "POST_RUN_TESTS.txt").exists(), "W10 must include post-run test output")
 
 
+def _read_runlog() -> list[dict[str, Any]]:
+    records = []
+    with (EVIDENCE / "runlog.jsonl").open(encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                records.append(json.loads(line))
+    return records
+
+
+def _assert_runlog_artifact_hashes() -> None:
+    records = _read_runlog()
+    verification = verify_runlog(records)
+    _require(verification["ok"] is True, f"W10 runlog hash chain broken: {verification}")
+    emitted = {
+        record.get("artifact"): record
+        for record in records
+        if record.get("event") == "emit-artifact"
+    }
+    required = {
+        "verify.log",
+        "capture-manifest.json",
+        "observer-capture.json",
+        "runner-receipt.json",
+        "bundle.json",
+        "evidence-contract.json",
+        "git-diff.patch",
+        "git-diff-name-only.txt",
+        "exit-code.txt",
+        "provenance.json",
+    }
+    _require(required <= set(emitted), f"W10 runlog missing artifact events: {required - set(emitted)}")
+    for artifact, record in emitted.items():
+        artifact_path = EVIDENCE / str(artifact)
+        _require(artifact_path.exists(), f"W10 runlog artifact missing from fixture: {artifact}")
+        digest = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+        _require(
+            digest == record.get("content_sha256"),
+            f"W10 runlog hash mismatch for {artifact}",
+        )
+
+
+def _assert_auxiliary_command_and_transcript() -> None:
+    receipt = _load(EVIDENCE / "runner-receipt.json")
+    command_log = _load(FIX / "adapter-command.json")
+    transcript = FIX / "adapter-transcript.txt"
+    _require(transcript.exists(), "W10 adapter transcript missing")
+    _require(transcript.read_text(encoding="utf-8").strip() != "", "W10 adapter transcript empty")
+    _require(command_log["command"] == receipt["invocation"], "W10 adapter command log must match runner receipt invocation")
+    _require(command_log["cwd"] == receipt["worktree"], "W10 adapter command cwd must match runner receipt worktree")
+    _require(command_log["exit_code"] == receipt["exit_code"], "W10 adapter command exit must match runner receipt")
+    invocation = command_log["command"]
+    output_index = invocation.index("--output-last-message")
+    _require(
+        invocation[output_index + 1] == str(transcript),
+        "W10 adapter command must bind adapter transcript path",
+    )
+
+
 def main() -> int:
     _require(FIX.is_dir(), "fixtures/w10 must exist")
     _require(PUBLIC_KEY.exists(), "W10 public key fixture missing")
@@ -166,6 +228,8 @@ def main() -> int:
     _assert_contract()
     _assert_nontrivial_diff()
     _assert_prompt_provenance()
+    _assert_runlog_artifact_hashes()
+    _assert_auxiliary_command_and_transcript()
     print("W10 revalidate: PASS")
     return 0
 

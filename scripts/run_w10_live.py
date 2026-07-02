@@ -51,6 +51,10 @@ def _is_inside_or_equal(path: Path, root: Path) -> bool:
     return True
 
 
+def _paths_overlap(left: Path, right: Path) -> bool:
+    return _is_inside_or_equal(left, right) or _is_inside_or_equal(right, left)
+
+
 def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -179,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
     sandbox = Path(args.sandbox).resolve(strict=False) if args.sandbox else out.parent / "w10-sandbox"
     state_root = Path(args.state_root).resolve(strict=False)
 
-    if _is_inside_or_equal(state_root, out):
+    if _paths_overlap(state_root, out):
         print("ERR_W10_STATE_ROOT_INSIDE_FIXTURE", file=sys.stderr)
         return 2
     if out.exists() or sandbox.exists():

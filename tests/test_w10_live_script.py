@@ -109,6 +109,41 @@ class TestW10LiveScript(unittest.TestCase):
             )
             self.assertNotIn(b"PRIVATE KEY", fixture_bytes)
 
+    def test_rejects_fixture_output_inside_state_root(self):
+        from scripts.run_w10_live import main
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            root = Path(tmp)
+            state = root / "state"
+            out = state / "fixture"
+            sandbox = root / "sandbox"
+            exit_code = main(
+                [
+                    "--adapter",
+                    "codex",
+                    "--out",
+                    str(out),
+                    "--sandbox",
+                    str(sandbox),
+                    "--state-root",
+                    str(state),
+                    "--codex-binary",
+                    _fake_codex(bindir),
+                    "--max-tokens",
+                    "1000",
+                    "--max-usd",
+                    "0.01",
+                    "--max-depth",
+                    "1",
+                ]
+            )
+
+            self.assertEqual(exit_code, 2)
+            self.assertFalse(out.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
