@@ -1,0 +1,91 @@
+{
+  "assurance": "A1-local-observed",
+  "boundary": {
+    "approves_public_claim": false,
+    "raises_assurance": false,
+    "signed": false
+  },
+  "dsse_envelope": {
+    "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsiYXNzdXJhbmNlIjoiQTEtbG9jYWwtb2JzZXJ2ZWQiLCJib3VuZGFyeSI6eyJhcHByb3Zlc19wdWJsaWNfY2xhaW0iOmZhbHNlLCJyYWlzZXNfYXNzdXJhbmNlIjpmYWxzZSwic2lnbmVkIjpmYWxzZX0sImRlY2lzaW9uIjoib2JzZXJ2ZWQtbG9jYWwtY2FwdHVyZSIsInByZXZfY2FwdHVyZV9oYXNoIjpudWxsLCJzY2hlbWFfdmVyc2lvbiI6IjEuMCIsInNvdXJjZV9raW5kIjoiYWdlbnQtZmFicmljLWNhcHR1cmUtbWFuaWZlc3QifSwicHJlZGljYXRlVHlwZSI6Imh0dHBzOi8vZGVwb25lLmRldi9hdHRlc3RhdGlvbnMvZXZpZGVuY2UvdjEiLCJzdWJqZWN0IjpbeyJkaWdlc3QiOnsic2hhMjU2IjoiNDMxMTU2MmJkNjU4MzRjMjEyY2MyOTU2NWMyOTk2NThlODZkZTU1NThmODJiYTgyZGE3ZDBkZjQ3YzEyNGM2MiJ9LCJuYW1lIjoiY2FwdHVyZS1tYW5pZmVzdCJ9LHsiZGlnZXN0Ijp7InNoYTI1NiI6ImI5MmMzMWM4NjQzMjYwYjZmMWI5NjMyYWU2ZDZiNWE3MmNhYjI3Y2U3MmM4MDcyMWM4Mzc0MTE3YWJkMDU5Y2MifSwibmFtZSI6Im9ic2VydmVyLWNhcHR1cmUifSx7ImRpZ2VzdCI6eyJzaGEyNTYiOiIwOWZjNzY0NGZjM2M0ZDE0YjNjNWJiMGIwNjgyYzY4ZWZmYTYyNmE4MjRmNWJlZjc2MTZhNzYyY2ViMDk3OWFlIn0sIm5hbWUiOiJydW5uZXItcmVjZWlwdCJ9XX0=",
+    "payloadType": "application/vnd.in-toto+json",
+    "signatures": []
+  },
+  "kind": "depone-evidence-substrate-bundle",
+  "otel_spans": [
+    {
+      "attributes": {
+        "depone.arm": "direct",
+        "depone.assurance": "A1-local-observed",
+        "depone.decision": "observed-local-capture",
+        "gen_ai.agent.name": "codex-cli",
+        "gen_ai.operation.name": "invoke_agent"
+      },
+      "name": "invoke_agent",
+      "parent_span_id": null,
+      "span_id": "38b0611a471ab45f",
+      "trace_id": "d7dbee2e1a37333ba93d201c67d5812b"
+    },
+    {
+      "attributes": {
+        "depone.command": [
+          "/home/ubuntu/moonweave/witnessd/fixtures/w4/bin/codex",
+          "--sandbox",
+          "workspace-write",
+          "exec",
+          "--skip-git-repo-check",
+          "--cd",
+          "/home/ubuntu/moonweave/witnessd/fixtures/w4/sandbox",
+          "--output-last-message",
+          "/home/ubuntu/moonweave/witnessd/fixtures/w4/transcripts/codex.txt",
+          "-"
+        ],
+        "depone.exit_code": 0,
+        "depone.status": null,
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": "verification_command"
+      },
+      "name": "execute_tool",
+      "parent_span_id": "38b0611a471ab45f",
+      "span_id": "53d1aa8958bd70e6",
+      "trace_id": "d7dbee2e1a37333ba93d201c67d5812b"
+    }
+  ],
+  "schema_version": "1.0",
+  "signing_status": "unsigned-content-addressed",
+  "statement": {
+    "_type": "https://in-toto.io/Statement/v1",
+    "predicate": {
+      "assurance": "A1-local-observed",
+      "boundary": {
+        "approves_public_claim": false,
+        "raises_assurance": false,
+        "signed": false
+      },
+      "decision": "observed-local-capture",
+      "prev_capture_hash": null,
+      "schema_version": "1.0",
+      "source_kind": "agent-fabric-capture-manifest"
+    },
+    "predicateType": "https://depone.dev/attestations/evidence/v1",
+    "subject": [
+      {
+        "digest": {
+          "sha256": "4311562bd65834c212cc29565c299658e86de5558f82ba82da7d0df47c124c62"
+        },
+        "name": "capture-manifest"
+      },
+      {
+        "digest": {
+          "sha256": "b92c31c8643260b6f1b9632ae6d6b5a72cab27ce72c80721c8374117abd059cc"
+        },
+        "name": "observer-capture"
+      },
+      {
+        "digest": {
+          "sha256": "09fc7644fc3c4d14b3c5bb0b0682c68effa626a824f5bef7616a762ceb0979ae"
+        },
+        "name": "runner-receipt"
+      }
+    ]
+  }
+}

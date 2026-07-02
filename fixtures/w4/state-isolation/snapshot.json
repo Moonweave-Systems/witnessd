@@ -1,0 +1,11 @@
+{
+  "codex_home": "state-isolation/witnessd-root/.witnessd/codex-home",
+  "mock_store_after": [
+    "marker.json"
+  ],
+  "mock_store_before": [
+    "marker.json"
+  ],
+  "mock_store_unchanged": true,
+  "witnessd_runlog_path": "state-isolation/witnessd-root/.witnessd/runlog.jsonl"
+}

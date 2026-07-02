@@ -1,0 +1,22 @@
+{
+  "arm": "direct",
+  "ended_at": "2026-07-01T00:00:01Z",
+  "exit_code": 0,
+  "human_intervened": false,
+  "invocation": [
+    "/home/ubuntu/moonweave/witnessd/fixtures/w4/bin/opencode",
+    "run",
+    "fixture opencode lane"
+  ],
+  "kind": "agent-fabric-runner-receipt",
+  "runner_kind": "manual",
+  "schema_version": "1.0",
+  "source_hashes": {
+    "receipt": "c916b89b5f91bb36781bbc28eacbf793b4d50a7fbb7e13a5843e7d3d82367bdf"
+  },
+  "started_at": "2026-07-01T00:00:00Z",
+  "task_id": "w4-opencode-fixture",
+  "touched_files": [],
+  "transcript_path": "/home/ubuntu/moonweave/witnessd/fixtures/w4/transcripts/opencode.txt",
+  "worktree": "/home/ubuntu/moonweave/witnessd/fixtures/w4/sandbox"
+}

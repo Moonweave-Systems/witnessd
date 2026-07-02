@@ -1,0 +1,11 @@
+{
+  "command": [
+    "/home/ubuntu/moonweave/witnessd/fixtures/w4/bin/claude",
+    "-p",
+    "fixture claude lane"
+  ],
+  "cwd": "/home/ubuntu/moonweave/witnessd/fixtures/w4/sandbox",
+  "exit_code": 0,
+  "stderr": "claude-fixture\n",
+  "stdout": ""
+}

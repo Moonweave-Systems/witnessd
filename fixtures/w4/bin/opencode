@@ -1,0 +1,3 @@
+#!/bin/sh
+echo opencode-fixture >&2
+exit 0

@@ -1,0 +1,11 @@
+{
+  "command": [
+    "/home/ubuntu/moonweave/witnessd/fixtures/w4/bin/opencode",
+    "run",
+    "fixture opencode lane"
+  ],
+  "cwd": "/home/ubuntu/moonweave/witnessd/fixtures/w4/sandbox",
+  "exit_code": 0,
+  "stderr": "opencode-fixture\n",
+  "stdout": ""
+}

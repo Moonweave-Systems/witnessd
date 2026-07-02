@@ -1,0 +1,31 @@
+{
+  "command_receipts": [
+    {
+      "command": [
+        "/home/ubuntu/moonweave/witnessd/fixtures/w4/bin/codex",
+        "--sandbox",
+        "workspace-write",
+        "exec",
+        "--skip-git-repo-check",
+        "--cd",
+        "/home/ubuntu/moonweave/witnessd/fixtures/w4/sandbox",
+        "--output-last-message",
+        "/home/ubuntu/moonweave/witnessd/fixtures/w4/transcripts/codex.txt",
+        "-"
+      ],
+      "cwd": "/home/ubuntu/moonweave/witnessd/fixtures/w4/sandbox",
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": ""
+    }
+  ],
+  "diff_summary": {
+    "changed_files": []
+  },
+  "observed_by": "depone-observer",
+  "source_fixture_hash": "a4400e486adc3730dec811631aca2edf43b4c6f94693f86a7c5ef6be28f0d2a8",
+  "test_output": {
+    "status": "not-run"
+  },
+  "touched_files": []
+}

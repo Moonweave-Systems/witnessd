@@ -1,0 +1,22 @@
+{
+  "arm": "direct",
+  "ended_at": "2026-07-01T00:00:01Z",
+  "exit_code": 0,
+  "human_intervened": false,
+  "invocation": [
+    "/home/ubuntu/moonweave/witnessd/fixtures/w4/bin/claude",
+    "-p",
+    "fixture claude lane"
+  ],
+  "kind": "agent-fabric-runner-receipt",
+  "runner_kind": "manual",
+  "schema_version": "1.0",
+  "source_hashes": {
+    "receipt": "e784918ac35aa3a43e3d47b2d6308e3837218c0dff08abfa62c308b47e006ae6"
+  },
+  "started_at": "2026-07-01T00:00:00Z",
+  "task_id": "w4-claude-fixture",
+  "touched_files": [],
+  "transcript_path": "/home/ubuntu/moonweave/witnessd/fixtures/w4/transcripts/claude.txt",
+  "worktree": "/home/ubuntu/moonweave/witnessd/fixtures/w4/sandbox"
+}
