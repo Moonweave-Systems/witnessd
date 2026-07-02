@@ -125,6 +125,20 @@ class TestOvertFields(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "post_hoc"):
             _assert_reconstruction_self_declares_post_hoc(manifest, reconstructed=True)
 
+    def test_release_docs_keep_temporality_and_a2_honesty(self):
+        root = os.path.dirname(os.path.dirname(__file__))
+        overt = open(
+            os.path.join(root, "docs", "conformance", "OVERT.md"),
+            encoding="utf-8",
+        ).read()
+        readme = open(os.path.join(root, "README.md"), encoding="utf-8").read()
+
+        for text in (overt, readme):
+            self.assertIn("self-declared", text)
+            self.assertIn("DELAYED_NOTARY", text)
+            self.assertIn("A2", text)
+            self.assertIn("demonstration", text.lower())
+
     def test_parent_attestation_id_must_be_sha256_hex(self):
         with self.assertRaisesRegex(ValueError, "parent_attestation_id"):
             _manifest(parent_attestation_id="not-a-sha")
