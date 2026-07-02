@@ -1,0 +1,7 @@
+{
+  "schema_version": "v105.verify_wedge",
+  "allowed_touched_files": [
+    "pkg/shell.py"
+  ],
+  "expected_exit_code": 0
+}

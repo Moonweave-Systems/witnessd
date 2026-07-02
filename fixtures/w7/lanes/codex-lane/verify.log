@@ -1,0 +1,2 @@
+$ /tmp/tmpme42hev5/bin/codex --sandbox workspace-write exec --skip-git-repo-check --cd /tmp/tmpme42hev5/out/worktrees/codex-lane --output-last-message /tmp/tmpme42hev5/out/adapter-transcript.txt -
+exit=0

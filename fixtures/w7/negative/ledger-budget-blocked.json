@@ -1,0 +1,23 @@
+{
+  "kind": "depone-team-ledger",
+  "lanes": [
+    {
+      "blocked_reason": "budget_exceeded",
+      "end_commit": "a4269df988889ce6e627bc8ec374b09fe5d82020",
+      "env_kind": "local",
+      "evidence_dir": "lanes/budget-blocked",
+      "lane_id": "budget-blocked",
+      "objective": "budget-blocked objective",
+      "runner_adapter_kind": "codex",
+      "start_commit": "a4269df988889ce6e627bc8ec374b09fe5d82020",
+      "team_adapter_kind": "codex",
+      "touched_files": [],
+      "verification_state": "blocked"
+    }
+  ],
+  "leader_id": "leader-fixed",
+  "leader_objective": "W7 budget-blocked negative fixture",
+  "schema_version": "0.1",
+  "start_commit": "a4269df988889ce6e627bc8ec374b09fe5d82020",
+  "stop_rule": "all write lanes pass or block"
+}
