@@ -114,8 +114,6 @@ def validate_lane_packet(packet: dict[str, Any]) -> dict[str, Any]:
         },
         "stop_rule": stop_rule,
     }
-    if packet.get("merge_lane") is True:
-        normalized["merge_lane"] = True
     return normalized
 
 
@@ -139,7 +137,7 @@ def _normalize_region(raw_region: Any) -> list[str]:
 
 def seal_plan(packets: list[dict[str, Any]], *, goal: str) -> dict[str, Any]:
     normalized = [validate_lane_packet(packet) for packet in packets]
-    _assert_region_disjoint_or_explicit_merge(normalized)
+    _assert_region_disjoint(normalized)
     return {
         "kind": SEALED_PLAN_KIND,
         "schema_version": SCHEMA_VERSION,
@@ -219,15 +217,10 @@ def _root_fingerprint(root: str) -> list[str]:
         raise PlannerError("ERR_PLAN_ROOT_MISSING") from exc
 
 
-def _assert_region_disjoint_or_explicit_merge(packets: list[dict[str, Any]]) -> None:
-    seen: dict[str, bool] = {}
+def _assert_region_disjoint(packets: list[dict[str, Any]]) -> None:
+    seen: set[str] = set()
     for packet in packets:
-        is_merge_lane = packet.get("merge_lane") is True
         for path in packet["region"]:
-            owner_is_merge_lane = seen.get(path)
-            if owner_is_merge_lane is not None and not (
-                owner_is_merge_lane or is_merge_lane
-            ):
+            if path in seen:
                 raise PlannerError("ERR_PLAN_REGION_OVERLAP")
-            if owner_is_merge_lane is None:
-                seen[path] = is_merge_lane
+            seen.add(path)

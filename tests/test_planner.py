@@ -123,16 +123,29 @@ class TestSealPlan(unittest.TestCase):
         with self.assertRaisesRegex(PlannerError, "ERR_PLAN_REGION_OVERLAP"):
             seal_plan(packets, goal="ship W11")
 
-    def test_merge_lane_may_overlap_region_it_merges(self):
+    def test_merge_lane_does_not_bypass_region_overlap_until_execution_bridge_exists(self):
         merge = self._packet("merge", ["pkg/shared.py"])
         merge["merge_lane"] = True
 
-        sealed = seal_plan(
-            [self._packet("L1", ["pkg/shared.py"]), merge],
-            goal="ship W11",
-        )
+        with self.assertRaisesRegex(PlannerError, "ERR_PLAN_REGION_OVERLAP"):
+            seal_plan(
+                [self._packet("L1", ["pkg/shared.py"]), merge],
+                goal="ship W11",
+            )
 
-        self.assertEqual(sealed["packets"][1]["merge_lane"], True)
+    def test_merge_lane_first_does_not_allow_two_non_merge_overlaps(self):
+        merge = self._packet("merge", ["pkg/shared.py"])
+        merge["merge_lane"] = True
+
+        with self.assertRaisesRegex(PlannerError, "ERR_PLAN_REGION_OVERLAP"):
+            seal_plan(
+                [
+                    merge,
+                    self._packet("L1", ["pkg/shared.py"]),
+                    self._packet("L2", ["pkg/shared.py"]),
+                ],
+                goal="ship W11",
+            )
 
 
 class TestHeuristicPlanner(unittest.TestCase):
