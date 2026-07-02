@@ -14,7 +14,7 @@
 - **canonical_hash 규약(Depone와 바이트 동일해야 함):**
   `sha256(json.dumps(obj, sort_keys=True, separators=(",",":")).encode("utf-8")).hexdigest()`
 - **불변식:** worker는 자기 성공 seal 불가, Evidence Emitter만 SoT에 씀, verifier는 assurance 상향 불가, fail-closed(부분점수 없음), assurance 상한 **A2**(A3 등급 없음 — operator 서명은 별도 report-level 축).
-- **전제:** Depone은 로컬에 설치돼 있어야 함(`python3 -m depone ...` 동작). W1 착수 전 `pip install --no-deps /home/ubuntu/depone-assurance-repair` 로 validator import 가능하게.
+- **전제:** Depone은 로컬에 설치돼 있어야 함(`python3 -m depone ...` 동작). 현재 canonical 로컬 repo는 `/home/ubuntu/moonweave/depone`이며, witnessd 검증은 `PYTHONPATH=/home/ubuntu/moonweave/depone`로 validator를 import한다.
 
 ## 웨이브 순서 · 의존 · 산출물
 
@@ -30,6 +30,6 @@
 
 전부 W1–W5 **구현 경로 밖**이거나 기본값 있음. 단, **key 회전 정책(§8.2-3)은 첫 프로덕션 배포 전 반드시 확정**(구현은 안 막지만 롤아웃 하드 게이트). Codex 상태격리 메커니즘(§8.2-4)은 W4 착수 시 조사+기본값(별도 상태 디렉터리+lock) 적용.
 
-## 착수
+## 현재 상태
 
-W1 계획(`2026-07-01-w1-evidence-substrate.md`)부터. 실행은 superpowers:subagent-driven-development(권장) 또는 executing-plans.
+W1-W5 구현 및 committed fixture revalidation이 완료됐다. 후속 작업은 SPEC의 deferred 항목(keyless 서명 축, docker/container isolation 모델 1급 승격)을 별도 웨이브로 다룬다.

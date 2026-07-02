@@ -8,9 +8,10 @@ re-derives A0/A1/A2 assurance from. The one-line thesis: *done is defined by
 observer-signed bytes, not by a self-reported "VERIFIED" string.*
 
 - **Source of truth:** `SPEC.md` (full design). Wave plans: `docs/plans/`.
-  Waves W1→W5; **W1 is done** (event log, observer separation, capture-manifest,
-  Ed25519 DSSE, runner-receipt, evidence-substrate, emitter) and Depone
-  re-derives A1/A2 from its committed bytes.
+  Waves W1→W5 are implemented in committed fixtures: evidence substrate,
+  supervised liveness/durable sessions, team fan-in, adapter routing/cost
+  controls, and autonomy safety. Depone re-derives the wave claims from
+  `scripts/revalidate_w1.py` through `scripts/revalidate_w5.py`.
 - **Runtime deps:** Python **stdlib + the `openssl` CLI only**. Never add a
   third-party package. `depone` is a **dev/test-only** dependency (to run
   conformance), never a runtime import of the shipped runtime.
@@ -43,7 +44,7 @@ make dogfood     # emit evidence -> depone re-derives A1/A2
 
 # standalone:
 PYTHONPATH=/path/to/depone uv run python3 -m unittest discover -s tests
-PYTHONPATH=/path/to/depone uv run python3 scripts/revalidate_wN.py
+PYTHONPATH=/home/ubuntu/moonweave/depone uv run python3 scripts/revalidate_wN.py
 ```
 
 ## Invariants

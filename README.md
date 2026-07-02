@@ -12,9 +12,10 @@ every action is falsifiable after the fact, witnessd can be **more** aggressive
 about autonomy than tools that trust their own "VERIFIED" tags.
 
 - **Design (SoT):** [`SPEC.md`](SPEC.md). Implementation plans: [`docs/plans/`](docs/plans/).
-- **Status:** W1 complete (event log · observer separation · capture-manifest ·
-  Ed25519 DSSE · runner-receipt · evidence-substrate). Depone re-derives A1/A2
-  from W1's committed fixtures. W2–W5 planned.
+- **Status:** W1-W5 complete on local mainline work: evidence substrate,
+  supervised liveness/durable sessions, team fan-in, adapter routing/cost
+  controls, and autonomy safety. Depone re-derives each wave from committed
+  fixtures via `scripts/revalidate_w1.py` through `scripts/revalidate_w5.py`.
 - **Deps:** Python stdlib + `openssl` CLI. No third-party runtime packages.
 - **Contract:** witnessd emits evidence per Depone's schemas; see [`CLAUDE.md`](CLAUDE.md).
 
