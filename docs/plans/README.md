@@ -37,18 +37,31 @@ W1-W5 구현 및 committed fixture revalidation 완료. 2026-07-02에 런타임 
 parity 가드 `tests/test_depone_replica_conformance.py`). W7 team adapter wiring은 `fixtures/w7/` +
 `scripts/revalidate_w7.py`로 어댑터 레인 팀 fan-in 재도출을 고정했다. production keyless gate는 blocked 유지.
 
-## 후속 로드맵 (2026-07-02 계획 확정 — 실행 순서 고정)
+## 로드맵 — 최종판(v2.0.0)까지의 전체 아크 (2026-07-02 확정)
 
+> **현재 위치(2026-07-02): W1–W9 완료·CI 그린·`v1.0.1` 태그. 다음 = W10.**
+> Part II 스펙(왜/무엇이 최종판인가)은 **`SPEC2.md`** — 조사 다시 하지 말고 그 문서부터 읽을 것.
+
+### 완료 (v1.0.x)
+| 웨이브 | 산출 | 상태 |
+|---|---|---|
+| W1–W5 | 증거 substrate → 자율성 안전 (위 표) | ✅ revalidate PASS |
+| W7 | 팀 fan-in에 진짜 어댑터 배선 (`2026-07-02-team-adapter-wiring.md`) | ✅ |
+| W8 | OVERT 1.1 스키마 정렬 + AAL-3 conformance 문서 (`2026-07-02-overt-alignment.md`) | ✅ |
+| W9 | CI + 릴리스 서사 + 태그 (`2026-07-02-hardening-and-release.md`) | ✅ v1.0.0/v1.0.1 |
+
+### 남은 아크 (v2.0.0 최종판 = SPEC2.md §0 정의·§5 수용 기준)
 | 순서 | 플랜 파일 | 산출 | 의존 | 성격 |
 |---|---|---|---|---|
-| **W7** | `2026-07-02-team-adapter-wiring.md` | 팀 fan-in 레인이 플레이스홀더 셸 대신 **진짜 어댑터**(codex/claude/opencode)를 worktree sandbox에서 몰고, ledger에 합류 | W1–W5 | 코드(에이전트 가능) |
-| **W8** | `2026-07-02-overt-alignment.md` | OVERT 1.1 스키마 정렬(evidence_mode/epoch/parent_attestation_id, 전부 additive) + **정직한 conformance 선언문**(AAL-3 Agentic, Exclusions 명시) + 자체 Protocol Profile 문서 | W7 | 코드+문서(에이전트 가능) |
-| **W9** | `2026-07-02-hardening-and-release.md` | 잔여 스윕(검증-후-종결) + GitHub Actions CI(decoupling 가드 포함) + README 대표작 서사 + `v1.0.0` 태그 | W7, W8 | 코드+글(에이전트 가능, push는 사용자) |
-| **P1** | `2026-07-02-external-team-pilot.md` | production gate 5종 증거 프로토콜: 툴링(pilot init/close/canary/verify)은 에이전트, **파일럿 실행·게이트 전환은 운영자 전용** | W7, W9-CI | 툴링+운영자 |
-| **W6a** | `2026-07-02-w6-keyless-signing.md` | keyless(Sigstore) readiness — **gate open 전까지 blocked 유지** | P1 완료 | 코드(별도 트랙) |
+| **W10** | `2026-07-02-w10-live-agent-e2e.md` | **진짜 codex 에이전트** 1레인 live run → 증거 committed fixture → Depone 재도출 (헤드라인 최초 실증) | v1.0.1 | 코드+실행 1회(비용, 사람 확인 지점 有) |
+| **W11** | `2026-07-02-w11-planner.md` | SPEC §2.4.1 Planner: `plan(goal)`→sealed plan(증거)→순수 dispatch→`team plan-run` | W10 | 코드(에이전트 가능) |
+| **W12** | `2026-07-02-w12-real-a2.md` | 전용 observer uid 셋업 → 진짜 `A2-isolated-observed` → demonstration 딱지 증거로 제거 | — (병렬 가능, 릴리스 전 필수) | 코드+**운영자 sudo 스텝** |
+| **v2.0.0** | (릴리스는 W12 뒤 태그) | one-command `team plan-run` 데모: goal→plan→진짜 에이전트 팀→증거→Depone 전과정 재도출 | W10–W12 | 태그+README(에이전트 준비, push는 사용자) |
+| **P1** | `2026-07-02-external-team-pilot.md` | production gate 5종 증거 — **파일럿 실행·게이트 전환은 운영자 전용** | v2.0.0 권장 | 운영 트랙 |
+| **W6a** | `2026-07-02-w6-keyless-signing.md` | keyless(Sigstore) readiness — gate open 전까지 blocked | P1 | 코드(별도 트랙) |
 
-공통 규율(모든 후속 웨이브): TDD / additive-only 스키마(기존 fixture 재도출 유지) /
-runtime depone import 금지 / worker self-seal 금지 / `production_gate.status` 자동 전환 절대 금지 /
-과대주장 금지(AAL-4·unforgeable·certified를 달성 주장으로 쓰지 않음) / Depone 계약 변경은 Depone PR 먼저.
-**범위 밖으로 못박은 것(1.0에 안 들어감):** 투명성 로그(RFC6962), 독립 IAP notary, MEASURE 통계층,
-역할 시스템 — 전부 conformance 문서의 Roadmap/Exclusions로만 기재.
+공통 규율(전 웨이브): TDD / additive-only 스키마(기존 fixture 재도출 유지) / runtime depone import 금지 /
+worker self-seal 금지 / `production_gate.status` 자동 전환 절대 금지 / 과대주장 금지 /
+Depone 계약 변경은 Depone PR 먼저.
+**영구 범위 밖(재논의 금지, SPEC2 §1):** 에이전트 페르소나 역할 시스템(팀 정의=레인+ownership-region),
+투명성 로그(RFC6962), 독립 IAP notary, MEASURE 통계층 — conformance 문서 Roadmap/Exclusions로만 기재.
