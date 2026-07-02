@@ -1,0 +1,122 @@
+{
+  "allowed_touched_files": [
+    "f.txt"
+  ],
+  "assurance": "A1-local-observed",
+  "decision": "observed-local-capture",
+  "fixture": {
+    "adapter": {
+      "executes_commands": false,
+      "harness": "shell",
+      "mode": "fixture-only",
+      "name": "shell-reference-fixture"
+    },
+    "capture": {
+      "command_receipts": [],
+      "diff_summary": {
+        "added_files": [],
+        "changed_files": [],
+        "deleted_files": [],
+        "modified_files": [],
+        "summary": "fixture-only adapter did not observe a diff"
+      },
+      "self_report": {
+        "agent_role": "runner",
+        "command_receipts": [],
+        "errors": [
+          "fixture-only adapter did not execute work"
+        ],
+        "output_files": [],
+        "profile": "w1-a1",
+        "result_version": "1.0",
+        "self_reported_claims": [],
+        "status": "partial"
+      },
+      "test_output": {
+        "command": null,
+        "status": "not-run",
+        "summary": "fixture-only adapter did not run tests"
+      },
+      "touched_files": [],
+      "trust_level": "A0-claims-only"
+    },
+    "invocation": {
+      "context_policy": "local-code-only",
+      "evidence_obligations": [
+        "command_receipt"
+      ],
+      "instructions": "Run checks and report outputs.",
+      "packet_version": "1.0",
+      "profile": "w1-a1",
+      "role": "runner",
+      "target_harness": "shell",
+      "toolbelt": {
+        "allowed_mcp": [],
+        "allowed_tools": [
+          "cat",
+          "python3"
+        ],
+        "context_policy": "local-code-only",
+        "evidence_obligations": [
+          "command_receipt"
+        ],
+        "forbidden_tools": [
+          "write"
+        ],
+        "output_schema": "runner-result-v1"
+      }
+    },
+    "kind": "agent-fabric-reference-adapter-fixture",
+    "schema_version": "1.0"
+  },
+  "kind": "agent-fabric-capture-manifest",
+  "observer_capture": {
+    "command_receipts": [
+      {
+        "command": [
+          "sh",
+          "-c",
+          "echo hi > f.txt"
+        ],
+        "exit_code": 0,
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "command": [
+          "sh",
+          "-c",
+          "true"
+        ],
+        "exit_code": 0,
+        "stderr": "",
+        "stdout": ""
+      }
+    ],
+    "diff_summary": {
+      "changed_files": [
+        "f.txt"
+      ]
+    },
+    "observed_by": "depone-observer",
+    "source_fixture_hash": "d05a8234bab64a6226b5f36cad83e5ba64081404e0c4b98403c19324149d23d6",
+    "test_output": {
+      "status": "passed"
+    },
+    "touched_files": [
+      "f.txt"
+    ]
+  },
+  "observer_capture_hash": "c8c7fcf134a3f8d1df5ded361024c91c8c68de56cb42066701485eb9ec4b1f92",
+  "prev_capture_hash": null,
+  "required_observer_fields": [
+    "command_receipts",
+    "diff_summary",
+    "observed_by",
+    "source_fixture_hash",
+    "test_output",
+    "touched_files"
+  ],
+  "schema_version": "1.0",
+  "source_fixture_hash": "d05a8234bab64a6226b5f36cad83e5ba64081404e0c4b98403c19324149d23d6"
+}

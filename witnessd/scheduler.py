@@ -35,6 +35,9 @@ class Scheduler:
         ]
 
     def schedule(self, supervisor) -> list[Any]:
+        from witnessd.pause import assert_not_paused
+
+        assert_not_paused(self.event_log.read())
         handles = []
         for packet in self.reconcile()[: self.concurrency]:
             argv = packet.get("argv")

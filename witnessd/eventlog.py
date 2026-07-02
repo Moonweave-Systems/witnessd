@@ -23,6 +23,11 @@ class EventLog:
         self.path = path
         self._seq = 0
         self._prev_event_hash: str | None = None
+        existing = self.read()
+        if existing:
+            self._seq = int(existing[-1].get("seq", -1)) + 1
+            last_hash = existing[-1].get("event_hash")
+            self._prev_event_hash = last_hash if isinstance(last_hash, str) else None
 
     def append(self, event: dict[str, Any]) -> dict[str, Any]:
         record = dict(event)

@@ -268,8 +268,121 @@ def _cmd_faultkit(args: argparse.Namespace) -> int:
             f"reapplied={state['idempotency_reapplied']}"
         )
         return 0
+    if args.fault == "pause-race":
+        from witnessd.eventlog import EventLog
+        from witnessd.faultkit import pause_race
+
+        log = EventLog(args.runlog)
+        pause_race(log, run_id=args.run_id)
+        print(f"faultkit pause-race: {args.runlog}")
+        return 0
     print(f"ERR_UNKNOWN_FAULT: {args.fault}", file=sys.stderr)
     return 2
+
+
+def _cmd_pause(args: argparse.Namespace) -> int:
+    from witnessd.eventlog import EventLog
+    from witnessd.pause import PauseError, append_user_pause
+
+    try:
+        append_user_pause(EventLog(args.runlog), args.run_id, source="cli")
+    except PauseError as exc:
+        print(exc.code, file=sys.stderr)
+        return 2
+    print(render_status(pending=1, verdict=None))
+    return 0
+
+
+def _cmd_resume_pause(args: argparse.Namespace) -> int:
+    from witnessd.eventlog import EventLog
+    from witnessd.pause import PauseError, append_user_resume
+
+    try:
+        append_user_resume(EventLog(args.runlog), args.run_id, confirm=args.confirm)
+    except PauseError as exc:
+        print(exc.code, file=sys.stderr)
+        return 2
+    print(render_status(pending=1, verdict=None))
+    return 0
+
+
+def _cmd_kill(args: argparse.Namespace) -> int:
+    if not args.all:
+        print("ERR_KILL_SCOPE_REQUIRED", file=sys.stderr)
+        return 2
+    from witnessd.eventlog import EventLog
+    from witnessd.killswitch import kill_all
+    from witnessd.supervisor import WorkerSupervisor
+
+    log = EventLog(args.runlog)
+    supervisor = WorkerSupervisor(log, run_id=args.run_id)
+    result = kill_all(supervisor, log, args.run_id)
+    print(json.dumps(result, sort_keys=True))
+    return 0 if result["all_confirmed_dead"] else 1
+
+
+def _cmd_learn(args: argparse.Namespace) -> int:
+    if args.learn_cmd != "promote":
+        print("ERR_LEARN_COMMAND_REQUIRED", file=sys.stderr)
+        return 2
+    from witnessd.eventlog import EventLog
+    from witnessd.learning import promote_learning_delta
+
+    with open(args.delta, encoding="utf-8") as handle:
+        delta = json.load(handle)
+    committed_captures = []
+    for path in args.capture:
+        with open(path, encoding="utf-8") as handle:
+            committed_captures.append(json.load(handle))
+    approval_events = []
+    for path in args.approval_log:
+        approval_events.extend(_read_runlog(path))
+    result = promote_learning_delta(
+        delta,
+        log=EventLog(args.runlog),
+        run_id=args.run_id,
+        priv=args.private_key,
+        pub=args.public_key,
+        committed_captures=committed_captures,
+        approval_events=approval_events,
+        evidence_dir=args.evidence_dir,
+    )
+    print(json.dumps({k: v for k, v in result.items() if k != "bundle"}, sort_keys=True))
+    if not result["promoted"]:
+        return 1
+    bundle_path = args.bundle_out
+    if bundle_path:
+        with open(bundle_path, "w", encoding="utf-8") as handle:
+            json.dump(result["bundle"], handle, sort_keys=True, indent=2)
+            handle.write("\n")
+    return 0
+
+
+def _cmd_install(args: argparse.Namespace) -> int:
+    from witnessd.installer import InstallerError, atomic_install, atomic_upgrade
+
+    try:
+        if args.cmd == "install":
+            result = atomic_install(
+                payload_path=args.payload,
+                dest_dir=args.dest,
+                config_path=args.config,
+                shim_dir=args.shim_dir,
+                version=args.version,
+            )
+        else:
+            result = atomic_upgrade(
+                payload_path=args.payload,
+                dest_dir=args.dest,
+                config_path=args.config,
+                shim_dir=args.shim_dir,
+                version=args.version,
+            )
+    except InstallerError as exc:
+        print(exc.code, file=sys.stderr)
+        return 1
+    print(json.dumps(result, sort_keys=True))
+    return 0
 
 
 def _cmd_route(args: argparse.Namespace) -> int:
@@ -364,9 +477,13 @@ def _cmd_self_test(args: argparse.Namespace) -> int:
         emitter,
         fanin,
         faultkit,
+        installer,
         isolation,
+        killswitch,
+        learning,
         lock,
         liveness,
+        pause,
         preflight,
         router,
         scheduler,
@@ -390,6 +507,10 @@ def _cmd_self_test(args: argparse.Namespace) -> int:
         ("scheduler", scheduler._self_test),
         ("session", session._self_test),
         ("isolation", isolation._self_test),
+        ("pause", pause._self_test),
+        ("killswitch", killswitch._self_test),
+        ("learning", learning._self_test),
+        ("installer", installer._self_test),
         ("faultkit", faultkit._self_test),
         ("lock", lock._self_test),
         ("worktree", worktree._self_test),
@@ -409,6 +530,10 @@ def _cmd_self_test(args: argparse.Namespace) -> int:
         "router",
         "budget",
         "state",
+        "pause",
+        "killswitch",
+        "learning",
+        "installer",
     }
     passed = 0
     for name, check in checks:
@@ -495,6 +620,10 @@ def _build_parser() -> argparse.ArgumentParser:
     crash.add_argument("--runlog-after", required=True)
     crash.add_argument("--session", required=True)
     crash.set_defaults(func=_cmd_faultkit)
+    pause_race = faultkit_sub.add_parser("pause-race")
+    pause_race.add_argument("--runlog", required=True)
+    pause_race.add_argument("--run-id", default="faultkit-pause-run")
+    pause_race.set_defaults(func=_cmd_faultkit)
     budget = faultkit_sub.add_parser("budget-blowout")
     budget.add_argument("--root", required=True)
     budget.add_argument("--runner-sandbox", required=True)
@@ -524,6 +653,49 @@ def _build_parser() -> argparse.ArgumentParser:
     team_ledger.add_argument("--ledger", required=True)
     team_ledger.add_argument("--json", action="store_true")
     team_ledger.set_defaults(func=_cmd_team_ledger)
+
+    pause = sub.add_parser("pause", help="append a user pause event")
+    pause.add_argument("run_id")
+    pause.add_argument("--runlog", required=True)
+    pause.set_defaults(func=_cmd_pause)
+
+    resume = sub.add_parser("resume", help="append an explicit user resume event")
+    resume.add_argument("run_id")
+    resume.add_argument("--runlog", required=True)
+    resume.add_argument("--confirm", action="store_true")
+    resume.set_defaults(func=_cmd_resume_pause)
+
+    kill = sub.add_parser("kill", help="kill all supervised children")
+    kill.add_argument("--all", action="store_true")
+    kill.add_argument("--runlog", required=True)
+    kill.add_argument("--run-id", default="witnessd-kill")
+    kill.set_defaults(func=_cmd_kill)
+
+    learn = sub.add_parser("learn", help="learning delta commands")
+    learn_sub = learn.add_subparsers(dest="learn_cmd", required=True)
+    promote = learn_sub.add_parser("promote")
+    promote.add_argument("--delta", required=True)
+    promote.add_argument("--capture", action="append", required=True)
+    promote.add_argument("--approval-log", action="append", default=[])
+    promote.add_argument("--runlog", required=True)
+    promote.add_argument("--run-id", default="witnessd-learning")
+    promote.add_argument("--private-key", required=True)
+    promote.add_argument("--public-key", required=True)
+    promote.add_argument("--evidence-dir", required=True)
+    promote.add_argument("--bundle-out", default=None)
+    promote.set_defaults(func=_cmd_learn)
+
+    for name, help_text in (
+        ("install", "atomically install witnessd payload"),
+        ("upgrade", "atomically upgrade witnessd payload"),
+    ):
+        install = sub.add_parser(name, help=help_text)
+        install.add_argument("--payload", required=True)
+        install.add_argument("--dest", required=True)
+        install.add_argument("--config", required=True)
+        install.add_argument("--shim-dir", required=True)
+        install.add_argument("--version", required=True)
+        install.set_defaults(func=_cmd_install)
 
     self_test = sub.add_parser("self-test", help="run module self-tests")
     self_test.add_argument("--all", action="store_true")

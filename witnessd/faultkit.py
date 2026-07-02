@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
 
 from witnessd.eventlog import EventLog
+from witnessd.pause import PauseError, append_user_pause, assert_not_paused
+from witnessd.runlog import append_runlog
 
 
 def zombie_hang(
@@ -111,6 +114,20 @@ def crash_mid_toolcall(
     return state
 
 
+def pause_race(log: EventLog, run_id: str = "faultkit-pause-run") -> list[dict]:
+    """Dispatch, inject SIGINT-as-pause after 200ms, and prove no later side-effect."""
+
+    append_runlog(log, run_id, "dispatch", payload={"lane_id": "L1"})
+    time.sleep(0.2)
+    append_user_pause(log, run_id, source="signal")
+    try:
+        assert_not_paused(log.read())
+    except PauseError:
+        return log.read()
+    append_runlog(log, run_id, "spawn", payload={"lane_id": "L1"})
+    return log.read()
+
+
 def _self_test() -> None:
     import os
     import tempfile
@@ -136,3 +153,8 @@ def _self_test() -> None:
         )
         assert resumed["run_state"] == "evidence-pending"
         assert resumed["idempotency_reapplied"] == 0
+
+        pause_log = EventLog(os.path.join(tmp, "pause.jsonl"))
+        records = pause_race(pause_log)
+        pause_index = next(i for i, rec in enumerate(records) if rec["event"] == "user_pause")
+        assert not any(rec.get("event") in {"spawn", "dispatch", "edit", "commit"} for rec in records[pause_index + 1 :])

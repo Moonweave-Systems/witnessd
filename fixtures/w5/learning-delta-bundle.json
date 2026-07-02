@@ -1,0 +1,54 @@
+{
+  "assurance": "A1-local-observed",
+  "boundary": {
+    "approves_public_claim": false,
+    "raises_assurance": false,
+    "signed": true
+  },
+  "dsse_envelope": {
+    "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsiYXNzdXJhbmNlIjoiQTEtbG9jYWwtb2JzZXJ2ZWQiLCJib3VuZGFyeSI6eyJhcHByb3Zlc19wdWJsaWNfY2xhaW0iOmZhbHNlLCJyYWlzZXNfYXNzdXJhbmNlIjpmYWxzZSwic2lnbmVkIjp0cnVlfSwiZGVjaXNpb24iOiJsZWFybmluZy1kZWx0YS1wcm9tb3RlZCIsInByZXZfY2FwdHVyZV9oYXNoIjoiODY4YWYxNTkwODI5ZTcyOTNmOTM3ZGE0M2JjNzYwMWJlYjc4N2ZjMTZkY2RhNzY0MDhlMTZhM2MwZmQxYjgzMyIsInNjaGVtYV92ZXJzaW9uIjoiMS4wIiwic291cmNlX2tpbmQiOiJ3aXRuZXNzZC1sZWFybmluZy1kZWx0YSJ9LCJwcmVkaWNhdGVUeXBlIjoiaHR0cHM6Ly9kZXBvbmUuZGV2L2F0dGVzdGF0aW9ucy9ldmlkZW5jZS92MSIsInN1YmplY3QiOlt7ImRpZ2VzdCI6eyJzaGEyNTYiOiJmMzg1ZGM3N2FiZWZmMTkzZWExOWNlNDcxMzY4ZDI5NGU2YTZkMTZjY2ExNWYxN2M2MTc4ODgwZmI3OWYwZmVjIn0sIm5hbWUiOiJsZWFybmluZy1kZWx0YSJ9XX0=",
+    "payloadType": "application/vnd.in-toto+json",
+    "signatures": [
+      {
+        "keyid": "witnessd-learning-operator",
+        "sig": "pUNas7eHHWZWOWQcmmPBpoiqsYOqahs7uDJS+5X1SEtN6KznRaH2SZ9JZVPl8peYjuJuKsYq9rkKDhv4+RW7CQ=="
+      }
+    ]
+  },
+  "kind": "depone-evidence-substrate-bundle",
+  "otel_spans": [],
+  "schema_version": "1.0",
+  "signature_boundary": {
+    "keyless_identity": false,
+    "note": "Trust is rooted in the operator-held key and distributed public key; this is not Fulcio keyless identity or Rekor logging.",
+    "operator_key": true,
+    "public_verifiable": true,
+    "scheme": "DSSE-Ed25519-openssl-cli",
+    "transparency_logged": false
+  },
+  "signing_status": "signed-ed25519-operator-key",
+  "statement": {
+    "_type": "https://in-toto.io/Statement/v1",
+    "predicate": {
+      "assurance": "A1-local-observed",
+      "boundary": {
+        "approves_public_claim": false,
+        "raises_assurance": false,
+        "signed": true
+      },
+      "decision": "learning-delta-promoted",
+      "prev_capture_hash": "868af1590829e7293f937da43bc7601beb787fc16dcda76408e16a3c0fd1b833",
+      "schema_version": "1.0",
+      "source_kind": "witnessd-learning-delta"
+    },
+    "predicateType": "https://depone.dev/attestations/evidence/v1",
+    "subject": [
+      {
+        "digest": {
+          "sha256": "f385dc77abeff193ea19ce471368d294e6a6d16cca15f17c6178880fb79f0fec"
+        },
+        "name": "learning-delta"
+      }
+    ]
+  }
+}
