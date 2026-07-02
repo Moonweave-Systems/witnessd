@@ -10,9 +10,10 @@ notary path is operator-controlled and there is no independent IAP or
 transparency log.
 
 This OVERT statement does not raise Depone's assurance ceiling. A2 remains the
-maximum assurance grade, and the W1 A2 fixture is a demonstration on hosts
-without uid-isolated runner/observer execution; see
-`fixtures/w1/A2-DEMONSTRATION.md`.
+maximum assurance grade. The committed W12 A2 evidence bytes record the local
+host setup required for new A2 evidence: a dedicated observer uid, an
+observer-owned `0700` directory, and a runner uid that cannot write that
+directory.
 
 OVERT source checked for this statement:
 
@@ -49,11 +50,12 @@ honesty fixture: it documents that a post-hoc source can be mislabeled as
 `contemporaneous`; `scripts/revalidate_w8.py` preserves that fact instead of
 claiming to detect it. OVERT `DELAYED_NOTARY` (`0x01`) is not modeled.
 
-A2 evidence in this repository is also host-conditional.
-`fixtures/w1/A2-DEMONSTRATION.md` records that the committed A2 fixture is a
-demonstration captured for the Depone schema path, not proof that this host ran
-with a uid-separated runner. A real A2 claim requires a uid-isolated host that
-produces the runner/observer separation in the captured bytes.
+A2 evidence in this repository is host-conditional. `fixtures/w12/` contains
+operator-key-signed evidence bytes from a local observer-launched uid boundary:
+the observer process runs under the dedicated observer uid, the runner uid is
+distinct and non-root, and the observer directory is not writable by the runner.
+Other hosts must reproduce that dedicated-observer-uid setup before emitting new
+A2 evidence.
 
 ## Exclusions
 

@@ -97,6 +97,7 @@ class TestW12RealA2(unittest.TestCase):
                     "model": UID_OBSERVER_LAUNCHED_ISOLATION_MODEL,
                     "runner_uid": runner_uid,
                     "observer_uid": observer_uid,
+                    "observer_dir_mode": "0700",
                     "observer_dir_writable_by_runner": False,
                     "observer_launched": True,
                 },
@@ -120,6 +121,7 @@ class TestW12RealA2(unittest.TestCase):
         self.assertEqual(
             manifest["isolation"]["model"], UID_OBSERVER_LAUNCHED_ISOLATION_MODEL
         )
+        self.assertEqual(manifest["isolation"]["observer_dir_mode"], "0700")
         self.assertIs(manifest["isolation"]["observer_launched"], True)
         assert_strict_real_a2(manifest)
         assert_runner_writable_observer_dir_blocks(manifest)
@@ -156,6 +158,7 @@ class TestW12RealA2(unittest.TestCase):
                     "model": UID_OBSERVER_LAUNCHED_ISOLATION_MODEL,
                     "runner_uid": runner_uid,
                     "observer_uid": observer_uid,
+                    "observer_dir_mode": "0700",
                     "observer_dir_writable_by_runner": False,
                     "observer_launched": False,
                 },

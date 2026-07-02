@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -95,10 +96,20 @@ class TestDeponeReplicaConformance(unittest.TestCase):
 
     def test_isolation_probe_matches_depone(self):
         with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual(
-                probe_lane_isolation(observer_dir=tmp, runner_uid=999999),
-                probe_isolation_facts(Path(tmp), runner_uid=999999),
-            )
+            witnessd_facts = probe_lane_isolation(observer_dir=tmp, runner_uid=999999)
+            depone_facts = probe_isolation_facts(Path(tmp), runner_uid=999999)
+            expected_mode = f"{stat.S_IMODE(os.stat(tmp).st_mode):04o}"
+
+        shared = {
+            "runner_uid",
+            "observer_uid",
+            "observer_dir_writable_by_runner",
+        }
+        self.assertEqual(
+            {key: witnessd_facts[key] for key in shared},
+            {key: depone_facts[key] for key in shared},
+        )
+        self.assertEqual(witnessd_facts["observer_dir_mode"], expected_mode)
 
     def test_otel_spans_match_depone(self):
         manifest = {

@@ -138,7 +138,10 @@ class TestOvertFields(unittest.TestCase):
             self.assertIn("self-declared", text)
             self.assertIn("DELAYED_NOTARY", text)
             self.assertIn("A2", text)
-            self.assertIn("demonstration", text.lower())
+            lowered = text.lower()
+            self.assertIn("dedicated observer uid", lowered)
+            self.assertIn("runner", lowered)
+            self.assertIn("not writable", lowered)
 
     def test_parent_attestation_id_must_be_sha256_hex(self):
         with self.assertRaisesRegex(ValueError, "parent_attestation_id"):

@@ -1,7 +1,7 @@
 """W1 committed-evidence fixtures re-derive their verdicts through Depone.
 
 These tests load the bytes committed under ``fixtures/w1/`` and assert that the
-separate Depone validator re-derives A1 (and the A2 demonstration) from them —
+separate Depone validator re-derives A1 and strict real A2 from them —
 the same re-derivation ``scripts/revalidate_w1.py`` performs in G2. If a fixture
 byte drifts from what Depone accepts, these fail.
 """
@@ -15,6 +15,10 @@ from depone.agent_fabric.capture_bridge import validate_capture_manifest
 from depone.agent_fabric.evidence_substrate import (
     ingest_signed_evidence_bundle,
     verify_capture_chain,
+)
+from depone.agent_fabric.isolation import (
+    UID_OBSERVER_LAUNCHED_ISOLATION_MODEL,
+    verify_isolation_boundary,
 )
 from depone.agent_fabric.observer_provenance import (
     validate_trusted_observer_provenance,
@@ -55,13 +59,18 @@ class TestW1Fixtures(unittest.TestCase):
         self.assertEqual(verify_capture_chain([m1, m2])["decision"], "pass")
         self.assertEqual(verify_capture_chain([m2, m1])["decision"], "blocked")
 
-    def test_a2_demonstration_manifest_valid(self):
-        # A2 fixture is a demonstration of the isolation gate (no uid-isolated
-        # runner on this host); the recorded facts still establish a real
-        # boundary, so Depone validates it as A2.
+    def test_a2_real_manifest_valid(self):
         manifest = _load("capture-manifest-a2.json")
         self.assertEqual(validate_capture_manifest(manifest), [])
         self.assertEqual(manifest["assurance"], "A2-isolated-observed")
+        verified = verify_isolation_boundary(manifest["isolation"])
+        self.assertTrue(verified["boundary"])
+        self.assertEqual(verified["model"], UID_OBSERVER_LAUNCHED_ISOLATION_MODEL)
+        self.assertEqual(verified["runner_uid"], 1001)
+        self.assertEqual(verified["observer_uid"], 997)
+        self.assertEqual(manifest["isolation"]["observer_dir_mode"], "0700")
+        self.assertFalse(verified["observer_dir_writable_by_runner"])
+        self.assertTrue(verified["observer_launched"])
 
     def test_runner_receipt_valid(self):
         receipt = _load("runner-receipt.json")

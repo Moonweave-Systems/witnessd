@@ -60,6 +60,7 @@ def _verify_uid_isolation_boundary(
     runner_uid = facts.get("runner_uid")
     observer_uid = facts.get("observer_uid")
     writable = facts.get("observer_dir_writable_by_runner")
+    observer_dir_mode = facts.get("observer_dir_mode")
     observer_launched = facts.get("observer_launched")
     if not isinstance(observer_launched, bool):
         observer_launched = None
@@ -94,6 +95,8 @@ def _verify_uid_isolation_boundary(
         else None,
         "reasons": reasons,
     }
+    if isinstance(observer_dir_mode, str):
+        verified["observer_dir_mode"] = observer_dir_mode
     if model == UID_OBSERVER_LAUNCHED_ISOLATION_MODEL:
         verified["observer_launched"] = observer_launched
     return verified
@@ -220,9 +223,11 @@ def probe_isolation_facts(
     try:
         st = os.stat(observer_dir)
     except OSError:
+        facts["observer_dir_mode"] = None
         facts["observer_dir_writable_by_runner"] = None
         return facts
 
+    facts["observer_dir_mode"] = f"{stat.S_IMODE(st.st_mode):04o}"
     foreign_owner = st.st_uid != observer_uid
     group_or_other_writable = bool(st.st_mode & (stat.S_IWGRP | stat.S_IWOTH))
     facts["observer_dir_writable_by_runner"] = bool(

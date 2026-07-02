@@ -1,0 +1,1 @@
+{"observed_by": "depone-observer", "source_fixture_hash": "6fd20425a32cba17a2733358eb03508d8618a542b5496868737dd771dfb3c13e", "diff_summary": {"changed_files": []}, "touched_files": [], "test_output": {"status": "not-run"}, "command_receipts": [{"command": ["/usr/bin/true"], "exit_code": 0, "stdout": "", "stderr": ""}]}

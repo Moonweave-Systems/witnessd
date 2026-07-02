@@ -46,7 +46,8 @@ def assert_strict_real_a2(manifest: dict[str, Any]) -> None:
         f"W12 assurance must be A2-isolated-observed, got {manifest.get('assurance')!r}",
     )
     isolation = manifest.get("isolation")
-    _require(isinstance(isolation, dict), "W12 A2 manifest must include isolation facts")
+    if not isinstance(isolation, dict):
+        raise AssertionError("W12 A2 manifest must include isolation facts")
     verified = verify_isolation_boundary(isolation)
     _require(
         verified.get("boundary") is True,
@@ -64,6 +65,10 @@ def assert_strict_real_a2(manifest: dict[str, Any]) -> None:
     _require(
         verified.get("observer_dir_writable_by_runner") is False,
         "W12 observer_dir must be proven not writable by the runner",
+    )
+    _require(
+        isolation.get("observer_dir_mode") == "0700",
+        f"W12 observer_dir_mode must be 0700, got {isolation.get('observer_dir_mode')!r}",
     )
     _require(
         verified.get("observer_launched") is True,

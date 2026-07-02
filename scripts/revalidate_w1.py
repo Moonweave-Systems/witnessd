@@ -3,18 +3,16 @@
 witnessd never verifies its own evidence. This harness loads only the bytes
 committed under ``fixtures/w1/`` and hands them to the installed Depone
 (non-executing) validator, asserting that Depone independently re-derives every
-W1 claim: A1 (and, on a genuinely uid-isolated host, A2), an append-only capture
+W1 claim: A1 and strict real A2, an append-only capture
 chain with reorder/tamper blocked, an operator-key signed bundle whose subjects
 re-hash from the same files, a valid runner-receipt, trusted-observer-provenance
 bound to the exact manifest, and an evidence-contract carrying an enforcement
 directive. It also asserts the negative direction inline: a forged ``A3-*``
 assurance fails signature verification.
 
-The A2 assurance claim is uid-host-conditional: ``fixtures/w1/capture-manifest-a2.json``
-is a demonstration on hosts without uid isolation (flagged by
-``fixtures/w1/A2-DEMONSTRATION.md``). There the manifest is still asserted
-structurally valid, but the strict ``assurance == "A2-isolated-observed"`` claim
-is only enforced when a real uid-isolated run produced the fixture.
+The A2 assurance claim is no longer demonstration-only: after W12, the committed
+``fixtures/w1/capture-manifest-a2.json`` bytes must prove an observer-launched
+uid boundary with a dedicated observer uid and a runner-unwritable observer dir.
 
 Run with:
 
@@ -29,10 +27,17 @@ import json
 import sys
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+
 from depone.agent_fabric.capture_bridge import validate_capture_manifest
 from depone.agent_fabric.evidence_substrate import (
     ingest_signed_evidence_bundle,
     verify_capture_chain,
+)
+from depone.agent_fabric.isolation import (
+    UID_OBSERVER_LAUNCHED_ISOLATION_MODEL,
+    verify_isolation_boundary,
 )
 from depone.agent_fabric.observer_provenance import (
     validate_trusted_observer_provenance,
@@ -41,11 +46,15 @@ from depone.agent_fabric.paired_run import validate_runner_receipt
 from depone.agent_fabric.sign import verify_signed_bundle
 from depone.verify.adapters.base import EvidenceContext, EvidenceFile
 from depone.verify.evidence_contract import validate_evidence_contract
+from scripts.revalidate_w12 import (
+    assert_runner_writable_observer_dir_blocks,
+    assert_strict_real_a2,
+)
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 FIX = REPO_ROOT / "fixtures" / "w1"
 NEG = FIX / "negative"
 PROVENANCE_EVIDENCE_PATH = "fixtures/w1/capture-manifest.json"
+W12_REAL_A2 = REPO_ROOT / "fixtures" / "w12" / "capture-manifest.json"
 CONTRACT_FILES = (
     "evidence-contract.json",
     "git-diff-name-only.txt",
@@ -93,23 +102,52 @@ def _revalidate_a1(public_key_path: str) -> dict:
 
 def _revalidate_a2() -> None:
     manifest = _load("capture-manifest-a2.json")
+    manifest_bytes = (FIX / "capture-manifest-a2.json").read_bytes()
+    w12_bytes = W12_REAL_A2.read_bytes()
+    _require(
+        manifest_bytes == w12_bytes,
+        "W1 A2 manifest must be sourced byte-for-byte from the W12 real A2 manifest",
+    )
+    w12_manifest = json.loads(W12_REAL_A2.read_text(encoding="utf-8"))
+    assert_strict_real_a2(w12_manifest)
+    assert_runner_writable_observer_dir_blocks(w12_manifest)
     _require(
         validate_capture_manifest(manifest) == [],
         "A2 capture-manifest must validate with no errors",
     )
-    is_demonstration = (FIX / "A2-DEMONSTRATION.md").exists()
-    if is_demonstration:
-        # uid-host-conditional: without uid isolation the A2 assurance claim is a
-        # demonstration only, so the strict assert is deferred to a real host.
-        print(
-            "W1 revalidate: A2 demonstration only (no uid isolation on host) — "
-            f"Depone derives {manifest['assurance']!r}, strict A2 assert deferred"
-        )
-    else:
-        _require(
-            manifest["assurance"] == "A2-isolated-observed",
-            f"A2 manifest assurance must be A2-isolated-observed, got {manifest['assurance']!r}",
-        )
+    _require(
+        manifest["assurance"] == "A2-isolated-observed",
+        f"A2 manifest assurance must be A2-isolated-observed, got {manifest['assurance']!r}",
+    )
+    isolation = manifest.get("isolation")
+    if not isinstance(isolation, dict):
+        raise AssertionError("A2 manifest must include isolation facts")
+    verified = verify_isolation_boundary(isolation)
+    _require(
+        verified.get("boundary") is True,
+        f"A2 isolation facts must establish a boundary: {verified!r}",
+    )
+    _require(
+        verified.get("model") == UID_OBSERVER_LAUNCHED_ISOLATION_MODEL,
+        "A2 manifest must use the observer-launched uid isolation model",
+    )
+    _require(
+        verified.get("runner_uid") != verified.get("observer_uid"),
+        "A2 runner and observer uids must differ",
+    )
+    _require(verified.get("runner_uid") != 0, "A2 root runner uid is forbidden")
+    _require(
+        verified.get("observer_dir_writable_by_runner") is False,
+        "A2 observer_dir must be proven not writable by the runner",
+    )
+    _require(
+        isolation.get("observer_dir_mode") == "0700",
+        f"A2 observer_dir_mode must be 0700, got {isolation.get('observer_dir_mode')!r}",
+    )
+    _require(
+        verified.get("observer_launched") is True,
+        "A2 runner must be observer-launched",
+    )
 
 
 def _revalidate_chain() -> None:

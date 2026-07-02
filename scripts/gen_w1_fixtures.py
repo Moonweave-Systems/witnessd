@@ -6,13 +6,10 @@ the capture-manifest, observer-capture, runner-receipt, signed evidence bundle,
 and evidence-contract companions. The trusted-observer-provenance is re-bound to
 a stable, repo-relative evidence path so a checkout can re-derive it.
 
-A2 is a DEMONSTRATION only: this host runs the lane in-process as the observer
-uid, so there is no uid-isolated runner to observe. The A2 manifest records real
-isolation facts probed via witnessd's local isolation probe against a
-mode-0700 observer dir with a distinct runner uid, which the isolation gate
-accepts as a boundary — it demonstrates the A2 path without claiming a real
-isolated run. ``scripts/revalidate_w1.py`` treats the strict A2 assert as
-uid-host-conditional.
+A2 is sourced from the W12 real observer-launched uid fixture. Regenerating W1
+now requires ``fixtures/w12/capture-manifest.json`` to exist and to prove the
+dedicated-observer-uid boundary through the same strict W12 assertions; the old
+demonstration marker must not be recreated.
 
 Only public material is committed; the operator private key never leaves the
 throwaway temp dir. Run with:
@@ -24,26 +21,34 @@ from __future__ import annotations
 
 import copy
 import json
-import os
 import shutil
-import stat
+import sys
 import tempfile
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 
 from witnessd.adapters.shell import run_shell_lane
 from witnessd.canonical import canonical_hash
 from witnessd.capture import build_capture_manifest
 from witnessd.emitter import emit_lane_evidence
 from witnessd.fixture import build_reference_adapter_fixture
-from witnessd.isolation import probe_isolation_facts
+from witnessd.isolation import (
+    UID_OBSERVER_LAUNCHED_ISOLATION_MODEL,
+    verify_isolation_boundary,
+)
 from witnessd.observer import build_observer_capture
 from witnessd.provenance import build_signed_trusted_observer_provenance
 from witnessd.signing import gen_operator_keypair
+from scripts.revalidate_w12 import (
+    assert_runner_writable_observer_dir_blocks,
+    assert_strict_real_a2,
+)
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 FIX = REPO_ROOT / "fixtures" / "w1"
+W12_REAL_A2 = REPO_ROOT / "fixtures" / "w12" / "capture-manifest.json"
 PROVENANCE_EVIDENCE_PATH = "fixtures/w1/capture-manifest.json"
-A2_DEMONSTRATION_RUNNER_UID = 65534  # real distinct non-root uid (nobody)
 
 A1_ARTIFACTS = (
     "capture-manifest.json",
@@ -96,25 +101,21 @@ def _chain_manifest(profile: str, prev: str | None) -> dict:
     )
 
 
-def _a2_demonstration_manifest(work: Path) -> dict:
-    observer_dir = work / "observer-a2"
-    observer_dir.mkdir()
-    os.chmod(observer_dir, stat.S_IRWXU)  # 0700: not writable by a different uid
-    facts = probe_isolation_facts(observer_dir, runner_uid=A2_DEMONSTRATION_RUNNER_UID)
-    observer_capture = build_observer_capture(
-        command_receipts=[{"command": ["sh", "-c", "true"], "exit_code": 0}],
-        touched_files=["depone/example.py"],
-        allowed_touched_files=["depone/example.py"],
-        test_output={"status": "passed", "summary": "1 passed"},
-    )
-    manifest = build_capture_manifest(
-        build_reference_adapter_fixture(_invocation("w1-a2-demonstration")),
-        observer_capture=observer_capture,
-        allowed_touched_files=["depone/example.py"],
-        isolation=facts,
-    )
-    if manifest["assurance"] != "A2-isolated-observed":
-        raise SystemExit(f"A2 demonstration did not reach A2: {manifest['assurance']}")
+def _a2_real_manifest() -> dict:
+    if not W12_REAL_A2.exists():
+        raise SystemExit(f"W12 real A2 fixture missing: {W12_REAL_A2}")
+    manifest = json.loads(W12_REAL_A2.read_text(encoding="utf-8"))
+    assert_strict_real_a2(manifest)
+    assert_runner_writable_observer_dir_blocks(manifest)
+    if manifest.get("assurance") != "A2-isolated-observed":
+        raise SystemExit(f"W12 fixture is not A2: {manifest.get('assurance')!r}")
+    verified = verify_isolation_boundary(manifest.get("isolation"))
+    if verified.get("boundary") is not True:
+        raise SystemExit(f"W12 fixture does not prove A2 isolation: {verified!r}")
+    if verified.get("model") != UID_OBSERVER_LAUNCHED_ISOLATION_MODEL:
+        raise SystemExit(f"W12 fixture uses unexpected isolation model: {verified!r}")
+    if verified.get("observer_launched") is not True:
+        raise SystemExit(f"W12 fixture is not observer-launched: {verified!r}")
     return manifest
 
 
@@ -210,21 +211,12 @@ def main() -> None:
         _write_json(FIX / "chain" / "capture-manifest-001.json", m1)
         _write_json(FIX / "chain" / "capture-manifest-002.json", m2)
 
-        _write_json(FIX / "capture-manifest-a2.json", _a2_demonstration_manifest(work))
+        _a2_real_manifest()
+        shutil.copyfile(W12_REAL_A2, FIX / "capture-manifest-a2.json")
 
-    (FIX / "A2-DEMONSTRATION.md").write_text(
-        "# A2 fixture: demonstration only\n\n"
-        "`capture-manifest-a2.json` is a demonstration of the A2 isolation gate, "
-        "not a real isolated run. This host has no uid isolation for the witnessd "
-        "runtime (the shell adapter runs in-process as the observer uid), so there "
-        "is no uid-separated runner to observe. The manifest records real isolation "
-        "facts probed via Depone's `probe_isolation_facts` (mode-0700 observer dir, "
-        f"distinct runner uid {A2_DEMONSTRATION_RUNNER_UID}); Depone validates it as "
-        "A2. `scripts/revalidate_w1.py` treats the strict A2 assert as "
-        'uid-host-conditional and only enforces `assurance == "A2-isolated-observed"` '
-        "on a host that produced a genuinely uid-isolated run.\n",
-        encoding="utf-8",
-    )
+    marker = FIX / "A2-DEMONSTRATION.md"
+    if marker.exists():
+        marker.unlink()
     _write_negative_fixtures()
     print(f"W1 fixtures written to {FIX}")
 

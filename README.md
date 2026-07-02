@@ -143,8 +143,10 @@ conformance statement, not an external certification.
 
 Honest exclusions matter:
 
-- A2 requires a uid-isolated host path; [`fixtures/w1/A2-DEMONSTRATION.md`](fixtures/w1/A2-DEMONSTRATION.md)
-  records the current demonstration limit.
+- A2 requires a uid-isolated host path with a dedicated observer uid. The
+  committed W12 A2 evidence bytes in [`fixtures/w12/`](fixtures/w12/) record a
+  local observer-launched run where the runner uid is distinct and the observer
+  directory is not writable by the runner.
 - There is no independent transparency log or independent IAP/notary in v1.0.
 - W8 `evidence_mode` is self-declared model data, not proof of live notary
   co-signing or co-epoch anchoring.
@@ -188,7 +190,8 @@ Conformance:
 - OVERT 1.1 alignment is documented as AAL-3 Agentic, not certification.
 
 Known limits:
-- A2 remains demonstration-only without uid-isolated host proof.
+- New A2 evidence requires reproducing the dedicated-observer-uid host setup
+  captured by W12.
 - No independent transparency log / IAP notary in v1.0.
 - Keyless signing remains blocked outside this release gate.
 ```
