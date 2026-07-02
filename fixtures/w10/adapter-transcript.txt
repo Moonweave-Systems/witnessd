@@ -1,0 +1,3 @@
+Implemented `score_phrase` in [wordscore/core.py](/tmp/witnessd-w10-live-sandbox-20260702T1429Z/wordscore/core.py:6). It now splits on whitespace, lowercases each word, and returns word counts.
+
+Verification: `python3 -m unittest discover -s tests` passed, running 2 tests.

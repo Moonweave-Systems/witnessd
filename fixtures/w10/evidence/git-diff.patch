@@ -1,0 +1,14 @@
+diff --git a/wordscore/core.py b/wordscore/core.py
+index cd25fd9..ddc5a6b 100644
+--- a/wordscore/core.py
++++ b/wordscore/core.py
+@@ -4,4 +4,8 @@ from __future__ import annotations
+ 
+ 
+ def score_phrase(text: str) -> dict[str, int]:
+-    raise NotImplementedError('W10 live agent must implement this')
++    counts: dict[str, int] = {}
++    for word in text.split():
++        word = word.lower()
++        counts[word] = counts.get(word, 0) + 1
++    return counts
