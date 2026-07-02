@@ -91,6 +91,8 @@ def run_team(
                         base_dir=base_dir,
                         observer_dir=observer_path,
                         allowed_touched_files=allowed_touched_files,
+                        private_key_path=private_key_path,
+                        public_key_path=public_key_path,
                         log=log,
                         run_id=run_id,
                     )
@@ -240,6 +242,8 @@ def _run_adapter_lane(
     base_dir: Path,
     observer_dir: Path,
     allowed_touched_files: list[str],
+    private_key_path: str,
+    public_key_path: str,
     log: EventLog,
     run_id: str,
 ) -> dict[str, Any]:
@@ -271,6 +275,8 @@ def _run_adapter_lane(
         claude_binary=str(spec.get("claude_binary", "claude")),
         opencode_binary=str(spec.get("opencode_binary", "opencode")),
         evidence_dir=str(evidence_dir),
+        private_key_path=private_key_path,
+        public_key_path=public_key_path,
     )
     _commit_lane(worktree, lane_id)
 
