@@ -116,6 +116,7 @@ Honest exclusions matter:
 - There is no independent transparency log or independent IAP/notary in v1.0.
 - W8 `evidence_mode` is self-declared model data, not proof of live notary
   co-signing or co-epoch anchoring.
+- OVERT `DELAYED_NOTARY` (`0x01`) is not modeled in v1.0.
 - Keyless signing is a separate blocked gate, tracked in
   [`docs/plans/2026-07-02-w6-keyless-signing.md`](docs/plans/2026-07-02-w6-keyless-signing.md).
 
