@@ -1,0 +1,1 @@
+{"idempotency_reapplied":0,"lane_id":"L1","last_event_hash":"3c7c8ae94e2735b7d0145227f86385d8cdcf51f2539bb15fcc0838d655aa3254","last_seq":2,"run_id":"w2-durable-resume","run_state":"evidence-pending","tool_call_cursor":1}
