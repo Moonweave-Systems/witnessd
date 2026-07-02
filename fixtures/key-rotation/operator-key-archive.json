@@ -1,0 +1,28 @@
+{
+  "kind": "witnessd-operator-key-archive",
+  "schema_version": "1.0",
+  "policy": {
+    "compromise_response": "rotate immediately; reject post-compromise evidence for compromised key_id",
+    "historical_evidence": "retain retired public keys so old evidence remains re-verifiable",
+    "keyless_gate": "keyless Fulcio/Rekor remains blocked until one production deployment exercises this runbook",
+    "rotation_interval_days": 90
+  },
+  "keys": [
+    {
+      "bundle_path": "fixtures/w1/bundle.json",
+      "key_id": "witnessd-operator",
+      "public_key_path": "fixtures/w1/keys/operator.pub",
+      "status": "retired",
+      "valid_from": "2026-07-01T00:00:00Z",
+      "valid_until": "2026-07-02T00:00:00Z"
+    },
+    {
+      "bundle_path": "fixtures/w5/learning-delta-bundle.json",
+      "key_id": "witnessd-learning-operator",
+      "public_key_path": "fixtures/w5/keys/operator.pub",
+      "status": "current",
+      "valid_from": "2026-07-02T00:00:00Z",
+      "valid_until": null
+    }
+  ]
+}
