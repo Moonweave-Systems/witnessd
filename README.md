@@ -77,6 +77,14 @@ Start with [`fixtures/w1/`](fixtures/w1/) and [`scripts/revalidate_w1.py`](scrip
   verified. The fixture intentionally preserves the original absolute run paths;
   revalidation checks those committed bytes as recorded, not path-independent
   replay.
+- W11 Planner/Orchestrator:
+  [`witnessd.planner`](witnessd/planner.py) turns a goal into explicit
+  `LanePacket` objects, seals the packet list with the canonical hash contract,
+  and derives deterministic dispatch events. [`fixtures/w11/`](fixtures/w11/)
+  and [`scripts/revalidate_w11.py`](scripts/revalidate_w11.py) prove the sealed
+  hash, dispatch determinism, heuristic determinism, and overlap rejection.
+  `witnessd team plan-run "<goal>"` runs the heuristic shell-lane fallback
+  locally and reports evidence pending separate verification.
 
 The runtime dependency target is intentionally small: Python standard library plus
 the `openssl` CLI. Depone is a development/test verifier dependency, not a
@@ -108,6 +116,14 @@ bytes:
 ```bash
 cd /home/ubuntu/moonweave/witnessd
 PYTHONPATH=/home/ubuntu/moonweave/depone uv run python3 scripts/revalidate_w10.py
+```
+
+For the W11 planner fixture and local zero-cost plan-run smoke:
+
+```bash
+cd /home/ubuntu/moonweave/witnessd
+PYTHONPATH=/home/ubuntu/moonweave/depone uv run python3 scripts/revalidate_w11.py
+uv run python3 -m witnessd team plan-run "smoke goal" --repo . --out /tmp/witnessd-plan-run
 ```
 
 For a depone-free runtime smoke test, run in an environment where Depone is not on
