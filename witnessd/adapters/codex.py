@@ -86,6 +86,7 @@ def run_codex_lane(
     log_path: str | None = None,
     sandbox_mode: str = "workspace-write",
     timeout_seconds: int = 120,
+    env: dict[str, str] | None = None,
 ) -> AdapterResult:
     if not prompt.strip():
         raise CodexAdapterError(
@@ -115,6 +116,7 @@ def run_codex_lane(
         completed = subprocess.run(
             invocation,
             cwd=repo,
+            env=env,
             input=prompt,
             text=True,
             encoding="utf-8",

@@ -53,6 +53,7 @@ class StateNamespace:
         codex_home = self.state_dir / "codex-home"
         codex_home.mkdir(parents=True, exist_ok=True)
         env["CODEX_HOME"] = str(codex_home)
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
         return env
 
 

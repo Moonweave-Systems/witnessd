@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -58,6 +59,7 @@ def _run_adapter(
     claude_binary: str,
     opencode_binary: str,
     timeout_seconds: int,
+    codex_env: dict[str, str] | None = None,
 ) -> Any:
     if adapter == "codex":
         return run_codex_lane(
@@ -67,6 +69,7 @@ def _run_adapter(
             transcript_path=transcript_path,
             log_path=log_path,
             timeout_seconds=timeout_seconds,
+            env=codex_env,
         )
     if adapter == "claude":
         return run_claude_lane(
@@ -87,6 +90,40 @@ def _run_adapter(
             timeout_seconds=timeout_seconds,
         )
     raise LaneBlocked("preflight_blocked", f"unknown adapter: {adapter}")
+
+
+def _git_diff_patch(worktree: str, touched_files: list[str]) -> str:
+    if not touched_files:
+        return ""
+    repo = str(Path(worktree).resolve(strict=False))
+
+    def run_git(args: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args],
+            cwd=repo,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+        )
+
+    inside = run_git(["rev-parse", "--is-inside-work-tree"])
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return ""
+
+    patch_parts: list[str] = []
+    tracked = run_git(["diff", "--no-ext-diff", "--", *touched_files])
+    if tracked.returncode == 0 and tracked.stdout:
+        patch_parts.append(tracked.stdout)
+
+    untracked = run_git(["ls-files", "--others", "--exclude-standard", "--", *touched_files])
+    for relpath in [line for line in untracked.stdout.splitlines() if line]:
+        diff = run_git(["diff", "--no-index", "--", "/dev/null", relpath])
+        if diff.returncode in {0, 1} and diff.stdout:
+            patch_parts.append(diff.stdout)
+
+    return "".join(patch_parts)
 
 
 def run_adapter_lane(
@@ -171,6 +208,7 @@ def run_adapter_lane(
             private_key, public_key = private_key_path, public_key_path
 
         assert_separated(worktree, str(lane_evidence_dir / "capture-manifest.json"))
+        codex_env = namespace.codex_env() if adapter == "codex" else None
         adapter_result = _run_adapter(
             adapter=adapter,
             sandbox=worktree,
@@ -181,7 +219,9 @@ def run_adapter_lane(
             claude_binary=claude_binary,
             opencode_binary=opencode_binary,
             timeout_seconds=timeout_seconds,
+            codex_env=codex_env,
         )
+        diff_patch = _git_diff_patch(worktree, adapter_result.touched_files)
 
         started_at = _now_iso()
         ended_at = _now_iso()
@@ -202,6 +242,7 @@ def run_adapter_lane(
             runner_kind=adapter_result.runner_kind,
             started_at=started_at,
             ended_at=ended_at,
+            diff_patch=diff_patch,
         )
 
         return {
