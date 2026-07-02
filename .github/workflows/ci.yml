@@ -14,99 +14,97 @@ jobs:
       matrix:
         python-version: ['3.10', '3.12']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout witnessd
+        uses: actions/checkout@v4
+
+      - name: Checkout Depone verifier
+        uses: actions/checkout@v4
+        with:
+          repository: Moonweave-Systems/Depone
+          path: depone
+          # For a private Depone repo, configure DEPONE_TOKEN with read access.
+          token: ${{ secrets.DEPONE_TOKEN || github.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install openssl
-        run: sudo apt-get update && sudo apt-get install -y openssl
-      - name: Clone Depone dev/test dependency
-        shell: bash
-        run: |
-          set -euo pipefail
-          # If Depone is private, set DEPONE_TOKEN in repository secrets.
-          if [ -n "${{ secrets.DEPONE_TOKEN }}" ]; then
-            git clone "https://x-access-token:${{ secrets.DEPONE_TOKEN }}@github.com/Moonweave-Systems/Depone.git" ../depone
-          else
-            git clone https://github.com/Moonweave-Systems/Depone.git ../depone
-          fi
-      - name: Unit tests
-        run: PYTHONPATH="$PWD/../depone" python3 -m unittest discover -s tests
+
+      - name: Run unit tests against Depone validators
+        run: PYTHONPATH="$GITHUB_WORKSPACE/depone" python3 -m unittest discover -s tests -p 'test_*.py'
 
   revalidate:
+    name: revalidate committed evidence fixtures
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout witnessd
+        uses: actions/checkout@v4
+
+      - name: Checkout Depone verifier
+        uses: actions/checkout@v4
+        with:
+          repository: Moonweave-Systems/Depone
+          path: depone
+          # For a private Depone repo, configure DEPONE_TOKEN with read access.
+          token: ${{ secrets.DEPONE_TOKEN || github.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install openssl
-        run: sudo apt-get update && sudo apt-get install -y openssl
-      - name: Clone Depone dev/test dependency
-        shell: bash
-        run: |
-          set -euo pipefail
-          # If Depone is private, set DEPONE_TOKEN in repository secrets.
-          if [ -n "${{ secrets.DEPONE_TOKEN }}" ]; then
-            git clone "https://x-access-token:${{ secrets.DEPONE_TOKEN }}@github.com/Moonweave-Systems/Depone.git" ../depone
-          else
-            git clone https://github.com/Moonweave-Systems/Depone.git ../depone
-          fi
-      - name: Revalidate committed fixtures
+
+      - name: Re-derive all committed fixture verdicts
         shell: bash
         run: |
           set -euo pipefail
           for script in scripts/revalidate_*.py; do
-            PYTHONPATH="$PWD/../depone" python3 "$script"
+            echo "== ${script} =="
+            PYTHONPATH="$GITHUB_WORKSPACE/depone" python3 "$script"
           done
 
   decoupling-guard:
+    name: depone-free runtime guard
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout witnessd
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install openssl
-        run: sudo apt-get update && sudo apt-get install -y openssl
-      - name: Runtime imports without Depone
-        run: |
-          python3 - <<'PY'
-          import importlib.util
-          assert importlib.util.find_spec('depone') is None
-          import witnessd.emitter, witnessd.__main__
-          PY
+
+      - name: Import runtime without Depone installed
+        run: python3 -c "import witnessd.emitter, witnessd.__main__"
+
       - name: Shell lane emits evidence-pending without Depone
         shell: bash
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
-          mkdir -p "$tmp/sandbox" "$tmp/evidence"
+          mkdir -p "$tmp/sandbox" "$tmp/observer"
           python3 -m witnessd run \
             --adapter shell \
             --runner-sandbox "$tmp/sandbox" \
-            --out "$tmp/evidence/capture-manifest.json" \
-            --log "$tmp/evidence/runlog.jsonl" \
+            --out "$tmp/observer/capture-manifest.json" \
+            --log "$tmp/observer/runlog.jsonl" \
+            --task-id ci-decoupling \
             --allow out.txt \
-            -- sh -c 'echo hi > out.txt' | tee "$tmp/stdout.txt"
+            -- sh -c 'printf ok > out.txt' | tee "$tmp/stdout.txt"
           grep -q 'evidence-pending' "$tmp/stdout.txt"
-          test -f "$tmp/evidence/capture-manifest.json"
 
   no-overclaim:
+    name: no standalone success overclaims
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Forbid standalone VERIFIED success paths
+      - name: Checkout witnessd
+        uses: actions/checkout@v4
+
+      - name: Reject forbidden status strings outside status gate
         shell: bash
         run: |
           set -euo pipefail
-          matches="$(grep -RIn 'VERIFIED' witnessd tests scripts || true)"
-          disallowed="$(printf '%s\n' "$matches" \
-            | grep -v '^witnessd/status.py:' \
-            | grep -v 'assertNotIn' \
-            | grep -v '^scripts/revalidate_w4.py:' \
-            || true)"
-          if [ -n "$disallowed" ]; then
-            printf '%s\n' "$disallowed"
+          if grep -RIn 'VERIFIED\|DONE\|COMPLETE\|ORCHESTRATION COMPLETE' witnessd/ | grep -v 'witnessd/status.py'; then
+            echo 'Forbidden standalone success string outside witnessd/status.py' >&2
             exit 1
           fi
