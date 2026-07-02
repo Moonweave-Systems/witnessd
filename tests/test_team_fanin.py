@@ -78,6 +78,27 @@ class TestTeamFanin(unittest.TestCase):
             self.assertEqual(validate_capture_manifest(lane["manifest"]), [])
         self.assertEqual(verify_runlog(result["runlog"])["ok"], True)
 
+    def test_w3_companion_artifacts_are_audited_in_team_runlog(self):
+        result = self._run(
+            [
+                {
+                    "lane_id": "lane-a",
+                    "region": ["pkg/a.py"],
+                    "commands": [["sh", "-c", "mkdir -p pkg && echo a > pkg/a.py"]],
+                },
+            ]
+        )
+
+        artifacts = [
+            event["payload"]["artifact"]
+            for event in result["runlog"]
+            if event["event"] == "emit-artifact"
+        ]
+
+        self.assertIn("team-ledger.json", artifacts)
+        self.assertIn("lane-a/worktree-lane-receipt.json", artifacts)
+        self.assertIn("lane-a/evidence-next-verdict.json", artifacts)
+
     def test_claim_conflict_is_audited_and_conflicting_lane_is_excluded(self):
         result = self._run(
             [

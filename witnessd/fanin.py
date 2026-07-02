@@ -90,6 +90,8 @@ def run_team(
                 allowed_touched_files=allowed_touched_files,
                 private_key_path=private_key_path,
                 public_key_path=public_key_path,
+                log=log,
+                run_id=run_id,
             )
             lanes.append(lane["ledger_lane"])
             lane_outputs.append(lane)
@@ -124,6 +126,8 @@ def _run_write_lane(
     allowed_touched_files: list[str],
     private_key_path: str,
     public_key_path: str,
+    log: EventLog,
+    run_id: str,
 ) -> dict[str, Any]:
     worktree = create_lane_worktree(
         repo_root=str(repo_root),
@@ -162,9 +166,21 @@ def _run_write_lane(
         evidence_dir=lane_id,
         commands=lane_result["command_receipts"],
     )
-    _write_json(evidence_dir / "worktree-lane-receipt.json", receipt)
+    _write_json_artifact(
+        log,
+        run_id,
+        evidence_dir / "worktree-lane-receipt.json",
+        receipt,
+        artifact_name=f"{lane_id}/worktree-lane-receipt.json",
+    )
     verdict = build_evidence_next_verdict()
-    _write_json(evidence_dir / "evidence-next-verdict.json", verdict)
+    _write_json_artifact(
+        log,
+        run_id,
+        evidence_dir / "evidence-next-verdict.json",
+        verdict,
+        artifact_name=f"{lane_id}/evidence-next-verdict.json",
+    )
 
     ledger_lane = {
         "lane_id": lane_id,
@@ -221,7 +237,12 @@ def _commit_lane(worktree: str, lane_id: str) -> None:
 
 
 def _write_json_artifact(
-    log: EventLog, run_id: str, path: Path, payload: dict[str, Any]
+    log: EventLog,
+    run_id: str,
+    path: Path,
+    payload: dict[str, Any],
+    *,
+    artifact_name: str | None = None,
 ) -> None:
     data = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     path.write_text(data, encoding="utf-8")
@@ -230,15 +251,11 @@ def _write_json_artifact(
         run_id,
         "emit-artifact",
         payload={
-            "artifact": path.name,
+            "artifact": artifact_name or path.name,
             "path": str(path),
             "content_sha256": hashlib.sha256(data.encode("utf-8")).hexdigest(),
         },
     )
-
-
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")), encoding="utf-8")
 
 
 def _git(cwd: Path, args: list[str]) -> str:
