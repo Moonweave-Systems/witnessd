@@ -106,7 +106,7 @@ OVERT `DELAYED_NOTARY` (`0x01`).
   A2 in the current contract.
 - **A2 in this repo is demonstration-only unless captured on a uid-isolated
   host.** See [`fixtures/w1/A2-DEMONSTRATION.md`](fixtures/w1/A2-DEMONSTRATION.md).
-- **Temporality is self-attested in v1.0.** `evidence_mode` distinguishes
+- **Temporality is self-declared / self-attested in v1.0.** `evidence_mode` distinguishes
   `contemporaneous` from `post_hoc`, but without a live independent notary,
   co-epoch anchor, or transparency timestamp, the bytes alone do not prove that
   distinction. W8 preserves this as an honesty fixture rather than a detector.

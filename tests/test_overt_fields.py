@@ -127,11 +127,12 @@ class TestOvertFields(unittest.TestCase):
 
     def test_release_docs_keep_temporality_and_a2_honesty(self):
         root = os.path.dirname(os.path.dirname(__file__))
-        overt = open(
-            os.path.join(root, "docs", "conformance", "OVERT.md"),
-            encoding="utf-8",
-        ).read()
-        readme = open(os.path.join(root, "README.md"), encoding="utf-8").read()
+        from pathlib import Path
+
+        overt = Path(root, "docs", "conformance", "OVERT.md").read_text(
+            encoding="utf-8"
+        )
+        readme = Path(root, "README.md").read_text(encoding="utf-8")
 
         for text in (overt, readme):
             self.assertIn("self-declared", text)
