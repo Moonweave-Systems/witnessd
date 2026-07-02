@@ -32,4 +32,22 @@
 
 ## 현재 상태
 
-W1-W5 구현 및 committed fixture revalidation이 완료됐다. 후속 작업은 SPEC의 deferred 항목(keyless 서명 축, docker/container isolation 모델 1급 승격)을 별도 웨이브로 다룬다.
+W1-W5 구현 및 committed fixture revalidation 완료. 2026-07-02에 런타임 depone 의존 제거
+(`ad5b9d5`, 이제 runtime은 진짜 stdlib+openssl only — depone 없는 환경에서 실행·방출 가능,
+parity 가드 `tests/test_depone_replica_conformance.py`). production keyless gate는 blocked 유지.
+
+## 후속 로드맵 (2026-07-02 계획 확정 — 실행 순서 고정)
+
+| 순서 | 플랜 파일 | 산출 | 의존 | 성격 |
+|---|---|---|---|---|
+| **W7** | `2026-07-02-team-adapter-wiring.md` | 팀 fan-in 레인이 플레이스홀더 셸 대신 **진짜 어댑터**(codex/claude/opencode)를 worktree sandbox에서 몰고, ledger에 합류 | W1–W5 | 코드(에이전트 가능) |
+| **W8** | `2026-07-02-overt-alignment.md` | OVERT 1.1 스키마 정렬(evidence_mode/epoch/parent_attestation_id, 전부 additive) + **정직한 conformance 선언문**(AAL-3 Agentic, Exclusions 명시) + 자체 Protocol Profile 문서 | W7 | 코드+문서(에이전트 가능) |
+| **W9** | `2026-07-02-hardening-and-release.md` | 잔여 스윕(검증-후-종결) + GitHub Actions CI(decoupling 가드 포함) + README 대표작 서사 + `v1.0.0` 태그 | W7, W8 | 코드+글(에이전트 가능, push는 사용자) |
+| **P1** | `2026-07-02-external-team-pilot.md` | production gate 5종 증거 프로토콜: 툴링(pilot init/close/canary/verify)은 에이전트, **파일럿 실행·게이트 전환은 운영자 전용** | W7, W9-CI | 툴링+운영자 |
+| **W6a** | `2026-07-02-w6-keyless-signing.md` | keyless(Sigstore) readiness — **gate open 전까지 blocked 유지** | P1 완료 | 코드(별도 트랙) |
+
+공통 규율(모든 후속 웨이브): TDD / additive-only 스키마(기존 fixture 재도출 유지) /
+runtime depone import 금지 / worker self-seal 금지 / `production_gate.status` 자동 전환 절대 금지 /
+과대주장 금지(AAL-4·unforgeable·certified를 달성 주장으로 쓰지 않음) / Depone 계약 변경은 Depone PR 먼저.
+**범위 밖으로 못박은 것(1.0에 안 들어감):** 투명성 로그(RFC6962), 독립 IAP notary, MEASURE 통계층,
+역할 시스템 — 전부 conformance 문서의 Roadmap/Exclusions로만 기재.
