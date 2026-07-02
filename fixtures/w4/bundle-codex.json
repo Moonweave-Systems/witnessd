@@ -3,12 +3,17 @@
   "boundary": {
     "approves_public_claim": false,
     "raises_assurance": false,
-    "signed": false
+    "signed": true
   },
   "dsse_envelope": {
-    "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsiYXNzdXJhbmNlIjoiQTEtbG9jYWwtb2JzZXJ2ZWQiLCJib3VuZGFyeSI6eyJhcHByb3Zlc19wdWJsaWNfY2xhaW0iOmZhbHNlLCJyYWlzZXNfYXNzdXJhbmNlIjpmYWxzZSwic2lnbmVkIjpmYWxzZX0sImRlY2lzaW9uIjoib2JzZXJ2ZWQtbG9jYWwtY2FwdHVyZSIsInByZXZfY2FwdHVyZV9oYXNoIjpudWxsLCJzY2hlbWFfdmVyc2lvbiI6IjEuMCIsInNvdXJjZV9raW5kIjoiYWdlbnQtZmFicmljLWNhcHR1cmUtbWFuaWZlc3QifSwicHJlZGljYXRlVHlwZSI6Imh0dHBzOi8vZGVwb25lLmRldi9hdHRlc3RhdGlvbnMvZXZpZGVuY2UvdjEiLCJzdWJqZWN0IjpbeyJkaWdlc3QiOnsic2hhMjU2IjoiNDMxMTU2MmJkNjU4MzRjMjEyY2MyOTU2NWMyOTk2NThlODZkZTU1NThmODJiYTgyZGE3ZDBkZjQ3YzEyNGM2MiJ9LCJuYW1lIjoiY2FwdHVyZS1tYW5pZmVzdCJ9LHsiZGlnZXN0Ijp7InNoYTI1NiI6ImI5MmMzMWM4NjQzMjYwYjZmMWI5NjMyYWU2ZDZiNWE3MmNhYjI3Y2U3MmM4MDcyMWM4Mzc0MTE3YWJkMDU5Y2MifSwibmFtZSI6Im9ic2VydmVyLWNhcHR1cmUifSx7ImRpZ2VzdCI6eyJzaGEyNTYiOiIwOWZjNzY0NGZjM2M0ZDE0YjNjNWJiMGIwNjgyYzY4ZWZmYTYyNmE4MjRmNWJlZjc2MTZhNzYyY2ViMDk3OWFlIn0sIm5hbWUiOiJydW5uZXItcmVjZWlwdCJ9XX0=",
+    "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJwcmVkaWNhdGUiOnsiYXNzdXJhbmNlIjoiQTEtbG9jYWwtb2JzZXJ2ZWQiLCJib3VuZGFyeSI6eyJhcHByb3Zlc19wdWJsaWNfY2xhaW0iOmZhbHNlLCJyYWlzZXNfYXNzdXJhbmNlIjpmYWxzZSwic2lnbmVkIjp0cnVlfSwiZGVjaXNpb24iOiJvYnNlcnZlZC1sb2NhbC1jYXB0dXJlIiwicHJldl9jYXB0dXJlX2hhc2giOm51bGwsInNjaGVtYV92ZXJzaW9uIjoiMS4wIiwic291cmNlX2tpbmQiOiJhZ2VudC1mYWJyaWMtY2FwdHVyZS1tYW5pZmVzdCJ9LCJwcmVkaWNhdGVUeXBlIjoiaHR0cHM6Ly9kZXBvbmUuZGV2L2F0dGVzdGF0aW9ucy9ldmlkZW5jZS92MSIsInN1YmplY3QiOlt7ImRpZ2VzdCI6eyJzaGEyNTYiOiI0MzExNTYyYmQ2NTgzNGMyMTJjYzI5NTY1YzI5OTY1OGU4NmRlNTU1OGY4MmJhODJkYTdkMGRmNDdjMTI0YzYyIn0sIm5hbWUiOiJjYXB0dXJlLW1hbmlmZXN0In0seyJkaWdlc3QiOnsic2hhMjU2IjoiYjkyYzMxYzg2NDMyNjBiNmYxYjk2MzJhZTZkNmI1YTcyY2FiMjdjZTcyYzgwNzIxYzgzNzQxMTdhYmQwNTljYyJ9LCJuYW1lIjoib2JzZXJ2ZXItY2FwdHVyZSJ9LHsiZGlnZXN0Ijp7InNoYTI1NiI6IjA5ZmM3NjQ0ZmMzYzRkMTRiM2M1YmIwYjA2ODJjNjhlZmZhNjI2YTgyNGY1YmVmNzYxNmE3NjJjZWIwOTc5YWUifSwibmFtZSI6InJ1bm5lci1yZWNlaXB0In1dfQ==",
     "payloadType": "application/vnd.in-toto+json",
-    "signatures": []
+    "signatures": [
+      {
+        "keyid": "w4-fixture-operator",
+        "sig": "hriaSZ+3HCqBttgL+jARvhsNsId+nHS4Q31mByhXmUUM8vWJY6/+KiQrBlqsg/MuFRc2i7p+SlvgaawO+l6gCw=="
+      }
+    ]
   },
   "kind": "depone-evidence-substrate-bundle",
   "otel_spans": [
@@ -51,7 +56,15 @@
     }
   ],
   "schema_version": "1.0",
-  "signing_status": "unsigned-content-addressed",
+  "signature_boundary": {
+    "keyless_identity": false,
+    "note": "Trust is rooted in the operator-held key and distributed public key; this is not Fulcio keyless identity or Rekor logging.",
+    "operator_key": true,
+    "public_verifiable": true,
+    "scheme": "DSSE-Ed25519-openssl-cli",
+    "transparency_logged": false
+  },
+  "signing_status": "signed-ed25519-operator-key",
   "statement": {
     "_type": "https://in-toto.io/Statement/v1",
     "predicate": {
@@ -59,7 +72,7 @@
       "boundary": {
         "approves_public_claim": false,
         "raises_assurance": false,
-        "signed": false
+        "signed": true
       },
       "decision": "observed-local-capture",
       "prev_capture_hash": null,
