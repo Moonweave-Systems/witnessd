@@ -209,6 +209,34 @@ class TestPlannerPlanRunCli(unittest.TestCase):
             ledger = json.loads((out_dir / "team-ledger.json").read_text())
             self.assertEqual(ledger["lanes"][0]["runner_adapter_kind"], "shell")
 
+    def test_team_plan_run_can_repeat_same_goal(self):
+        with tempfile.TemporaryDirectory() as root:
+            repo = Path(root) / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "w@x.invalid"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "w11"], cwd=repo, check=True)
+            (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
+
+            for out_name in ("out-a", "out-b"):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    code = main(
+                        [
+                            "team",
+                            "plan-run",
+                            "repeatable goal",
+                            "--repo",
+                            str(repo),
+                            "--out",
+                            str(Path(root) / out_name),
+                        ]
+                    )
+                self.assertEqual(code, 0)
+                self.assertIn("evidence-pending", stdout.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

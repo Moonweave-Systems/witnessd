@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import posixpath
 import re
@@ -36,7 +37,7 @@ def create_lane_worktree(
     lane_slug = _lane_slug(lane_id)
     target = (Path(worktrees_dir) / lane_slug).resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
-    branch = f"witnessd/{lane_slug}"
+    branch = _worktree_branch(root, lane_slug, target)
     command = [
         "git",
         "worktree",
@@ -59,6 +60,30 @@ def create_lane_worktree(
             completed.stderr.strip() or completed.stdout.strip(),
         )
     return os.path.abspath(target)
+
+
+def _worktree_branch(root: Path, lane_slug: str, target: Path) -> str:
+    base_branch = f"witnessd/{lane_slug}"
+    if not _branch_exists(root, base_branch):
+        return base_branch
+    suffix = hashlib.sha256(str(target).encode("utf-8")).hexdigest()[:12]
+    branch = f"{base_branch}-{suffix}"
+    counter = 2
+    while _branch_exists(root, branch):
+        branch = f"{base_branch}-{suffix}-{counter}"
+        counter += 1
+    return branch
+
+
+def _branch_exists(root: Path, branch: str) -> bool:
+    completed = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return completed.returncode == 0
 
 
 def build_worktree_lane_receipt(
