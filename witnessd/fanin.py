@@ -253,3 +253,49 @@ def _git(cwd: Path, args: list[str]) -> str:
         message = completed.stderr.strip() or completed.stdout.strip()
         raise RuntimeError(f"ERR_TEAM_GIT_FAILED: {message}")
     return completed.stdout.strip()
+
+
+def _self_test() -> None:
+    import shutil
+    import tempfile
+
+    if shutil.which("openssl") is None:
+        print("witnessd fanin --self-test: pass (openssl unavailable)")
+        return
+
+    from depone.agent_fabric.team_ledger import build_team_ledger_verdict
+
+    from witnessd.signing import gen_operator_keypair
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        repo = root / "repo"
+        repo.mkdir()
+        _git(repo, ["init", "-q"])
+        _git(repo, ["config", "user.email", "w@x.invalid"])
+        _git(repo, ["config", "user.name", "w3"])
+        (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+        _git(repo, ["add", "-A"])
+        _git(repo, ["commit", "-qm", "seed"])
+        base_commit = _git(repo, ["rev-parse", "HEAD"])
+        keys = root / "keys"
+        keys.mkdir()
+        private_key_path, public_key_path = gen_operator_keypair(str(keys))
+        result = run_team(
+            [
+                {
+                    "lane_id": "lane-a",
+                    "region": ["pkg/a.py"],
+                    "commands": [["sh", "-c", "mkdir -p pkg && echo a > pkg/a.py"]],
+                }
+            ],
+            repo_root=str(repo),
+            out_dir=str(root / "evidence"),
+            private_key_path=private_key_path,
+            public_key_path=public_key_path,
+            base_commit=base_commit,
+        )
+        verdict = build_team_ledger_verdict(
+            result["ledger"], base_dir=result["base_dir"]
+        )
+        assert verdict["decision"] == "pass"

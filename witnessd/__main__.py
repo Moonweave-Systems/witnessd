@@ -253,14 +253,18 @@ def _default_team_lane_command(lane_id: str, region: list[str]) -> list[str]:
 def _cmd_self_test(args: argparse.Namespace) -> int:
     from witnessd import (
         emitter,
+        fanin,
         faultkit,
         isolation,
+        lock,
         liveness,
         scheduler,
         session,
         signing,
         substrate,
         supervisor,
+        team_ledger,
+        worktree,
     )
 
     checks = [
@@ -273,6 +277,10 @@ def _cmd_self_test(args: argparse.Namespace) -> int:
         ("session", session._self_test),
         ("isolation", isolation._self_test),
         ("faultkit", faultkit._self_test),
+        ("lock", lock._self_test),
+        ("worktree", worktree._self_test),
+        ("team_ledger", team_ledger._self_test),
+        ("fanin", fanin._self_test),
     ]
     passed = 0
     for name, check in checks:
