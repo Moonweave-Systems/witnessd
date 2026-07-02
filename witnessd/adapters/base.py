@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
+import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from depone.agent_fabric.paired_run import VALID_RUNNERS
 
+from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
 from witnessd.receipt import build_runner_receipt
 
 RUNNER_KIND_BY_ADAPTER = {
@@ -18,6 +24,13 @@ RUNNER_KIND_BY_ADAPTER = {
 
 class RunnerKindError(ValueError):
     pass
+
+
+class AdapterExecutionError(RuntimeError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.message = message
 
 
 def assert_runner_kind_valid(runner_kind: str) -> None:
@@ -73,6 +86,128 @@ class AdapterResult:
             runner_kind=self.runner_kind,
             human_intervened=human_intervened,
         )
+
+
+def _resolve_executable(binary: str, *, unavailable_code: str) -> str:
+    if os.path.sep in binary or (os.path.altsep is not None and os.path.altsep in binary):
+        path = Path(binary)
+        if path.exists() and os.access(path, os.X_OK):
+            return str(path)
+        raise AdapterExecutionError(
+            unavailable_code, f"binary is not executable: {binary}"
+        )
+
+    resolved = shutil.which(binary)
+    if resolved is None:
+        raise AdapterExecutionError(unavailable_code, f"binary not found: {binary}")
+    return resolved
+
+
+def _write_command_log(
+    log_path: str,
+    *,
+    command: list[str],
+    cwd: str,
+    stdout: str,
+    stderr: str,
+    exit_code: int,
+) -> None:
+    path = Path(log_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "command": command,
+                "cwd": cwd,
+                "exit_code": exit_code,
+                "stdout": stdout,
+                "stderr": stderr,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _timeout_text(value: object) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, str):
+        return value
+    return ""
+
+
+def _run_cli_lane(
+    *,
+    adapter: str,
+    runner_kind: str,
+    sandbox: str,
+    invocation: list[str],
+    transcript_path: str,
+    log_path: str | None,
+    timeout_seconds: int,
+) -> AdapterResult:
+    repo = str(Path(sandbox).resolve(strict=False))
+    transcript = str(Path(transcript_path).resolve(strict=False))
+    Path(transcript).parent.mkdir(parents=True, exist_ok=True)
+
+    before = _snapshot(repo)
+    try:
+        completed = subprocess.run(
+            invocation,
+            cwd=repo,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+            timeout=timeout_seconds,
+        )
+        exit_code = completed.returncode
+        stdout = completed.stdout
+        stderr = completed.stderr
+    except subprocess.TimeoutExpired as exc:
+        exit_code = 124
+        stdout = _timeout_text(exc.stdout)
+        stderr = _timeout_text(exc.stderr)
+    except OSError as exc:
+        exit_code = 127
+        stdout = ""
+        stderr = str(exc)
+
+    if log_path is not None:
+        _write_command_log(
+            log_path,
+            command=invocation,
+            cwd=repo,
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=exit_code,
+        )
+    if not Path(transcript).exists():
+        Path(transcript).write_text((stdout or "") + (stderr or ""), encoding="utf-8")
+
+    after = _snapshot(repo)
+    return AdapterResult(
+        adapter=adapter,
+        runner_kind=runner_kind,
+        invocation=invocation,
+        exit_code=exit_code,
+        transcript_path=transcript,
+        command_receipts=[
+            {
+                "command": invocation,
+                "cwd": repo,
+                "exit_code": exit_code,
+                "stdout": stdout[:4096],
+                "stderr": stderr[:4096],
+            }
+        ],
+        touched_files=_diff_touched(before, after),
+        test_output={"status": TEST_STATUS_NOT_RUN},
+    )
 
 
 def _self_test() -> None:
