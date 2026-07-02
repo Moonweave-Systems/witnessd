@@ -52,8 +52,15 @@ def _diff_touched(
     return sorted(touched)
 
 
-def _run_one(command: list[str], sandbox: str) -> dict[str, Any]:
+CommandRunner = Callable[[list[str], str], dict[str, Any]]
+
+
+def _run_one(
+    command: list[str], sandbox: str, *, command_runner: CommandRunner | None = None
+) -> dict[str, Any]:
     _scan_argv(command)
+    if command_runner is not None:
+        return command_runner(list(command), sandbox)
     try:
         completed = subprocess.run(
             command,
@@ -82,6 +89,7 @@ def run_shell_lane(
     *,
     test_command: list[str] | None = None,
     argv_scanner: Callable[[list[str]], None] | None = None,
+    command_runner: CommandRunner | None = None,
 ) -> dict[str, Any]:
     before = _snapshot(sandbox)
 
@@ -89,13 +97,17 @@ def run_shell_lane(
     for command in commands:
         if argv_scanner is not None:
             argv_scanner(command)
-        command_receipts.append(_run_one(command, sandbox))
+        command_receipts.append(
+            _run_one(command, sandbox, command_runner=command_runner)
+        )
 
     test_output: dict[str, Any] = {"status": TEST_STATUS_NOT_RUN}
     if test_command is not None:
         if argv_scanner is not None:
             argv_scanner(test_command)
-        test_receipt = _run_one(test_command, sandbox)
+        test_receipt = _run_one(
+            test_command, sandbox, command_runner=command_runner
+        )
         command_receipts.append(test_receipt)
         if test_receipt["exit_code"] == 127:
             test_output = {"status": TEST_STATUS_ERROR}

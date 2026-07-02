@@ -575,6 +575,48 @@ def _cmd_team_plan_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_a2_observer_run(args: argparse.Namespace) -> int:
+    if not args.command:
+        print("ERR_NO_COMMAND", file=sys.stderr)
+        return 2
+
+    from witnessd.a2 import run_observer_launched_shell_lane, uid_for_user
+    from witnessd.signing import gen_operator_keypair
+
+    evidence_dir = os.path.abspath(args.out)
+    observer_dir = os.path.abspath(args.observer_dir)
+    keys_dir = os.path.abspath(args.keys_dir or (evidence_dir.rstrip(os.sep) + "-keys"))
+    os.makedirs(keys_dir, exist_ok=True)
+    private_key_path, public_key_path = gen_operator_keypair(keys_dir)
+    runner_uid = args.runner_uid
+    if runner_uid is None:
+        runner_uid = uid_for_user(args.runner_user)
+
+    result = run_observer_launched_shell_lane(
+        sandbox=os.path.abspath(args.runner_sandbox),
+        commands=[list(args.command)],
+        evidence_dir=evidence_dir,
+        private_key_path=private_key_path,
+        public_key_path=public_key_path,
+        observer_dir=observer_dir,
+        runner_user=args.runner_user,
+        runner_uid=runner_uid,
+        allowed_touched_files=list(args.allow or []),
+        task_id=args.task_id,
+        test_command=["sh", "-c", args.test_command] if args.test_command else None,
+    )
+
+    pending = 1
+    print(
+        f"{pending} capture(s) pending Depone verification "
+        f"({render_status(pending=pending, verdict=None)})"
+    )
+    print(f"evidence_dir: {evidence_dir}")
+    print(f"assurance (candidate, unverified): {result['assurance']}")
+    print(f"trusted-observer public key (out-of-band): {result['public_key_path']}")
+    return 0
+
+
 def _lane_packet_to_run_team_spec(packet: dict) -> dict:
     if packet["adapter"] == "shell":
         return {
@@ -776,6 +818,22 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("command", nargs=argparse.REMAINDER)
     run.set_defaults(func=_cmd_run)
+
+    a2 = sub.add_parser(
+        "a2-observer-run",
+        help="run one observer-launched shell lane for W12 real A2 evidence",
+    )
+    a2.add_argument("--runner-sandbox", required=True)
+    a2.add_argument("--out", required=True, help="observer evidence directory")
+    a2.add_argument("--observer-dir", required=True)
+    a2.add_argument("--keys-dir", default=None)
+    a2.add_argument("--runner-user", default="ubuntu")
+    a2.add_argument("--runner-uid", type=int, default=None)
+    a2.add_argument("--task-id", default="w12-real-a2")
+    a2.add_argument("--test-command", default=None)
+    a2.add_argument("--allow", action="append", default=[])
+    a2.add_argument("command", nargs=argparse.REMAINDER)
+    a2.set_defaults(func=_cmd_a2_observer_run)
 
     plan = sub.add_parser("plan", help="emit a sealed W11 plan")
     plan.add_argument("goal")

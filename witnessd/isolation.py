@@ -404,6 +404,27 @@ def _self_test() -> None:
     if missing["boundary"] is not False:
         raise AssertionError("missing facts must fail closed")
 
+    root_runner = verify_isolation_boundary(
+        {
+            "runner_uid": 0,
+            "observer_uid": 1002,
+            "observer_dir_writable_by_runner": False,
+        }
+    )
+    if root_runner["boundary"] is not False:
+        raise AssertionError("root runner must not establish a uid boundary")
+
+    missing_observer_launch = verify_isolation_boundary(
+        {
+            "model": UID_OBSERVER_LAUNCHED_ISOLATION_MODEL,
+            "runner_uid": 1001,
+            "observer_uid": 1002,
+            "observer_dir_writable_by_runner": False,
+        }
+    )
+    if missing_observer_launch["boundary"] is not False:
+        raise AssertionError("observer-launched model must require launch receipt")
+
 
 __all__ = [
     "CONTAINER_ISOLATION_MODEL",

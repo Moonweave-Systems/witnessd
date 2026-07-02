@@ -266,15 +266,26 @@ def emit_supervised_lane(
     epoch_seconds: int = 300,
     monotonic_counter: int = 1,
     parent_attestation_id: str | None = None,
+    isolation_model: str | None = None,
+    observer_launched: bool = False,
 ) -> dict[str, Any]:
     """Emit supervised-lane evidence with per-spawn isolation facts.
 
     witnessd probes facts and passes them into the existing W1 evidence path
     when they establish A2; otherwise the manifest remains A1.
     """
-    from witnessd.isolation import probe_lane_isolation, verify_isolation_boundary
+    from witnessd.isolation import (
+        ISOLATION_MODEL,
+        probe_lane_isolation,
+        verify_isolation_boundary,
+    )
 
-    facts = probe_lane_isolation(observer_dir=observer_dir, runner_uid=runner_uid)
+    facts = probe_lane_isolation(
+        observer_dir=observer_dir,
+        runner_uid=runner_uid,
+        model=isolation_model or ISOLATION_MODEL,
+        observer_launched=observer_launched,
+    )
     isolation = facts if verify_isolation_boundary(facts).get("boundary") is True else None
     return emit_lane_evidence(
         lane_result,
