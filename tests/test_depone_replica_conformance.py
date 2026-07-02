@@ -35,7 +35,7 @@ from witnessd.provenance import build_signed_trusted_observer_provenance
 from witnessd.signing import gen_operator_keypair
 from witnessd.substrate import build_otel_spans
 
-DEPONE_ROOT = Path("/home/ubuntu/moonweave/depone")
+DEPONE_ROOT = Path(os.environ.get("WITNESSD_DEPONE_ROOT", "/home/ubuntu/moonweave/depone"))
 
 
 @contextmanager

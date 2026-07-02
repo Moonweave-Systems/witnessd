@@ -13,7 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 class TestCliW2(unittest.TestCase):
     def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
         env = dict(os.environ)
-        depone_path = "/home/ubuntu/moonweave/depone"
+        depone_path = os.environ.get(
+            "WITNESSD_DEPONE_ROOT", "/home/ubuntu/moonweave/depone"
+        )
         pythonpath = [str(ROOT), depone_path]
         if env.get("PYTHONPATH"):
             pythonpath.append(env["PYTHONPATH"])

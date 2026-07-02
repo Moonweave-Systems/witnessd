@@ -17,13 +17,8 @@ jobs:
       - name: Checkout witnessd
         uses: actions/checkout@v4
 
-      - name: Checkout Depone verifier
-        uses: actions/checkout@v4
-        with:
-          repository: Moonweave-Systems/Depone
-          path: depone
-          # For a private Depone repo, configure DEPONE_TOKEN with read access.
-          token: ${{ secrets.DEPONE_TOKEN || github.token }}
+      - name: Clone Depone verifier
+        run: git clone --depth=1 https://github.com/Moonweave-Systems/Depone.git "$RUNNER_TEMP/depone"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -31,7 +26,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Run unit tests against Depone validators
-        run: PYTHONPATH="$GITHUB_WORKSPACE/depone" python3 -m unittest discover -s tests -p 'test_*.py'
+        env:
+          PYTHONPATH: ${{ runner.temp }}/depone
+          WITNESSD_DEPONE_ROOT: ${{ runner.temp }}/depone
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
 
   revalidate:
     name: revalidate committed evidence fixtures
@@ -40,13 +38,8 @@ jobs:
       - name: Checkout witnessd
         uses: actions/checkout@v4
 
-      - name: Checkout Depone verifier
-        uses: actions/checkout@v4
-        with:
-          repository: Moonweave-Systems/Depone
-          path: depone
-          # For a private Depone repo, configure DEPONE_TOKEN with read access.
-          token: ${{ secrets.DEPONE_TOKEN || github.token }}
+      - name: Clone Depone verifier
+        run: git clone --depth=1 https://github.com/Moonweave-Systems/Depone.git "$RUNNER_TEMP/depone"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -59,7 +52,7 @@ jobs:
           set -euo pipefail
           for script in scripts/revalidate_*.py; do
             echo "== ${script} =="
-            PYTHONPATH="$GITHUB_WORKSPACE/depone" python3 "$script"
+            PYTHONPATH="$RUNNER_TEMP/depone" WITNESSD_DEPONE_ROOT="$RUNNER_TEMP/depone" python3 "$script"
           done
 
   decoupling-guard:

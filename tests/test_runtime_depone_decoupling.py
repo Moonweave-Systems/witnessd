@@ -11,7 +11,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WITNESSD_ROOT = ROOT / "witnessd"
-IGNORED_SCAN_DIRS = {".git", ".omx", ".pytest_cache", ".ruff_cache", "__pycache__"}
+IGNORED_SCAN_DIRS = {
+    ".git",
+    ".omx",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "depone",
+}
 
 
 def _witnessd_python_files() -> list[Path]:

@@ -42,7 +42,9 @@ class TestKeyRotationArchive(unittest.TestCase):
     def test_archive_revalidates_from_non_repo_cwd(self):
         with tempfile.TemporaryDirectory() as d:
             env = dict(os.environ)
-            depone_path = "/home/ubuntu/moonweave/depone"
+            depone_path = os.environ.get(
+                "WITNESSD_DEPONE_ROOT", "/home/ubuntu/moonweave/depone"
+            )
             env["PYTHONPATH"] = (
                 depone_path
                 if not env.get("PYTHONPATH")
