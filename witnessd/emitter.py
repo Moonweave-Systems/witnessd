@@ -225,6 +225,56 @@ def emit_lane_evidence(
     }
 
 
+def emit_supervised_lane(
+    lane_result: dict[str, Any],
+    evidence_dir: str,
+    private_key_path: str,
+    *,
+    fixture: dict[str, Any],
+    allowed_touched_files: list[str],
+    public_key_path: str,
+    observer_dir: str,
+    runner_uid: int | None,
+    task_id: str = "witnessd-supervised-lane",
+    invocation: list[str] | None = None,
+    runner_sandbox: str = "",
+    prev_capture_hash: str | None = None,
+    key_id: str = "witnessd-operator",
+    started_at: str | None = None,
+    ended_at: str | None = None,
+    diff_patch: str = "",
+) -> dict[str, Any]:
+    """Emit supervised-lane evidence with per-spawn isolation facts.
+
+    Depone owns boundary verification. witnessd only probes facts and passes
+    them into the existing W1 evidence path when they establish A2; otherwise
+    the manifest remains A1.
+    """
+    from depone.agent_fabric.isolation import verify_isolation_boundary
+
+    from witnessd.isolation import probe_lane_isolation
+
+    facts = probe_lane_isolation(observer_dir=observer_dir, runner_uid=runner_uid)
+    isolation = facts if verify_isolation_boundary(facts).get("boundary") is True else None
+    return emit_lane_evidence(
+        lane_result,
+        evidence_dir,
+        private_key_path,
+        fixture=fixture,
+        allowed_touched_files=allowed_touched_files,
+        public_key_path=public_key_path,
+        task_id=task_id,
+        invocation=invocation,
+        runner_sandbox=runner_sandbox,
+        prev_capture_hash=prev_capture_hash,
+        isolation=isolation,
+        key_id=key_id,
+        started_at=started_at,
+        ended_at=ended_at,
+        diff_patch=diff_patch,
+    )
+
+
 def _self_test() -> None:
     import shutil
     import tempfile
