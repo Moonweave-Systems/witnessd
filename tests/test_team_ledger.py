@@ -9,7 +9,11 @@ from depone.agent_fabric.team_ledger import (
     validate_team_ledger,
 )
 
-from witnessd.team_ledger import build_evidence_next_verdict, build_team_ledger
+from witnessd.team_ledger import (
+    build_evidence_next_verdict,
+    build_team_ledger,
+    build_team_ledger_merge_receipt,
+)
 from witnessd.worktree import build_worktree_lane_receipt
 
 
@@ -96,6 +100,55 @@ class TestTeamLedger(unittest.TestCase):
             self.assertEqual(validate_team_ledger(ledger, base_dir=base_dir), [])
             self.assertIs(verdict["boundary"]["raises_assurance"], False)
             self.assertIs(verdict["boundary"]["approves_merge"], False)
+
+    def test_overlap_without_merge_blocked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base_dir = Path(directory)
+            lane_a = _make_lane(base_dir, "lane-a", "pkg/shared.py")
+            lane_b = _make_lane(base_dir, "lane-b", "pkg/shared.py")
+            ledger = build_team_ledger(
+                leader_objective="ship W3",
+                leader_id="leader-fixed",
+                start_commit=lane_a["start_commit"],
+                stop_rule="all lanes pass or block",
+                lanes=[lane_a, lane_b],
+            )
+
+            verdict = build_team_ledger_verdict(ledger, base_dir=base_dir)
+
+            self.assertEqual(verdict["decision"], "blocked")
+            codes = {error["code"] for error in verdict["errors"]}
+            self.assertIn("ERR_TEAM_LEDGER_MERGE_RECEIPT_REQUIRED", codes)
+            self.assertTrue(verdict["overlapping_touched_files"])
+
+    def test_overlap_with_passing_merge_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base_dir = Path(directory)
+            lane_a = _make_lane(base_dir, "lane-a", "pkg/shared.py")
+            lane_b = _make_lane(base_dir, "lane-b", "pkg/shared.py")
+            merge_path = Path("merge-receipt.json")
+            (base_dir / merge_path).write_text(
+                json.dumps(
+                    build_team_ledger_merge_receipt(
+                        lanes=["lane-a", "lane-b"],
+                        files=["pkg/shared.py"],
+                        decision="pass",
+                    )
+                ),
+                encoding="utf-8",
+            )
+            ledger = build_team_ledger(
+                leader_objective="ship W3",
+                leader_id="leader-fixed",
+                start_commit=lane_a["start_commit"],
+                stop_rule="all lanes pass or block",
+                lanes=[lane_a, lane_b],
+                merge_receipt=merge_path.as_posix(),
+            )
+
+            verdict = build_team_ledger_verdict(ledger, base_dir=base_dir)
+
+            self.assertEqual(verdict["decision"], "pass")
 
 
 if __name__ == "__main__":
