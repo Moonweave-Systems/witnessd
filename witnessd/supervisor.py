@@ -51,6 +51,9 @@ class WorkerSupervisor:
         runner_uid: int | None,
         cwd: str | None = None,
     ) -> WorkerHandle:
+        from witnessd.pause import assert_not_paused
+
+        assert_not_paused(self.event_log.read())
         preexec_fn = None
         if runner_uid is not None and hasattr(os, "setuid") and os.geteuid() == 0:
             preexec_fn = lambda: os.setuid(runner_uid)
