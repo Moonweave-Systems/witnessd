@@ -1,0 +1,13 @@
+{
+  "delta_text": "Record W5 learning deltas only with capture and approval provenance.",
+  "kind": "witnessd-learning-delta",
+  "provenance": {
+    "approval_event_hash": "not-approved",
+    "capture_hash": "868af1590829e7293f937da43bc7601beb787fc16dcda76408e16a3c0fd1b833",
+    "provenance_manifest_hash": "868af1590829e7293f937da43bc7601beb787fc16dcda76408e16a3c0fd1b833"
+  },
+  "run_id": "W5",
+  "schema_version": "1.0",
+  "target": "AGENTS.md",
+  "version": 1
+}
