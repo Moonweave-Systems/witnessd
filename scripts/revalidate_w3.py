@@ -16,6 +16,7 @@ from depone.agent_fabric.worktree_receipt import (
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BASE = REPO_ROOT / "fixtures" / "w3"
+NEGATIVE = BASE / "negative"
 
 
 def _load_json(path: Path) -> dict:
@@ -101,11 +102,32 @@ def _revalidate_claim_conflict() -> None:
     )
 
 
+def _revalidate_negatives() -> None:
+    expected = {
+        "dirty_lane_receipt.json": "ERR_TEAM_LEDGER_WORKTREE_RECEIPT_DIRTY",
+        "touched_files_underreport.json": (
+            "ERR_TEAM_LEDGER_WORKTREE_RECEIPT_TOUCHED_FILES_UNDERREPORTED"
+        ),
+        "merge_receipt_not_pass.json": "ERR_TEAM_LEDGER_MERGE_RECEIPT_NOT_PASS",
+        "duplicate_lane_id.json": "ERR_TEAM_LEDGER_LANE_ID_DUPLICATE",
+    }
+    for name, code in expected.items():
+        ledger = _load_json(NEGATIVE / name)
+        verdict = build_team_ledger_verdict(ledger, base_dir=BASE)
+        codes = {error["code"] for error in verdict["errors"]}
+        _require(
+            verdict["decision"] == "blocked",
+            f"{name} must be blocked: {verdict}",
+        )
+        _require(code in codes, f"{name} must include {code}, got {codes}")
+
+
 def main() -> int:
     disjoint = _revalidate_team_ledgers()
     _revalidate_receipts(disjoint)
     _revalidate_lane_manifests(disjoint)
     _revalidate_claim_conflict()
+    _revalidate_negatives()
     print("W3 revalidate: PASS")
     return 0
 

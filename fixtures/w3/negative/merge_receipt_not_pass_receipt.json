@@ -1,0 +1,1 @@
+{"command":"team-ledger-merge-receipt","conflict_events":[{"event":"manual-block"}],"decision":"blocked","files":["pkg/shared.py"],"lanes":["overlap-a","overlap-b"],"schema_version":"1.0"}
