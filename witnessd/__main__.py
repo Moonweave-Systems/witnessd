@@ -579,8 +579,20 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
     if state_root is not None and _paths_overlap(Path(state_root), out_dir_path):
         print("ERR_TEAM_RUN_STATE_ROOT_INSIDE_OUTPUT", file=sys.stderr)
         return 2
-    if state_root is not None and any(spec.get("adapter") == "codex" for spec in lane_specs):
-        _seed_codex_auth(Path(state_root), args.codex_auth_source)
+    codex_specs = [spec for spec in lane_specs if spec.get("adapter") == "codex"]
+    if len(codex_specs) > 1 and state_root is None:
+        print("ERR_TEAM_RUN_MULTI_CODEX_UNISOLATED", file=sys.stderr)
+        return 2
+    if state_root is not None and codex_specs:
+        if len(codex_specs) > 1:
+            for spec in codex_specs:
+                lane_state_root = _team_run_lane_state_root(
+                    Path(state_root), str(spec["lane_id"])
+                )
+                spec["state_root"] = str(lane_state_root)
+                _seed_codex_auth(lane_state_root, args.codex_auth_source)
+        else:
+            _seed_codex_auth(Path(state_root), args.codex_auth_source)
 
     keys_dir = os.path.abspath(args.keys_dir or (out_dir.rstrip(os.sep) + "-keys"))
     os.makedirs(keys_dir, exist_ok=True)
@@ -610,6 +622,13 @@ def _team_run_state_root(args: argparse.Namespace, out_dir: Path) -> str | None:
             Path(str(out_dir).rstrip(os.sep) + "-w4-state-root").resolve(strict=False)
         )
     return None
+
+
+def _team_run_lane_state_root(state_root: Path, lane_id: str) -> Path:
+    slug = "".join(
+        char if char.isalnum() or char in {"-", "_", "."} else "-" for char in lane_id
+    ).strip("-._")
+    return state_root / (slug or "lane")
 
 
 def _cmd_team_plan_run(args: argparse.Namespace) -> int:

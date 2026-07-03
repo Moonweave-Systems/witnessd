@@ -259,8 +259,16 @@ def _run_adapter_lane(
     evidence_dir = base_dir / lane_id
     assert_separated(runner_sandbox=worktree, out_path=str(evidence_dir / "capture-manifest.json"))
 
+    lane_state_root = spec.get("state_root")
+    adapter_state_root = (
+        str(Path(str(lane_state_root)).resolve(strict=False))
+        if lane_state_root
+        else str(Path(state_root).resolve(strict=False))
+        if state_root
+        else str(repo_root)
+    )
     result = run_adapter_lane(
-        root=str(Path(state_root).resolve(strict=False)) if state_root else str(repo_root),
+        root=adapter_state_root,
         sandbox=worktree,
         adapter=str(spec["adapter"]),
         task_id=lane_id,

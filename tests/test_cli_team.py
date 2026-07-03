@@ -65,6 +65,30 @@ def _fake_codex_records_home(directory: Path) -> str:
     return str(path)
 
 
+def _fake_codex_records_home_from_prompt(directory: Path) -> str:
+    path = directory / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        "out=\"\"\n"
+        "while [ $# -gt 0 ]; do\n"
+        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
+        "  shift\n"
+        "done\n"
+        "target=$(cat)\n"
+        "if [ -z \"$target\" ]; then target=pkg/codex-home.txt; fi\n"
+        "mkdir -p \"$(dirname \"$target\")\"\n"
+        "if [ -f \"$CODEX_HOME/auth.json\" ]; then auth_status=present; else auth_status=missing; fi\n"
+        "printf '%s\\n%s\\n' \"$CODEX_HOME\" \"$auth_status\" > \"$target\"\n"
+        ": > \"$out\"\n"
+        "echo done >> \"$out\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | 0o111)
+    return str(path)
+
+
 @unittest.skipUnless(_HAS_OPENSSL, "openssl required to sign emitted evidence")
 class TestTeamCli(unittest.TestCase):
     def test_team_run_emits_ledger_and_pending_status(self):
@@ -305,6 +329,101 @@ class TestTeamCli(unittest.TestCase):
             self.assertEqual(code, 2)
             self.assertIn("ERR_TEAM_RUN_STATE_ROOT_INSIDE_OUTPUT", stderr.getvalue())
             self.assertFalse((state_root / ".witnessd" / "codex-home" / "auth.json").exists())
+
+    def test_team_run_isolates_multiple_codex_lanes_under_state_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            out_dir = root / "evidence"
+            state_root = root / "state"
+            bindir = root / "bin"
+            auth_source = root / "auth.json"
+            repo.mkdir()
+            bindir.mkdir()
+            auth_source.write_text('{"session":"subscription"}\n', encoding="utf-8")
+            _seed_repo(repo)
+            _fake_codex_records_home_from_prompt(bindir)
+            old_path = os.environ.get("PATH", "")
+
+            try:
+                os.environ["PATH"] = f"{bindir}{os.pathsep}{old_path}"
+                code = main(
+                    [
+                        "team",
+                        "run",
+                        "--repo",
+                        str(repo),
+                        "--out",
+                        str(out_dir),
+                        "--state-root",
+                        str(state_root),
+                        "--codex-auth-source",
+                        str(auth_source),
+                        "--lane",
+                        "alpha:adapter=codex:tier=quick:region=pkg/alpha-home.txt:prompt=pkg/alpha-home.txt",
+                        "--lane",
+                        "beta:adapter=codex:tier=quick:region=pkg/beta-home.txt:prompt=pkg/beta-home.txt",
+                    ]
+                )
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(code, 0)
+            alpha_file = next((out_dir / "worktrees").glob("alpha*/pkg/alpha-home.txt"))
+            beta_file = next((out_dir / "worktrees").glob("beta*/pkg/beta-home.txt"))
+            alpha_lines = alpha_file.read_text(encoding="utf-8").splitlines()
+            beta_lines = beta_file.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(alpha_lines[1], "present")
+            self.assertEqual(beta_lines[1], "present")
+            self.assertNotEqual(alpha_lines[0], beta_lines[0])
+            self.assertTrue(alpha_lines[0].startswith(str(state_root)))
+            self.assertTrue(beta_lines[0].startswith(str(state_root)))
+            self.assertEqual(
+                (Path(alpha_lines[0]) / "auth.json").read_text(encoding="utf-8"),
+                auth_source.read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                (Path(beta_lines[0]) / "auth.json").read_text(encoding="utf-8"),
+                auth_source.read_text(encoding="utf-8"),
+            )
+            self.assertFalse((state_root / ".witnessd" / "codex-home" / "auth.json").exists())
+
+    def test_team_run_rejects_multiple_codex_lanes_without_state_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            out_dir = root / "evidence"
+            bindir = root / "bin"
+            repo.mkdir()
+            bindir.mkdir()
+            _seed_repo(repo)
+            _fake_codex_records_home_from_prompt(bindir)
+            old_path = os.environ.get("PATH", "")
+            stderr = io.StringIO()
+
+            try:
+                os.environ["PATH"] = f"{bindir}{os.pathsep}{old_path}"
+                with redirect_stderr(stderr):
+                    code = main(
+                        [
+                            "team",
+                            "run",
+                            "--repo",
+                            str(repo),
+                            "--out",
+                            str(out_dir),
+                            "--lane",
+                            "alpha:adapter=codex:tier=quick:region=pkg/alpha-home.txt:prompt=pkg/alpha-home.txt",
+                            "--lane",
+                            "beta:adapter=codex:tier=quick:region=pkg/beta-home.txt:prompt=pkg/beta-home.txt",
+                        ]
+                    )
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(code, 2)
+            self.assertIn("ERR_TEAM_RUN_MULTI_CODEX_UNISOLATED", stderr.getvalue())
+            self.assertFalse((repo / ".witnessd").exists())
 
 
 if __name__ == "__main__":
