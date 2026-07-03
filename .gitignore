@@ -1,4 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
-keys/
+# Ignore private key material under any keys/ dir, but keep public keys tracked
+# so fixture revalidation (which needs operator.pub) passes in CI.
+**/keys/*
+!**/keys/*.pub
