@@ -73,6 +73,11 @@ def _transcript(lane_result: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _portable_path(path: str, root: str) -> str:
+    relative = os.path.relpath(os.path.abspath(path), os.path.abspath(root))
+    return relative.replace(os.sep, "/")
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -183,7 +188,7 @@ def emit_lane_evidence(
         task_id=task_id,
         worktree=runner_sandbox,
         invocation=invocation,
-        transcript_path=os.path.abspath(transcript_path),
+        transcript_path=_portable_path(transcript_path, os.path.dirname(evidence_dir)),
         exit_code=exit_code,
         touched_files=lane_result["touched_files"],
         started_at=started_at or _now_iso(),
@@ -224,7 +229,7 @@ def emit_lane_evidence(
 
     provenance = build_signed_trusted_observer_provenance(
         manifest,
-        evidence_path=manifest_path,
+        evidence_path=_portable_path(manifest_path, evidence_dir),
         private_key_path=private_key_path,
         key_id=key_id,
     )

@@ -5,3 +5,6 @@ __pycache__/
 # so fixture revalidation (which needs operator.pub) passes in CI.
 **/keys/*
 !**/keys/*.pub
+
+# Transient W10 live-capture sandbox (run_w10_live.py); never commit
+fixtures/w10-sandbox/

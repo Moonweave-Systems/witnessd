@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """Re-derive W10 live-agent evidence from committed fixture bytes."""
 
 from __future__ import annotations
@@ -43,6 +44,47 @@ def _load(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _fixture_relative(path: Path, root: Path) -> str:
+    return path.relative_to(root).as_posix()
+
+
+def _expected_manifest_evidence_path() -> str:
+    return _fixture_relative(EVIDENCE / "capture-manifest.json", EVIDENCE)
+
+
+def _expected_adapter_transcript_binding() -> str:
+    return _fixture_relative(FIX / "adapter-transcript.txt", FIX)
+
+
+def _stored_provenance_evidence_path() -> str:
+    return str(_load(EVIDENCE / "provenance.json").get("evidence_path", ""))
+
+
+def _stored_adapter_transcript_binding() -> str:
+    command_log = _load(FIX / "adapter-command.json")
+    invocation = command_log["command"]
+    output_index = invocation.index("--output-last-message")
+    return str(invocation[output_index + 1])
+
+
+def w10_fixture_uses_portable_internal_paths() -> bool:
+    return (
+        not Path(_stored_provenance_evidence_path()).is_absolute()
+        and not Path(_stored_adapter_transcript_binding()).is_absolute()
+    )
+
+
+def w10_fixture_uses_legacy_current_checkout_paths() -> bool:
+    provenance_path = _stored_provenance_evidence_path()
+    transcript_binding = _stored_adapter_transcript_binding()
+    return (
+        Path(provenance_path).is_absolute()
+        and Path(transcript_binding).is_absolute()
+        and provenance_path == str(EVIDENCE / "capture-manifest.json")
+        and transcript_binding == str(FIX / "adapter-transcript.txt")
+    )
+
+
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
@@ -70,9 +112,13 @@ def _assert_manifest_and_provenance() -> dict[str, Any]:
     chain = verify_capture_chain([manifest])
     _require(chain["decision"] == "pass", f"W10 capture chain failed: {chain}")
     provenance = _load(EVIDENCE / "provenance.json")
+    if Path(_stored_provenance_evidence_path()).is_absolute():
+        expected_evidence_path = str(manifest_path)
+    else:
+        expected_evidence_path = _expected_manifest_evidence_path()
     provenance_errors = validate_trusted_observer_provenance(
         manifest,
-        evidence_path=str(manifest_path),
+        evidence_path=expected_evidence_path,
         provenance=[provenance],
         public_key_path=str(PUBLIC_KEY),
     )
@@ -212,8 +258,14 @@ def _assert_auxiliary_command_and_transcript() -> None:
     _require(command_log["exit_code"] == receipt["exit_code"], "W10 adapter command exit must match runner receipt")
     invocation = command_log["command"]
     output_index = invocation.index("--output-last-message")
+    stored_transcript = str(invocation[output_index + 1])
+    expected_transcript = (
+        str(transcript)
+        if Path(stored_transcript).is_absolute()
+        else _expected_adapter_transcript_binding()
+    )
     _require(
-        invocation[output_index + 1] == str(transcript),
+        stored_transcript == expected_transcript,
         "W10 adapter command must bind adapter transcript path",
     )
 

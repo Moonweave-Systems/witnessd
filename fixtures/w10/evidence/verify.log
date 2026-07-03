@@ -1,19 +1,25 @@
-$ /home/ubuntu/.local/bin/codex --sandbox workspace-write exec --skip-git-repo-check --cd /tmp/witnessd-w10-live-sandbox-20260702T1429Z --output-last-message /home/ubuntu/moonweave/witnessd/fixtures/w10/adapter-transcript.txt -
+$ /home/ubuntu/.local/bin/codex --sandbox workspace-write exec --skip-git-repo-check --cd /home/ubuntu/moonweave/witnessd/fixtures/w10-sandbox --output-last-message adapter-transcript.txt -
 exit=0
-Implemented `score_phrase` in [wordscore/core.py](/tmp/witnessd-w10-live-sandbox-20260702T1429Z/wordscore/core.py:6). It now splits on whitespace, lowercases each word, and returns word counts.
+Implemented `score_phrase` in [wordscore/core.py](/home/ubuntu/moonweave/witnessd/fixtures/w10-sandbox/wordscore/core.py:6). It lowercases whitespace-separated words and returns word counts.
 
-Verification: `python3 -m unittest discover -s tests` passed, running 2 tests.
-WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir "/tmp" (codex_home: AbsolutePathBuf("/tmp/witnessd-w10-live-state-20260702T1429Z/.witnessd/codex-home"))
+Verification run:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+Result: 2 tests passed.
+WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir "/tmp" (codex_home: AbsolutePathBuf("/tmp/witnessd-w10-live-state-20260703T072115Z/.witnessd/codex-home"))
 OpenAI Codex v0.142.4
 --------
-workdir: /tmp/witnessd-w10-live-sandbox-20260702T1429Z
+workdir: /home/ubuntu/moonweave/witnessd/fixtures/w10-sandbox
 model: gpt-5.5
 provider: openai
 approval: never
 sandbox: workspace-write [workdir, /tmp, $TMPDIR]
 reasoning effort: none
 reasoning summaries: none
-session id: 019f2341-c19b-7241-b9a1-809b3a16e9b2
+session id: 019f26da-6df3-7fd2-9823-9382e7fea4f9
 --------
 user
 You are in a temporary git repository.
@@ -30,9 +36,9 @@ Requirements:
 
 warning: Codex could not find bubblewrap on PATH. Install bubblewrap with your OS package manager. See the sandbox prerequisites: https://developers.openai.com/codex/concepts/sandboxing#prerequisites. Codex will use the bundled bubblewrap in the meantime.
 codex
-I’ll inspect the repo and the target file first, then make the smallest change in `wordscore/core.py` and run the requested unittest command.
+I’ll inspect the repository and the target module first, then patch only `wordscore/core.py` and run the requested unittest command.
 exec
-/usr/bin/zsh -lc "sed -n '1,200p' wordscore/core.py" in /tmp/witnessd-w10-live-sandbox-20260702T1429Z
+/usr/bin/zsh -lc "sed -n '1,200p' wordscore/core.py" in /home/ubuntu/moonweave/witnessd/fixtures/w10-sandbox
  succeeded in 0ms:
 """Word scoring helpers."""
 
@@ -43,15 +49,15 @@ def score_phrase(text: str) -> dict[str, int]:
     raise NotImplementedError('W10 live agent must implement this')
 
 exec
-/usr/bin/zsh -lc 'pwd && rg --files' in /tmp/witnessd-w10-live-sandbox-20260702T1429Z
+/usr/bin/zsh -lc 'pwd && rg --files' in /home/ubuntu/moonweave/witnessd/fixtures/w10-sandbox
  succeeded in 0ms:
-/tmp/witnessd-w10-live-sandbox-20260702T1429Z
+/home/ubuntu/moonweave/witnessd/fixtures/w10-sandbox
 tests/test_core.py
 wordscore/core.py
 wordscore/__init__.py
 
 exec
-/usr/bin/zsh -lc "sed -n '1,200p' tests/test*.py" in /tmp/witnessd-w10-live-sandbox-20260702T1429Z
+/usr/bin/zsh -lc "sed -n '1,200p' tests/test_core.py" in /home/ubuntu/moonweave/witnessd/fixtures/w10-sandbox
  succeeded in 0ms:
 import unittest
 
@@ -70,10 +76,10 @@ if __name__ == '__main__':
     unittest.main()
 
 codex
-The tests are narrow: split on whitespace, lowercase each token, and count occurrences. I’m editing only `wordscore/core.py` with that direct behavior.
+The tests are narrow: split on whitespace, lowercase each token, and count occurrences. I’m applying that directly in the target file.
 apply patch
 patch: completed
-/tmp/witnessd-w10-live-sandbox-20260702T1429Z/wordscore/core.py
+/home/ubuntu/moonweave/witnessd/fixtures/w10-sandbox/wordscore/core.py
 diff --git a/wordscore/core.py b/wordscore/core.py
 index cd25fd9aa5fdbdcc59756d3261b799640967fd4c..ddc5a6b3bd1ed7c1c0df69651b66906da2208b48
 --- a/wordscore/core.py
@@ -105,9 +111,9 @@ index cd25fd9aa5fdbdcc59756d3261b799640967fd4c..ddc5a6b3bd1ed7c1c0df69651b66906d
 +    return counts
 
 codex
-The implementation is in place. I’m running the exact unittest command now to verify it against the existing tests.
+The implementation is in place. I’m running the requested test command now to verify behavior without touching the tests.
 exec
-/usr/bin/zsh -lc 'python3 -m unittest discover -s tests' in /tmp/witnessd-w10-live-sandbox-20260702T1429Z
+/usr/bin/zsh -lc 'python3 -m unittest discover -s tests' in /home/ubuntu/moonweave/witnessd/fixtures/w10-sandbox
  succeeded in 0ms:
 ..
 ----------------------------------------------------------------------
@@ -116,4 +122,4 @@ Ran 2 tests in 0.000s
 OK
 
 diff --git a/wordscore/core.py b/wordscore/core.py
-index cd25fd9aa5fdbdcc59756d3261b799640967fd4c..ddc5a6b3bd1ed7c1c0df69651b66906da2208b
+index cd25fd9aa5fdbdcc59756d3261b799640967fd4c..ddc

@@ -83,6 +83,7 @@ def run_codex_lane(
     prompt: str,
     codex_binary: str = "codex",
     transcript_path: str,
+    transcript_invocation_path: str | None = None,
     log_path: str | None = None,
     sandbox_mode: str = "workspace-write",
     timeout_seconds: int = 120,
@@ -96,9 +97,10 @@ def run_codex_lane(
     repo = str(Path(sandbox).resolve(strict=False))
     codex = _resolve_codex(codex_binary)
     transcript = str(Path(transcript_path).resolve(strict=False))
+    transcript_binding = transcript_invocation_path or transcript
     Path(transcript).parent.mkdir(parents=True, exist_ok=True)
 
-    invocation = [
+    run_invocation = [
         codex,
         "--sandbox",
         sandbox_mode,
@@ -110,11 +112,14 @@ def run_codex_lane(
         transcript,
         "-",
     ]
+    evidence_invocation = list(run_invocation)
+    output_index = evidence_invocation.index("--output-last-message")
+    evidence_invocation[output_index + 1] = transcript_binding
 
     before = _snapshot(repo)
     try:
         completed = subprocess.run(
-            invocation,
+            run_invocation,
             cwd=repo,
             env=env,
             input=prompt,
@@ -140,7 +145,7 @@ def run_codex_lane(
     if log_path is not None:
         _write_command_log(
             log_path,
-            command=invocation,
+            command=evidence_invocation,
             cwd=repo,
             stdout=stdout,
             stderr=stderr,
@@ -152,7 +157,7 @@ def run_codex_lane(
     after = _snapshot(repo)
     touched_files = _diff_touched(before, after)
     command_receipt: dict[str, Any] = {
-        "command": invocation,
+        "command": evidence_invocation,
         "cwd": repo,
         "exit_code": exit_code,
         "stdout": stdout[:_OUTPUT_LIMIT],
@@ -162,9 +167,9 @@ def run_codex_lane(
     return AdapterResult(
         adapter="codex",
         runner_kind="codex-cli",
-        invocation=invocation,
+        invocation=evidence_invocation,
         exit_code=exit_code,
-        transcript_path=transcript,
+        transcript_path=transcript_binding,
         command_receipts=[command_receipt],
         touched_files=touched_files,
         test_output={"status": TEST_STATUS_NOT_RUN},

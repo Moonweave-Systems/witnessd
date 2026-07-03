@@ -97,8 +97,23 @@ class TestEmitter(unittest.TestCase):
             manifest = result["manifest"]
             errors = validate_trusted_observer_provenance(
                 manifest,
-                evidence_path=result["manifest_path"],
+                evidence_path=result["provenance"]["evidence_path"],
                 provenance=[result["provenance"]],
+                public_key_path=pub,
+            )
+            self.assertEqual(errors, [])
+
+    def test_trusted_observer_provenance_binds_relative_manifest_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _evidence_dir, pub, result = self._emit(tmp)
+            manifest = result["manifest"]
+            provenance = result["provenance"]
+
+            self.assertEqual(provenance["evidence_path"], "capture-manifest.json")
+            errors = validate_trusted_observer_provenance(
+                manifest,
+                evidence_path="capture-manifest.json",
+                provenance=[provenance],
                 public_key_path=pub,
             )
             self.assertEqual(errors, [])

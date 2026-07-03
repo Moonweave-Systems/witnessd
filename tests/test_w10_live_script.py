@@ -1,5 +1,4 @@
 import json
-import os
 import stat
 import subprocess
 import tempfile
@@ -100,6 +99,13 @@ class TestW10LiveScript(unittest.TestCase):
             receipt = json.loads((evidence / "runner-receipt.json").read_text())
             self.assertEqual(receipt["runner_kind"], "codex-cli")
             self.assertEqual(receipt["exit_code"], 0)
+            output_index = receipt["invocation"].index("--output-last-message")
+            self.assertEqual(receipt["invocation"][output_index + 1], "adapter-transcript.txt")
+            self.assertEqual(receipt["transcript_path"], "evidence/verify.log")
+            command_log = json.loads((out / "adapter-command.json").read_text())
+            self.assertEqual(command_log["command"], receipt["invocation"])
+            provenance = json.loads((evidence / "provenance.json").read_text())
+            self.assertEqual(provenance["evidence_path"], "capture-manifest.json")
             patch = (evidence / "git-diff.patch").read_text(encoding="utf-8")
             self.assertIn("+    counts: dict[str, int] = {}", patch)
             self.assertNotIn("__pycache__", patch)

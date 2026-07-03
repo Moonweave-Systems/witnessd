@@ -161,6 +161,36 @@ class TestAdapterRun(unittest.TestCase):
             self.assertIn("+def generated():", patch)
             self.assertIn("pkg/agent.py", patch)
 
+    def test_codex_transcript_binding_is_relative_to_evidence_parent(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "evidence")
+            subprocess.run(["git", "init", "-q", sandbox], check=True)
+
+            out = run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="t",
+                prompt="do X",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=_fake_codex(bindir),
+                evidence_dir=evidence_dir,
+            )
+
+            receipt = out["runner_receipt"]
+            output_index = receipt["invocation"].index("--output-last-message")
+            self.assertEqual(receipt["invocation"][output_index + 1], "adapter-transcript.txt")
+            self.assertEqual(receipt["transcript_path"], "evidence/verify.log")
+            command_log = json.loads(
+                pathlib.Path(root, "adapter-command.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(command_log["command"], receipt["invocation"])
+            self.assertTrue(pathlib.Path(root, "adapter-transcript.txt").exists())
+
     def test_adapter_evidence_includes_staged_tracked_diff_patch(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
             sandbox = os.path.join(root, "repo")

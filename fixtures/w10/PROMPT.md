@@ -1,10 +1,10 @@
 # W10 Live-Agent Prompt Provenance
 
-- generated_at: 2026-07-02T14:36:00Z
+- generated_at: 2026-07-03T07:21:37Z
 - adapter: codex
 - runner_kind: codex-cli
-- sandbox: /tmp/witnessd-w10-live-sandbox-20260702T1429Z
-- isolated_state_root: /tmp/witnessd-w10-live-state-20260702T1429Z
+- sandbox: /home/ubuntu/moonweave/witnessd/fixtures/w10-sandbox
+- isolated_state_root: /tmp/witnessd-w10-live-state-20260703T072115Z
 - evidence_dir: /home/ubuntu/moonweave/witnessd/fixtures/w10/evidence
 - public_key: /home/ubuntu/moonweave/witnessd/fixtures/w10/keys/operator.pub
 - budget_flags: --max-tokens 12000 --max-usd 0.25 --max-depth 1

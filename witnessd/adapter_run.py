@@ -54,6 +54,7 @@ def _run_adapter(
     sandbox: str,
     prompt: str,
     transcript_path: str,
+    transcript_invocation_path: str | None,
     log_path: str,
     codex_binary: str,
     claude_binary: str,
@@ -67,6 +68,7 @@ def _run_adapter(
             prompt=prompt,
             codex_binary=codex_binary,
             transcript_path=transcript_path,
+            transcript_invocation_path=transcript_invocation_path,
             log_path=log_path,
             timeout_seconds=timeout_seconds,
             env=codex_env,
@@ -200,6 +202,9 @@ def run_adapter_lane(
             lane_evidence_dir = Path(evidence_dir).resolve(strict=False)
             task_dir = lane_evidence_dir.parent
         transcript_path = task_dir / "adapter-transcript.txt"
+        transcript_invocation_path = os.path.relpath(transcript_path, task_dir).replace(
+            os.sep, "/"
+        )
         log_path = task_dir / "adapter-command.json"
         key_dir = namespace.state_dir / "keys"
         task_dir.mkdir(parents=True, exist_ok=True)
@@ -217,6 +222,7 @@ def run_adapter_lane(
             sandbox=worktree,
             prompt=prompt,
             transcript_path=str(transcript_path),
+            transcript_invocation_path=transcript_invocation_path,
             log_path=str(log_path),
             codex_binary=codex_binary,
             claude_binary=claude_binary,
