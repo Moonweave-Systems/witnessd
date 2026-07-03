@@ -56,6 +56,14 @@ Floor invariants that must never regress, wave after wave:
 - Both platforms first-class: path comparisons via `realpath`; in-fixture
   evidence references relative; subprocess via `sys.executable` (never a
   hardcoded `uv`); no `/home/ubuntu` or `/Users/...` literals in code/tests.
+- **CI has NO `codex` binary and NO `uv` on PATH** (only plain `python3`).
+  Any test exercising an adapter lane must pass an explicit fake binary
+  (`codex_binary=...`), never rely on a real `codex`/PATH lookup; any
+  subprocess uses `sys.executable`. A green local run on this VM (which HAS
+  codex+uv) is NOT proof — the regression floor is only met when it would
+  pass in a codex-absent, uv-absent, plain-`python3` environment. (Learned
+  the hard way at W15: `budget_exceeded` vs `preflight_blocked` diverged by
+  codex presence.)
 - evidence-pending output rule; worker never self-seals; assurance cap A2
   (trust axes rise in W20, assurance cap does not).
 - Timestamps real; anything unavailable is recorded `unavailable` — the
