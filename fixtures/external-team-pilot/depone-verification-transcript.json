@@ -1,0 +1,48 @@
+{
+  "all_passed": true,
+  "created_at": "2026-07-03T05:13:41Z",
+  "deployment_id": "pilot-64cbaf83148c",
+  "kind": "depone-verification-transcript",
+  "results": [
+    {
+      "command": [
+        "uv",
+        "run",
+        "python3",
+        "-m",
+        "depone",
+        "team-ledger",
+        "--ledger",
+        "/home/ubuntu/pilot-2026-07-03/production-ev/team-ledger.json",
+        "--base-dir",
+        "/home/ubuntu/pilot-2026-07-03/production-ev",
+        "--json"
+      ],
+      "exit_code": 0,
+      "name": "production_bundle",
+      "stderr": "",
+      "stdout": "{\"blocked_lane_count\": 0, \"command\": \"team-ledger\", \"decision\": \"pass\", \"error_count\": 0, \"lane_count\": 1, \"passed_lane_count\": 1}\n"
+    },
+    {
+      "command": [
+        "uv",
+        "run",
+        "python3",
+        "-m",
+        "depone",
+        "agent-fabric-verify-signature",
+        "--bundle",
+        "/home/ubuntu/moonweave/witnessd/fixtures/key-rotation/operator-key-canary-bundle.json",
+        "--public-key",
+        "/home/ubuntu/moonweave/witnessd/fixtures/key-rotation/keys/operator-2026q3.pub"
+      ],
+      "exit_code": 0,
+      "name": "canary_bundle",
+      "stderr": "",
+      "stdout": "verified: true\n"
+    }
+  ],
+  "rollout_stage": "external-team-pilot",
+  "schema_version": "1.0",
+  "verifier": "depone"
+}

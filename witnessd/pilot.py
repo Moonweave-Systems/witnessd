@@ -14,10 +14,12 @@ from pathlib import Path
 from typing import Any
 
 DEPLOYMENT_KIND = "witnessd-external-team-pilot-deployment"
+ROTATION_RECORD_KIND = "witnessd-operator-key-rotation-record"
 TRANSCRIPT_KIND = "depone-verification-transcript"
 ROLLOUT_STAGE = "external-team-pilot"
 SCHEMA_VERSION = "1.0"
 DEPLOYMENT_RECORD_NAME = "deployment-record.json"
+ROTATION_RECORD_NAME = "rotation-record.json"
 CANARY_KIND = "operator-key-rotation-canary"
 CANARY_RECORD_NAME = "operator-key-canary.json"
 CANARY_BUNDLE_NAME = "operator-key-canary-bundle.json"
@@ -93,9 +95,54 @@ def write_deployment_record(
 def close_deployment_record(record_path: str | Path) -> str:
     path = Path(record_path)
     record = json.loads(path.read_text(encoding="utf-8"))
-    record["ended_at"] = utc_now()
-    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if record.get("ended_at") is None:
+        record["ended_at"] = utc_now()
+        path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return sha256_file(path)
+
+
+def _current_archive_key(archive: dict[str, Any]) -> dict[str, Any]:
+    keys = archive.get("keys")
+    if not isinstance(keys, list):
+        raise ValueError("operator key archive keys must be a list")
+    current = [key for key in keys if isinstance(key, dict) and key.get("status") == "current"]
+    if len(current) != 1:
+        raise ValueError("operator key archive must contain exactly one current key")
+    return current[0]
+
+
+def write_rotation_record(
+    *,
+    archive_path: str | Path,
+    out_dir: str | Path,
+    retired_key_id: str = "witnessd-operator",
+) -> Path:
+    from witnessd.signing import DEFAULT_OPERATOR_KEY_ID
+
+    archive = json.loads(Path(archive_path).read_text(encoding="utf-8"))
+    current_key = _current_archive_key(archive)
+    current_key_id = current_key.get("key_id")
+    if current_key_id != DEFAULT_OPERATOR_KEY_ID:
+        raise ValueError("current key must match witnessd runtime default")
+    if retired_key_id == current_key_id:
+        raise ValueError("retired key must differ from current key")
+    canary_bundle_path = current_key.get("bundle_path")
+    if not isinstance(canary_bundle_path, str) or not canary_bundle_path:
+        raise ValueError("current key must include bundle_path")
+    record = {
+        "kind": ROTATION_RECORD_KIND,
+        "schema_version": SCHEMA_VERSION,
+        "rollout_stage": ROLLOUT_STAGE,
+        "retired_key_id": retired_key_id,
+        "current_key_id": current_key_id,
+        "rotated_to": current_key_id,
+        "canary_bundle_path": canary_bundle_path,
+    }
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    record_path = out_path / ROTATION_RECORD_NAME
+    record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return record_path
 
 
 def emit_canary_bundle(*, keys_dir: str | Path, out_dir: str | Path) -> Path:
@@ -160,6 +207,7 @@ def record_archive_evidence(
             raise ValueError(f"unknown evidence id: {evidence_id}")
         artifact_path = Path(artifact)
         item = by_id[evidence_id]
+        item["status"] = "recorded"
         item["artifact_path"] = _relative_to_cwd(artifact_path)
         item["artifact_sha256"] = sha256_file(artifact_path)
     target = Path(out_path) if out_path is not None else archive_file
@@ -180,4 +228,12 @@ def _self_test() -> None:
         body = json.loads(path.read_text(encoding="utf-8"))
         if not body["local_dogfood"] or not body["ci_only"]:
             raise AssertionError("pilot deployment record must default to dogfood/CI")
+        rotation_path = write_rotation_record(
+            archive_path=Path(__file__).resolve().parents[1]
+            / "fixtures/key-rotation/operator-key-archive.json",
+            out_dir=Path(tmp) / "rotation",
+        )
+        rotation = json.loads(rotation_path.read_text(encoding="utf-8"))
+        if rotation["current_key_id"] == rotation["retired_key_id"]:
+            raise AssertionError("pilot rotation record must rotate to a distinct key")
     print("witnessd pilot --self-test: pass")

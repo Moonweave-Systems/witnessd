@@ -1,0 +1,14 @@
+{
+  "ci_only": false,
+  "deployed_runtime": true,
+  "deployment_id": "pilot-64cbaf83148c",
+  "ended_at": "2026-07-03T05:13:41Z",
+  "kind": "witnessd-external-team-pilot-deployment",
+  "local_dogfood": false,
+  "operator": "ubuntu",
+  "rollout_stage": "external-team-pilot",
+  "schema_version": "1.0",
+  "started_at": "2026-07-03T04:54:42Z",
+  "team_scope": "harness-check TASK-2 version flag",
+  "witnessd_git_sha": "9e206a32ddd9"
+}

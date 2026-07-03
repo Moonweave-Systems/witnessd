@@ -1,0 +1,9 @@
+{
+  "canary_bundle_path": "fixtures/key-rotation/operator-key-canary-bundle.json",
+  "current_key_id": "witnessd-operator-2026q3",
+  "kind": "witnessd-operator-key-rotation-record",
+  "retired_key_id": "witnessd-operator",
+  "rollout_stage": "external-team-pilot",
+  "rotated_to": "witnessd-operator-2026q3",
+  "schema_version": "1.0"
+}

@@ -1,0 +1,12 @@
+{
+  "decision": "approve-keyless-gate",
+  "deployment_id": "pilot-64cbaf83148c",
+  "kind": "witnessd-operator-review",
+  "local_dogfood": false,
+  "private_keys_committed": false,
+  "private_keys_exposed": false,
+  "reviewed_at": "2026-07-03T05:22:52Z",
+  "reviewer": "adaptivewave.ai@gmail.com",
+  "rollout_stage": "external-team-pilot",
+  "schema_version": "1.0"
+}

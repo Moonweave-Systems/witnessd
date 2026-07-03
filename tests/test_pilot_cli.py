@@ -9,6 +9,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from witnessd.__main__ import main
+from witnessd.pilot import write_rotation_record
 from witnessd.signing import DEFAULT_OPERATOR_KEY_ID, gen_operator_keypair, verify_dsse
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -153,6 +154,93 @@ class TestPilotClose(unittest.TestCase):
             digest = hashlib.sha256(record_path.read_bytes()).hexdigest()
             self.assertIn(digest, out.getvalue())
 
+    def test_close_preserves_existing_end_time_for_idempotence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            record_path = Path(tmp) / "deployment-record.json"
+            record_path.write_text(
+                json.dumps(
+                    {
+                        "kind": "witnessd-external-team-pilot-deployment",
+                        "schema_version": "1.0",
+                        "rollout_stage": "external-team-pilot",
+                        "deployment_id": "pilot-test",
+                        "operator": "operator@example.invalid",
+                        "team_scope": "external-team:alpha",
+                        "started_at": "2026-07-03T00:00:00Z",
+                        "ended_at": "2026-07-03T00:05:00Z",
+                        "witnessd_git_sha": "9e206a32ddd9",
+                        "deployed_runtime": True,
+                        "local_dogfood": False,
+                        "ci_only": False,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            before = record_path.read_text(encoding="utf-8")
+
+            close_code = main(["pilot", "close", "--record", str(record_path)])
+
+            self.assertEqual(close_code, 0)
+            self.assertEqual(record_path.read_text(encoding="utf-8"), before)
+
+
+class TestPilotRotationRecord(unittest.TestCase):
+    def test_rotation_record_matches_current_archive_canary_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive_path = ROOT / "fixtures/key-rotation/operator-key-archive.json"
+
+            record_path = write_rotation_record(
+                archive_path=archive_path,
+                out_dir=tmp,
+                retired_key_id="witnessd-operator",
+            )
+
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            archive = json.loads(archive_path.read_text(encoding="utf-8"))
+            current = [
+                key for key in archive["keys"] if key.get("status") == "current"
+            ][0]
+            self.assertEqual(
+                record,
+                {
+                    "canary_bundle_path": current["bundle_path"],
+                    "current_key_id": DEFAULT_OPERATOR_KEY_ID,
+                    "kind": "witnessd-operator-key-rotation-record",
+                    "retired_key_id": "witnessd-operator",
+                    "rollout_stage": "external-team-pilot",
+                    "rotated_to": DEFAULT_OPERATOR_KEY_ID,
+                    "schema_version": "1.0",
+                },
+            )
+            self.assertNotEqual(record["retired_key_id"], record["current_key_id"])
+            self.assertEqual(record["current_key_id"], record["rotated_to"])
+            self.assertEqual(record["canary_bundle_path"], current["bundle_path"])
+
+    def test_rotation_record_cli_writes_record_and_prints_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = main(
+                    [
+                        "pilot",
+                        "rotation-record",
+                        "--archive",
+                        "fixtures/key-rotation/operator-key-archive.json",
+                        "--out",
+                        tmp,
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            record_path = Path(tmp) / "rotation-record.json"
+            self.assertIn(str(record_path), out.getvalue())
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            self.assertEqual(record["retired_key_id"], "witnessd-operator")
+            self.assertEqual(record["current_key_id"], DEFAULT_OPERATOR_KEY_ID)
+
 
 @unittest.skipUnless(shutil.which("openssl"), "openssl required to sign canary bundle")
 class TestPilotCanary(unittest.TestCase):
@@ -192,7 +280,7 @@ class TestPilotCanary(unittest.TestCase):
 
 
 class TestPilotArchiveEvidence(unittest.TestCase):
-    def test_archive_evidence_records_path_and_sha_without_status_changes(self):
+    def test_archive_evidence_records_supplied_item_without_opening_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             archive_path = Path(tmp) / "operator-key-archive.json"
             archive = json.loads(
@@ -200,6 +288,14 @@ class TestPilotArchiveEvidence(unittest.TestCase):
                     encoding="utf-8"
                 )
             )
+            # Seed a blocked, all-missing gate so this exercises the invariant
+            # (archive-evidence records an item without opening the gate)
+            # independent of the committed archive's live open/blocked state.
+            archive["production_gate"]["status"] = "blocked"
+            for item in archive["production_gate"]["required_evidence"]:
+                item["status"] = "missing"
+                item.pop("artifact_path", None)
+                item.pop("artifact_sha256", None)
             archive_path.write_text(
                 json.dumps(archive, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
@@ -229,7 +325,7 @@ class TestPilotArchiveEvidence(unittest.TestCase):
             self.assertEqual(updated["production_gate"]["status"], "blocked")
             item = updated["production_gate"]["required_evidence"][0]
             self.assertEqual(item["id"], "deployment_record")
-            self.assertEqual(item["status"], "missing")
+            self.assertEqual(item["status"], "recorded")
             self.assertEqual(item["artifact_path"], str(artifact_path))
             self.assertEqual(
                 item["artifact_sha256"],

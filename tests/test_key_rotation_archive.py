@@ -96,11 +96,19 @@ class TestKeyRotationArchive(unittest.TestCase):
                 "operator_review",
             ],
         )
-        self.assertTrue(all(item["status"] == "missing" for item in gate["required_evidence"]))
+        # Each evidence entry must carry a valid status; do not pin recorded vs
+        # missing here — that is the live gate state and legitimately flips to
+        # "recorded"/"open" once the external-team-pilot gate is opened.
+        for item in gate["required_evidence"]:
+            self.assertIn(item["status"], {"missing", "recorded"})
 
     def test_production_gate_cannot_open_without_required_evidence(self):
         archive = _load(ARCHIVE)
         mutated = copy.deepcopy(archive)
+        for item in mutated["production_gate"]["required_evidence"]:
+            item["status"] = "missing"
+            item.pop("artifact_path", None)
+            item.pop("artifact_sha256", None)
         mutated["production_gate"]["status"] = "open"
         with self.assertRaisesRegex(AssertionError, "deployment evidence"):
             validate_archive(mutated)
@@ -125,7 +133,9 @@ class TestKeyRotationArchive(unittest.TestCase):
             item["status"] = "recorded"
             item["artifact_path"] = artifact_path
             item["artifact_sha256"] = digest
-        with self.assertRaisesRegex(AssertionError, "wrong kind|duplicate artifact_path"):
+        with self.assertRaisesRegex(
+            AssertionError, "wrong kind|duplicate artifact_path"
+        ):
             validate_archive(mutated)
 
     def test_production_gate_rejects_duplicate_recorded_artifact_paths(self):
@@ -159,7 +169,9 @@ class TestKeyRotationArchive(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "duplicate artifact_path"):
                 validate_archive(mutated)
 
-    def test_production_gate_rejects_fake_canary_bundle_path_not_linked_to_rotation(self):
+    def test_production_gate_rejects_fake_canary_bundle_path_not_linked_to_rotation(
+        self,
+    ):
         archive = _load(ARCHIVE)
         mutated = copy.deepcopy(archive)
         with tempfile.TemporaryDirectory(dir=ROOT) as d:
@@ -201,8 +213,12 @@ class TestKeyRotationArchive(unittest.TestCase):
                     "canary_bundle_path": "fixtures/key-rotation/operator-key-canary-bundle.json",
                 },
             )
-            fake_canary = _load(ROOT / "fixtures/key-rotation/operator-key-canary-bundle.json")
-            fake_canary["dsse_envelope"]["signatures"][0]["sig"] = "not-a-valid-signature"
+            fake_canary = _load(
+                ROOT / "fixtures/key-rotation/operator-key-canary-bundle.json"
+            )
+            fake_canary["dsse_envelope"]["signatures"][0]["sig"] = (
+                "not-a-valid-signature"
+            )
             _write_json(ROOT / artifacts["canary_bundle"], fake_canary)
             _write_json(
                 ROOT / artifacts["depone_verification"],
@@ -251,7 +267,9 @@ class TestKeyRotationArchive(unittest.TestCase):
         fake_canary = _load(ROOT / current_key["bundle_path"])
         fake_canary["dsse_envelope"]["signatures"][0]["sig"] = "not-a-valid-signature"
 
-        with self.assertRaisesRegex(AssertionError, "canary_bundle signature verification"):
+        with self.assertRaisesRegex(
+            AssertionError, "canary_bundle signature verification"
+        ):
             _validate_canary_bundle_record(
                 fake_canary,
                 artifact_path=(ROOT / current_key["bundle_path"]).resolve(),
@@ -362,7 +380,9 @@ class TestKeyRotationArchive(unittest.TestCase):
             for item in mutated["production_gate"]["required_evidence"]:
                 item["status"] = "recorded"
                 if item["id"] == "canary_bundle":
-                    artifact_path = Path("fixtures/key-rotation/operator-key-canary-bundle.json")
+                    artifact_path = Path(
+                        "fixtures/key-rotation/operator-key-canary-bundle.json"
+                    )
                 else:
                     artifact_path = artifacts[item["id"]]
                 item["artifact_path"] = str(artifact_path)

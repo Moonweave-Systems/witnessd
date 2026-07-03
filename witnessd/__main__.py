@@ -187,6 +187,18 @@ def _cmd_pilot_close(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_pilot_rotation_record(args: argparse.Namespace) -> int:
+    from witnessd.pilot import write_rotation_record
+
+    record_path = write_rotation_record(
+        archive_path=args.archive,
+        out_dir=args.out,
+        retired_key_id=args.retired_key_id,
+    )
+    print(f"rotation_record: {record_path}")
+    return 0
+
+
 def _cmd_pilot_canary(args: argparse.Namespace) -> int:
     from witnessd.pilot import emit_canary_bundle
 
@@ -1233,6 +1245,14 @@ def _build_parser() -> argparse.ArgumentParser:
     pilot_close = pilot_sub.add_parser("close", help="close a pilot deployment record")
     pilot_close.add_argument("--record", required=True)
     pilot_close.set_defaults(func=_cmd_pilot_close)
+
+    pilot_rotation = pilot_sub.add_parser(
+        "rotation-record", help="create an operator key rotation record"
+    )
+    pilot_rotation.add_argument("--archive", required=True)
+    pilot_rotation.add_argument("--out", required=True)
+    pilot_rotation.add_argument("--retired-key-id", default="witnessd-operator")
+    pilot_rotation.set_defaults(func=_cmd_pilot_rotation_record)
 
     pilot_canary = pilot_sub.add_parser(
         "canary", help="emit a signed operator key-rotation canary bundle"
