@@ -2,6 +2,11 @@
 
 > **Done is signed bytes, not a self-reported string.**
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-4F46E5.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Moonweave-Systems/witnessd?color=4F46E5)](https://github.com/Moonweave-Systems/witnessd/releases)
+[![CI](https://github.com/Moonweave-Systems/witnessd/actions/workflows/ci.yml/badge.svg)](https://github.com/Moonweave-Systems/witnessd/actions/workflows/ci.yml)
+[![Runtime](https://img.shields.io/badge/runtime-stdlib%20%2B%20openssl-059669.svg)](SPEC.md)
+
 `witnessd` is the executing half of Moonweave: it spawns and supervises
 agent/team work, captures what happened, signs the resulting evidence, and leaves
 bytes that another program can re-check later. The point is not to trust a model,
