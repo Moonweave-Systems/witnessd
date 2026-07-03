@@ -10,7 +10,7 @@
 - **공통 게이트(웨이브 완료 정의, §5.0):**
   - **G1** `witnessd self-test --all` → `N/N passed` (exit 0).
   - **G2** `python3 scripts/revalidate_wN.py` → committed fixture를 **설치된 Depone 패키지의 validator로** 재도출, exit 0.
-  - **G3** Depone repo에서 witnessd evidence 소비 → `python scripts/check_contract.py --tier changed` + `python scripts/dwm.py doctor` red 없음.
+  - **G3** Depone repo에서 witnessd evidence 소비 → `python3 -m depone validate-contracts --self-test` + `python3 -m depone doctor --self-test` red 없음. (2026-07-03 DWM 은퇴로 `check_contract.py`/`dwm.py doctor` 게이트가 패키지 self-test로 대체됨.)
 - **canonical_hash 규약(Depone와 바이트 동일해야 함):**
   `sha256(json.dumps(obj, sort_keys=True, separators=(",",":")).encode("utf-8")).hexdigest()`
 - **불변식:** worker는 자기 성공 seal 불가, Evidence Emitter만 SoT에 씀, verifier는 assurance 상향 불가, fail-closed(부분점수 없음), assurance 상한 **A2**(A3 등급 없음 — operator 서명은 별도 report-level 축).
