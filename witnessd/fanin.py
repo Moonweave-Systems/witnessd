@@ -310,7 +310,11 @@ def _normalize_merge_groups(
 ) -> list[dict[str, Any]]:
     if not merge_groups:
         return []
+    if len(merge_groups) != 1:
+        raise ValueError("ERR_TEAM_MERGE_GROUP_UNSUPPORTED")
     normalized: list[dict[str, Any]] = []
+    seen_lane_ids: set[str] = set()
+    seen_coverage: set[tuple[tuple[str, ...], tuple[str, ...]]] = set()
     for raw in merge_groups:
         lane_id = str(raw.get("lane_id", "")).strip()
         sources = raw.get("sources")
@@ -327,6 +331,11 @@ def _normalize_merge_groups(
         normalized_files = _normalize_repo_region(files)
         if len(normalized_sources) < 2 or not normalized_files:
             raise ValueError("ERR_TEAM_MERGE_GROUP_INVALID")
+        coverage_key = (tuple(normalized_sources), tuple(normalized_files))
+        if lane_id in seen_lane_ids or coverage_key in seen_coverage:
+            raise ValueError("ERR_TEAM_MERGE_GROUP_UNSUPPORTED")
+        seen_lane_ids.add(lane_id)
+        seen_coverage.add(coverage_key)
         normalized.append(
             {
                 "lane_id": lane_id,

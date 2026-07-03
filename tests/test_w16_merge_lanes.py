@@ -203,6 +203,55 @@ class TestW16MergeLanes(unittest.TestCase):
         self.assertNotIn("merge_receipt", ledger)
         self.assertFalse((result["base_dir"] / "merge-ab" / "conflicts").exists())
 
+    def test_run_team_rejects_duplicate_merge_groups(self):
+        with self.assertRaisesRegex(ValueError, "ERR_TEAM_MERGE_GROUP_UNSUPPORTED"):
+            self._run_with_groups(
+                [
+                    {"lane_id": "lane-a", "region": ["pkg/shared.py"], "commands": [["sh", "-c", "true"]]},
+                    {"lane_id": "lane-b", "region": ["pkg/shared.py"], "commands": [["sh", "-c", "true"]]},
+                ],
+                [
+                    {"lane_id": "merge-ab", "sources": ["lane-a", "lane-b"], "files": ["pkg/shared.py"]},
+                    {"lane_id": "merge-ab-2", "sources": ["lane-a", "lane-b"], "files": ["pkg/shared.py"]},
+                ],
+            )
+
+    def test_run_team_rejects_multiple_merge_groups_until_depone_supports_multiple_receipts(self):
+        with self.assertRaisesRegex(ValueError, "ERR_TEAM_MERGE_GROUP_UNSUPPORTED"):
+            self._run_with_groups(
+                [
+                    {"lane_id": "lane-a", "region": ["pkg/a.py"], "commands": [["sh", "-c", "true"]]},
+                    {"lane_id": "lane-b", "region": ["pkg/a.py"], "commands": [["sh", "-c", "true"]]},
+                    {"lane_id": "lane-c", "region": ["pkg/c.py"], "commands": [["sh", "-c", "true"]]},
+                    {"lane_id": "lane-d", "region": ["pkg/c.py"], "commands": [["sh", "-c", "true"]]},
+                ],
+                [
+                    {"lane_id": "merge-ab", "sources": ["lane-a", "lane-b"], "files": ["pkg/a.py"]},
+                    {"lane_id": "merge-cd", "sources": ["lane-c", "lane-d"], "files": ["pkg/c.py"]},
+                ],
+            )
+
+    def _run_with_groups(self, lane_specs: list[dict], merge_groups: list[dict]):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        repo = root / "repo"
+        out_dir = root / "evidence"
+        keys = root / "keys"
+        repo.mkdir()
+        keys.mkdir()
+        base_commit = _seed_repo(repo)
+        private_key_path, public_key_path = gen_operator_keypair(str(keys))
+        return run_team(
+            lane_specs,
+            repo_root=str(repo),
+            out_dir=str(out_dir),
+            private_key_path=private_key_path,
+            public_key_path=public_key_path,
+            base_commit=base_commit,
+            merge_groups=merge_groups,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
