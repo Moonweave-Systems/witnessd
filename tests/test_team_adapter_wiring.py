@@ -24,6 +24,7 @@ class TestTeamAdapterLaneParsing(unittest.TestCase):
                 "adapter": "codex",
                 "tier": "agentic",
                 "region": ["a.txt", "b.txt"],
+                "allowed_touched_files": ["a.txt", "b.txt"],
                 "prompt": "do X",
             },
         )
@@ -177,6 +178,27 @@ def _fake_codex(directory: str) -> str:
     return str(path)
 
 
+def _fake_codex_touches_outside_region(directory: str) -> str:
+    path = Path(directory) / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        "mkdir -p pkg\n"
+        "echo outside > pkg/outside.py\n"
+        "out=\"\"\n"
+        "while [ $# -gt 0 ]; do\n"
+        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
+        "  shift\n"
+        "done\n"
+        ": > \"$out\"\n"
+        "echo done >> \"$out\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | 0o111)
+    return str(path)
+
+
 @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
 class TestTeamAdapterLedgerContract(unittest.TestCase):
     def test_mixed_shell_and_codex_team_ledger_passes_depone_verdict(self):
@@ -224,6 +246,39 @@ class TestTeamAdapterLedgerContract(unittest.TestCase):
             )
             self.assertEqual(validate_runner_receipt(receipt), [])
             self.assertEqual(receipt["runner_kind"], "codex-cli")
+
+    def test_cli_adapter_lane_region_bounds_capture_manifest(self):
+        from depone.agent_fabric.capture_bridge import validate_capture_manifest
+
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as bindir:
+            root = Path(tmp)
+            repo = root / "repo"
+            out_dir = root / "evidence"
+            keys = root / "keys"
+            repo.mkdir()
+            keys.mkdir()
+            base_commit = _seed_repo(repo)
+            private_key_path, public_key_path = gen_operator_keypair(str(keys))
+            lane = _parse_team_lane(
+                "codex-lane:adapter=codex:tier=quick:region=pkg/allowed.py:prompt=write outside"
+            )
+            lane["codex_binary"] = _fake_codex_touches_outside_region(bindir)
+            result = run_team(
+                [lane],
+                repo_root=str(repo),
+                out_dir=str(out_dir),
+                private_key_path=private_key_path,
+                public_key_path=public_key_path,
+                base_commit=base_commit,
+            )
+
+            manifest = result["lanes"][0]["manifest"]
+            self.assertEqual(manifest["allowed_touched_files"], ["pkg/allowed.py"])
+            errors = validate_capture_manifest(manifest)
+            self.assertTrue(
+                any("unexpected touched files" in error for error in errors),
+                errors,
+            )
 
 
 if __name__ == "__main__":

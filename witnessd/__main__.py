@@ -882,13 +882,15 @@ def _parse_team_lane(text: str) -> dict:
     if not prompt:
         raise ValueError("ERR_TEAM_LANE_PROMPT")
 
+    region = [
+        item.strip() for item in fields.get("region", "").split(",") if item.strip()
+    ]
     parsed = {
         "lane_id": lane_id,
         "adapter": adapter,
         "tier": fields.get("tier", "agentic"),
-        "region": [
-            item.strip() for item in fields.get("region", "").split(",") if item.strip()
-        ],
+        "region": region,
+        "allowed_touched_files": list(region),
         "prompt": prompt,
     }
     return parsed

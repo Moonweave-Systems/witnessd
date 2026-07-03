@@ -1,0 +1,8 @@
+diff --git a/pkg/w13_marker.py b/pkg/w13_marker.py
+new file mode 100644
+index 0000000..7a57ab9
+--- /dev/null
++++ b/pkg/w13_marker.py
+@@ -0,0 +1,2 @@
++# W13 fake codex marker
++PROMPT = implement W13 marker: via prompt file

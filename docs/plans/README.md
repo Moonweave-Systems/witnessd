@@ -39,7 +39,7 @@ parity 가드 `tests/test_depone_replica_conformance.py`). W7 team adapter wirin
 
 ## 로드맵 — 최종판(v2.0.0)까지의 전체 아크 (2026-07-02 확정)
 
-> **현재 위치(2026-07-03): v2.0.0 릴리스 준비 완료. 다음 = 운영 트랙 P1 → W6a.**
+> **현재 위치(2026-07-03): v2.0.0 + P1 Part A tooling + W13 team-run Codex auth/region repair complete. 다음 = 운영 트랙 P1 실전 파일럿 → W6a.**
 > Part II 스펙(왜/무엇이 최종판인가)은 **`SPEC2.md`** — 조사 다시 하지 말고 그 문서부터 읽을 것.
 
 ### 완료 (v1.0.x)
@@ -53,6 +53,7 @@ parity 가드 `tests/test_depone_replica_conformance.py`). W7 team adapter wirin
 | W11 | Planner: goal → sealed plan → deterministic dispatch → `team plan-run` shell fallback (`2026-07-02-w11-planner.md`) | ✅ revalidate PASS |
 | W12 | Dedicated observer uid real A2 fixture (`2026-07-02-w12-real-a2.md`) | ✅ strict revalidate PASS |
 | v2.0.0 | one-command `team plan-run` demo with a real Codex lane → `fixtures/v2-demo/` → Depone revalidation | ✅ local tag, push left to operator |
+| W13 | `team run` Codex auth seeding + state isolation + declared ownership-region enforcement (`2026-07-03-w13-team-run-codex-auth.md`) | ✅ fake-codex fixture/revalidate PASS |
 
 ### 운영 트랙 (v2.0.0 이후)
 | 순서 | 플랜 파일 | 산출 | 의존 | 성격 |

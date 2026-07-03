@@ -103,6 +103,13 @@ Start with [`fixtures/w1/`](fixtures/w1/) and [`scripts/revalidate_w1.py`](scrip
   and team-ledger verdict from committed bytes. The fixture contains only the
   operator public key; the subscription `auth.json` used for the live worker
   stayed in the isolated W4 state root and is not committed.
+- W13 team-run Codex auth/region repair:
+  [`fixtures/w13/`](fixtures/w13/) records a fake-Codex `witnessd team run`
+  lane using `--state-root`, `--codex-auth-source`, and `--lane-prompt-file`.
+  [`scripts/revalidate_w13.py`](scripts/revalidate_w13.py) re-derives the
+  codex-cli runner receipt, signed evidence bundle, team-ledger verdict, and
+  declared ownership-region binding; an out-of-region touched file is blocked
+  by Depone validation.
 
 The runtime dependency target is intentionally small: Python standard library plus
 the `openssl` CLI. Depone is a development/test verifier dependency, not a
@@ -213,6 +220,7 @@ Execution half summary:
 - W11 sealed planner and deterministic dispatch.
 - W12 real dedicated-observer-uid A2 fixture.
 - v2-demo one-command plan-run: goal -> sealed plan -> Codex lane -> evidence tree -> Depone revalidation.
+- W13 team-run repair: subscription auth seeds only isolated state, complex prompts use prompt files, and declared regions bind Codex lane evidence.
 
 Conformance:
 - witnessd executes and emits evidence.

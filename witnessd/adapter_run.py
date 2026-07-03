@@ -149,6 +149,7 @@ def run_adapter_lane(
     evidence_dir: str | None = None,
     private_key_path: str | None = None,
     public_key_path: str | None = None,
+    allowed_touched_files: list[str] | None = None,
 ) -> dict[str, Any]:
     worktree = str(Path(sandbox or root).resolve(strict=False))
 
@@ -224,6 +225,11 @@ def run_adapter_lane(
             codex_env=codex_env,
         )
         diff_patch = _git_diff_patch(worktree, adapter_result.touched_files)
+        allowed_for_manifest = (
+            list(allowed_touched_files)
+            if allowed_touched_files is not None
+            else adapter_result.touched_files
+        )
 
         started_at = _now_iso()
         ended_at = _now_iso()
@@ -236,7 +242,7 @@ def run_adapter_lane(
             str(lane_evidence_dir),
             private_key,
             fixture=_fixture(adapter, task_id, route_decision),
-            allowed_touched_files=adapter_result.touched_files,
+            allowed_touched_files=allowed_for_manifest,
             public_key_path=public_key,
             task_id=task_id,
             invocation=adapter_result.invocation,

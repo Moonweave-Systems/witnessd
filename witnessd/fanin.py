@@ -288,6 +288,12 @@ def _run_adapter_lane(
         evidence_dir=str(evidence_dir),
         private_key_path=private_key_path,
         public_key_path=public_key_path,
+        allowed_touched_files=(
+            list(spec["allowed_touched_files"])
+            if isinstance(spec.get("allowed_touched_files"), list)
+            and all(isinstance(item, str) for item in spec["allowed_touched_files"])
+            else None
+        ),
     )
     _commit_lane(worktree, lane_id)
 

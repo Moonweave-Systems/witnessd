@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/tmp/tmp.ce2zeWoNmv/bin/codex",
+    "--sandbox",
+    "workspace-write",
+    "exec",
+    "--skip-git-repo-check",
+    "--cd",
+    "/home/ubuntu/moonweave/witnessd/fixtures/w13/worktrees/impl",
+    "--output-last-message",
+    "/home/ubuntu/moonweave/witnessd/fixtures/w13/adapter-transcript.txt",
+    "-"
+  ],
+  "cwd": "/home/ubuntu/moonweave/witnessd/fixtures/w13/worktrees/impl",
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": ""
+}
