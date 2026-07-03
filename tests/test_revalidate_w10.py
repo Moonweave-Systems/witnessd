@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -72,7 +73,7 @@ class TestRevalidateW10(unittest.TestCase):
                 else depone_path + os.pathsep + env["PYTHONPATH"]
             )
             result = subprocess.run(
-                ["uv", "run", "python3", "scripts/revalidate_w10.py"],
+                [sys.executable, "scripts/revalidate_w10.py"],
                 cwd=tmp,
                 env=env,
                 text=True,
