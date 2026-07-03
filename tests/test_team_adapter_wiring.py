@@ -101,29 +101,44 @@ class TestTeamAdapterFanin(unittest.TestCase):
         worktree = Path(lane["worktree"])
         self.assertEqual(worktree.parent.name, "worktrees")
         self.assertTrue(worktree.name.startswith("agent-lane-"))
-        self.assertNotEqual(os.path.abspath(lane["worktree"]), os.path.abspath(lane["evidence_dir"]))
+        self.assertNotEqual(
+            os.path.abspath(lane["worktree"]), os.path.abspath(lane["evidence_dir"])
+        )
         Path(lane["evidence_dir"]).resolve().relative_to(result["base_dir"].resolve())
         self.assertEqual(result["ledger"]["lanes"][0]["runner_adapter_kind"], "codex")
-        self.assertEqual(result["ledger"]["lanes"][0]["touched_files"], ["pkg/agent.py"])
+        self.assertEqual(
+            result["ledger"]["lanes"][0]["touched_files"], ["pkg/agent.py"]
+        )
 
     def test_blocked_adapter_lane_is_fail_closed_and_other_lanes_continue(self):
-        result = self._run(
-            [
-                {
-                    "lane_id": "blocked-lane",
-                    "adapter": "codex",
-                    "tier": "agentic",
-                    "region": ["pkg/blocked.py"],
-                    "prompt": "write blocked",
-                    "budget": {"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 0},
-                },
-                {
-                    "lane_id": "shell-lane",
-                    "region": ["pkg/shell.py"],
-                    "commands": [["sh", "-c", "mkdir -p pkg && echo shell > pkg/shell.py"]],
-                },
-            ]
-        )
+        with tempfile.TemporaryDirectory() as bindir:
+            result = self._run(
+                [
+                    {
+                        "lane_id": "blocked-lane",
+                        "adapter": "codex",
+                        "tier": "agentic",
+                        "region": ["pkg/blocked.py"],
+                        "prompt": "write blocked",
+                        "budget": {
+                            "max_tokens": 10**9,
+                            "max_usd": 10**9,
+                            "max_depth": 0,
+                        },
+                        # Provide a fake binary so preflight passes deterministically
+                        # (CI has no real `codex` on PATH); the depth-0 budget is
+                        # what must block the lane, yielding budget_exceeded.
+                        "codex_binary": _fake_codex(bindir),
+                    },
+                    {
+                        "lane_id": "shell-lane",
+                        "region": ["pkg/shell.py"],
+                        "commands": [
+                            ["sh", "-c", "mkdir -p pkg && echo shell > pkg/shell.py"]
+                        ],
+                    },
+                ]
+            )
 
         lanes = {lane["lane_id"]: lane for lane in result["ledger"]["lanes"]}
         self.assertEqual(lanes["blocked-lane"]["verification_state"], "blocked")
@@ -137,16 +152,16 @@ def _fake_codex(directory: str) -> str:
     path = Path(directory) / "codex"
     path.write_text(
         "#!/bin/sh\n"
-        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
         "mkdir -p pkg\n"
         "echo agent > pkg/agent.py\n"
-        "out=\"\"\n"
+        'out=""\n'
         "while [ $# -gt 0 ]; do\n"
-        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
+        '  if [ "$1" = "--output-last-message" ]; then out="$2"; fi\n'
         "  shift\n"
         "done\n"
-        ": > \"$out\"\n"
-        "echo done >> \"$out\"\n"
+        ': > "$out"\n'
+        'echo done >> "$out"\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -158,16 +173,16 @@ def _fake_codex_touches_outside_region(directory: str) -> str:
     path = Path(directory) / "codex"
     path.write_text(
         "#!/bin/sh\n"
-        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
         "mkdir -p pkg\n"
         "echo outside > pkg/outside.py\n"
-        "out=\"\"\n"
+        'out=""\n'
         "while [ $# -gt 0 ]; do\n"
-        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
+        '  if [ "$1" = "--output-last-message" ]; then out="$2"; fi\n'
         "  shift\n"
         "done\n"
-        ": > \"$out\"\n"
-        "echo done >> \"$out\"\n"
+        ': > "$out"\n'
+        'echo done >> "$out"\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -181,7 +196,10 @@ class TestTeamAdapterLedgerContract(unittest.TestCase):
         from depone.agent_fabric.paired_run import validate_runner_receipt
         from depone.agent_fabric.team_ledger import build_team_ledger_verdict
 
-        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             root = Path(tmp)
             repo = root / "repo"
             out_dir = root / "evidence"
@@ -195,7 +213,9 @@ class TestTeamAdapterLedgerContract(unittest.TestCase):
                     {
                         "lane_id": "shell-lane",
                         "region": ["pkg/shell.py"],
-                        "commands": [["sh", "-c", "mkdir -p pkg && echo shell > pkg/shell.py"]],
+                        "commands": [
+                            ["sh", "-c", "mkdir -p pkg && echo shell > pkg/shell.py"]
+                        ],
                     },
                     {
                         "lane_id": "codex-lane",
@@ -213,9 +233,14 @@ class TestTeamAdapterLedgerContract(unittest.TestCase):
                 base_commit=base_commit,
             )
 
-            verdict = build_team_ledger_verdict(result["ledger"], base_dir=result["base_dir"])
+            verdict = build_team_ledger_verdict(
+                result["ledger"], base_dir=result["base_dir"]
+            )
             self.assertEqual(verdict["decision"], "pass")
-            kinds = {lane["lane_id"]: lane["runner_adapter_kind"] for lane in result["ledger"]["lanes"]}
+            kinds = {
+                lane["lane_id"]: lane["runner_adapter_kind"]
+                for lane in result["ledger"]["lanes"]
+            }
             self.assertEqual(kinds, {"shell-lane": "shell", "codex-lane": "codex"})
             receipt = json.loads(
                 (result["base_dir"] / "codex-lane" / "runner-receipt.json").read_text()
@@ -226,7 +251,10 @@ class TestTeamAdapterLedgerContract(unittest.TestCase):
     def test_cli_adapter_lane_region_bounds_capture_manifest(self):
         from depone.agent_fabric.capture_bridge import validate_capture_manifest
 
-        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             root = Path(tmp)
             repo = root / "repo"
             out_dir = root / "evidence"
