@@ -10,6 +10,8 @@ from pathlib import Path
 from witnessd.__main__ import main
 from witnessd.signing import DEFAULT_OPERATOR_KEY_ID, gen_operator_keypair, verify_dsse
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 class TestPilotInit(unittest.TestCase):
     def test_init_defaults_to_local_dogfood_and_ci_only(self):
@@ -139,6 +141,57 @@ class TestPilotCanary(unittest.TestCase):
             self.assertEqual(len(signatures), 1)
             self.assertEqual(signatures[0]["keyid"], DEFAULT_OPERATOR_KEY_ID)
             self.assertTrue(verify_dsse(bundle["dsse_envelope"], public_key))
+
+
+class TestPilotArchiveEvidence(unittest.TestCase):
+    def test_archive_evidence_records_path_and_sha_without_status_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive_path = Path(tmp) / "operator-key-archive.json"
+            archive = json.loads(
+                (ROOT / "fixtures/key-rotation/operator-key-archive.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            archive_path.write_text(
+                json.dumps(archive, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            artifact_path = Path(tmp) / "deployment-record.json"
+            artifact_path.write_text('{"kind":"evidence"}\n', encoding="utf-8")
+            out_path = Path(tmp) / "updated-archive.json"
+
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = main(
+                    [
+                        "pilot",
+                        "archive-evidence",
+                        "--archive",
+                        str(archive_path),
+                        "--out",
+                        str(out_path),
+                        "--artifact",
+                        f"deployment_record={artifact_path}",
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            self.assertIn(str(out_path), out.getvalue())
+            updated = json.loads(out_path.read_text(encoding="utf-8"))
+            self.assertEqual(updated["production_gate"]["status"], "blocked")
+            item = updated["production_gate"]["required_evidence"][0]
+            self.assertEqual(item["id"], "deployment_record")
+            self.assertEqual(item["status"], "missing")
+            self.assertEqual(item["artifact_path"], str(artifact_path))
+            self.assertEqual(
+                item["artifact_sha256"],
+                hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
+            )
+            for before, after in zip(
+                archive["production_gate"]["required_evidence"][1:],
+                updated["production_gate"]["required_evidence"][1:],
+            ):
+                self.assertEqual(before, after)
 
 
 if __name__ == "__main__":

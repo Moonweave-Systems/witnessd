@@ -160,7 +160,6 @@ def record_archive_evidence(
             raise ValueError(f"unknown evidence id: {evidence_id}")
         artifact_path = Path(artifact)
         item = by_id[evidence_id]
-        item["status"] = "recorded"
         item["artifact_path"] = _relative_to_cwd(artifact_path)
         item["artifact_sha256"] = sha256_file(artifact_path)
     target = Path(out_path) if out_path is not None else archive_file

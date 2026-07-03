@@ -194,6 +194,32 @@ def _cmd_pilot_canary(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_pilot_archive_evidence(args: argparse.Namespace) -> int:
+    from witnessd.pilot import record_archive_evidence
+
+    artifacts: dict[str, str] = {}
+    for entry in args.artifact:
+        if "=" not in entry:
+            print("ERR_ARCHIVE_ARTIFACT_FORMAT", file=sys.stderr)
+            return 2
+        evidence_id, path = entry.split("=", 1)
+        if not evidence_id or not path:
+            print("ERR_ARCHIVE_ARTIFACT_FORMAT", file=sys.stderr)
+            return 2
+        artifacts[evidence_id] = path
+    try:
+        archive_path = record_archive_evidence(
+            archive_path=args.archive,
+            artifacts=artifacts,
+            out_path=args.out,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(f"operator_key_archive: {archive_path}")
+    return 0
+
+
 def _cmd_plan(args: argparse.Namespace) -> int:
     from witnessd.adapter_run import LaneBlocked, run_adapter_lane
     from witnessd.planner import (
@@ -1123,6 +1149,14 @@ def _build_parser() -> argparse.ArgumentParser:
     pilot_canary.add_argument("--keys-dir", required=True)
     pilot_canary.add_argument("--out", required=True)
     pilot_canary.set_defaults(func=_cmd_pilot_canary)
+
+    pilot_archive = pilot_sub.add_parser(
+        "archive-evidence", help="record pilot evidence paths and hashes"
+    )
+    pilot_archive.add_argument("--archive", required=True)
+    pilot_archive.add_argument("--out", default=None)
+    pilot_archive.add_argument("--artifact", action="append", required=True)
+    pilot_archive.set_defaults(func=_cmd_pilot_archive_evidence)
 
     return parser
 
