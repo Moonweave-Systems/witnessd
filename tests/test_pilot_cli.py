@@ -1,6 +1,7 @@
 import io
 import hashlib
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -35,9 +36,7 @@ class TestPilotInit(unittest.TestCase):
             record_path = Path(tmp) / "deployment-record.json"
             self.assertIn(str(record_path), out.getvalue())
             record = json.loads(record_path.read_text(encoding="utf-8"))
-            self.assertEqual(
-                record["kind"], "witnessd-external-team-pilot-deployment"
-            )
+            self.assertEqual(record["kind"], "witnessd-external-team-pilot-deployment")
             self.assertEqual(record["schema_version"], "1.0")
             self.assertEqual(record["rollout_stage"], "external-team-pilot")
             self.assertTrue(record["deployment_id"].startswith("pilot-"))
@@ -74,6 +73,55 @@ class TestPilotInit(unittest.TestCase):
             self.assertTrue(record["deployed_runtime"])
             self.assertFalse(record["local_dogfood"])
             self.assertFalse(record["ci_only"])
+
+    def test_init_records_deployment_root_git_sha(self):
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as tmp:
+            deploy = Path(tmp) / "deployed"
+            deploy.mkdir()
+            env = {
+                **os.environ,
+                "GIT_AUTHOR_NAME": "t",
+                "GIT_AUTHOR_EMAIL": "t@t",
+                "GIT_COMMITTER_NAME": "t",
+                "GIT_COMMITTER_EMAIL": "t@t",
+            }
+            subprocess.run(["git", "init", "-q"], cwd=deploy, check=True)
+            (deploy / "f.txt").write_text("x")
+            subprocess.run(["git", "add", "-A"], cwd=deploy, check=True)
+            subprocess.run(
+                ["git", "commit", "-qm", "seed"], cwd=deploy, env=env, check=True
+            )
+            deployed_sha = subprocess.run(
+                ["git", "rev-parse", "--short=12", "HEAD"],
+                cwd=deploy,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+
+            out = Path(tmp) / "out"
+            code = main(
+                [
+                    "pilot",
+                    "init",
+                    "--operator",
+                    "op",
+                    "--team-scope",
+                    "s",
+                    "--out",
+                    str(out),
+                    "--deployment-root",
+                    str(deploy),
+                ]
+            )
+            self.assertEqual(code, 0)
+            record = json.loads(
+                (out / "deployment-record.json").read_text(encoding="utf-8")
+            )
+            # Records the DEPLOYED runtime's SHA, not this dev tree's HEAD.
+            self.assertEqual(record["witnessd_git_sha"], deployed_sha)
 
 
 class TestPilotClose(unittest.TestCase):

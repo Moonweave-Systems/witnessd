@@ -173,6 +173,7 @@ def _cmd_pilot_init(args: argparse.Namespace) -> int:
         deployed_runtime=deployed_runtime,
         local_dogfood=not deployed_runtime,
         ci_only=not deployed_runtime,
+        repo_root=args.deployment_root,
     )
     print(f"deployment_record: {record_path}")
     return 0
@@ -496,7 +497,9 @@ def _cmd_learn(args: argparse.Namespace) -> int:
         approval_events=approval_events,
         evidence_dir=args.evidence_dir,
     )
-    print(json.dumps({k: v for k, v in result.items() if k != "bundle"}, sort_keys=True))
+    print(
+        json.dumps({k: v for k, v in result.items() if k != "bundle"}, sort_keys=True)
+    )
     if not result["promoted"]:
         return 1
     bundle_path = args.bundle_out
@@ -545,7 +548,9 @@ def _cmd_route(args: argparse.Namespace) -> int:
     from witnessd.router import RouteExhaustedError, route_model
 
     root = Path(args.root).resolve()
-    runlog_path = Path(args.runlog) if args.runlog else root / ".witnessd" / "route-runlog.jsonl"
+    runlog_path = (
+        Path(args.runlog) if args.runlog else root / ".witnessd" / "route-runlog.jsonl"
+    )
     runlog_path.parent.mkdir(parents=True, exist_ok=True)
     unsupported = set(args.unsupported_model or [])
     log = EventLog(str(runlog_path))
@@ -634,7 +639,9 @@ def _cmd_team_plan_run(args: argparse.Namespace) -> int:
     keys_dir = Path(args.keys_dir or (str(out_dir).rstrip(os.sep) + "-keys")).resolve()
     keys_dir.mkdir(parents=True, exist_ok=True)
     private_key_path, public_key_path = gen_operator_keypair(str(keys_dir))
-    lane_specs = [_lane_packet_to_run_team_spec(packet, args) for packet in sealed["packets"]]
+    lane_specs = [
+        _lane_packet_to_run_team_spec(packet, args) for packet in sealed["packets"]
+    ]
     if args.lane_adapter == "codex" and state_root is not None:
         _seed_codex_auth(Path(state_root), args.codex_auth_source)
     result = run_team(
@@ -663,7 +670,9 @@ def _team_plan_state_root(args: argparse.Namespace, out_dir: Path) -> str | None
         return str(Path(args.state_root).resolve(strict=False))
     if args.lane_adapter == "shell":
         return None
-    return str(Path(str(out_dir).rstrip(os.sep) + "-w4-state-root").resolve(strict=False))
+    return str(
+        Path(str(out_dir).rstrip(os.sep) + "-w4-state-root").resolve(strict=False)
+    )
 
 
 def _is_inside_or_equal(path: Path, root: Path) -> bool:
@@ -732,12 +741,16 @@ def _cmd_a2_observer_run(args: argparse.Namespace) -> int:
     return 0
 
 
-def _lane_packet_to_run_team_spec(packet: dict, args: argparse.Namespace | None = None) -> dict:
+def _lane_packet_to_run_team_spec(
+    packet: dict, args: argparse.Namespace | None = None
+) -> dict:
     if packet["adapter"] == "shell":
         return {
             "lane_id": packet["lane_id"],
             "region": list(packet["region"]),
-            "commands": [_default_team_lane_command(packet["lane_id"], packet["region"])],
+            "commands": [
+                _default_team_lane_command(packet["lane_id"], packet["region"])
+            ],
         }
     spec = {
         "lane_id": packet["lane_id"],
@@ -761,7 +774,9 @@ def _lane_packet_to_run_team_spec(packet: dict, args: argparse.Namespace | None 
 def _cmd_team_ledger(args: argparse.Namespace) -> int:
     ledger_path = Path(args.ledger)
     ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
-    pending = len(ledger.get("lanes", [])) if isinstance(ledger.get("lanes"), list) else 0
+    pending = (
+        len(ledger.get("lanes", [])) if isinstance(ledger.get("lanes"), list) else 0
+    )
     status = render_status(pending=pending, verdict=None)
     result = {
         "decision": status,
@@ -813,7 +828,9 @@ def _parse_team_lane(text: str) -> dict:
         "lane_id": lane_id,
         "adapter": adapter,
         "tier": fields.get("tier", "agentic"),
-        "region": [item.strip() for item in fields.get("region", "").split(",") if item.strip()],
+        "region": [
+            item.strip() for item in fields.get("region", "").split(",") if item.strip()
+        ],
         "prompt": prompt,
     }
     return parsed
@@ -930,7 +947,9 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--keys-dir", default=None)
     run.add_argument("--task-id", default="witnessd-lane")
     run.add_argument("--arm", default="direct", choices=["direct", "governed"])
-    run.add_argument("--tier", default="agentic", choices=["quick", "agentic", "frontier"])
+    run.add_argument(
+        "--tier", default="agentic", choices=["quick", "agentic", "frontier"]
+    )
     run.add_argument("--codex-binary", default="codex")
     run.add_argument("--claude-binary", default="claude")
     run.add_argument("--opencode-binary", default="opencode")
@@ -967,7 +986,9 @@ def _build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--seed", default="w11")
     plan.add_argument("--draft-adapter", choices=["codex", "claude", "opencode"])
     plan.add_argument("--draft-out", default=None)
-    plan.add_argument("--tier", default="agentic", choices=["quick", "agentic", "frontier"])
+    plan.add_argument(
+        "--tier", default="agentic", choices=["quick", "agentic", "frontier"]
+    )
     plan.add_argument("--codex-binary", default="codex")
     plan.add_argument("--claude-binary", default="claude")
     plan.add_argument("--opencode-binary", default="opencode")
@@ -991,7 +1012,9 @@ def _build_parser() -> argparse.ArgumentParser:
     route.add_argument("--root", default=".")
     route.add_argument("--runlog", default=None)
     route.add_argument("--task-id", default="witnessd-route")
-    route.add_argument("--tier", required=True, choices=["quick", "agentic", "frontier"])
+    route.add_argument(
+        "--tier", required=True, choices=["quick", "agentic", "frontier"]
+    )
     route.add_argument("--unsupported-model", action="append", default=[])
     route.set_defaults(func=_cmd_route)
 
@@ -1137,6 +1160,11 @@ def _build_parser() -> argparse.ArgumentParser:
     pilot_init.add_argument("--deployed-runtime", action="store_true")
     pilot_init.add_argument("--not-dogfood", action="store_true")
     pilot_init.add_argument("--not-ci", action="store_true")
+    pilot_init.add_argument(
+        "--deployment-root",
+        default=None,
+        help="repo path of the deployed runtime whose git SHA is recorded (default: this tree)",
+    )
     pilot_init.set_defaults(func=_cmd_pilot_init)
 
     pilot_close = pilot_sub.add_parser("close", help="close a pilot deployment record")
