@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +18,9 @@ TRANSCRIPT_KIND = "depone-verification-transcript"
 ROLLOUT_STAGE = "external-team-pilot"
 SCHEMA_VERSION = "1.0"
 DEPLOYMENT_RECORD_NAME = "deployment-record.json"
+CANARY_KIND = "operator-key-rotation-canary"
+CANARY_RECORD_NAME = "operator-key-canary.json"
+CANARY_BUNDLE_NAME = "operator-key-canary-bundle.json"
 
 
 def utc_now() -> str:
@@ -94,6 +96,45 @@ def close_deployment_record(record_path: str | Path) -> str:
     record["ended_at"] = utc_now()
     path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return sha256_file(path)
+
+
+def emit_canary_bundle(*, keys_dir: str | Path, out_dir: str | Path) -> Path:
+    from witnessd.signing import DEFAULT_OPERATOR_KEY_ID
+    from witnessd.substrate import build_bundle
+
+    keys = Path(keys_dir)
+    private_key = keys / "operator-ed25519.pem"
+    public_key = keys / "operator-ed25519.pub.pem"
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    canary_path = out_path / CANARY_RECORD_NAME
+    canary = {
+        "kind": CANARY_KIND,
+        "schema_version": SCHEMA_VERSION,
+        "rollout_stage": ROLLOUT_STAGE,
+        "created_at": utc_now(),
+        "key_id": DEFAULT_OPERATOR_KEY_ID,
+        "public_key_path": str(public_key),
+    }
+    canary_path.write_text(json.dumps(canary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    manifest = {
+        "kind": CANARY_KIND,
+        "assurance": "A1-local-observed",
+        "decision": CANARY_KIND,
+        "evidence_mode": "contemporaneous",
+        "epoch_seconds": 300,
+        "monotonic_counter": 1,
+    }
+    bundle = build_bundle(
+        manifest,
+        {"operator-key-rotation-canary": str(canary_path)},
+        str(private_key),
+        str(public_key),
+        key_id=DEFAULT_OPERATOR_KEY_ID,
+    )
+    bundle_path = out_path / CANARY_BUNDLE_NAME
+    bundle_path.write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return bundle_path
 
 
 def _relative_to_cwd(path: Path) -> str:

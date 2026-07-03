@@ -186,6 +186,14 @@ def _cmd_pilot_close(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_pilot_canary(args: argparse.Namespace) -> int:
+    from witnessd.pilot import emit_canary_bundle
+
+    bundle_path = emit_canary_bundle(keys_dir=args.keys_dir, out_dir=args.out)
+    print(f"canary_bundle: {bundle_path}")
+    return 0
+
+
 def _cmd_plan(args: argparse.Namespace) -> int:
     from witnessd.adapter_run import LaneBlocked, run_adapter_lane
     from witnessd.planner import (
@@ -1108,6 +1116,13 @@ def _build_parser() -> argparse.ArgumentParser:
     pilot_close = pilot_sub.add_parser("close", help="close a pilot deployment record")
     pilot_close.add_argument("--record", required=True)
     pilot_close.set_defaults(func=_cmd_pilot_close)
+
+    pilot_canary = pilot_sub.add_parser(
+        "canary", help="emit a signed operator key-rotation canary bundle"
+    )
+    pilot_canary.add_argument("--keys-dir", required=True)
+    pilot_canary.add_argument("--out", required=True)
+    pilot_canary.set_defaults(func=_cmd_pilot_canary)
 
     return parser
 

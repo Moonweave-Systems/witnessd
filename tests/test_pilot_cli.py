@@ -1,12 +1,14 @@
 import io
 import hashlib
 import json
+import shutil
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
 from witnessd.__main__ import main
+from witnessd.signing import DEFAULT_OPERATOR_KEY_ID, gen_operator_keypair, verify_dsse
 
 
 class TestPilotInit(unittest.TestCase):
@@ -100,6 +102,43 @@ class TestPilotClose(unittest.TestCase):
             self.assertGreaterEqual(record["ended_at"], record["started_at"])
             digest = hashlib.sha256(record_path.read_bytes()).hexdigest()
             self.assertIn(digest, out.getvalue())
+
+
+@unittest.skipUnless(shutil.which("openssl"), "openssl required to sign canary bundle")
+class TestPilotCanary(unittest.TestCase):
+    def test_canary_emits_single_signature_operator_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            keys_dir = Path(tmp) / "keys"
+            out_dir = Path(tmp) / "canary"
+            keys_dir.mkdir()
+            _private_key, public_key = gen_operator_keypair(str(keys_dir))
+
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = main(
+                    [
+                        "pilot",
+                        "canary",
+                        "--keys-dir",
+                        str(keys_dir),
+                        "--out",
+                        str(out_dir),
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            bundle_path = out_dir / "operator-key-canary-bundle.json"
+            self.assertIn(str(bundle_path), out.getvalue())
+            bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+            self.assertEqual(bundle["kind"], "depone-evidence-substrate-bundle")
+            self.assertEqual(
+                bundle["statement"]["predicate"]["source_kind"],
+                "operator-key-rotation-canary",
+            )
+            signatures = bundle["dsse_envelope"]["signatures"]
+            self.assertEqual(len(signatures), 1)
+            self.assertEqual(signatures[0]["keyid"], DEFAULT_OPERATOR_KEY_ID)
+            self.assertTrue(verify_dsse(bundle["dsse_envelope"], public_key))
 
 
 if __name__ == "__main__":

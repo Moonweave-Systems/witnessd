@@ -258,6 +258,34 @@ class TestKeyRotationArchive(unittest.TestCase):
                 current_key=current_key,
             )
 
+    def test_canary_bundle_record_rejects_more_than_one_signature(self):
+        archive = _load(ARCHIVE)
+        current_key = [key for key in archive["keys"] if key["status"] == "current"][0]
+        fake_canary = _load(ROOT / current_key["bundle_path"])
+        fake_canary["dsse_envelope"]["signatures"].append(
+            copy.deepcopy(fake_canary["dsse_envelope"]["signatures"][0])
+        )
+
+        with self.assertRaisesRegex(AssertionError, "exactly one signature"):
+            _validate_canary_bundle_record(
+                fake_canary,
+                artifact_path=(ROOT / current_key["bundle_path"]).resolve(),
+                current_key=current_key,
+            )
+
+    def test_canary_bundle_record_rejects_wrong_source_kind(self):
+        archive = _load(ARCHIVE)
+        current_key = [key for key in archive["keys"] if key["status"] == "current"][0]
+        fake_canary = _load(ROOT / current_key["bundle_path"])
+        fake_canary["statement"]["predicate"]["source_kind"] = "wrong-source-kind"
+
+        with self.assertRaisesRegex(AssertionError, "source_kind"):
+            _validate_canary_bundle_record(
+                fake_canary,
+                artifact_path=(ROOT / current_key["bundle_path"]).resolve(),
+                current_key=current_key,
+            )
+
     def test_production_gate_can_open_with_semantic_hash_bound_required_evidence(self):
         archive = _load(ARCHIVE)
         mutated = copy.deepcopy(archive)
