@@ -152,18 +152,35 @@ def seal_plan(packets: list[dict[str, Any]], *, goal: str) -> dict[str, Any]:
     }
 
 
-def plan_heuristic(goal: str, *, seed: str, root: str) -> list[dict[str, Any]]:
+def plan_heuristic(
+    goal: str,
+    *,
+    seed: str,
+    root: str,
+    adapter: str = "shell",
+    budget: dict[str, Any] | None = None,
+    prompt: str | None = None,
+    tier: str | None = None,
+) -> list[dict[str, Any]]:
     root_fingerprint = _root_fingerprint(root)
     lane_hash = canonical_hash(
         {"goal": str(goal), "seed": str(seed), "root": root_fingerprint}
     )[:12]
+    if budget is None:
+        budget = {"max_tokens": 0, "max_usd": 0.0, "max_depth": 1}
+    if prompt is None:
+        prompt = (
+            f"Record planner evidence for goal {goal}"
+            if adapter == "shell"
+            else str(goal)
+        )
     packet = {
         "lane_id": f"plan-{lane_hash}",
-        "adapter": "shell",
-        "tier": "quick",
+        "adapter": adapter,
+        "tier": tier or ("quick" if adapter == "shell" else "agentic"),
         "region": [f"w11/{lane_hash}.txt"],
-        "prompt": f"Record planner evidence for goal {goal}",
-        "budget": {"max_tokens": 0, "max_usd": 0.0, "max_depth": 1},
+        "prompt": prompt,
+        "budget": budget,
         "stop_rule": "evidence-pending",
     }
     return [validate_lane_packet(packet)]

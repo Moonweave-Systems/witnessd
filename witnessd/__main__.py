@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import shlex
 import sys
 import time
@@ -537,8 +538,29 @@ def _cmd_team_plan_run(args: argparse.Namespace) -> int:
 
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+    if args.draft_adapter != "heuristic":
+        print("ERR_PLAN_RUN_DRAFT_ADAPTER_UNSUPPORTED", file=sys.stderr)
+        return 2
+
+    state_root = _team_plan_state_root(args, out_dir)
+    if state_root is not None and _paths_overlap(Path(state_root), out_dir):
+        print("ERR_PLAN_RUN_STATE_ROOT_INSIDE_OUTPUT", file=sys.stderr)
+        return 2
+
+    budget = {
+        "max_tokens": args.max_tokens,
+        "max_usd": args.max_usd,
+        "max_depth": args.max_depth,
+    }
     sealed = seal_plan(
-        plan_heuristic(args.goal, seed=args.seed, root=args.repo),
+        plan_heuristic(
+            args.goal,
+            seed=args.seed,
+            root=args.repo,
+            adapter=args.lane_adapter,
+            budget=budget,
+            tier=args.tier,
+        ),
         goal=args.goal,
     )
     sealed_path = out_dir / "sealed-plan.json"
@@ -554,7 +576,9 @@ def _cmd_team_plan_run(args: argparse.Namespace) -> int:
     keys_dir = Path(args.keys_dir or (str(out_dir).rstrip(os.sep) + "-keys")).resolve()
     keys_dir.mkdir(parents=True, exist_ok=True)
     private_key_path, public_key_path = gen_operator_keypair(str(keys_dir))
-    lane_specs = [_lane_packet_to_run_team_spec(packet) for packet in sealed["packets"]]
+    lane_specs = [_lane_packet_to_run_team_spec(packet, args) for packet in sealed["packets"]]
+    if args.lane_adapter == "codex" and state_root is not None:
+        _seed_codex_auth(Path(state_root), args.codex_auth_source)
     result = run_team(
         lane_specs,
         repo_root=args.repo,
@@ -563,6 +587,7 @@ def _cmd_team_plan_run(args: argparse.Namespace) -> int:
         public_key_path=public_key_path,
         leader_objective=args.goal,
         stop_rule="evidence-pending",
+        state_root=state_root,
     )
     pending = len(result["ledger"]["lanes"])
     print(
@@ -573,6 +598,38 @@ def _cmd_team_plan_run(args: argparse.Namespace) -> int:
     print(f"dispatch_log: {out_dir / 'dispatch-log.jsonl'}")
     print(f"team_ledger: {out_dir / 'team-ledger.json'}")
     return 0
+
+
+def _team_plan_state_root(args: argparse.Namespace, out_dir: Path) -> str | None:
+    if args.state_root is not None:
+        return str(Path(args.state_root).resolve(strict=False))
+    if args.lane_adapter == "shell":
+        return None
+    return str(Path(str(out_dir).rstrip(os.sep) + "-w4-state-root").resolve(strict=False))
+
+
+def _is_inside_or_equal(path: Path, root: Path) -> bool:
+    try:
+        path.resolve(strict=False).relative_to(root.resolve(strict=False))
+        return True
+    except ValueError:
+        return False
+
+
+def _paths_overlap(left: Path, right: Path) -> bool:
+    return _is_inside_or_equal(left, right) or _is_inside_or_equal(right, left)
+
+
+def _seed_codex_auth(state_root: Path, source: str | None) -> None:
+    if not source:
+        return
+    source_path = Path(source).expanduser().resolve(strict=False)
+    if not source_path.exists():
+        raise RuntimeError(f"codex auth source does not exist: {source_path}")
+    target = state_root.resolve(strict=False) / ".witnessd" / "codex-home" / "auth.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source_path, target)
+    target.chmod(0o600)
 
 
 def _cmd_a2_observer_run(args: argparse.Namespace) -> int:
@@ -617,14 +674,14 @@ def _cmd_a2_observer_run(args: argparse.Namespace) -> int:
     return 0
 
 
-def _lane_packet_to_run_team_spec(packet: dict) -> dict:
+def _lane_packet_to_run_team_spec(packet: dict, args: argparse.Namespace | None = None) -> dict:
     if packet["adapter"] == "shell":
         return {
             "lane_id": packet["lane_id"],
             "region": list(packet["region"]),
             "commands": [_default_team_lane_command(packet["lane_id"], packet["region"])],
         }
-    return {
+    spec = {
         "lane_id": packet["lane_id"],
         "adapter": packet["adapter"],
         "tier": packet["tier"],
@@ -632,6 +689,15 @@ def _lane_packet_to_run_team_spec(packet: dict) -> dict:
         "prompt": packet["prompt"],
         "budget": dict(packet["budget"]),
     }
+    if args is not None:
+        spec.update(
+            {
+                "codex_binary": args.codex_binary,
+                "claude_binary": args.claude_binary,
+                "opencode_binary": args.opencode_binary,
+            }
+        )
+    return spec
 
 
 def _cmd_team_ledger(args: argparse.Namespace) -> int:
@@ -926,6 +992,25 @@ def _build_parser() -> argparse.ArgumentParser:
     team_plan_run.add_argument("--out", required=True)
     team_plan_run.add_argument("--keys-dir", default=None)
     team_plan_run.add_argument("--seed", default="w11")
+    team_plan_run.add_argument(
+        "--draft-adapter",
+        choices=["heuristic", "codex", "claude", "opencode"],
+        default="heuristic",
+    )
+    team_plan_run.add_argument(
+        "--lane-adapter",
+        choices=["shell", "codex", "claude", "opencode"],
+        default="shell",
+    )
+    team_plan_run.add_argument("--tier", default="agentic")
+    team_plan_run.add_argument("--max-tokens", type=int, default=10**9)
+    team_plan_run.add_argument("--max-usd", type=float, default=10**9)
+    team_plan_run.add_argument("--max-depth", type=int, default=3)
+    team_plan_run.add_argument("--state-root", default=None)
+    team_plan_run.add_argument("--codex-auth-source", default="~/.codex/auth.json")
+    team_plan_run.add_argument("--codex-binary", default="codex")
+    team_plan_run.add_argument("--claude-binary", default="claude")
+    team_plan_run.add_argument("--opencode-binary", default="opencode")
     team_plan_run.set_defaults(func=_cmd_team_plan_run)
 
     team_ledger = sub.add_parser("team-ledger", help="verify a team ledger")

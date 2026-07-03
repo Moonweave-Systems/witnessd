@@ -70,3 +70,14 @@ PYTHONPATH=/home/ubuntu/moonweave/depone uv run python3 scripts/revalidate_w8.py
 
 The full workspace matrix also re-runs W1-W5 and key rotation revalidation
 against the pinned Depone checkout.
+
+The v2 one-command team demo is re-derived from committed bytes by:
+
+```bash
+PYTHONPATH=/home/ubuntu/moonweave/depone uv run python3 scripts/revalidate_v2_demo.py
+```
+
+That script recomputes the sealed plan hash and dispatch events, verifies each
+Codex lane capture manifest, runner receipt, signed bundle, and team-ledger
+verdict, and includes a forged-signature negative check. It does not launch
+agents or require the Codex subscription session used for the original run.

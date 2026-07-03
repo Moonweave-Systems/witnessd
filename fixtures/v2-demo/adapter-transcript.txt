@@ -1,0 +1,8 @@
+Implemented `score_phrase` in [wordscore/core.py](/home/ubuntu/moonweave/witnessd/fixtures/v2-demo/worktrees/plan-74e544d0b33b/wordscore/core.py:6). It lowercases the input, splits on whitespace, and returns word counts.
+
+Verification passed:
+
+```bash
+python3 -m unittest discover -s tests -t .
+# Ran 2 tests ... OK
+```

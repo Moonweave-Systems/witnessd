@@ -45,6 +45,7 @@ def run_team(
     leader_id: str = "leader-fixed",
     stop_rule: str = DEFAULT_STOP_RULE,
     observer_dir: str | None = None,
+    state_root: str | None = None,
 ) -> dict[str, Any]:
     base_dir = Path(out_dir).resolve()
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -95,6 +96,7 @@ def run_team(
                         public_key_path=public_key_path,
                         log=log,
                         run_id=run_id,
+                        state_root=state_root,
                     )
                 else:
                     lane = _run_write_lane(
@@ -246,6 +248,7 @@ def _run_adapter_lane(
     public_key_path: str,
     log: EventLog,
     run_id: str,
+    state_root: str | None,
 ) -> dict[str, Any]:
     worktree = create_lane_worktree(
         repo_root=str(repo_root),
@@ -257,7 +260,7 @@ def _run_adapter_lane(
     assert_separated(runner_sandbox=worktree, out_path=str(evidence_dir / "capture-manifest.json"))
 
     result = run_adapter_lane(
-        root=str(repo_root),
+        root=str(Path(state_root).resolve(strict=False)) if state_root else str(repo_root),
         sandbox=worktree,
         adapter=str(spec["adapter"]),
         task_id=lane_id,

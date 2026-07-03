@@ -80,7 +80,7 @@ temporality evidence. OVERT `DELAYED_NOTARY` (`0x01`) is not modeled.
 
 ## Roadmap
 
-A future AAL-4 path would require an independent IAP, transparency log
-inclusion/consistency proofs, independent timestamping, registered profile test
-vectors, and public verification of the receipt chain. That work is outside the
-Solo 1.0 / W8 scope.
+No AAL-4 path is implemented in this release. A future path would require an
+independent IAP, transparency log inclusion/consistency proofs, independent
+timestamping, registered profile test vectors, and public verification of the
+receipt chain. That work is outside the v2.0.0 release scope.

@@ -39,7 +39,7 @@ parity 가드 `tests/test_depone_replica_conformance.py`). W7 team adapter wirin
 
 ## 로드맵 — 최종판(v2.0.0)까지의 전체 아크 (2026-07-02 확정)
 
-> **현재 위치(2026-07-02): W1–W11 완료. 다음 = W12.**
+> **현재 위치(2026-07-03): v2.0.0 릴리스 준비 완료. 다음 = 운영 트랙 P1 → W6a.**
 > Part II 스펙(왜/무엇이 최종판인가)은 **`SPEC2.md`** — 조사 다시 하지 말고 그 문서부터 읽을 것.
 
 ### 완료 (v1.0.x)
@@ -51,12 +51,12 @@ parity 가드 `tests/test_depone_replica_conformance.py`). W7 team adapter wirin
 | W9 | CI + 릴리스 서사 + 태그 (`2026-07-02-hardening-and-release.md`) | ✅ v1.0.0/v1.0.1 |
 | W10 | 진짜 Codex CLI 1레인 live run → `fixtures/w10/` committed evidence → Depone 재도출 (`2026-07-02-w10-live-agent-e2e.md`) | ✅ one real-agent attestation |
 | W11 | Planner: goal → sealed plan → deterministic dispatch → `team plan-run` shell fallback (`2026-07-02-w11-planner.md`) | ✅ revalidate PASS |
+| W12 | Dedicated observer uid real A2 fixture (`2026-07-02-w12-real-a2.md`) | ✅ strict revalidate PASS |
+| v2.0.0 | one-command `team plan-run` demo with a real Codex lane → `fixtures/v2-demo/` → Depone revalidation | ✅ local tag, push left to operator |
 
-### 남은 아크 (v2.0.0 최종판 = SPEC2.md §0 정의·§5 수용 기준)
+### 운영 트랙 (v2.0.0 이후)
 | 순서 | 플랜 파일 | 산출 | 의존 | 성격 |
 |---|---|---|---|---|
-| **W12** | `2026-07-02-w12-real-a2.md` | 전용 observer uid 셋업 → 진짜 `A2-isolated-observed` → demonstration 딱지 증거로 제거 | — (병렬 가능, 릴리스 전 필수) | 코드+**운영자 sudo 스텝** |
-| **v2.0.0** | (릴리스는 W12 뒤 태그) | one-command `team plan-run` 데모: goal→plan→진짜 에이전트 팀→증거→Depone 전과정 재도출 | W10–W12 | 태그+README(에이전트 준비, push는 사용자) |
 | **P1** | `2026-07-02-external-team-pilot.md` | production gate 5종 증거 — **파일럿 실행·게이트 전환은 운영자 전용** | v2.0.0 권장 | 운영 트랙 |
 | **W6a** | `2026-07-02-w6-keyless-signing.md` | keyless(Sigstore) readiness — gate open 전까지 blocked | P1 | 코드(별도 트랙) |
 

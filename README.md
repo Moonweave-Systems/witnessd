@@ -50,7 +50,7 @@ Negative fixtures are part of the contract: tampered or mismatched bytes are
 expected to fail revalidation instead of being upgraded by runtime assertion.
 Start with [`fixtures/w1/`](fixtures/w1/) and [`scripts/revalidate_w1.py`](scripts/revalidate_w1.py).
 
-## What v1.0 demonstrates
+## What v2.0.0 demonstrates
 
 - W1 evidence substrate: fixtures under [`fixtures/w1/`](fixtures/w1/) are
   re-derived by [`scripts/revalidate_w1.py`](scripts/revalidate_w1.py).
@@ -85,6 +85,19 @@ Start with [`fixtures/w1/`](fixtures/w1/) and [`scripts/revalidate_w1.py`](scrip
   hash, dispatch determinism, heuristic determinism, and overlap rejection.
   `witnessd team plan-run "<goal>"` runs the heuristic shell-lane fallback
   locally and reports evidence pending separate verification.
+- W12 real A2:
+  [`fixtures/w12/`](fixtures/w12/) contains committed real-host A2 evidence bytes
+  from a dedicated observer uid setup, and [`scripts/revalidate_w12.py`](scripts/revalidate_w12.py)
+  re-derives the strict A2 condition through Depone.
+- v2 one-command team demo:
+  [`fixtures/v2-demo/`](fixtures/v2-demo/) records one `witnessd team plan-run`
+  command that sealed a plan, dispatched a Codex lane, let the real Codex CLI
+  fix a failing Python test in a demo repo, emitted lane evidence and a team
+  ledger, and stopped at `evidence-pending`. [`scripts/revalidate_v2_demo.py`](scripts/revalidate_v2_demo.py)
+  re-derives the plan hash, dispatch events, lane manifest/signature/receipt,
+  and team-ledger verdict from committed bytes. The fixture contains only the
+  operator public key; the subscription `auth.json` used for the live worker
+  stayed in the isolated W4 state root and is not committed.
 
 The runtime dependency target is intentionally small: Python standard library plus
 the `openssl` CLI. Depone is a development/test verifier dependency, not a
@@ -126,6 +139,14 @@ PYTHONPATH=/home/ubuntu/moonweave/depone uv run python3 scripts/revalidate_w11.p
 uv run python3 -m witnessd team plan-run "smoke goal" --repo . --out /tmp/witnessd-plan-run
 ```
 
+For the v2 one-command real-agent team fixture, no Codex subscription or API key
+is needed to re-check the committed bytes:
+
+```bash
+cd /home/ubuntu/moonweave/witnessd
+PYTHONPATH=/home/ubuntu/moonweave/depone uv run python3 scripts/revalidate_v2_demo.py
+```
+
 For a depone-free runtime smoke test, run in an environment where Depone is not on
 `PYTHONPATH`:
 
@@ -156,7 +177,7 @@ Honest exclusions matter:
 
 ## Release validation matrix
 
-Before cutting `v1.0.0`, collect local evidence for each row:
+Before cutting `v2.0.0`, collect local evidence for each row:
 
 | Gate | Command | Expected result |
 | --- | --- | --- |
@@ -170,12 +191,12 @@ Before cutting `v1.0.0`, collect local evidence for each row:
 CI for these gates belongs in this repository. Depone CI changes belong in the
 separate Depone repository.
 
-## v1.0.0 tag message draft
+## v2.0.0 tag message draft
 
 ```text
-v1.0.0: signed-bytes runtime release
+v2.0.0: one-command real-agent evidence release
 
-W1-W8 summary:
+Execution half summary:
 - W1 evidence substrate with Depone re-derivation fixtures.
 - W2 supervised liveness and durable session evidence.
 - W3 team fan-in / conflict evidence.
@@ -183,6 +204,10 @@ W1-W8 summary:
 - W5 pause, kill, and resume safety gates.
 - W7 team adapter wiring.
 - W8 OVERT field alignment and evidence_mode honesty notes.
+- W10 real Codex live-agent fixture.
+- W11 sealed planner and deterministic dispatch.
+- W12 real dedicated-observer-uid A2 fixture.
+- v2-demo one-command plan-run: goal -> sealed plan -> Codex lane -> evidence tree -> Depone revalidation.
 
 Conformance:
 - witnessd executes and emits evidence.
@@ -192,7 +217,9 @@ Conformance:
 Known limits:
 - New A2 evidence requires reproducing the dedicated-observer-uid host setup
   captured by W12.
-- No independent transparency log / IAP notary in v1.0.
+- No independent transparency log / IAP notary in v2.0.0.
+- `evidence_mode` temporality remains self-declared without live notary bytes.
+- Overlap teams still require explicit merge-receipt paths.
 - Keyless signing remains blocked outside this release gate.
 ```
 
