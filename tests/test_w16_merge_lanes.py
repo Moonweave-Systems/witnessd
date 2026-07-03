@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from depone.agent_fabric.team_ledger import build_team_ledger_verdict
 
@@ -148,6 +149,59 @@ class TestW16MergeLanes(unittest.TestCase):
         conflict_bytes = result["base_dir"] / "merge-ab" / "conflicts" / "pkg" / "shared.py"
         self.assertTrue(conflict_bytes.is_file())
         self.assertIn("<<<<<<<", conflict_bytes.read_text(encoding="utf-8"))
+
+    def test_merge_attempt_producer_failure_is_not_reported_as_source_conflict(self):
+        blocked_receipt = {
+            "kind": "depone-team-merge-attempt",
+            "schema_version": "0.1",
+            "decision": "blocked",
+            "base_commit": "0" * 40,
+            "head_commits": ["1" * 40, "2" * 40],
+            "attempt_worktree": "unavailable",
+            "dirty_target_refused": False,
+            "exit_code": 127,
+            "merged_files": [],
+            "conflict_files": [],
+            "cleanup": {"attempt_worktree_removed": True},
+            "captured_at": "2026-07-03T00:00:00Z",
+            "source_command": ["python3", "-m", "depone", "team-merge-attempt"],
+            "errors": [
+                {
+                    "code": "ERR_TEAM_MERGE_ATTEMPT_FAILED",
+                    "message": "producer unavailable",
+                }
+            ],
+            "boundary": {
+                "executes_git_merge_attempt": True,
+                "launches_agents": False,
+                "calls_live_models": False,
+                "approves_merge": False,
+                "raises_assurance": False,
+            },
+        }
+        with patch("witnessd.fanin._build_team_merge_attempt_receipt", return_value=blocked_receipt):
+            result = self._run(
+                [
+                    {
+                        "lane_id": "lane-a",
+                        "region": ["pkg/shared.py"],
+                        "commands": [["sh", "-c", "printf 'lane-a\\n' > pkg/shared.py"]],
+                    },
+                    {
+                        "lane_id": "lane-b",
+                        "region": ["pkg/shared.py"],
+                        "commands": [["sh", "-c", "printf 'lane-b\\n' > pkg/shared.py"]],
+                    },
+                ],
+                conflict=True,
+            )
+
+        ledger = json.loads((result["base_dir"] / "team-ledger.json").read_text())
+        lanes = {lane["lane_id"]: lane for lane in ledger["lanes"]}
+        self.assertEqual(lanes["merge-ab"]["verification_state"], "blocked")
+        self.assertEqual(lanes["merge-ab"]["blocked_reason"], "ERR_TEAM_MERGE_ATTEMPT_FAILED")
+        self.assertNotIn("merge_receipt", ledger)
+        self.assertFalse((result["base_dir"] / "merge-ab" / "conflicts").exists())
 
 
 if __name__ == "__main__":

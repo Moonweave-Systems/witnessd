@@ -447,23 +447,41 @@ def _run_merge_groups(
             merge_outputs.append(merge_output)
             continue
 
-        _capture_merge_conflict_bytes(
-            repo=repo_root,
-            base=base_commit,
-            heads=heads,
-            out_dir=evidence_dir / "conflicts",
-        )
+        blocked_reason = _merge_attempt_blocked_reason(receipt)
+        if blocked_reason == ERR_TEAM_MERGE_CONFLICT_UNRESOLVED:
+            _capture_merge_conflict_bytes(
+                repo=repo_root,
+                base=base_commit,
+                heads=heads,
+                out_dir=evidence_dir / "conflicts",
+            )
         _finish_schedule_lane(schedule, int(receipt.get("exit_code", 1)))
         schedule_lanes.append(schedule)
         blocked = _blocked_adapter_lane(
             lane_id=lane_id,
             adapter="shell",
             base_commit=base_commit,
-            reason=ERR_TEAM_MERGE_CONFLICT_UNRESOLVED,
+            reason=blocked_reason,
         )
         blocked["merge_attempt_receipt"] = receipt_rel
         merge_outputs.append(blocked)
     return merge_outputs
+
+
+def _merge_attempt_blocked_reason(receipt: dict[str, Any]) -> str:
+    if receipt.get("conflict_files"):
+        return ERR_TEAM_MERGE_CONFLICT_UNRESOLVED
+    errors = receipt.get("errors")
+    if isinstance(errors, list):
+        for error in errors:
+            if not isinstance(error, dict):
+                continue
+            code = error.get("code")
+            if code == "ERR_TEAM_MERGE_ATTEMPT_CONFLICT":
+                return ERR_TEAM_MERGE_CONFLICT_UNRESOLVED
+            if isinstance(code, str) and code:
+                return code
+    return "ERR_TEAM_MERGE_ATTEMPT_FAILED"
 
 
 def _build_team_merge_attempt_receipt(

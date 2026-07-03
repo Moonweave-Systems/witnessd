@@ -204,6 +204,32 @@ class TestSealPlan(unittest.TestCase):
                 ],
             )
 
+    def test_explicit_merge_group_rejects_duplicate_coverage(self):
+        packets = [
+            self._packet("lane-a", ["pkg/shared.py"]),
+            self._packet("lane-b", ["pkg/shared.py"]),
+            self._packet("merge-ab", ["merge/merge-ab.txt"]),
+            self._packet("merge-ab-2", ["merge/merge-ab-2.txt"]),
+        ]
+
+        with self.assertRaisesRegex(PlannerError, "ERR_PLAN_REGION_OVERLAP"):
+            seal_plan(
+                packets,
+                goal="ship W16",
+                merge_groups=[
+                    {
+                        "lane_id": "merge-ab",
+                        "sources": ["lane-a", "lane-b"],
+                        "files": ["pkg/shared.py"],
+                    },
+                    {
+                        "lane_id": "merge-ab-2",
+                        "sources": ["lane-a", "lane-b"],
+                        "files": ["pkg/shared.py"],
+                    },
+                ],
+            )
+
     def test_merge_group_source_order_runs_before_merge_lane(self):
         packets = [
             self._packet("lane-a", ["pkg/shared.py"]),

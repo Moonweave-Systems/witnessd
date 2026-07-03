@@ -333,18 +333,21 @@ def _assert_region_overlaps_covered(
         for path in packet["region"]:
             owners_by_path.setdefault(path, []).append(packet["lane_id"])
 
-    covered: set[tuple[str, tuple[str, ...]]] = set()
+    coverage_counts: dict[tuple[str, tuple[str, ...]], int] = {}
     for group in merge_groups:
         source_key = tuple(group["sources"])
         merge_region = set(packets_by_id[group["lane_id"]]["region"])
         if merge_region & set(group["files"]):
             raise PlannerError("ERR_PLAN_REGION_OVERLAP")
         for path in group["files"]:
-            covered.add((path, source_key))
+            key = (path, source_key)
+            coverage_counts[key] = coverage_counts.get(key, 0) + 1
+    if any(count != 1 for count in coverage_counts.values()):
+        raise PlannerError("ERR_PLAN_REGION_OVERLAP")
 
     for path, owners in owners_by_path.items():
         unique_owners = sorted(set(owners))
         if len(unique_owners) <= 1:
             continue
-        if (path, tuple(unique_owners)) not in covered:
+        if coverage_counts.get((path, tuple(unique_owners))) != 1:
             raise PlannerError("ERR_PLAN_REGION_OVERLAP")
