@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from witnessd.__main__ import _parse_team_lane
+from witnessd.__main__ import _parse_team_lane, _parse_team_merge_group
 from witnessd.fanin import run_team
 from witnessd.signing import gen_operator_keypair
 
@@ -42,6 +42,20 @@ class TestTeamAdapterLaneParsing(unittest.TestCase):
     def test_parse_rejects_adapter_without_prompt(self):
         with self.assertRaisesRegex(ValueError, "ERR_TEAM_LANE_PROMPT"):
             _parse_team_lane("L1:adapter=codex:tier=agentic:region=a.txt")
+
+    def test_parse_team_merge_group(self):
+        self.assertEqual(
+            _parse_team_merge_group("merge-ab:lane-a,lane-b:pkg/shared.py"),
+            {
+                "lane_id": "merge-ab",
+                "sources": ["lane-a", "lane-b"],
+                "files": ["pkg/shared.py"],
+            },
+        )
+
+    def test_parse_team_merge_group_rejects_single_source(self):
+        with self.assertRaisesRegex(ValueError, "ERR_TEAM_MERGE_GROUP_FORMAT"):
+            _parse_team_merge_group("merge-ab:lane-a:pkg/shared.py")
 
 
 def _seed_repo(repo: Path) -> str:

@@ -15,6 +15,7 @@ from witnessd.planner import (
     dispatch,
     lane_packet_from_team_lane,
     lane_packet_to_team_lane,
+    merge_groups_from_overlapping_regions,
     plan_heuristic,
     seal_plan,
 )
@@ -150,6 +151,81 @@ class TestSealPlan(unittest.TestCase):
                 ],
                 goal="ship W11",
             )
+
+    def test_explicit_merge_group_allows_covered_source_overlap(self):
+        packets = [
+            self._packet("lane-a", ["pkg/shared.py"]),
+            self._packet("lane-b", ["pkg/shared.py"]),
+            self._packet("merge-ab", ["merge/merge-ab.txt"]),
+        ]
+
+        sealed = seal_plan(
+            packets,
+            goal="ship W16",
+            merge_groups=[
+                {
+                    "lane_id": "merge-ab",
+                    "sources": ["lane-a", "lane-b"],
+                    "files": ["pkg/shared.py"],
+                }
+            ],
+        )
+
+        self.assertEqual(
+            sealed["merge_groups"],
+            [
+                {
+                    "lane_id": "merge-ab",
+                    "sources": ["lane-a", "lane-b"],
+                    "files": ["pkg/shared.py"],
+                }
+            ],
+        )
+        self.assertEqual(sealed["packets"], packets)
+
+    def test_explicit_merge_group_must_cover_every_overlap(self):
+        packets = [
+            self._packet("lane-a", ["pkg/shared.py", "pkg/other.py"]),
+            self._packet("lane-b", ["pkg/shared.py"]),
+            self._packet("lane-c", ["pkg/other.py"]),
+            self._packet("merge-ab", ["merge/merge-ab.txt"]),
+        ]
+
+        with self.assertRaisesRegex(PlannerError, "ERR_PLAN_REGION_OVERLAP"):
+            seal_plan(
+                packets,
+                goal="ship W16",
+                merge_groups=[
+                    {
+                        "lane_id": "merge-ab",
+                        "sources": ["lane-a", "lane-b"],
+                        "files": ["pkg/shared.py"],
+                    }
+                ],
+            )
+
+    def test_merge_group_source_order_runs_before_merge_lane(self):
+        packets = [
+            self._packet("lane-a", ["pkg/shared.py"]),
+            self._packet("lane-b", ["pkg/shared.py"]),
+            self._packet("merge-ab", ["merge/merge-ab.txt"]),
+        ]
+        sealed = seal_plan(
+            packets,
+            goal="ship W16",
+            merge_groups=[
+                {
+                    "lane_id": "merge-ab",
+                    "sources": ["lane-a", "lane-b"],
+                    "files": ["pkg/shared.py"],
+                }
+            ],
+        )
+
+        groups = merge_groups_from_overlapping_regions(sealed)
+
+        self.assertEqual(groups[0]["lane_id"], "merge-ab")
+        self.assertEqual(groups[0]["sources"], ["lane-a", "lane-b"])
 
 
 class TestHeuristicPlanner(unittest.TestCase):

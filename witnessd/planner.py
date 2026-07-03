@@ -140,16 +140,32 @@ def _normalize_region(raw_region: Any) -> list[str]:
     return sorted(normalized)
 
 
-def seal_plan(packets: list[dict[str, Any]], *, goal: str) -> dict[str, Any]:
+def seal_plan(
+    packets: list[dict[str, Any]],
+    *,
+    goal: str,
+    merge_groups: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     normalized = [validate_lane_packet(packet) for packet in packets]
-    _assert_region_disjoint(normalized)
-    return {
+    normalized_merge_groups = _normalize_merge_groups(normalized, merge_groups)
+    if normalized_merge_groups:
+        _assert_region_overlaps_covered(normalized, normalized_merge_groups)
+    else:
+        _assert_region_disjoint(normalized)
+    sealed = {
         "kind": SEALED_PLAN_KIND,
         "schema_version": SCHEMA_VERSION,
         "goal": str(goal),
         "packets": normalized,
-        "plan_hash": canonical_hash(normalized),
     }
+    if normalized_merge_groups:
+        sealed["merge_groups"] = normalized_merge_groups
+        sealed["plan_hash"] = canonical_hash(
+            {"packets": normalized, "merge_groups": normalized_merge_groups}
+        )
+    else:
+        sealed["plan_hash"] = canonical_hash(normalized)
+    return sealed
 
 
 def plan_heuristic(
@@ -205,7 +221,13 @@ def dispatch(sealed_plan: dict[str, Any]) -> list[dict[str, Any]]:
         raise PlannerError("ERR_PLAN_SEALED_PACKETS")
     normalized = [validate_lane_packet(packet) for packet in packets]
     plan_hash = sealed_plan.get("plan_hash")
-    if plan_hash != canonical_hash(normalized):
+    merge_groups = merge_groups_from_overlapping_regions(sealed_plan)
+    expected_hash = (
+        canonical_hash({"packets": normalized, "merge_groups": merge_groups})
+        if merge_groups
+        else canonical_hash(normalized)
+    )
+    if plan_hash != expected_hash:
         raise PlannerError("ERR_PLAN_HASH_MISMATCH")
 
     events: list[dict[str, Any]] = []
@@ -246,3 +268,83 @@ def _assert_region_disjoint(packets: list[dict[str, Any]]) -> None:
             if path in seen:
                 raise PlannerError("ERR_PLAN_REGION_OVERLAP")
             seen.add(path)
+
+
+def merge_groups_from_overlapping_regions(
+    sealed_plan: dict[str, Any],
+) -> list[dict[str, Any]]:
+    packets = sealed_plan.get("packets")
+    if not isinstance(packets, list):
+        raise PlannerError("ERR_PLAN_SEALED_PACKETS")
+    normalized = [validate_lane_packet(packet) for packet in packets]
+    return _normalize_merge_groups(normalized, sealed_plan.get("merge_groups"))
+
+
+def _normalize_merge_groups(
+    packets: list[dict[str, Any]],
+    merge_groups: Any,
+) -> list[dict[str, Any]]:
+    if merge_groups is None:
+        return []
+    if not isinstance(merge_groups, list):
+        raise PlannerError("ERR_PLAN_MERGE_GROUP_SCHEMA")
+    packet_ids = {packet["lane_id"] for packet in packets}
+    normalized: list[dict[str, Any]] = []
+    seen_merge_lanes: set[str] = set()
+    for raw in merge_groups:
+        if not isinstance(raw, dict):
+            raise PlannerError("ERR_PLAN_MERGE_GROUP_SCHEMA")
+        lane_id = str(raw.get("lane_id", "")).strip()
+        if not lane_id or lane_id not in packet_ids or lane_id in seen_merge_lanes:
+            raise PlannerError("ERR_PLAN_MERGE_GROUP_LANE")
+        seen_merge_lanes.add(lane_id)
+        sources = raw.get("sources")
+        if (
+            not isinstance(sources, list)
+            or len(sources) < 2
+            or any(not isinstance(source, str) or not source.strip() for source in sources)
+        ):
+            raise PlannerError("ERR_PLAN_MERGE_GROUP_SOURCES")
+        normalized_sources = sorted({source.strip() for source in sources})
+        if lane_id in normalized_sources or any(source not in packet_ids for source in normalized_sources):
+            raise PlannerError("ERR_PLAN_MERGE_GROUP_SOURCES")
+        try:
+            files = _normalize_region(raw.get("files"))
+        except (TypeError, ValueError) as exc:
+            raise PlannerError("ERR_PLAN_MERGE_GROUP_FILES") from exc
+        if not files:
+            raise PlannerError("ERR_PLAN_MERGE_GROUP_FILES")
+        normalized.append(
+            {"lane_id": lane_id, "sources": normalized_sources, "files": files}
+        )
+    return sorted(normalized, key=lambda group: group["lane_id"])
+
+
+def _assert_region_overlaps_covered(
+    packets: list[dict[str, Any]],
+    merge_groups: list[dict[str, Any]],
+) -> None:
+    packets_by_id = {packet["lane_id"]: packet for packet in packets}
+    merge_lane_ids = {group["lane_id"] for group in merge_groups}
+    owners_by_path: dict[str, list[str]] = {}
+    for packet in packets:
+        if packet["lane_id"] in merge_lane_ids:
+            continue
+        for path in packet["region"]:
+            owners_by_path.setdefault(path, []).append(packet["lane_id"])
+
+    covered: set[tuple[str, tuple[str, ...]]] = set()
+    for group in merge_groups:
+        source_key = tuple(group["sources"])
+        merge_region = set(packets_by_id[group["lane_id"]]["region"])
+        if merge_region & set(group["files"]):
+            raise PlannerError("ERR_PLAN_REGION_OVERLAP")
+        for path in group["files"]:
+            covered.add((path, source_key))
+
+    for path, owners in owners_by_path.items():
+        unique_owners = sorted(set(owners))
+        if len(unique_owners) <= 1:
+            continue
+        if (path, tuple(unique_owners)) not in covered:
+            raise PlannerError("ERR_PLAN_REGION_OVERLAP")

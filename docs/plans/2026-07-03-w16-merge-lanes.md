@@ -201,3 +201,43 @@ Additional W16 bar:
 - No live Codex lanes, paid runs, OIDC, policy gates, production gate edits,
   archive edits, or operator review edits.
 - No hidden conflict resolution, silent retry loop, or merge approval claim.
+
+## Outcome — 2026-07-03
+
+Landed:
+
+- Planner accepts explicit merge groups for covered source-lane overlaps while
+  keeping implicit overlap fail-closed as `ERR_PLAN_REGION_OVERLAP`.
+- `witnessd team run --merge-group merge:source-a,source-b:file` and
+  `run_team(..., merge_groups=...)` now run source lanes first, then a local
+  merge lane after source exits.
+- fan-in emits a Depone-valid `depone-team-merge-attempt` receipt by invoking
+  Depone through `sys.executable -m depone team-merge-attempt`; witnessd
+  runtime still imports no Depone modules.
+- Passing merge lanes touch only a non-overlap merge marker, so Depone's
+  overlap derivation remains source-lane-only while the ledger links the
+  existing `merge_receipt` field.
+- Unresolved conflicts produce blocked merge-lane evidence with
+  `ERR_TEAM_MERGE_CONFLICT_UNRESOLVED` and captured conflict-file bytes; no
+  passing merge receipt is linked.
+- Added `fixtures/w16/` and `scripts/revalidate_w16.py` with pass-with-merge
+  and forged merge receipt negative coverage.
+
+Deviations:
+
+- Depone schedule validation requires schedule lane ids to match ledger lane
+  ids exactly. Therefore the merge lane is a normal ledger lane with its own
+  non-overlapping marker file, rather than a schedule-only lane. This preserves
+  the existing Depone contract and avoids inventing a parallel schedule schema.
+
+Evidence:
+
+- `PYTHONPATH=../depone python3 -m unittest discover -s tests` — 313 tests OK.
+- `cd ../depone && python3 -m unittest discover -s tests` — 350 tests OK.
+- `PYTHONPATH=../depone python3 -m witnessd self-test --all` — 24/24 passed.
+- `for s in scripts/revalidate_*.py; do PYTHONPATH=../depone python3 "$s" || exit 1; done` — all revalidators PASS, including W16.
+- `PYTHONPATH=../depone python3 scripts/revalidate_w16.py` — pass fixture and forged negative PASS.
+- `git diff --check` — clean.
+- `depone/agent_fabric/evidence_substrate.py` diff — none.
+- `fixtures/key-rotation/operator-key-archive.json` production gate remains
+  `open` with 5/5 required evidence recorded.

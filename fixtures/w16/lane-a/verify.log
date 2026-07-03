@@ -1,0 +1,8 @@
+$ sh -c sleep 0.25; python3 - <<'PY2'
+from pathlib import Path
+p=Path('pkg/shared.py')
+p.write_text(p.read_text().replace('left','lane-a'), encoding='utf-8')
+PY2
+exit=0
+$ sh -c true
+exit=0

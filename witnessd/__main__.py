@@ -589,6 +589,11 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
     out_dir = str(out_dir_path)
     lane_specs = [_parse_team_lane(text) for text in args.lane]
     try:
+        merge_groups = [_parse_team_merge_group(text) for text in args.merge_group]
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    try:
         _apply_lane_prompt_files(lane_specs, args.lane_prompt_file)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -627,6 +632,7 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
         state_root=state_root,
         max_parallel=args.max_parallel,
         fail_fast=args.fail_fast,
+        merge_groups=merge_groups,
     )
     pending = len(result["ledger"]["lanes"])
     print(
@@ -684,6 +690,20 @@ def _apply_lane_prompt_files(lane_specs: list[dict], entries: list[str]) -> None
         if "prompt" not in spec:
             raise ValueError("ERR_TEAM_RUN_LANE_PROMPT_FILE_NON_ADAPTER")
         spec["prompt"] = Path(prompt_path).read_text(encoding="utf-8")
+
+
+def _parse_team_merge_group(text: str) -> dict:
+    lane_id, sep, rest = text.partition(":")
+    if sep != ":" or not lane_id.strip():
+        raise ValueError("ERR_TEAM_MERGE_GROUP_FORMAT")
+    sources_text, sep, files_text = rest.partition(":")
+    if sep != ":":
+        raise ValueError("ERR_TEAM_MERGE_GROUP_FORMAT")
+    sources = [part.strip() for part in sources_text.split(",") if part.strip()]
+    files = [part.strip() for part in files_text.split(",") if part.strip()]
+    if len(sources) < 2 or not files:
+        raise ValueError("ERR_TEAM_MERGE_GROUP_FORMAT")
+    return {"lane_id": lane_id.strip(), "sources": sources, "files": files}
 
 
 def _cmd_team_plan_run(args: argparse.Namespace) -> int:
@@ -1202,6 +1222,12 @@ def _build_parser() -> argparse.ArgumentParser:
     team_run.add_argument("--max-parallel", type=int, default=None)
     team_run.add_argument("--fail-fast", action="store_true")
     team_run.add_argument("--lane-prompt-file", action="append", default=[])
+    team_run.add_argument(
+        "--merge-group",
+        action="append",
+        default=[],
+        help="merge_lane:source_a,source_b:file[,file...] for explicit overlapped-source merge evidence",
+    )
     team_run.add_argument(
         "--lane",
         action="append",

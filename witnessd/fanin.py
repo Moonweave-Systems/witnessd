@@ -13,9 +13,10 @@ import os
 import secrets
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from witnessd.adapter_run import LaneBlocked, run_adapter_lane
@@ -42,6 +43,7 @@ ERR_TEAM_LANE_FAILED = "ERR_TEAM_LANE_FAILED"
 ERR_TEAM_LANE_CANCELLED_FAIL_FAST = "ERR_TEAM_LANE_CANCELLED_FAIL_FAST"
 ERR_TEAM_LANE_EXEC_FAILED = "ERR_TEAM_LANE_EXEC_FAILED"
 ERR_TEAM_LANE_INDETERMINATE_PARENT_CRASH = "ERR_TEAM_LANE_INDETERMINATE_PARENT_CRASH"
+ERR_TEAM_MERGE_CONFLICT_UNRESOLVED = "ERR_TEAM_MERGE_CONFLICT_UNRESOLVED"
 TEAM_SCHEDULE_RECEIPT = "team-schedule-receipt.json"
 TEAM_SCHEDULE_BUNDLE = "team-schedule-receipt-bundle.json"
 
@@ -62,6 +64,7 @@ def run_team(
     state_root: str | None = None,
     max_parallel: int | None = None,
     fail_fast: bool = False,
+    merge_groups: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     base_dir = Path(out_dir).resolve()
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -86,6 +89,8 @@ def run_team(
     runnable: list[dict[str, Any]] = []
     schedule_lanes: list[dict[str, Any]] = []
     supervisor = WorkerSupervisor(log, run_id=run_id)
+    normalized_merge_groups = _normalize_merge_groups(merge_groups)
+    merge_receipt: str | None = None
 
     try:
         for spec in lane_specs:
@@ -95,8 +100,24 @@ def run_team(
                 allowed_touched_files = registry.claim(
                     lane_id=lane_id, region=spec.get("region", [])
                 )
-            except ClaimConflictError:
-                continue
+            except ClaimConflictError as exc:
+                if not _merge_group_allows_overlap(
+                    lane_id=lane_id,
+                    conflict_files=exc.conflict_files,
+                    merge_groups=normalized_merge_groups,
+                ):
+                    continue
+                allowed_touched_files = _normalize_repo_region(spec.get("region", []))
+                append_runlog(
+                    log,
+                    run_id,
+                    "region-claim-overlap-allowed",
+                    payload={
+                        "lane_id": lane_id,
+                        "region": allowed_touched_files,
+                        "conflict_files": exc.conflict_files,
+                    },
+                )
             claimed_lanes.append(lane_id)
 
             if not allowed_touched_files:
@@ -134,6 +155,24 @@ def run_team(
             schedule_lanes=schedule_lanes,
         )
         lanes = [lane["ledger_lane"] for lane in lane_outputs]
+        merge_outputs = _run_merge_groups(
+            normalized_merge_groups,
+            lane_outputs=lane_outputs,
+            repo_root=root,
+            base_commit=start_commit,
+            base_dir=base_dir,
+            private_key_path=private_key_path,
+            public_key_path=public_key_path,
+            log=log,
+            run_id=run_id,
+            schedule_lanes=schedule_lanes,
+        )
+        if merge_outputs:
+            lane_outputs.extend(merge_outputs)
+            lanes.extend(output["ledger_lane"] for output in merge_outputs)
+            for output in merge_outputs:
+                if output.get("merge_receipt"):
+                    merge_receipt = str(output["merge_receipt"])
     finally:
         _reap_remaining(supervisor, log, run_id)
         for lane_id in reversed(claimed_lanes):
@@ -157,6 +196,7 @@ def run_team(
         start_commit=start_commit,
         stop_rule=stop_rule,
         lanes=lanes,
+        merge_receipt=merge_receipt,
         schedule_receipt=schedule_receipt,
     )
     _write_json_artifact(log, run_id, base_dir / "team-ledger.json", ledger)
@@ -263,6 +303,292 @@ def _run_claimed_lanes_parallel(
     finally:
         _reap_remaining(supervisor, log, run_id)
     return sorted(outputs, key=lambda lane: int(lane.get("_order", 0)))
+
+
+def _normalize_merge_groups(
+    merge_groups: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    if not merge_groups:
+        return []
+    normalized: list[dict[str, Any]] = []
+    for raw in merge_groups:
+        lane_id = str(raw.get("lane_id", "")).strip()
+        sources = raw.get("sources")
+        files = raw.get("files")
+        if (
+            not lane_id
+            or not isinstance(sources, list)
+            or len(sources) < 2
+            or not isinstance(files, list)
+            or not files
+        ):
+            raise ValueError("ERR_TEAM_MERGE_GROUP_INVALID")
+        normalized_sources = sorted({str(source).strip() for source in sources if str(source).strip()})
+        normalized_files = _normalize_repo_region(files)
+        if len(normalized_sources) < 2 or not normalized_files:
+            raise ValueError("ERR_TEAM_MERGE_GROUP_INVALID")
+        normalized.append(
+            {
+                "lane_id": lane_id,
+                "sources": normalized_sources,
+                "files": normalized_files,
+            }
+        )
+    return sorted(normalized, key=lambda group: group["lane_id"])
+
+
+def _normalize_repo_region(region: Any) -> list[str]:
+    if not isinstance(region, list):
+        raise ValueError("ERR_TEAM_MERGE_GROUP_INVALID")
+    normalized: set[str] = set()
+    for raw in region:
+        text = str(raw).replace("\\", "/").strip()
+        if not text:
+            raise ValueError("ERR_TEAM_MERGE_GROUP_INVALID")
+        path = PurePosixPath(text)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError("ERR_TEAM_MERGE_GROUP_INVALID")
+        normalized.add(path.as_posix())
+    return sorted(normalized)
+
+
+def _merge_group_allows_overlap(
+    *,
+    lane_id: str,
+    conflict_files: list[str],
+    merge_groups: list[dict[str, Any]],
+) -> bool:
+    conflicts = set(conflict_files)
+    if not conflicts:
+        return False
+    allowed: set[str] = set()
+    for group in merge_groups:
+        if lane_id in group["sources"]:
+            allowed.update(group["files"])
+    return conflicts.issubset(allowed)
+
+
+def _run_merge_groups(
+    merge_groups: list[dict[str, Any]],
+    *,
+    lane_outputs: list[dict[str, Any]],
+    repo_root: Path,
+    base_commit: str,
+    base_dir: Path,
+    private_key_path: str,
+    public_key_path: str,
+    log: EventLog,
+    run_id: str,
+    schedule_lanes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not merge_groups:
+        return []
+    outputs_by_id = {str(output["lane_id"]): output for output in lane_outputs}
+    merge_outputs: list[dict[str, Any]] = []
+    for group in merge_groups:
+        lane_id = str(group["lane_id"])
+        source_lanes = [outputs_by_id.get(source) for source in group["sources"]]
+        if any(source is None or _lane_failed(source) for source in source_lanes):
+            merge_outputs.append(
+                _blocked_adapter_lane(
+                    lane_id=lane_id,
+                    adapter="shell",
+                    base_commit=base_commit,
+                    reason="ERR_TEAM_MERGE_SOURCE_NOT_PASS",
+                )
+            )
+            continue
+
+        heads = [
+            str(source["ledger_lane"]["end_commit"])
+            for source in source_lanes
+            if isinstance(source, dict)
+        ]
+        schedule = _parent_schedule_lane(lane_id, base_dir=base_dir, repo_root=repo_root)
+        receipt_rel = f"{lane_id}/team-merge-attempt-receipt.json"
+        evidence_dir = base_dir / lane_id
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        receipt = _build_team_merge_attempt_receipt(
+            repo=repo_root,
+            base=base_commit,
+            heads=heads,
+        )
+        _write_json_artifact(
+            log,
+            run_id,
+            base_dir / receipt_rel,
+            receipt,
+            artifact_name=receipt_rel,
+        )
+        if receipt.get("decision") == "pass" and receipt.get("exit_code") == 0:
+            marker = f"merge/{lane_id}.txt"
+            merge_output = _run_write_lane(
+                lane_id=lane_id,
+                commands=[
+                    [
+                        "sh",
+                        "-c",
+                        f"mkdir -p merge && printf '%s\\n' {lane_id!r} > {marker}",
+                    ]
+                ],
+                repo_root=repo_root,
+                base_commit=base_commit,
+                base_dir=base_dir,
+                observer_dir=base_dir / "observer",
+                allowed_touched_files=[marker],
+                private_key_path=private_key_path,
+                public_key_path=public_key_path,
+                log=log,
+                run_id=run_id,
+            )
+            merge_output["merge_receipt"] = receipt_rel
+            _finish_schedule_lane(schedule, 0)
+            schedule_lanes.append(schedule)
+            merge_outputs.append(merge_output)
+            continue
+
+        _capture_merge_conflict_bytes(
+            repo=repo_root,
+            base=base_commit,
+            heads=heads,
+            out_dir=evidence_dir / "conflicts",
+        )
+        _finish_schedule_lane(schedule, int(receipt.get("exit_code", 1)))
+        schedule_lanes.append(schedule)
+        blocked = _blocked_adapter_lane(
+            lane_id=lane_id,
+            adapter="shell",
+            base_commit=base_commit,
+            reason=ERR_TEAM_MERGE_CONFLICT_UNRESOLVED,
+        )
+        blocked["merge_attempt_receipt"] = receipt_rel
+        merge_outputs.append(blocked)
+    return merge_outputs
+
+
+def _build_team_merge_attempt_receipt(
+    *, repo: Path, base: str, heads: list[str]
+) -> dict[str, Any]:
+    with tempfile.TemporaryDirectory(prefix="witnessd-team-merge-attempt-") as tmp:
+        out_path = Path(tmp) / "team-merge-attempt-receipt.json"
+        argv = [
+            sys.executable,
+            "-m",
+            "depone",
+            "team-merge-attempt",
+            "--repo",
+            str(repo),
+            "--base",
+            base,
+            "--out",
+            str(out_path),
+            "--json",
+        ]
+        for head in heads:
+            argv.extend(["--head", head])
+        completed = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if out_path.is_file():
+            return json.loads(out_path.read_text(encoding="utf-8"))
+        message = completed.stderr.strip() or completed.stdout.strip()
+        return {
+            "kind": "depone-team-merge-attempt",
+            "schema_version": "0.1",
+            "decision": "blocked",
+            "base_commit": base,
+            "head_commits": heads,
+            "attempt_worktree": str(repo),
+            "dirty_target_refused": False,
+            "exit_code": completed.returncode,
+            "merged_files": [],
+            "conflict_files": [],
+            "cleanup": {"attempt_worktree_removed": True},
+            "captured_at": _utc_now(),
+            "source_command": argv,
+            "errors": [
+                {
+                    "code": "ERR_TEAM_MERGE_ATTEMPT_FAILED",
+                    "message": message or "depone team-merge-attempt did not write a receipt",
+                }
+            ],
+            "boundary": {
+                "executes_git_merge_attempt": True,
+                "launches_agents": False,
+                "calls_live_models": False,
+                "approves_merge": False,
+                "raises_assurance": False,
+            },
+        }
+
+
+def _parent_schedule_lane(lane_id: str, *, base_dir: Path, repo_root: Path) -> dict[str, Any]:
+    pid = os.getpid()
+    pid_start = read_pid_start_time(pid)
+    return {
+        "lane_id": lane_id,
+        "spawned_at": _utc_now(),
+        "spawned_monotonic_ns": time.monotonic_ns(),
+        "pid": pid,
+        "pid_start_token": f"{pid}:{pid_start}",
+        "worktree": _display_path(base_dir / "worktrees" / lane_id, base_dir, repo_root),
+        "state_root": "merge-lane-local",
+    }
+
+
+def _capture_merge_conflict_bytes(
+    *, repo: Path, base: str, heads: list[str], out_dir: Path
+) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="witnessd-merge-conflict-") as tmp:
+        worktree = Path(tmp) / "worktree"
+        add_result = subprocess.run(
+            ["git", "-C", str(repo), "worktree", "add", "--detach", str(worktree), base],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if add_result.returncode != 0:
+            (out_dir / "merge-worktree-error.txt").write_text(
+                add_result.stderr or add_result.stdout,
+                encoding="utf-8",
+            )
+            return
+        try:
+            subprocess.run(
+                ["git", "-C", str(worktree), "merge", "--no-commit", "--no-ff", *heads],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            conflict_files = subprocess.run(
+                ["git", "-C", str(worktree), "diff", "--name-only", "--diff-filter=U"],
+                capture_output=True,
+                text=True,
+                check=False,
+            ).stdout.splitlines()
+            for name in conflict_files:
+                source = worktree / name
+                if source.is_file():
+                    target = out_dir / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(source.read_bytes())
+            subprocess.run(
+                ["git", "-C", str(worktree), "merge", "--abort"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        finally:
+            subprocess.run(
+                ["git", "-C", str(repo), "worktree", "remove", "--force", str(worktree)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
 
 
 def _spawn_lane_exec(

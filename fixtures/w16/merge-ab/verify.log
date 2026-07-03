@@ -1,0 +1,4 @@
+$ sh -c mkdir -p merge && printf '%s\n' 'merge-ab' > merge/merge-ab.txt
+exit=0
+$ sh -c true
+exit=0
