@@ -575,6 +575,11 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
     out_dir_path = Path(args.out).resolve()
     out_dir = str(out_dir_path)
     lane_specs = [_parse_team_lane(text) for text in args.lane]
+    try:
+        _apply_lane_prompt_files(lane_specs, args.lane_prompt_file)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     state_root = _team_run_state_root(args, out_dir_path)
     if state_root is not None and _paths_overlap(Path(state_root), out_dir_path):
         print("ERR_TEAM_RUN_STATE_ROOT_INSIDE_OUTPUT", file=sys.stderr)
@@ -629,6 +634,21 @@ def _team_run_lane_state_root(state_root: Path, lane_id: str) -> Path:
         char if char.isalnum() or char in {"-", "_", "."} else "-" for char in lane_id
     ).strip("-._")
     return state_root / (slug or "lane")
+
+
+def _apply_lane_prompt_files(lane_specs: list[dict], entries: list[str]) -> None:
+    specs_by_id = {str(spec.get("lane_id")): spec for spec in lane_specs}
+    for entry in entries:
+        lane_id, sep, prompt_path = entry.partition("=")
+        lane_id = lane_id.strip()
+        if sep != "=" or not lane_id or not prompt_path:
+            raise ValueError("ERR_TEAM_RUN_LANE_PROMPT_FILE_FORMAT")
+        if lane_id not in specs_by_id:
+            raise ValueError("ERR_TEAM_RUN_LANE_PROMPT_FILE_UNKNOWN_LANE")
+        spec = specs_by_id[lane_id]
+        if "prompt" not in spec:
+            raise ValueError("ERR_TEAM_RUN_LANE_PROMPT_FILE_NON_ADAPTER")
+        spec["prompt"] = Path(prompt_path).read_text(encoding="utf-8")
 
 
 def _cmd_team_plan_run(args: argparse.Namespace) -> int:
@@ -1099,6 +1119,7 @@ def _build_parser() -> argparse.ArgumentParser:
     team_run.add_argument("--keys-dir", default=None)
     team_run.add_argument("--state-root", default=None)
     team_run.add_argument("--codex-auth-source", default=None)
+    team_run.add_argument("--lane-prompt-file", action="append", default=[])
     team_run.add_argument(
         "--lane",
         action="append",

@@ -89,6 +89,27 @@ def _fake_codex_records_home_from_prompt(directory: Path) -> str:
     return str(path)
 
 
+def _fake_codex_writes_prompt(directory: Path) -> str:
+    path = directory / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        "out=\"\"\n"
+        "while [ $# -gt 0 ]; do\n"
+        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
+        "  shift\n"
+        "done\n"
+        "mkdir -p pkg\n"
+        "cat > pkg/prompt.txt\n"
+        ": > \"$out\"\n"
+        "echo done >> \"$out\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | 0o111)
+    return str(path)
+
+
 @unittest.skipUnless(_HAS_OPENSSL, "openssl required to sign emitted evidence")
 class TestTeamCli(unittest.TestCase):
     def test_team_run_emits_ledger_and_pending_status(self):
@@ -424,6 +445,83 @@ class TestTeamCli(unittest.TestCase):
             self.assertEqual(code, 2)
             self.assertIn("ERR_TEAM_RUN_MULTI_CODEX_UNISOLATED", stderr.getvalue())
             self.assertFalse((repo / ".witnessd").exists())
+
+    def test_team_run_lane_prompt_file_overrides_inline_prompt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            out_dir = root / "evidence"
+            state_root = root / "state"
+            bindir = root / "bin"
+            prompt_file = root / "prompt.txt"
+            repo.mkdir()
+            bindir.mkdir()
+            prompt_text = "implement feature: preserve colon\nand newline\n"
+            prompt_file.write_text(prompt_text, encoding="utf-8")
+            _seed_repo(repo)
+            _fake_codex_writes_prompt(bindir)
+            old_path = os.environ.get("PATH", "")
+
+            try:
+                os.environ["PATH"] = f"{bindir}{os.pathsep}{old_path}"
+                code = main(
+                    [
+                        "team",
+                        "run",
+                        "--repo",
+                        str(repo),
+                        "--out",
+                        str(out_dir),
+                        "--state-root",
+                        str(state_root),
+                        "--lane-prompt-file",
+                        f"impl={prompt_file}",
+                        "--lane",
+                        "impl:adapter=codex:tier=quick:region=pkg/prompt.txt:prompt=inline-prompt",
+                    ]
+                )
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(code, 0)
+            prompt_out = next((out_dir / "worktrees").glob("impl*/pkg/prompt.txt"))
+            self.assertEqual(prompt_out.read_text(encoding="utf-8"), prompt_text)
+
+    def test_team_run_keeps_inline_prompt_without_prompt_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            out_dir = root / "evidence"
+            state_root = root / "state"
+            bindir = root / "bin"
+            repo.mkdir()
+            bindir.mkdir()
+            _seed_repo(repo)
+            _fake_codex_writes_prompt(bindir)
+            old_path = os.environ.get("PATH", "")
+
+            try:
+                os.environ["PATH"] = f"{bindir}{os.pathsep}{old_path}"
+                code = main(
+                    [
+                        "team",
+                        "run",
+                        "--repo",
+                        str(repo),
+                        "--out",
+                        str(out_dir),
+                        "--state-root",
+                        str(state_root),
+                        "--lane",
+                        "impl:adapter=codex:tier=quick:region=pkg/prompt.txt:prompt=inline-prompt",
+                    ]
+                )
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(code, 0)
+            prompt_out = next((out_dir / "worktrees").glob("impl*/pkg/prompt.txt"))
+            self.assertEqual(prompt_out.read_text(encoding="utf-8"), "inline-prompt")
 
 
 if __name__ == "__main__":
