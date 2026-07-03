@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from witnessd.__main__ import main
@@ -34,6 +34,28 @@ def _fake_codex(directory: Path) -> str:
         "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
         "  shift\n"
         "done\n"
+        ": > \"$out\"\n"
+        "echo done >> \"$out\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | 0o111)
+    return str(path)
+
+
+def _fake_codex_records_home(directory: Path) -> str:
+    path = directory / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        "out=\"\"\n"
+        "while [ $# -gt 0 ]; do\n"
+        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
+        "  shift\n"
+        "done\n"
+        "mkdir -p pkg\n"
+        "if [ -f \"$CODEX_HOME/auth.json\" ]; then auth_status=present; else auth_status=missing; fi\n"
+        "printf '%s\\n%s\\n' \"$CODEX_HOME\" \"$auth_status\" > pkg/codex-home.txt\n"
         ": > \"$out\"\n"
         "echo done >> \"$out\"\n"
         "exit 0\n",
@@ -187,6 +209,102 @@ class TestTeamCli(unittest.TestCase):
             self.assertEqual([lane["lane_id"] for lane in ledger["lanes"]], ["lane-a"])
             runlog = (out_dir / "runlog.jsonl").read_text()
             self.assertIn("claim-conflict", runlog)
+
+    def test_team_run_seeds_codex_auth_only_into_isolated_state_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            out_dir = root / "evidence"
+            state_root = root / "state"
+            bindir = root / "bin"
+            auth_source = root / "auth.json"
+            repo.mkdir()
+            bindir.mkdir()
+            auth_source.write_text('{"session":"subscription"}\n', encoding="utf-8")
+            _seed_repo(repo)
+            _fake_codex_records_home(bindir)
+            old_path = os.environ.get("PATH", "")
+            stdout = io.StringIO()
+
+            try:
+                os.environ["PATH"] = f"{bindir}{os.pathsep}{old_path}"
+                with redirect_stdout(stdout):
+                    code = main(
+                        [
+                            "team",
+                            "run",
+                            "--repo",
+                            str(repo),
+                            "--out",
+                            str(out_dir),
+                            "--state-root",
+                            str(state_root),
+                            "--codex-auth-source",
+                            str(auth_source),
+                            "--lane",
+                            "adapter-lane:adapter=codex:tier=quick:region=pkg/codex-home.txt:prompt=write adapter",
+                        ]
+                    )
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(code, 0)
+            self.assertIn("evidence-pending", stdout.getvalue())
+            isolated_auth = state_root / ".witnessd" / "codex-home" / "auth.json"
+            self.assertEqual(
+                isolated_auth.read_text(encoding="utf-8"),
+                auth_source.read_text(encoding="utf-8"),
+            )
+            self.assertEqual(oct(isolated_auth.stat().st_mode & 0o777), "0o600")
+            worktree_file = next((out_dir / "worktrees").glob("adapter-lane*/pkg/codex-home.txt"))
+            lines = worktree_file.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(lines, [str(state_root / ".witnessd" / "codex-home"), "present"])
+            evidence_bytes = b"".join(
+                path.read_bytes() for path in out_dir.rglob("*") if path.is_file()
+            )
+            self.assertNotIn(b"subscription", evidence_bytes)
+
+    def test_team_run_rejects_state_root_inside_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            out_dir = root / "evidence"
+            state_root = out_dir / "state"
+            bindir = root / "bin"
+            auth_source = root / "auth.json"
+            repo.mkdir()
+            bindir.mkdir()
+            auth_source.write_text('{"session":"subscription"}\n', encoding="utf-8")
+            _seed_repo(repo)
+            _fake_codex_records_home(bindir)
+            old_path = os.environ.get("PATH", "")
+            stderr = io.StringIO()
+
+            try:
+                os.environ["PATH"] = f"{bindir}{os.pathsep}{old_path}"
+                with redirect_stderr(stderr):
+                    code = main(
+                        [
+                            "team",
+                            "run",
+                            "--repo",
+                            str(repo),
+                            "--out",
+                            str(out_dir),
+                            "--state-root",
+                            str(state_root),
+                            "--codex-auth-source",
+                            str(auth_source),
+                            "--lane",
+                            "adapter-lane:adapter=codex:tier=quick:region=pkg/codex-home.txt:prompt=write adapter",
+                        ]
+                    )
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(code, 2)
+            self.assertIn("ERR_TEAM_RUN_STATE_ROOT_INSIDE_OUTPUT", stderr.getvalue())
+            self.assertFalse((state_root / ".witnessd" / "codex-home" / "auth.json").exists())
 
 
 if __name__ == "__main__":

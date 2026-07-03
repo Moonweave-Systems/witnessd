@@ -572,17 +572,26 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
     from witnessd.fanin import run_team
     from witnessd.signing import gen_operator_keypair
 
-    out_dir = os.path.abspath(args.out)
+    out_dir_path = Path(args.out).resolve()
+    out_dir = str(out_dir_path)
+    lane_specs = [_parse_team_lane(text) for text in args.lane]
+    state_root = _team_run_state_root(args, out_dir_path)
+    if state_root is not None and _paths_overlap(Path(state_root), out_dir_path):
+        print("ERR_TEAM_RUN_STATE_ROOT_INSIDE_OUTPUT", file=sys.stderr)
+        return 2
+    if state_root is not None and any(spec.get("adapter") == "codex" for spec in lane_specs):
+        _seed_codex_auth(Path(state_root), args.codex_auth_source)
+
     keys_dir = os.path.abspath(args.keys_dir or (out_dir.rstrip(os.sep) + "-keys"))
     os.makedirs(keys_dir, exist_ok=True)
     private_key_path, public_key_path = gen_operator_keypair(keys_dir)
-    lane_specs = [_parse_team_lane(text) for text in args.lane]
     result = run_team(
         lane_specs,
         repo_root=args.repo,
         out_dir=out_dir,
         private_key_path=private_key_path,
         public_key_path=public_key_path,
+        state_root=state_root,
     )
     pending = len(result["ledger"]["lanes"])
     print(
@@ -591,6 +600,16 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
     )
     print(f"team_ledger: {os.path.join(out_dir, 'team-ledger.json')}")
     return 0
+
+
+def _team_run_state_root(args: argparse.Namespace, out_dir: Path) -> str | None:
+    if args.state_root is not None:
+        return str(Path(args.state_root).resolve(strict=False))
+    if args.codex_auth_source:
+        return str(
+            Path(str(out_dir).rstrip(os.sep) + "-w4-state-root").resolve(strict=False)
+        )
+    return None
 
 
 def _cmd_team_plan_run(args: argparse.Namespace) -> int:
@@ -1059,6 +1078,8 @@ def _build_parser() -> argparse.ArgumentParser:
     team_run.add_argument("--repo", required=True)
     team_run.add_argument("--out", required=True)
     team_run.add_argument("--keys-dir", default=None)
+    team_run.add_argument("--state-root", default=None)
+    team_run.add_argument("--codex-auth-source", default=None)
     team_run.add_argument(
         "--lane",
         action="append",
