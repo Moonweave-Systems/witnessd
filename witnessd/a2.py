@@ -79,7 +79,7 @@ def run_observer_launched_shell_lane(
     needed for Phase A.
     """
 
-    sandbox_path = os.path.abspath(sandbox)
+    sandbox_path = os.path.realpath(sandbox)
     evidence_path = Path(evidence_dir).resolve()
     manifest_path = evidence_path / "capture-manifest.json"
     assert_separated(runner_sandbox=sandbox_path, out_path=str(manifest_path))

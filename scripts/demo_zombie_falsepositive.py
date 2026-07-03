@@ -16,7 +16,7 @@ outcome), refuting the doctor's PASS.
 
 Run with:
 
-    PYTHONPATH=/home/ubuntu/depone-assurance-repair uv run python3 \
+    PYTHONPATH=/path/to/depone python3 \
         scripts/demo_zombie_falsepositive.py
 """
 

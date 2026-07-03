@@ -59,7 +59,7 @@ def create_lane_worktree(
             "ERR_WORKTREE_CREATE_FAILED",
             completed.stderr.strip() or completed.stdout.strip(),
         )
-    return os.path.abspath(target)
+    return os.path.realpath(target)
 
 
 def _worktree_target(worktrees_dir: Path, lane_slug: str) -> Path:

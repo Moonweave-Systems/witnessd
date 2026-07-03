@@ -14,8 +14,12 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DEPONE_ROOT = Path("/home/ubuntu/moonweave/depone")
-DEFAULT_PILOT_ROOT = Path("/home/ubuntu/pilot-2026-07-03")
+DEFAULT_DEPONE_ROOT = Path(
+    os.environ.get("WITNESSD_DEPONE_ROOT", ROOT.parent / "depone")
+)
+DEFAULT_PILOT_ROOT = Path(
+    os.environ.get("WITNESSD_PILOT_ROOT", ROOT.parent / "pilot-2026-07-03")
+)
 DEFAULT_ARCHIVE = ROOT / "fixtures/key-rotation/operator-key-archive.json"
 DEFAULT_STABLE_DIR = ROOT / "fixtures/external-team-pilot"
 CANARY_BUNDLE = ROOT / "fixtures/key-rotation/operator-key-canary-bundle.json"

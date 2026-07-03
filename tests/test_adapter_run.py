@@ -132,7 +132,11 @@ class TestAdapterRun(unittest.TestCase):
             used_home = pathlib.Path(sandbox, "codex-home.txt").read_text(
                 encoding="utf-8"
             ).strip()
-            self.assertTrue(used_home.startswith(os.path.join(root, ".witnessd")))
+            self.assertTrue(
+                os.path.realpath(used_home).startswith(
+                    os.path.realpath(os.path.join(root, ".witnessd"))
+                )
+            )
             self.assertNotEqual(used_home, outside_codex_home)
 
     def test_adapter_evidence_includes_generated_diff_patch(self):

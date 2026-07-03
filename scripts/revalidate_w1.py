@@ -16,7 +16,7 @@ uid boundary with a dedicated observer uid and a runner-unwritable observer dir.
 
 Run with:
 
-    PYTHONPATH=/home/ubuntu/depone-assurance-repair uv run python3 scripts/revalidate_w1.py
+    PYTHONPATH=/path/to/depone python3 scripts/revalidate_w1.py
 """
 
 from __future__ import annotations

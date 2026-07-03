@@ -58,7 +58,7 @@ class StateNamespace:
 
 
 def _norm(path: str) -> str:
-    return os.path.normcase(os.path.abspath(path))
+    return os.path.normcase(os.path.realpath(path))
 
 
 def _paths_overlap(left: str, right: str) -> bool:
@@ -88,7 +88,9 @@ def _self_test() -> None:
 
     with tempfile.TemporaryDirectory() as root:
         with StateNamespace(root) as namespace:
-            if not namespace.runlog_path.startswith(str(Path(root) / ".witnessd")):
+            if not os.path.realpath(namespace.runlog_path).startswith(
+                os.path.realpath(str(Path(root) / ".witnessd"))
+            ):
                 raise AssertionError("runlog must stay inside .witnessd namespace")
             try:
                 StateNamespace(root).__enter__()

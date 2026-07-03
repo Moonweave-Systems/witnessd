@@ -75,7 +75,7 @@ class TestRevalidateW10(unittest.TestCase):
                 check=True,
             )
             depone_path = os.environ.get(
-                "WITNESSD_DEPONE_ROOT", "/home/ubuntu/moonweave/depone"
+                "WITNESSD_DEPONE_ROOT", str(revalidate_w10.ROOT.parent / "depone")
             )
             env = os.environ.copy()
             env["PYTHONPATH"] = (

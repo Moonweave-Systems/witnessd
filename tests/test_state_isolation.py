@@ -16,11 +16,17 @@ class TestStateIsolation(unittest.TestCase):
 
             with StateNamespace(root) as namespace:
                 self.assertTrue(
-                    namespace.runlog_path.startswith(os.path.join(root, ".witnessd"))
+                    os.path.realpath(namespace.runlog_path).startswith(
+                        os.path.realpath(os.path.join(root, ".witnessd"))
+                    )
                 )
                 env = namespace.codex_env(base_env={"HOME": omx})
                 self.assertNotEqual(env["CODEX_HOME"], omx)
-                self.assertTrue(env["CODEX_HOME"].startswith(root))
+                self.assertTrue(
+                    os.path.realpath(env["CODEX_HOME"]).startswith(
+                        os.path.realpath(root)
+                    )
+                )
 
             self.assertEqual(set(os.listdir(omx)), before)
 
@@ -36,6 +42,22 @@ class TestStateIsolation(unittest.TestCase):
             errors = detect_state_contention(
                 witnessd_worktree=worktree,
                 external_active_worktrees=[worktree],
+            )
+
+            self.assertIn("ERR_WITNESSD_STATE_CONTENTION", errors[0])
+
+    def test_doctor_detects_overlap_through_symlink_alias(self):
+        with tempfile.TemporaryDirectory() as root:
+            real_parent = os.path.join(root, "real")
+            alias_parent = os.path.join(root, "alias")
+            os.mkdir(real_parent)
+            os.symlink(real_parent, alias_parent)
+            worktree = os.path.join(alias_parent, "wt")
+            nested = os.path.join(real_parent, "wt", "child")
+
+            errors = detect_state_contention(
+                witnessd_worktree=worktree,
+                external_active_worktrees=[nested],
             )
 
             self.assertIn("ERR_WITNESSD_STATE_CONTENTION", errors[0])

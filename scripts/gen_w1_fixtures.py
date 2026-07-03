@@ -14,7 +14,7 @@ demonstration marker must not be recreated.
 Only public material is committed; the operator private key never leaves the
 throwaway temp dir. Run with:
 
-    PYTHONPATH=/home/ubuntu/depone-assurance-repair uv run python3 scripts/gen_w1_fixtures.py
+    PYTHONPATH=/path/to/depone python3 scripts/gen_w1_fixtures.py
 """
 
 from __future__ import annotations

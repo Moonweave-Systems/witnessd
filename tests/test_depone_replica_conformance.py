@@ -8,6 +8,7 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
+import depone
 from depone.agent_fabric.codex_local_capability import (
     build_codex_local_capability as depone_codex_capability,
 )
@@ -36,7 +37,9 @@ from witnessd.provenance import build_signed_trusted_observer_provenance
 from witnessd.signing import gen_operator_keypair
 from witnessd.substrate import build_otel_spans
 
-DEPONE_ROOT = Path(os.environ.get("WITNESSD_DEPONE_ROOT", "/home/ubuntu/moonweave/depone"))
+DEPONE_ROOT = Path(
+    os.environ.get("WITNESSD_DEPONE_ROOT", Path(depone.__file__).resolve().parents[1])
+)
 
 
 @contextmanager

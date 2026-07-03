@@ -303,7 +303,10 @@ class TestTeamCli(unittest.TestCase):
             self.assertEqual(oct(isolated_auth.stat().st_mode & 0o777), "0o600")
             worktree_file = next((out_dir / "worktrees").glob("adapter-lane*/pkg/codex-home.txt"))
             lines = worktree_file.read_text(encoding="utf-8").splitlines()
-            self.assertEqual(lines, [str(state_root / ".witnessd" / "codex-home"), "present"])
+            self.assertEqual(
+                [os.path.realpath(lines[0]), lines[1]],
+                [os.path.realpath(state_root / ".witnessd" / "codex-home"), "present"],
+            )
             evidence_bytes = b"".join(
                 path.read_bytes() for path in out_dir.rglob("*") if path.is_file()
             )
@@ -397,8 +400,12 @@ class TestTeamCli(unittest.TestCase):
             self.assertEqual(alpha_lines[1], "present")
             self.assertEqual(beta_lines[1], "present")
             self.assertNotEqual(alpha_lines[0], beta_lines[0])
-            self.assertTrue(alpha_lines[0].startswith(str(state_root)))
-            self.assertTrue(beta_lines[0].startswith(str(state_root)))
+            self.assertTrue(
+                os.path.realpath(alpha_lines[0]).startswith(os.path.realpath(state_root))
+            )
+            self.assertTrue(
+                os.path.realpath(beta_lines[0]).startswith(os.path.realpath(state_root))
+            )
             self.assertEqual(
                 (Path(alpha_lines[0]) / "auth.json").read_text(encoding="utf-8"),
                 auth_source.read_text(encoding="utf-8"),

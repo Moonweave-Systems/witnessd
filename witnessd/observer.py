@@ -24,7 +24,7 @@ class ObserverSeparationError(Exception):
 
 
 def _norm_path(path: str) -> str:
-    return os.path.normcase(os.path.abspath(path))
+    return os.path.normcase(os.path.realpath(path))
 
 
 def _is_inside_or_equal(path: str, root: str) -> bool:

@@ -42,8 +42,8 @@ class EmitterError(Exception):
 
 
 def _is_inside_or_equal(path: str, root: str) -> bool:
-    norm_path = os.path.normcase(os.path.abspath(path))
-    norm_root = os.path.normcase(os.path.abspath(root))
+    norm_path = os.path.normcase(os.path.realpath(path))
+    norm_root = os.path.normcase(os.path.realpath(root))
     try:
         return os.path.commonpath([norm_path, norm_root]) == norm_root
     except ValueError:
