@@ -178,6 +178,14 @@ def _cmd_pilot_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_pilot_close(args: argparse.Namespace) -> int:
+    from witnessd.pilot import close_deployment_record
+
+    digest = close_deployment_record(args.record)
+    print(f"deployment_record_sha256: {digest}")
+    return 0
+
+
 def _cmd_plan(args: argparse.Namespace) -> int:
     from witnessd.adapter_run import LaneBlocked, run_adapter_lane
     from witnessd.planner import (
@@ -1096,6 +1104,10 @@ def _build_parser() -> argparse.ArgumentParser:
     pilot_init.add_argument("--not-dogfood", action="store_true")
     pilot_init.add_argument("--not-ci", action="store_true")
     pilot_init.set_defaults(func=_cmd_pilot_init)
+
+    pilot_close = pilot_sub.add_parser("close", help="close a pilot deployment record")
+    pilot_close.add_argument("--record", required=True)
+    pilot_close.set_defaults(func=_cmd_pilot_close)
 
     return parser
 
