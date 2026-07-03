@@ -1,0 +1,143 @@
+"""External-team pilot tooling.
+
+This module records pilot evidence scaffolding only. It does not verify Depone
+claims and does not open production gates.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+DEPLOYMENT_KIND = "witnessd-external-team-pilot-deployment"
+TRANSCRIPT_KIND = "depone-verification-transcript"
+ROLLOUT_STAGE = "external-team-pilot"
+SCHEMA_VERSION = "1.0"
+DEPLOYMENT_RECORD_NAME = "deployment-record.json"
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
+        "+00:00", "Z"
+    )
+
+
+def sha256_file(path: str | Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _git_sha(root: Path) -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "--short=12", "HEAD"],
+        cwd=str(root),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        value = result.stdout.strip()
+        if value:
+            return value
+    return "0" * 12
+
+
+def _deployment_id(operator: str, team_scope: str, started_at: str) -> str:
+    seed = json.dumps(
+        {"operator": operator, "team_scope": team_scope, "started_at": started_at},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return "pilot-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:12]
+
+
+def write_deployment_record(
+    *,
+    operator: str,
+    team_scope: str,
+    out_dir: str | Path,
+    deployed_runtime: bool = False,
+    local_dogfood: bool = True,
+    ci_only: bool = True,
+    repo_root: str | Path | None = None,
+) -> Path:
+    root = Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[1]
+    started_at = utc_now()
+    record = {
+        "kind": DEPLOYMENT_KIND,
+        "schema_version": SCHEMA_VERSION,
+        "rollout_stage": ROLLOUT_STAGE,
+        "deployment_id": _deployment_id(operator, team_scope, started_at),
+        "operator": operator,
+        "team_scope": team_scope,
+        "started_at": started_at,
+        "ended_at": None,
+        "witnessd_git_sha": _git_sha(root),
+        "deployed_runtime": deployed_runtime,
+        "local_dogfood": local_dogfood,
+        "ci_only": ci_only,
+    }
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    record_path = out_path / DEPLOYMENT_RECORD_NAME
+    record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return record_path
+
+
+def close_deployment_record(record_path: str | Path) -> str:
+    path = Path(record_path)
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["ended_at"] = utc_now()
+    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return sha256_file(path)
+
+
+def _relative_to_cwd(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(Path.cwd().resolve()))
+    except ValueError:
+        return str(path)
+
+
+def record_archive_evidence(
+    *,
+    archive_path: str | Path,
+    artifacts: dict[str, str | Path],
+    out_path: str | Path | None = None,
+) -> Path:
+    archive_file = Path(archive_path)
+    archive = json.loads(archive_file.read_text(encoding="utf-8"))
+    gate = archive["production_gate"]
+    required = gate["required_evidence"]
+    by_id = {item["id"]: item for item in required}
+    for evidence_id, artifact in artifacts.items():
+        if evidence_id not in by_id:
+            raise ValueError(f"unknown evidence id: {evidence_id}")
+        artifact_path = Path(artifact)
+        item = by_id[evidence_id]
+        item["status"] = "recorded"
+        item["artifact_path"] = _relative_to_cwd(artifact_path)
+        item["artifact_sha256"] = sha256_file(artifact_path)
+    target = Path(out_path) if out_path is not None else archive_file
+    target.write_text(json.dumps(archive, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return target
+
+
+def _self_test() -> None:
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = write_deployment_record(
+            operator="operator@example.invalid",
+            team_scope="external-team:self-test",
+            out_dir=tmp,
+            repo_root=Path(__file__).resolve().parents[1],
+        )
+        body = json.loads(path.read_text(encoding="utf-8"))
+        if not body["local_dogfood"] or not body["ci_only"]:
+            raise AssertionError("pilot deployment record must default to dogfood/CI")
+    print("witnessd pilot --self-test: pass")

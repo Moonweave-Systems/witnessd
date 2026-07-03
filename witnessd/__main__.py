@@ -162,6 +162,22 @@ def _cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_pilot_init(args: argparse.Namespace) -> int:
+    from witnessd.pilot import write_deployment_record
+
+    deployed_runtime = bool(args.deployed_runtime and args.not_dogfood and args.not_ci)
+    record_path = write_deployment_record(
+        operator=args.operator,
+        team_scope=args.team_scope,
+        out_dir=args.out,
+        deployed_runtime=deployed_runtime,
+        local_dogfood=not deployed_runtime,
+        ci_only=not deployed_runtime,
+    )
+    print(f"deployment_record: {record_path}")
+    return 0
+
+
 def _cmd_plan(args: argparse.Namespace) -> int:
     from witnessd.adapter_run import LaneBlocked, run_adapter_lane
     from witnessd.planner import (
@@ -786,6 +802,7 @@ def _cmd_self_test(args: argparse.Namespace) -> int:
         lock,
         liveness,
         pause,
+        pilot,
         preflight,
         router,
         scheduler,
@@ -811,6 +828,7 @@ def _cmd_self_test(args: argparse.Namespace) -> int:
         ("isolation", isolation._self_test),
         ("pause", pause._self_test),
         ("killswitch", killswitch._self_test),
+        ("pilot", pilot._self_test),
         ("learning", learning._self_test),
         ("installer", installer._self_test),
         ("faultkit", faultkit._self_test),
@@ -1066,6 +1084,18 @@ def _build_parser() -> argparse.ArgumentParser:
     self_test = sub.add_parser("self-test", help="run module self-tests")
     self_test.add_argument("--all", action="store_true")
     self_test.set_defaults(func=_cmd_self_test)
+
+    pilot = sub.add_parser("pilot", help="external-team pilot tooling")
+    pilot_sub = pilot.add_subparsers(dest="pilot_cmd", required=True)
+
+    pilot_init = pilot_sub.add_parser("init", help="create a pilot deployment record")
+    pilot_init.add_argument("--operator", required=True)
+    pilot_init.add_argument("--team-scope", required=True)
+    pilot_init.add_argument("--out", required=True)
+    pilot_init.add_argument("--deployed-runtime", action="store_true")
+    pilot_init.add_argument("--not-dogfood", action="store_true")
+    pilot_init.add_argument("--not-ci", action="store_true")
+    pilot_init.set_defaults(func=_cmd_pilot_init)
 
     return parser
 
