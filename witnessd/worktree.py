@@ -23,7 +23,8 @@ class WorktreeError(RuntimeError):
 
 def _lane_slug(lane_id: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", lane_id).strip("-")
-    return slug or "lane"
+    digest = hashlib.sha256(lane_id.encode("utf-8")).hexdigest()[:12]
+    return f"{slug or 'lane'}-{digest}"
 
 
 def create_lane_worktree(

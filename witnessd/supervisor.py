@@ -26,6 +26,7 @@ class WorkerHandle:
     lane_id: str
     runner_uid: int | None
     popen: subprocess.Popen[bytes]
+    pgid: int | None = None
 
 
 class WorkerSupervisor:
@@ -65,12 +66,18 @@ class WorkerSupervisor:
             preexec_fn=preexec_fn,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
+        try:
+            pgid = os.getpgid(popen.pid)
+        except OSError:
+            pgid = None
         handle = WorkerHandle(
             pid=popen.pid,
             lane_id=lane_id,
             runner_uid=runner_uid,
             popen=popen,
+            pgid=pgid,
         )
         self._handles.append(handle)
         append_runlog(
@@ -80,6 +87,7 @@ class WorkerSupervisor:
             payload={
                 "lane_id": lane_id,
                 "pid": handle.pid,
+                "pgid": handle.pgid,
                 "pid_start_time": read_pid_start_time(handle.pid),
                 "runner_uid": runner_uid,
             },
@@ -111,6 +119,9 @@ class WorkerSupervisor:
         )
         self._handles = [candidate for candidate in self._handles if candidate != handle]
         return int(exit_code)
+
+    def forget(self, handle: WorkerHandle) -> None:
+        self._handles = [candidate for candidate in self._handles if candidate != handle]
 
     def claim_region(self, lane_id: str, paths: Sequence[str]) -> dict:
         for path in paths:

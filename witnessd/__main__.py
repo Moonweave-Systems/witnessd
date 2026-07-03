@@ -16,6 +16,7 @@ Depone verification returns a verdict.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -597,7 +598,7 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
         print("ERR_TEAM_RUN_STATE_ROOT_INSIDE_OUTPUT", file=sys.stderr)
         return 2
     codex_specs = [spec for spec in lane_specs if spec.get("adapter") == "codex"]
-    if len(codex_specs) > 1 and state_root is None:
+    if len(codex_specs) > 1 and state_root is None and not _codex_specs_are_isolated(codex_specs):
         print("ERR_TEAM_RUN_MULTI_CODEX_UNISOLATED", file=sys.stderr)
         return 2
     if state_root is not None and codex_specs:
@@ -610,6 +611,9 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
                 _seed_codex_auth(lane_state_root, args.codex_auth_source)
         else:
             _seed_codex_auth(Path(state_root), args.codex_auth_source)
+    elif len(codex_specs) > 1:
+        for spec in codex_specs:
+            _seed_codex_auth(Path(str(spec["state_root"])), args.codex_auth_source)
 
     keys_dir = os.path.abspath(args.keys_dir or (out_dir.rstrip(os.sep) + "-keys"))
     os.makedirs(keys_dir, exist_ok=True)
@@ -621,6 +625,8 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
         private_key_path=private_key_path,
         public_key_path=public_key_path,
         state_root=state_root,
+        max_parallel=args.max_parallel,
+        fail_fast=args.fail_fast,
     )
     pending = len(result["ledger"]["lanes"])
     print(
@@ -645,7 +651,24 @@ def _team_run_lane_state_root(state_root: Path, lane_id: str) -> Path:
     slug = "".join(
         char if char.isalnum() or char in {"-", "_", "."} else "-" for char in lane_id
     ).strip("-._")
-    return state_root / (slug or "lane")
+    digest = hashlib.sha256(lane_id.encode("utf-8")).hexdigest()[:16]
+    return state_root / f"{slug or 'lane'}-{digest}"
+
+
+def _codex_specs_are_isolated(codex_specs: list[dict]) -> bool:
+    roots: list[Path] = []
+    for spec in codex_specs:
+        state_root = spec.get("state_root")
+        if not state_root:
+            return False
+        roots.append(Path(str(state_root)).resolve(strict=False))
+    if len({str(root) for root in roots}) != len(roots):
+        return False
+    for left_index, left in enumerate(roots):
+        for right in roots[left_index + 1 :]:
+            if _paths_overlap(left, right):
+                return False
+    return True
 
 
 def _apply_lane_prompt_files(lane_specs: list[dict], entries: list[str]) -> None:
@@ -723,6 +746,8 @@ def _cmd_team_plan_run(args: argparse.Namespace) -> int:
         leader_objective=args.goal,
         stop_rule="evidence-pending",
         state_root=state_root,
+        max_parallel=args.max_parallel,
+        fail_fast=args.fail_fast,
     )
     pending = len(result["ledger"]["lanes"])
     print(
@@ -859,6 +884,47 @@ def _cmd_team_ledger(args: argparse.Namespace) -> int:
     else:
         print(f"{result['message']} ({status})")
     return 0
+
+
+def _cmd_lane_exec(args: argparse.Namespace) -> int:
+    from witnessd.fanin import run_lane_exec_from_spec
+
+    return run_lane_exec_from_spec(args.spec_json, args.result_json)
+
+
+def _cmd_team_resume_audit(args: argparse.Namespace) -> int:
+    from witnessd.fanin import resume_audit
+
+    audit = resume_audit(args.out, run_id=args.run_id)
+    if args.json:
+        print(json.dumps(audit, sort_keys=True))
+    else:
+        print(f"team_resume_audit: {Path(args.out).resolve(strict=False) / 'team-resume-audit.json'}")
+    return 0
+
+
+def _cmd_team_kill(args: argparse.Namespace) -> int:
+    runlog = args.runlog
+    if runlog is None and args.state_root is not None:
+        state_root = Path(args.state_root).resolve(strict=False)
+        manifest_path = state_root / "team-run.json"
+        if not manifest_path.is_file():
+            print("ERR_TEAM_KILL_STATE_MANIFEST_MISSING", file=sys.stderr)
+            return 2
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("kind") != "witnessd-team-run-state":
+            print("ERR_TEAM_KILL_STATE_MANIFEST_INVALID", file=sys.stderr)
+            return 2
+        manifest_runlog = manifest.get("runlog")
+        if not isinstance(manifest_runlog, str) or not manifest_runlog:
+            print("ERR_TEAM_KILL_STATE_MANIFEST_INVALID", file=sys.stderr)
+            return 2
+        runlog = manifest_runlog
+    if runlog is None:
+        print("ERR_TEAM_KILL_RUNLOG_REQUIRED", file=sys.stderr)
+        return 2
+    args.runlog = runlog
+    return _cmd_kill(args)
 
 
 def _parse_team_lane(text: str) -> dict:
@@ -1133,6 +1199,8 @@ def _build_parser() -> argparse.ArgumentParser:
     team_run.add_argument("--keys-dir", default=None)
     team_run.add_argument("--state-root", default=None)
     team_run.add_argument("--codex-auth-source", default=None)
+    team_run.add_argument("--max-parallel", type=int, default=None)
+    team_run.add_argument("--fail-fast", action="store_true")
     team_run.add_argument("--lane-prompt-file", action="append", default=[])
     team_run.add_argument(
         "--lane",
@@ -1169,12 +1237,34 @@ def _build_parser() -> argparse.ArgumentParser:
     team_plan_run.add_argument("--codex-binary", default="codex")
     team_plan_run.add_argument("--claude-binary", default="claude")
     team_plan_run.add_argument("--opencode-binary", default="opencode")
+    team_plan_run.add_argument("--max-parallel", type=int, default=None)
+    team_plan_run.add_argument("--fail-fast", action="store_true")
     team_plan_run.set_defaults(func=_cmd_team_plan_run)
 
     team_ledger = sub.add_parser("team-ledger", help="verify a team ledger")
     team_ledger.add_argument("--ledger", required=True)
     team_ledger.add_argument("--json", action="store_true")
     team_ledger.set_defaults(func=_cmd_team_ledger)
+
+    team_resume_audit = team_sub.add_parser(
+        "resume-audit", help="audit surviving team lane bytes without replay"
+    )
+    team_resume_audit.add_argument("--out", required=True)
+    team_resume_audit.add_argument("--run-id", default="w15-resume-audit")
+    team_resume_audit.add_argument("--json", action="store_true")
+    team_resume_audit.set_defaults(func=_cmd_team_resume_audit)
+
+    team_kill = team_sub.add_parser("kill", help="kill all live team lanes")
+    team_kill.add_argument("--runlog", default=None)
+    team_kill.add_argument("--state-root", default=None)
+    team_kill.add_argument("--run-id", default="team-kill")
+    team_kill.add_argument("--all", action="store_true", default=True)
+    team_kill.set_defaults(func=_cmd_team_kill)
+
+    lane_exec = sub.add_parser("lane-exec", help=argparse.SUPPRESS)
+    lane_exec.add_argument("--spec-json", required=True)
+    lane_exec.add_argument("--result-json", required=True)
+    lane_exec.set_defaults(func=_cmd_lane_exec)
 
     pause = sub.add_parser("pause", help="append a user pause event")
     pause.add_argument("run_id")

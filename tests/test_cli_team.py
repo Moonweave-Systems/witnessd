@@ -416,6 +416,61 @@ class TestTeamCli(unittest.TestCase):
             )
             self.assertFalse((state_root / ".witnessd" / "codex-home" / "auth.json").exists())
 
+    def test_team_run_derived_codex_state_roots_do_not_slug_collide(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            out_dir = root / "evidence"
+            state_root = root / "state"
+            bindir = root / "bin"
+            auth_source = root / "auth.json"
+            repo.mkdir()
+            bindir.mkdir()
+            auth_source.write_text('{"session":"subscription"}\n', encoding="utf-8")
+            _seed_repo(repo)
+            _fake_codex_records_home_from_prompt(bindir)
+            old_path = os.environ.get("PATH", "")
+
+            try:
+                os.environ["PATH"] = f"{bindir}{os.pathsep}{old_path}"
+                code = main(
+                    [
+                        "team",
+                        "run",
+                        "--repo",
+                        str(repo),
+                        "--out",
+                        str(out_dir),
+                        "--state-root",
+                        str(state_root),
+                        "--codex-auth-source",
+                        str(auth_source),
+                        "--lane",
+                        "a/b:adapter=codex:tier=quick:region=pkg/ab-home.txt:prompt=pkg/ab-home.txt",
+                        "--lane",
+                        "a?b:adapter=codex:tier=quick:region=pkg/aqb-home.txt:prompt=pkg/aqb-home.txt",
+                    ]
+                )
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(code, 0)
+            ab_file = next((out_dir / "worktrees").rglob("ab-home.txt"))
+            aqb_file = next((out_dir / "worktrees").rglob("aqb-home.txt"))
+            ab_home = Path(ab_file.read_text(encoding="utf-8").splitlines()[0])
+            aqb_home = Path(aqb_file.read_text(encoding="utf-8").splitlines()[0])
+            self.assertNotEqual(ab_home, aqb_home)
+            self.assertTrue(str(ab_home).startswith(os.path.realpath(state_root)))
+            self.assertTrue(str(aqb_home).startswith(os.path.realpath(state_root)))
+            self.assertEqual(
+                (ab_home / "auth.json").read_text(encoding="utf-8"),
+                auth_source.read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                (aqb_home / "auth.json").read_text(encoding="utf-8"),
+                auth_source.read_text(encoding="utf-8"),
+            )
+
     def test_team_run_rejects_multiple_codex_lanes_without_state_root(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

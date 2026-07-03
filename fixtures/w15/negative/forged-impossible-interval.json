@@ -1,0 +1,51 @@
+{
+  "boundary": {
+    "executes_commands": false,
+    "launches_agents": false,
+    "note": "single-host orchestrator clock process-concurrency basis",
+    "proves_single_host_process_overlap": true,
+    "raises_assurance": false
+  },
+  "captured_at": "2026-07-03T13:42:36Z",
+  "kind": "depone-team-schedule-receipt",
+  "lanes": [
+    {
+      "exit_code": 0,
+      "exited_at": "2026-07-03T13:42:36Z",
+      "exited_monotonic_ns": 5956765531808668,
+      "lane_id": "lane-a",
+      "pid": 3301566,
+      "pid_start_token": "3301566:595676553",
+      "spawned_at": "2026-07-03T13:42:35Z",
+      "spawned_monotonic_ns": 5956765531808669,
+      "state_root": "repo:.",
+      "worktree": "worktrees/lane-a"
+    },
+    {
+      "exit_code": 0,
+      "exited_at": "2026-07-03T13:42:36Z",
+      "exited_monotonic_ns": 5956766039123108,
+      "lane_id": "lane-b",
+      "pid": 3301567,
+      "pid_start_token": "3301567:595676553",
+      "spawned_at": "2026-07-03T13:42:35Z",
+      "spawned_monotonic_ns": 5956765533298033,
+      "state_root": "repo:.",
+      "worktree": "worktrees/lane-b"
+    },
+    {
+      "exit_code": 0,
+      "exited_at": "2026-07-03T13:42:36Z",
+      "exited_monotonic_ns": 5956766039421068,
+      "lane_id": "lane-c",
+      "pid": 3301568,
+      "pid_start_token": "3301568:595676553",
+      "spawned_at": "2026-07-03T13:42:35Z",
+      "spawned_monotonic_ns": 5956765534440836,
+      "state_root": "repo:.",
+      "worktree": "worktrees/lane-c"
+    }
+  ],
+  "observed_by": "leader-fixed",
+  "schema_version": "0.1"
+}

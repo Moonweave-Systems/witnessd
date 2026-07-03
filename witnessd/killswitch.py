@@ -26,6 +26,7 @@ class KillTarget:
     pid: int
     runner_uid: int | None = None
     popen: Any | None = None
+    pgid: int | None = None
 
 
 def _target_from_handle(handle) -> KillTarget:
@@ -34,6 +35,7 @@ def _target_from_handle(handle) -> KillTarget:
         pid=handle.pid,
         runner_uid=handle.runner_uid,
         popen=handle.popen,
+        pgid=getattr(handle, "pgid", None),
     )
 
 
@@ -68,11 +70,13 @@ def active_targets_from_runlog(records: list[dict[str, Any]]) -> list[KillTarget
         if not pid_identity_matches(pid, start_time):
             continue
         runner_uid = payload.get("runner_uid")
+        pgid = payload.get("pgid")
         targets.append(
             KillTarget(
                 lane_id=lane_id,
                 pid=pid,
                 runner_uid=runner_uid if isinstance(runner_uid, int) else None,
+                pgid=pgid if isinstance(pgid, int) else None,
             )
         )
     return targets
@@ -82,46 +86,106 @@ def _process_confirmed_dead(pid: int) -> bool:
     return not process_exists(pid) or process_state(pid) == "Z"
 
 
+def _process_group_confirmed_dead(pgid: int | None) -> bool:
+    if pgid is None:
+        return True
+    proc = "/proc"
+    if os.path.isdir(proc):
+        for name in os.listdir(proc):
+            if not name.isdigit():
+                continue
+            try:
+                stat = os.path.join(proc, name, "stat")
+                with open(stat, "r", encoding="utf-8") as handle:
+                    text = handle.read()
+            except OSError:
+                continue
+            end = text.rfind(")")
+            if end < 0:
+                continue
+            fields = text[end + 2 :].split()
+            if len(fields) < 3:
+                continue
+            state = fields[0]
+            try:
+                proc_pgid = int(fields[2])
+            except ValueError:
+                continue
+            if proc_pgid == pgid and state != "Z":
+                return False
+        return True
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    return False
+
+
+def _signal_target(target: KillTarget, sig: int) -> None:
+    if target.pgid is not None:
+        os.killpg(target.pgid, sig)
+    else:
+        os.kill(target.pid, sig)
+
+
+def _target_confirmed_dead(target: KillTarget) -> bool:
+    return _process_confirmed_dead(target.pid) and _process_group_confirmed_dead(target.pgid)
+
+
 def _terminate(target: KillTarget, grace: float) -> tuple[bool, int | None]:
     popen = target.popen
     if popen is None:
-        if _process_confirmed_dead(target.pid):
+        if _target_confirmed_dead(target):
             return True, None
         try:
-            os.kill(target.pid, signal.SIGTERM)
+            _signal_target(target, signal.SIGTERM)
         except ProcessLookupError:
             return True, None
         deadline = time.monotonic() + grace
         while time.monotonic() < deadline:
-            if _process_confirmed_dead(target.pid):
+            if _target_confirmed_dead(target):
                 return True, -15
             time.sleep(0.02)
         try:
-            os.kill(target.pid, signal.SIGKILL)
+            _signal_target(target, signal.SIGKILL)
         except ProcessLookupError:
             return True, None
         deadline = time.monotonic() + grace
         while time.monotonic() < deadline:
-            if _process_confirmed_dead(target.pid):
+            if _target_confirmed_dead(target):
                 return True, -9
             time.sleep(0.02)
-        return _process_confirmed_dead(target.pid), None
+        return _target_confirmed_dead(target), None
 
-    if popen.poll() is not None:
+    if popen.poll() is not None and _target_confirmed_dead(target):
         return True, popen.returncode
-    popen.send_signal(signal.SIGTERM)
+    try:
+        _signal_target(target, signal.SIGTERM)
+    except ProcessLookupError:
+        return True, None
     deadline = time.monotonic() + grace
     while time.monotonic() < deadline:
-        if popen.poll() is not None:
+        if popen.poll() is not None and _target_confirmed_dead(target):
             return True, popen.returncode
         time.sleep(0.02)
-    popen.send_signal(signal.SIGKILL)
+    try:
+        _signal_target(target, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
     try:
         popen.wait(timeout=grace)
     except Exception:
         pass
     code = popen.poll()
-    return code is not None, code
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        if code is not None and _target_confirmed_dead(target):
+            return True, code
+        time.sleep(0.02)
+        code = popen.poll()
+    return code is not None and _target_confirmed_dead(target), code
 
 
 def kill_all(

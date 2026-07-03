@@ -13,7 +13,12 @@ hash of the immediately preceding event, or None for the genesis event.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    fcntl = None
 
 from witnessd.canonical import canonical_hash
 
@@ -30,16 +35,36 @@ class EventLog:
             self._prev_event_hash = last_hash if isinstance(last_hash, str) else None
 
     def append(self, event: dict[str, Any]) -> dict[str, Any]:
-        record = dict(event)
-        record["seq"] = self._seq
-        record["prev_event_hash"] = self._prev_event_hash
-        record["event_hash"] = canonical_hash(
-            {key: value for key, value in record.items() if key != "event_hash"}
-        )
-        line = json.dumps(record, sort_keys=True, separators=(",", ":"))
-        with open(self.path, "a", encoding="utf-8") as handle:
+        with open(self.path, "a+", encoding="utf-8") as handle:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            handle.seek(0)
+            existing = [
+                json.loads(line)
+                for line in handle
+                if line.strip()
+            ]
+            if existing:
+                seq = int(existing[-1].get("seq", -1)) + 1
+                prev_event_hash = existing[-1].get("event_hash")
+                prev = prev_event_hash if isinstance(prev_event_hash, str) else None
+            else:
+                seq = 0
+                prev = None
+            record = dict(event)
+            record["seq"] = seq
+            record["prev_event_hash"] = prev
+            record["event_hash"] = canonical_hash(
+                {key: value for key, value in record.items() if key != "event_hash"}
+            )
+            line = json.dumps(record, sort_keys=True, separators=(",", ":"))
+            handle.seek(0, 2)
             handle.write(line + "\n")
-        self._seq += 1
+            handle.flush()
+            os.fsync(handle.fileno())
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        self._seq = record["seq"] + 1
         self._prev_event_hash = record["event_hash"]
         return record
 

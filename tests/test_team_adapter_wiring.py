@@ -5,10 +5,8 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 from witnessd.__main__ import _parse_team_lane
-from witnessd.adapter_run import LaneBlocked
 from witnessd.fanin import run_team
 from witnessd.signing import gen_operator_keypair
 
@@ -85,28 +83,7 @@ class TestTeamAdapterFanin(unittest.TestCase):
         )
 
     def test_adapter_lane_uses_lane_worktree_as_sandbox(self):
-        captured = {}
-
-        def fake_run_adapter_lane(**kwargs):
-            captured.update(kwargs)
-            sandbox = Path(kwargs["sandbox"])
-            (sandbox / "pkg").mkdir(exist_ok=True)
-            (sandbox / "pkg" / "agent.py").write_text("agent\n", encoding="utf-8")
-            evidence = Path(kwargs["evidence_dir"])
-            evidence.mkdir(parents=True, exist_ok=True)
-            return {
-                "runner_receipt": {
-                    "runner_kind": "codex-cli",
-                    "command_receipts": [
-                        {"command": ["codex", "exec"], "exit_code": 0}
-                    ],
-                },
-                "capture_manifest": {"task_id": kwargs["task_id"]},
-                "evidence_dir": str(evidence),
-                "route": {"model": "gpt-5.4-mini"},
-            }
-
-        with mock.patch("witnessd.fanin.run_adapter_lane", fake_run_adapter_lane):
+        with tempfile.TemporaryDirectory() as bindir:
             result = self._run(
                 [
                     {
@@ -115,39 +92,38 @@ class TestTeamAdapterFanin(unittest.TestCase):
                         "tier": "agentic",
                         "region": ["pkg/agent.py"],
                         "prompt": "write agent",
+                        "codex_binary": _fake_codex(bindir),
                     }
                 ]
             )
 
-        self.assertEqual(captured["adapter"], "codex")
-        self.assertEqual(captured["prompt"], "write agent")
-        self.assertTrue(captured["sandbox"].endswith("worktrees/agent-lane"))
-        self.assertNotEqual(os.path.abspath(captured["sandbox"]), os.path.abspath(captured["evidence_dir"]))
-        Path(captured["evidence_dir"]).resolve().relative_to(result["base_dir"].resolve())
+        lane = result["lanes"][0]
+        worktree = Path(lane["worktree"])
+        self.assertEqual(worktree.parent.name, "worktrees")
+        self.assertTrue(worktree.name.startswith("agent-lane-"))
+        self.assertNotEqual(os.path.abspath(lane["worktree"]), os.path.abspath(lane["evidence_dir"]))
+        Path(lane["evidence_dir"]).resolve().relative_to(result["base_dir"].resolve())
         self.assertEqual(result["ledger"]["lanes"][0]["runner_adapter_kind"], "codex")
         self.assertEqual(result["ledger"]["lanes"][0]["touched_files"], ["pkg/agent.py"])
 
     def test_blocked_adapter_lane_is_fail_closed_and_other_lanes_continue(self):
-        def fake_run_adapter_lane(**_kwargs):
-            raise LaneBlocked("budget_exceeded", "too expensive")
-
-        with mock.patch("witnessd.fanin.run_adapter_lane", fake_run_adapter_lane):
-            result = self._run(
-                [
-                    {
-                        "lane_id": "blocked-lane",
-                        "adapter": "codex",
-                        "tier": "agentic",
-                        "region": ["pkg/blocked.py"],
-                        "prompt": "write blocked",
-                    },
-                    {
-                        "lane_id": "shell-lane",
-                        "region": ["pkg/shell.py"],
-                        "commands": [["sh", "-c", "mkdir -p pkg && echo shell > pkg/shell.py"]],
-                    },
-                ]
-            )
+        result = self._run(
+            [
+                {
+                    "lane_id": "blocked-lane",
+                    "adapter": "codex",
+                    "tier": "agentic",
+                    "region": ["pkg/blocked.py"],
+                    "prompt": "write blocked",
+                    "budget": {"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 0},
+                },
+                {
+                    "lane_id": "shell-lane",
+                    "region": ["pkg/shell.py"],
+                    "commands": [["sh", "-c", "mkdir -p pkg && echo shell > pkg/shell.py"]],
+                },
+            ]
+        )
 
         lanes = {lane["lane_id"]: lane for lane in result["ledger"]["lanes"]}
         self.assertEqual(lanes["blocked-lane"]["verification_state"], "blocked")
