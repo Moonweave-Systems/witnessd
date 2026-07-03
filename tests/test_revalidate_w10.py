@@ -38,6 +38,17 @@ class TestRevalidateW10(unittest.TestCase):
     def test_w10_export_root_revalidates_when_fixture_is_portable(self):
         from scripts import revalidate_w10
 
+        git_probe = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=revalidate_w10.ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if git_probe.returncode != 0:
+            self.skipTest("git archive export-root assertion requires a git worktree")
+
         if not revalidate_w10.w10_fixture_uses_portable_internal_paths():
             # This is a temporary pre-recapture boundary, not a portability
             # workaround: the committed legacy fixture is signed with absolute

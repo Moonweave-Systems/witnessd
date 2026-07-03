@@ -28,14 +28,14 @@
 
 ## 열린 결정 (실행 중 정지 안 함 — SPEC §8.2)
 
-전부 W1–W5 **구현 경로 밖**이거나 기본값 있음. **key 회전 정책(§8.2-3)은 `docs/ops/operator-key-rotation.md` + `scripts/revalidate_key_rotation.py`로 로컬 canary/archive 재검증을 갖췄지만, `external-team-pilot` required evidence 5종이 아직 `missing`이므로 keyless gate는 blocked 상태다.** Codex 상태격리 메커니즘(§8.2-4)은 W4에서 별도 상태 디렉터리+lock으로 확정 적용했다.
+전부 W1–W5 **구현 경로 밖**이거나 기본값 있음. **key 회전 정책(§8.2-3)은 `docs/ops/operator-key-rotation.md` + `scripts/revalidate_key_rotation.py`로 로컬 canary/archive 재검증을 갖췄고, `external-team-pilot` required evidence 5종이 recorded라 production gate는 open이다.** W6a에서 keyless가 fail-closed인 이유는 gate가 아니라 live Fulcio/Rekor verifier가 아직 없기 때문이다. Codex 상태격리 메커니즘(§8.2-4)은 W4에서 별도 상태 디렉터리+lock으로 확정 적용했다.
 
 ## 현재 상태
 
 W1-W5 구현 및 committed fixture revalidation 완료. 2026-07-02에 런타임 depone 의존 제거
 (`ad5b9d5`, 이제 runtime은 진짜 stdlib+openssl only — depone 없는 환경에서 실행·방출 가능,
 parity 가드 `tests/test_depone_replica_conformance.py`). W7 team adapter wiring은 `fixtures/w7/` +
-`scripts/revalidate_w7.py`로 어댑터 레인 팀 fan-in 재도출을 고정했다. production keyless gate는 blocked 유지.
+`scripts/revalidate_w7.py`로 어댑터 레인 팀 fan-in 재도출을 고정했다. production gate는 open이며, live keyless 신뢰/emit/ingest는 W6b 전까지 미구현이다.
 
 ## 로드맵 — 최종판(v2.0.0)까지의 전체 아크 (2026-07-02 확정)
 
@@ -59,7 +59,7 @@ parity 가드 `tests/test_depone_replica_conformance.py`). W7 team adapter wirin
 | 순서 | 플랜 파일 | 산출 | 의존 | 성격 |
 |---|---|---|---|---|
 | **P1** | `2026-07-02-external-team-pilot.md` | production gate 5종 증거 — **파일럿 실행·게이트 전환은 운영자 전용** | v2.0.0 권장 | 운영 트랙 |
-| **W6a** | `2026-07-02-w6-keyless-signing.md` | keyless(Sigstore) readiness — gate open 전까지 blocked | P1 | 코드(별도 트랙) |
+| **W6a** | `2026-07-02-w6-keyless-signing.md` | keyless(Sigstore) readiness — gate open, live Fulcio/Rekor verifier 미구현으로 fail-closed | P1 | 코드(별도 트랙) |
 
 공통 규율(전 웨이브): TDD / additive-only 스키마(기존 fixture 재도출 유지) / runtime depone import 금지 /
 worker self-seal 금지 / `production_gate.status` 자동 전환 절대 금지 / 과대주장 금지 /

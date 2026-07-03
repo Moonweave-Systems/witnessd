@@ -4,7 +4,7 @@
 
 **Goal:** Prepare a fail-closed keyless signing seam and non-trusting keyless fixture linter without letting keyless metadata become verified evidence.
 
-**Architecture:** W6a is readiness only. Depone gets a separate keyless fixture linter that never returns `signature_verified=true` and never routes through `ingest_signed_evidence_bundle`; witnessd gets a signing-profile seam whose default remains operator-key and whose keyless profile is always blocked. Live Fulcio/Rekor verification, production gate opening, and keyless ingest are explicitly deferred to W6b after real external-team-pilot evidence and an approved dependency/network design.
+**Architecture:** W6a is readiness only. Depone gets a separate keyless fixture linter that never returns `signature_verified=true` and never routes through `ingest_signed_evidence_bundle`; witnessd gets a signing-profile seam whose default remains operator-key and whose keyless profile fails closed with `ERR_WITNESSD_KEYLESS_LIVE_UNIMPLEMENTED`. The external-team-pilot production gate is already open with 5/5 evidence recorded; live Fulcio/Rekor verification and keyless ingest are still deferred to W6b because an approved dependency/network verifier design does not exist yet.
 
 **Tech Stack:** Python 3.10+, stdlib JSON/hash/base64/path/unittest, existing `openssl` CLI only for the unchanged operator-key path. No new dependency, network call, Sigstore CLI, OIDC exchange, Rekor lookup, public assurance claim, or production-gate opening in W6a.
 
@@ -22,9 +22,9 @@ Two independent read-only reviews of the first draft returned `BLOCK`. The plan 
 
 ## Status And Stop Conditions
 
-- Current witnessd baseline: `3145c9b fix: cryptographically validate gate canary evidence`.
-- Current depone baseline: `355b231 test: make agent fabric fixtures cwd independent`.
-- `fixtures/key-rotation/operator-key-archive.json` must keep `production_gate.status == "blocked"` throughout W6a.
+- Current witnessd baseline: `00a5c9a`.
+- Current depone baseline: `e08de54`.
+- `fixtures/key-rotation/operator-key-archive.json` must keep `production_gate.status == "open"` throughout W6a; do not mutate the archive, operator review, or recorded evidence.
 - Stop immediately if any implementation modifies `depone/agent_fabric/evidence_substrate.py::ingest_signed_evidence_bundle` to accept keyless bundles.
 - Stop immediately if any implementation emits or accepts `A3`, deprecates operator-key signing, treats local dogfood as production evidence, or adds a dependency/network verifier without explicit approval.
 
@@ -42,7 +42,7 @@ Two independent read-only reviews of the first draft returned `BLOCK`. The plan 
 /home/ubuntu/moonweave/depone/
   depone/agent_fabric/keyless.py              # NEW: non-trusting fixture linter only.
   tests/test_agent_fabric_keyless_lint.py     # NEW: linter, anti-forgery, operator verifier rejection.
-  depone/resources/fixtures/agent_fabric/keyless/
+  depone/fixtures/agent_fabric/keyless/
     keyless-capture-manifest.json             # Real Depone-valid capture manifest copied from existing fixture.
     keyless-bundle.json                       # Keyless-shaped metadata bundle.
     keyless-bundle.sha256                     # Pinned raw fixture hash for linter.
@@ -51,7 +51,7 @@ Two independent read-only reviews of the first draft returned `BLOCK`. The plan 
     negative-assurance-upgrade.json           # A3 attempt.
 
 /home/ubuntu/moonweave/witnessd/
-  witnessd/signing_profile.py                 # NEW: operator default; keyless always blocked in W6a.
+  witnessd/signing_profile.py                 # NEW: operator default; keyless live verifier unimplemented in W6a.
   witnessd/substrate.py                       # MODIFY: behavior-preserving profile seam.
   tests/test_signing_profile.py               # NEW: default + fail-closed keyless.
   tests/test_substrate_keyless_guard.py       # NEW: build_bundle cannot emit keyless.
@@ -73,7 +73,7 @@ Two independent read-only reviews of the first draft returned `BLOCK`. The plan 
 - Read: `/home/ubuntu/moonweave/witnessd/fixtures/key-rotation/operator-key-archive.json`
 - Read: `/home/ubuntu/moonweave/witnessd/scripts/revalidate_key_rotation.py`
 
-- [ ] **Step 1: Confirm clean baselines**
+- [ ] **Step 1: Confirm baselines**
 
 ```bash
 cd /home/ubuntu/moonweave/witnessd
@@ -85,9 +85,9 @@ git status --short --branch
 git rev-parse --short HEAD
 ```
 
-Expected: both repos are clean; witnessd is `3145c9b` or a descendant, depone is `355b231` or a descendant.
+Expected: witnessd is `00a5c9a` or a descendant, depone is `e08de54` or a descendant. Preserve any unrelated existing working-tree changes.
 
-- [ ] **Step 2: Confirm production gate is blocked**
+- [ ] **Step 2: Confirm production gate is open and recorded**
 
 ```bash
 cd /home/ubuntu/moonweave/witnessd
@@ -97,13 +97,14 @@ import json
 from pathlib import Path
 archive = json.loads(Path("fixtures/key-rotation/operator-key-archive.json").read_text())
 gate = archive["production_gate"]
-assert gate["status"] == "blocked", gate
-assert all(item["status"] == "missing" for item in gate["required_evidence"]), gate
-print("production gate blocked")
+assert gate["status"] == "open", gate
+assert len(gate["required_evidence"]) == 5, gate
+assert all(item["status"] == "recorded" for item in gate["required_evidence"]), gate
+print("production gate open with 5 recorded evidence entries")
 PY
 ```
 
-Expected: `key rotation revalidate: PASS` and `production gate blocked`.
+Expected: `key rotation revalidate: PASS` and `production gate open with 5 recorded evidence entries`.
 
 ## Task 1: Depone Keyless Linter Tests
 
@@ -204,12 +205,12 @@ Expected: import failure for `depone.agent_fabric.keyless`.
 
 **Files:**
 - Create: `/home/ubuntu/moonweave/depone/depone/agent_fabric/keyless.py`
-- Create: `/home/ubuntu/moonweave/depone/depone/resources/fixtures/agent_fabric/keyless/keyless-capture-manifest.json`
-- Create: `/home/ubuntu/moonweave/depone/depone/resources/fixtures/agent_fabric/keyless/keyless-bundle.json`
-- Create: `/home/ubuntu/moonweave/depone/depone/resources/fixtures/agent_fabric/keyless/keyless-bundle.sha256`
-- Create: `/home/ubuntu/moonweave/depone/depone/resources/fixtures/agent_fabric/keyless/negative-forged-self-consistent.json`
-- Create: `/home/ubuntu/moonweave/depone/depone/resources/fixtures/agent_fabric/keyless/negative-fake-subject.json`
-- Create: `/home/ubuntu/moonweave/depone/depone/resources/fixtures/agent_fabric/keyless/negative-assurance-upgrade.json`
+- Create: `/home/ubuntu/moonweave/depone/depone/fixtures/agent_fabric/keyless/keyless-capture-manifest.json`
+- Create: `/home/ubuntu/moonweave/depone/depone/fixtures/agent_fabric/keyless/keyless-bundle.json`
+- Create: `/home/ubuntu/moonweave/depone/depone/fixtures/agent_fabric/keyless/keyless-bundle.sha256`
+- Create: `/home/ubuntu/moonweave/depone/depone/fixtures/agent_fabric/keyless/negative-forged-self-consistent.json`
+- Create: `/home/ubuntu/moonweave/depone/depone/fixtures/agent_fabric/keyless/negative-fake-subject.json`
+- Create: `/home/ubuntu/moonweave/depone/depone/fixtures/agent_fabric/keyless/negative-assurance-upgrade.json`
 
 - [ ] **Step 1: Add `keyless.py`**
 
@@ -364,9 +365,9 @@ import hashlib
 import json
 from pathlib import Path
 
-out = Path("depone/resources/fixtures/agent_fabric/keyless")
+out = Path("depone/fixtures/agent_fabric/keyless")
 out.mkdir(parents=True, exist_ok=True)
-source = Path("depone/resources/fixtures/agent_fabric/capture_manifest_v126_governed_utf8.json")
+source = Path("depone/fixtures/agent_fabric/capture_manifest_v126_governed_utf8.json")
 capture = json.loads(source.read_text(encoding="utf-8"))
 
 def canonical_json(value):
@@ -475,7 +476,7 @@ Expected: pass. `verify_signed_bundle` still rejects the keyless fixture.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add depone/agent_fabric/keyless.py depone/resources/fixtures/agent_fabric/keyless tests/test_agent_fabric_keyless_lint.py
+git add depone/agent_fabric/keyless.py depone/fixtures/agent_fabric/keyless tests/test_agent_fabric_keyless_lint.py
 git commit -m "feat: add non-trusting keyless fixture linter"
 ```
 
@@ -515,7 +516,7 @@ class TestSigningProfile(unittest.TestCase):
     def test_keyless_profile_is_always_blocked_in_w6a(self):
         with self.assertRaises(SigningProfileError) as cm:
             select_signing_profile(KEYLESS_FULCIO_REKOR_PROFILE)
-        self.assertEqual(cm.exception.code, "ERR_WITNESSD_KEYLESS_GATE_BLOCKED")
+        self.assertEqual(cm.exception.code, "ERR_WITNESSD_KEYLESS_LIVE_UNIMPLEMENTED")
 ```
 
 - [ ] **Step 2: Run and confirm red**
@@ -575,7 +576,7 @@ def select_signing_profile(requested: str | None) -> SigningProfile:
             signature_boundary=operator_key_signature_boundary(),
         )
     if profile == KEYLESS_FULCIO_REKOR_PROFILE:
-        raise SigningProfileError("ERR_WITNESSD_KEYLESS_GATE_BLOCKED")
+        raise SigningProfileError("ERR_WITNESSD_KEYLESS_LIVE_UNIMPLEMENTED")
     raise SigningProfileError("ERR_WITNESSD_SIGNING_PROFILE_UNSUPPORTED")
 ```
 
@@ -633,7 +634,7 @@ class TestSubstrateKeylessGuard(unittest.TestCase):
                     {"artifact": str(artifact)},
                     signing_profile="keyless-fulcio-rekor",
                 )
-            self.assertEqual(cm.exception.code, "ERR_WITNESSD_KEYLESS_GATE_BLOCKED")
+            self.assertEqual(cm.exception.code, "ERR_WITNESSD_KEYLESS_LIVE_UNIMPLEMENTED")
 
     def test_unsigned_default_still_works(self):
         manifest = {
@@ -740,16 +741,21 @@ def _fail(message: str) -> None:
 def main() -> int:
     archive = _load(ARCHIVE)
     validate_archive(archive)
-    if archive["production_gate"]["status"] != "blocked":
-        _fail("W6a expects production gate to remain blocked")
+    gate = archive["production_gate"]
+    if gate["status"] != "open":
+        _fail("W6a expects production gate to remain open")
+    if len(gate["required_evidence"]) != 5:
+        _fail("W6a expects five production gate evidence entries")
+    if any(item.get("status") != "recorded" for item in gate["required_evidence"]):
+        _fail("W6a expects every production gate evidence entry to be recorded")
 
     try:
         select_signing_profile("keyless-fulcio-rekor")
     except SigningProfileError as exc:
-        if exc.code != "ERR_WITNESSD_KEYLESS_GATE_BLOCKED":
+        if exc.code != "ERR_WITNESSD_KEYLESS_LIVE_UNIMPLEMENTED":
             raise
     else:
-        _fail("keyless profile must remain blocked in W6a")
+        _fail("keyless profile must fail closed until live Fulcio/Rekor verification exists")
 
     capture = json.loads(resource_text("fixtures/agent_fabric/keyless/keyless-capture-manifest.json"))
     if validate_capture_manifest(capture) != []:
@@ -843,7 +849,7 @@ git commit -m "test: add W6a keyless readiness revalidation"
 Replace the single deferred paragraph with this split:
 
 ```markdown
-W6a implements only non-trusting keyless fixture lint and a witnessd fail-closed signing-profile seam. It does not perform live Fulcio issuance, live Rekor lookup, OIDC exchange, public-production enablement, keyless ingest, trusted keyless signature verification, or assurance upgrade. W6b/live keyless remains deferred until `production_gate.status == "open"` through `external-team-pilot` evidence and an explicit dependency/network verification design is approved.
+W6a implements only non-trusting keyless fixture lint and a witnessd fail-closed signing-profile seam. The production gate is already open through `external-team-pilot` evidence, but W6a does not perform live Fulcio issuance, live Rekor lookup, OIDC exchange, keyless ingest, trusted keyless signature verification, or assurance upgrade. W6b/live keyless remains deferred until an explicit dependency/network verification design is approved.
 ```
 
 - [ ] **Step 2: Update roadmap row**
@@ -863,7 +869,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ubuntu/moonweave/depone python3 scrip
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ubuntu/moonweave/depone python3 scripts/revalidate_w6_keyless.py
 ```
 
-Expected: search hits, if any, are negative tests, anti-claims, or explicit deferred-gate wording; no positive trusted-keyless, A3, production-gate-open, keyless-ingest, or operator-key deprecation claim is introduced. Both revalidators pass.
+Expected: search hits, if any, are negative tests, anti-claims, or explicit W6b-deferred wording; no positive trusted-keyless, A3, production-gate-open flag, keyless-ingest, or operator-key deprecation claim is introduced. Both revalidators pass.
 
 - [ ] **Step 4: Commit**
 
@@ -895,7 +901,7 @@ git diff --check
 Expected:
 - Depone tests pass and contract/doctor pass.
 - witnessd tests pass, self-test passes, W1-W5 revalidators pass, key rotation passes, W6a revalidator passes.
-- `fixtures/key-rotation/operator-key-archive.json` still has `production_gate.status == "blocked"`.
+- `fixtures/key-rotation/operator-key-archive.json` still has `production_gate.status == "open"` and all five required evidence entries recorded.
 - No W6a path produces trusted keyless signature semantics.
 
 ## Review Checklist For Agents
@@ -907,5 +913,5 @@ Expected:
 - Verify statement subject digest is bound to the embedded Depone-valid capture manifest.
 - Verify keyless profile selection has no caller-controlled gate boolean.
 - Verify operator-key signing remains default and tested.
-- Verify the production gate remains blocked.
+- Verify the production gate remains open and unchanged.
 - Verify W6b/live keyless remains a separate dependency/network design.

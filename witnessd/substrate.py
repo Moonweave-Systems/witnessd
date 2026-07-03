@@ -25,6 +25,11 @@ from typing import Any
 
 from witnessd.canonical import canonical_hash
 from witnessd.signing import DEFAULT_OPERATOR_KEY_ID, sign_dsse
+from witnessd.signing_profile import (
+    OPERATOR_KEY_PROFILE,
+    operator_key_signature_boundary,
+    select_signing_profile,
+)
 
 INTOTO_STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
 DEPONE_PREDICATE_TYPE = "https://depone.dev/attestations/evidence/v1"
@@ -41,22 +46,6 @@ DEFAULT_EPOCH_SECONDS = 300
 # Assurance is a derived view over the capture manifest; the substrate is a
 # packaging/signing layer and must never claim more than A2.
 _ASSURANCE_CEILING = ["A0-claims-only", "A1-local-observed", "A2-isolated-observed"]
-
-
-def _operator_key_signature_boundary() -> dict[str, Any]:
-    # Byte-identical to Depone sign.operator_key_signature_boundary(); verify_signed_bundle
-    # rejects any divergence.
-    return {
-        "scheme": "DSSE-Ed25519-openssl-cli",
-        "operator_key": True,
-        "public_verifiable": True,
-        "keyless_identity": False,
-        "transparency_logged": False,
-        "note": (
-            "Trust is rooted in the operator-held key and distributed public "
-            "key; this is not Fulcio keyless identity or Rekor logging."
-        ),
-    }
 
 
 def _cap_assurance(value: Any) -> str:
@@ -149,6 +138,7 @@ def build_bundle(
     *,
     key_id: str = DEFAULT_OPERATOR_KEY_ID,
     otel_spans: list[dict[str, Any]] | None = None,
+    signing_profile: str | None = None,
 ) -> dict[str, Any]:
     """Package on-disk artifacts as a signed in-toto/DSSE evidence bundle.
 
@@ -159,6 +149,9 @@ def build_bundle(
     from the manifest and capped at A2 either way.
     """
     _ = public_key_path
+    profile = select_signing_profile(signing_profile)
+    if profile.name != OPERATOR_KEY_PROFILE:
+        raise AssertionError("non-operator signing profile escaped fail-closed selection")
     assurance = _cap_assurance(manifest.get("assurance"))
     signed = private_key_path is not None
     evidence_mode = manifest.get("evidence_mode", EVIDENCE_MODE_CONTEMPORANEOUS)
@@ -221,7 +214,7 @@ def build_bundle(
     if signed:
         bundle["dsse_envelope"] = sign_dsse(envelope, private_key_path, key_id=key_id)
         bundle["signing_status"] = SIGNING_STATUS_OPERATOR_KEY
-        bundle["signature_boundary"] = _operator_key_signature_boundary()
+        bundle["signature_boundary"] = operator_key_signature_boundary()
     return bundle
 
 
