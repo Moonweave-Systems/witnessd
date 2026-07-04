@@ -1,6 +1,7 @@
 import io
 import inspect
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -15,7 +16,9 @@ from witnessd.distribution import ERR_WITNESSD_DEPONE_PIN_MISMATCH
 
 def _seed_repo(repo: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "user.email", "w18@example.invalid"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "w18@example.invalid"], cwd=repo, check=True
+    )
     subprocess.run(["git", "config", "user.name", "w18"], cwd=repo, check=True)
     (repo / "README.txt").write_text("seed\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
@@ -25,7 +28,10 @@ def _seed_repo(repo: Path) -> None:
 class W18DxCliTests(unittest.TestCase):
     def _run_ergonomic_goal(self, root: Path) -> tuple[Path, Path]:
         witnessd_root = Path(__file__).resolve().parents[1]
-        depone_root = witnessd_root.parent / "depone"
+        # CI exposes the depone clone via WITNESSD_DEPONE_ROOT (no sibling).
+        depone_root = Path(
+            os.environ.get("WITNESSD_DEPONE_ROOT") or witnessd_root.parent / "depone"
+        )
         repo = root / "repo"
         home = root / "home"
         repo.mkdir()
@@ -55,7 +61,9 @@ class W18DxCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             home, run_dir = self._run_ergonomic_goal(root)
-            payload = json.loads((run_dir / "team-ledger-verdict.json").read_text(encoding="utf-8"))
+            payload = json.loads(
+                (run_dir / "team-ledger-verdict.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(payload["decision"], "pass")
             self.assertEqual(payload["lane_count"], 2)
             self.assertTrue((run_dir / "sealed-plan.json").is_file())
@@ -99,7 +107,9 @@ class W18DxCliTests(unittest.TestCase):
             self.assertIn(ERR_WITNESSD_DEPONE_PIN_MISMATCH, stderr.getvalue())
             self.assertFalse((run_dir / "team-ledger-verdict.json").exists())
 
-    def test_runtime_and_verify_paths_do_not_contain_network_provision_actions(self) -> None:
+    def test_runtime_and_verify_paths_do_not_contain_network_provision_actions(
+        self,
+    ) -> None:
         runtime_sources = "\n".join(
             inspect.getsource(obj)
             for obj in (
@@ -134,7 +144,9 @@ class W18DxCliTests(unittest.TestCase):
         self.assertNotIn("codex", script_text)
         self.assertIn("quickstart_check.sh", workflow_text)
 
-    def test_session_guidance_requires_depone_verdict_without_success_tokens(self) -> None:
+    def test_session_guidance_requires_depone_verdict_without_success_tokens(
+        self,
+    ) -> None:
         root = Path(__file__).resolve().parents[1]
         for rel in ("SKILL.md", "AGENTS.md"):
             text = (root / rel).read_text(encoding="utf-8")
@@ -148,9 +160,7 @@ class W18DxCliTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         readme = (root / "README.md").read_text(encoding="utf-8")
         first_headings = [
-            line.strip()
-            for line in readme.splitlines()
-            if line.startswith("## ")
+            line.strip() for line in readme.splitlines() if line.startswith("## ")
         ][:3]
         self.assertIn("## 10-minute quickstart", first_headings[:1])
         self.assertIn("witnessd init", readme)
@@ -163,9 +173,9 @@ class W18DxCliTests(unittest.TestCase):
         release = (root / "docs" / "releases" / "v2.3.0-draft.md").read_text(
             encoding="utf-8"
         )
-        operator = (
-            root / "docs" / "ops" / "w18-operator-checkpoints.md"
-        ).read_text(encoding="utf-8")
+        operator = (root / "docs" / "ops" / "w18-operator-checkpoints.md").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("v2.3.0", release)
         self.assertIn("W18", release)

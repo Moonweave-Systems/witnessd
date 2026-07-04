@@ -35,9 +35,17 @@ class DistributionInitTests(unittest.TestCase):
         subprocess.run(["git", "add", "-A"], cwd=root, check=True)
         subprocess.run(["git", "commit", "-qm", "seed"], cwd=root, check=True)
 
+    @staticmethod
+    def _env_depone_root(witnessd_root: Path) -> Path:
+        # CI has no sibling depone checkout; it exposes the clone via
+        # WITNESSD_DEPONE_ROOT (same pattern as the conformance tests).
+        return Path(
+            os.environ.get("WITNESSD_DEPONE_ROOT") or witnessd_root.parent / "depone"
+        )
+
     def test_init_records_config_keys_and_repo_hashes(self) -> None:
         witnessd_root = Path(__file__).resolve().parents[1]
-        depone_root = witnessd_root.parent / "depone"
+        depone_root = self._env_depone_root(witnessd_root)
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
 
@@ -71,7 +79,7 @@ class DistributionInitTests(unittest.TestCase):
 
     def test_validate_depone_pin_rejects_forged_hash(self) -> None:
         witnessd_root = Path(__file__).resolve().parents[1]
-        depone_root = witnessd_root.parent / "depone"
+        depone_root = self._env_depone_root(witnessd_root)
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             init_witnessd_home(
@@ -96,7 +104,7 @@ class DistributionInitTests(unittest.TestCase):
 
     def test_cli_init_writes_home_and_prints_config_path(self) -> None:
         witnessd_root = Path(__file__).resolve().parents[1]
-        depone_root = witnessd_root.parent / "depone"
+        depone_root = self._env_depone_root(witnessd_root)
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             out = io.StringIO()
@@ -118,26 +126,40 @@ class DistributionInitTests(unittest.TestCase):
             self.assertEqual(payload["config"], str(home / "config.json"))
             self.assertTrue((home / "provision.json").is_file())
 
-    def test_cli_init_auto_detects_sibling_depone_checkout(self) -> None:
-        witnessd_root = Path(__file__).resolve().parents[1]
-        depone_root = witnessd_root.parent / "depone"
+    def test_init_auto_detects_sibling_depone_checkout(self) -> None:
+        # Build a synthetic sibling layout so auto-detection is covered on
+        # any machine (CI has no real sibling depone checkout).
         with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp) / "home"
-            out = io.StringIO()
-            err = io.StringIO()
+            base = Path(tmp)
+            witnessd_root = base / "witnessd"
+            depone_root = base / "depone"
+            witnessd_root.mkdir()
+            depone_root.mkdir()
+            self._seed_git_repo(witnessd_root, {"witnessd/__init__.py": ""})
+            self._seed_git_repo(depone_root, {"depone/__init__.py": ""})
+            home = base / "home"
 
             with patch.dict(os.environ, {"WITNESSD_DEPONE_ROOT": ""}):
                 os.environ.pop("WITNESSD_DEPONE_ROOT", None)
-                with redirect_stdout(out), redirect_stderr(err):
-                    code = main(["init", "--home", str(home)])
+                init_witnessd_home(
+                    InitConfig(
+                        home=home,
+                        witnessd_root=witnessd_root,
+                        depone_root=None,
+                        network_allowed=False,
+                    )
+                )
 
-            self.assertEqual(code, 0, err.getvalue())
-            provision = json.loads((home / "provision.json").read_text(encoding="utf-8"))
+            provision = json.loads(
+                (home / "provision.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(provision["depone"]["root"], str(depone_root.resolve()))
             self.assertEqual(provision["depone"]["source"], "sibling-checkout")
             self.assertFalse(provision["depone"]["network_used"])
 
-    def test_init_allow_network_provisions_depone_when_no_local_checkout_exists(self) -> None:
+    def test_init_allow_network_provisions_depone_when_no_local_checkout_exists(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             fake_witnessd = root / "isolated" / "witnessd"
@@ -166,7 +188,9 @@ class DistributionInitTests(unittest.TestCase):
                     )
                 )
 
-            provision = json.loads(Path(result["provision"]).read_text(encoding="utf-8"))
+            provision = json.loads(
+                Path(result["provision"]).read_text(encoding="utf-8")
+            )
             depone_root = Path(provision["depone"]["root"])
             self.assertEqual(depone_root, home.resolve() / "depone-pinned")
             self.assertTrue((depone_root / "depone").is_dir())
