@@ -1,31 +1,32 @@
 ---
-name: superflow
-description: Superflow turns a goal into an evidence-backed workflow: scout the repo, plan it, run it through witnessd, seal the evidence, and check what the bytes support through Depone. Use for superflow, scout, flowplan, proofrun, proofcheck, provable team execution, 증명 실행, or evidence-backed automation. Published by Moonweave.
+name: orro
+description: ORRO, the Observed Run & Review Orchestrator, turns a goal into an evidence-backed workflow: scout the repo, plan it, run it through witnessd, seal the evidence, and check what the bytes support through Depone. Use for orro, scout, flowplan, proofrun, proofcheck, provable team execution, evidence-backed automation, and 증명 실행. Published by Moonweave.
 ---
 
-# superflow — evidence-backed workflow runs
+# orro - evidence-backed workflow runs
 
-Use this skill when an operator asks for Superflow, a proofrun, provable team
+Use this skill when an operator asks for ORRO, a proofrun, provable team
 execution, 증명 실행, repo scouting, or evidence-backed automation.
 
-Source of truth: `SPEC3.md` is the current witnessd × Depone final-form spec.
+Source of truth: `SPEC3.md` is the current witnessd x Depone final-form spec.
 This skill text is derived from that spec. Moonweave is the publisher/account;
-Superflow is the product/tool name.
+ORRO is the product/tool name. `Superflow` is historical/compatibility naming and
+should not be used for new public surfaces.
 
 ## Public modes
 
 | Mode | Meaning |
 | --- | --- |
-| `superflow` | goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
-| `superflow scout` | read-only repo exploration and context-pack creation |
+| `orro` | goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
+| `orro scout` | read-only repo exploration and context-pack creation |
 | `flowplan` | plan-only workflow design |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
-| `superflow handoff` | maintainer review package bound to evidence |
-| `superflow skillpack` | knowledge-as-code and progressive-disclosure support |
-| `superflow doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
-| `superflow auto` | later continuation loop behind evidence gates |
-| `superflow ultra` | future high-autonomy profile with stricter gates |
+| `orro handoff` | maintainer review package bound to evidence |
+| `orro skillpack` | knowledge-as-code and progressive-disclosure support |
+| `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
+| `orro auto` | later continuation loop behind evidence gates |
+| `orro ultra` | future high-autonomy profile with stricter gates |
 
 ## Repository and install boundary
 
@@ -33,14 +34,16 @@ This is the single user-facing skill surface. Do not ask normal users to install
 separate Depone and witnessd skills for one workflow.
 
 The skill may live in the witnessd repo while the product surface is thin,
-because Superflow starts execution and witnessd owns execution. Depone stays a
-pinned verifier dependency and is invoked only to re-derive persisted evidence
-bytes.
+because ORRO starts execution and witnessd owns execution. Depone stays a pinned
+verifier dependency and is invoked only to re-derive persisted evidence bytes.
 
-A future standalone `Superflow` repo may package marketplace manifests,
-host-specific plugin files, examples, product docs, and engine version locks. It
-must remain a wrapper/distribution repo, not a place to duplicate witnessd runtime
-logic or Depone verifier logic.
+A future standalone `ORRO` repo may package marketplace manifests, host-specific
+plugin files, examples, product docs, and engine version locks. It must remain a
+wrapper/distribution repo, not a place to duplicate witnessd runtime logic or
+Depone verifier logic.
+
+Compatibility aliases such as `superflow` may remain during migration, but ORRO
+is the canonical product and skill surface.
 
 ## Contract
 
@@ -59,7 +62,7 @@ Required output evidence:
 - verdict `decision`
 - lane count and any error count present in the verdict
 
-Scout artifacts are planning-only. `superflow scout` must not create a fake
+Scout artifacts are planning-only. `orro scout` must not create a fake
 `verification-receipt.json`, and a scout-only directory must not be reported as a
 `proofcheck` pass.
 
@@ -74,7 +77,7 @@ Do not load the whole repository into context. For non-trivial work:
 5. create a `verification-recipe.json` before implementation when checks exist,
 6. run witnessd only after the plan and checks are clear.
 
-Use existing `SKILL.md`, `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, and Superflow
+Use existing `SKILL.md`, `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, and ORRO
 skillpacks as knowledge-as-code. Load only the relevant skill body after
 frontmatter matching.
 
