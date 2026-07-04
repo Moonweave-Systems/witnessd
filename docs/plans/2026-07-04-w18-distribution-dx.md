@@ -173,3 +173,35 @@ Also confirm:
 - W21 declarative policy layer.
 - W22 repo publication and actual GitHub release publication.
 - Any Depone schema extension or execution behavior.
+
+## Outcome
+
+W18 implemented the runner DX path in witnessd and limited Depone changes to
+reverse-conformance CI authentication docs/workflow wiring. `witnessd init`
+now records a pinned Depone provision from an explicit checkout, environment
+checkout, sibling checkout, or setup-only `--allow-network` clone into
+`<home>/depone-pinned`. `witnessd run "<goal>" --repo <path>` creates a
+quota-free shell team run and immediately invokes the pinned Depone verifier;
+`witnessd verify <run-dir>` re-derives the verdict offline from the run ledger.
+
+Validation evidence collected before the W18 checkpoint:
+
+- Depone full suite: `python3 -m unittest discover -s tests` -> 356 tests OK.
+- witnessd full suite with CI-style Depone env:
+  `PYTHONPATH=/home/ubuntu/moonweave/depone WITNESSD_DEPONE_ROOT=/home/ubuntu/moonweave/depone python3 -m unittest discover -s tests`
+  -> 337 tests OK.
+- witnessd self-test: `PYTHONPATH=../depone python3 -m witnessd self-test --all`
+  -> 24/24 passed.
+- All `scripts/revalidate_*.py` -> PASS through W17 plus key rotation and
+  v2 demo.
+- W18 quickstart: `WITNESSD_DEPONE_ROOT=../depone scripts/quickstart_check.sh`
+  -> `quickstart_check: pass`.
+- Clean setup clone probe from a temp witnessd checkout with no sibling Depone
+  -> `clean_setup_clone: pass`.
+- `git diff --check` clean in both repos; Depone
+  `ingest_signed_evidence_bundle` diff 0; witnessd gate/archive/operator-review
+  diff 0; export-root `revalidate_key_rotation.py` PASS.
+
+Remaining operator-only checkpoints are PAT creation/registration for Depone
+reverse-conformance, clean-machine macOS/new-environment quickstart, push/CI,
+and GitHub release publication.

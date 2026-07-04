@@ -31,6 +31,14 @@ run_dir="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["run_dir"]
 python3 -m witnessd verify "$run_dir" --home .witnessd
 ```
 
+On a runner machine without a local Depone checkout, setup can provision the
+pinned verifier into `.witnessd/depone-pinned` and record that setup-time
+network use:
+
+```bash
+python3 -m witnessd init --home .witnessd --allow-network
+```
+
 For the same path as CI:
 
 ```bash
