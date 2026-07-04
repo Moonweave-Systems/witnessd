@@ -1223,6 +1223,8 @@ def _resume_rederived_lane(
         if latest_attempt is None:
             return None
         attempt, ledger_lane = latest_attempt
+        if ledger_lane is None:
+            return None
         return _resume_rederived_ledger_lane(
             base_dir=base_dir,
             control=control,
@@ -1246,6 +1248,8 @@ def _resume_rederived_lane(
     latest_attempt = _latest_resume_attempt_lane(base_dir, lane_id=lane_id)
     if latest_attempt is not None and latest_attempt[0] > attempt:
         attempt, ledger_lane = latest_attempt
+        if ledger_lane is None:
+            return None
     return _resume_rederived_ledger_lane(
         base_dir=base_dir,
         control=control,
@@ -1266,8 +1270,8 @@ def _root_lane_result_path(base_dir: Path, lane_id: str) -> Path:
 
 def _latest_resume_attempt_lane(
     base_dir: Path, *, lane_id: str
-) -> tuple[int, dict[str, Any]] | None:
-    best: tuple[int, dict[str, Any]] | None = None
+) -> tuple[int, dict[str, Any] | None] | None:
+    best: tuple[int, dict[str, Any] | None] | None = None
     attempts_dir = base_dir / "attempts"
     if not attempts_dir.is_dir():
         return None
@@ -1284,12 +1288,18 @@ def _latest_resume_attempt_lane(
         try:
             result = json.loads(result_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
+            if best is None or attempt > best[0]:
+                best = (attempt, None)
             continue
         lane = result.get("lane")
         if not isinstance(lane, dict) or not isinstance(lane.get("ledger_lane"), dict):
+            if best is None or attempt > best[0]:
+                best = (attempt, None)
             continue
         ledger_lane = _prefix_resume_attempt_lane(dict(lane["ledger_lane"]), attempt=attempt)
         if ledger_lane.get("lane_id") != lane_id:
+            if best is None or attempt > best[0]:
+                best = (attempt, None)
             continue
         if best is None or attempt > best[0]:
             best = (attempt, ledger_lane)

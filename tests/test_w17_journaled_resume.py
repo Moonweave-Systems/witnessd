@@ -212,6 +212,30 @@ class TestW17JournaledResume(unittest.TestCase):
             ["indeterminate", "completed"],
         )
 
+    def test_resume_does_not_fall_back_past_corrupted_newer_attempt(self):
+        result = self._run_initial(
+            [
+                {
+                    "lane_id": "lane-a",
+                    "region": ["pkg/a.py"],
+                    "commands": [["sh", "-c", "mkdir -p pkg; echo a > pkg/a.py"]],
+                }
+            ]
+        )
+        attempt_control = result["base_dir"] / "attempts" / "attempt-2" / ".lane-exec"
+        attempt_control.mkdir(parents=True)
+        result_path = attempt_control / f"{_lane_control_stem('lane-a')}-result.json"
+        result_path.write_text('{"run_id":"team-run","lane":', encoding="utf-8")
+
+        resumed = resume_team(str(result["base_dir"]), run_id="team-run", max_parallel=1)
+
+        self.assertTrue((result["base_dir"] / "attempts" / "attempt-3" / "lane-a").is_dir())
+        lane = resumed["ledger"]["lanes"][0]
+        self.assertEqual(lane["evidence_dir"], "attempts/attempt-3/lane-a")
+        receipt = json.loads((result["base_dir"] / resumed["ledger"]["resume_receipt"]).read_text())
+        self.assertEqual(receipt["decisions"][0]["decision"], "re_executed")
+        self.assertEqual(receipt["decisions"][0]["attempt"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()
