@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -10,6 +11,23 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from witnessd.__main__ import main
+
+
+def _depone_root() -> Path:
+    env_root = os.environ.get("WITNESSD_DEPONE_ROOT")
+    if env_root:
+        return Path(env_root)
+    return Path(__file__).resolve().parents[1].parent / "Depone"
+
+
+def _depone_env() -> dict[str, str]:
+    env = os.environ.copy()
+    depone_root = str(_depone_root())
+    current_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        depone_root if not current_pythonpath else f"{depone_root}{os.pathsep}{current_pythonpath}"
+    )
+    return env
 
 
 def _seed_repo(repo: Path) -> None:
@@ -88,14 +106,26 @@ class SuperflowScoutTests(unittest.TestCase):
                 text=True,
                 capture_output=True,
                 check=False,
+                env=_depone_env(),
             )
             self.assertNotEqual(proofcheck.returncode, 0)
             verdict = json.loads(proofcheck.stdout)
             self.assertEqual(verdict["decision"], "blocked")
-            self.assertIn(
-                "ERR_SUPERFLOW_ARTIFACT_REQUIRED_MISSING",
-                {error["code"] for error in verdict["errors"]},
+            codes = {error["code"] for error in verdict["errors"]}
+            legacy_codes = {
+                error["legacy_code"]
+                for error in verdict["errors"]
+                if "legacy_code" in error
+            }
+            self.assertTrue(
+                "ERR_ORRO_ARTIFACT_REQUIRED_MISSING" in codes
+                or "ERR_SUPERFLOW_ARTIFACT_REQUIRED_MISSING" in codes
             )
+            if "ERR_ORRO_ARTIFACT_REQUIRED_MISSING" in codes:
+                self.assertIn(
+                    "ERR_SUPERFLOW_ARTIFACT_REQUIRED_MISSING",
+                    legacy_codes,
+                )
 
     def test_superflow_scout_alias_routes_to_scout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
