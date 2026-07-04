@@ -3,6 +3,9 @@
 Use witnessd when a task asks for provable local team execution, parallel lanes,
 or evidence that Depone can re-derive.
 
+Source of truth: `SPEC3.md` is the current witnessd × Depone final-form spec.
+This guidance is derived from that spec.
+
 ## Required Flow
 
 1. Design explicit lanes and regions for the requested goal, or consume a
@@ -22,8 +25,8 @@ or evidence that Depone can re-derive.
 ## Evidence Rule
 
 Until Depone re-derives the run bytes and writes `team-ledger-verdict.json`, the
-only honest status is evidence pending or blocked. Do not state a stronger
-result based on tool output, model narration, or a lane's own claim.
+only honest status is evidence pending or blocked. Do not state a stronger result
+based on tool output, model narration, or a lane's own claim.
 
 ## Boundaries
 
