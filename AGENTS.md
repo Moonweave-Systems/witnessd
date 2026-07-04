@@ -1,7 +1,8 @@
 # witnessd Session Guidance
 
-Use Moonweave Superflow when a task asks for provable local team execution,
-parallel lanes, or evidence that Depone can re-derive.
+Use Superflow when a task asks for provable local team execution, parallel lanes,
+or evidence that Depone can re-derive. Moonweave is the publisher/account;
+Superflow is the product/tool name.
 
 Source of truth: `SPEC3.md` is the current witnessd × Depone final-form spec.
 This guidance is derived from that spec.
