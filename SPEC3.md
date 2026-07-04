@@ -214,6 +214,15 @@ lane not in the plan, or region drift from plan) rejected;
   Bar addition: from a fresh session with the skill installed, "use witnessd
   to do <goal> with 2 lanes" yields a verified parallel run without the
   human touching the CLI.
+  **Naming principle (appended 2026-07-04): skill names are task-verbs, not
+  engine brands.** Repos keep their brand names (witnessd/Depone — renaming
+  public repos and contract kind strings is churn for no user value), but
+  what a session sees must say the job: the runner skill ships as
+  **`proofrun`** ("provable run" in one word; triggers include verified run
+  / proven / 증명 실행), the audit skill as **`verify-evidence`**, with
+  "powered by witnessd × Depone" as the engine credit. Skill discovery is
+  name+description matching, so intuitive naming is invocation accuracy,
+  not cosmetics.
 - Depone CI PAT for reverse conformance (D4).
 **Bar:** on a clean macOS *and* Linux machine, `git clone && witnessd init
 && witnessd run` (shell adapter) to green verdict in under 10 minutes,
