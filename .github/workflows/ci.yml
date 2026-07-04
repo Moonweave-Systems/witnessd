@@ -55,6 +55,26 @@ jobs:
             PYTHONPATH="$RUNNER_TEMP/depone" WITNESSD_DEPONE_ROOT="$RUNNER_TEMP/depone" python3 "$script"
           done
 
+  quickstart:
+    name: quickstart init run verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout witnessd
+        uses: actions/checkout@v4
+
+      - name: Clone Depone verifier
+        run: git clone --depth=1 https://github.com/Moonweave-Systems/Depone.git "$RUNNER_TEMP/depone"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run quickstart check
+        env:
+          WITNESSD_DEPONE_ROOT: ${{ runner.temp }}/depone
+        run: scripts/quickstart_check.sh
+
   decoupling-guard:
     name: depone-free runtime guard
     runs-on: ubuntu-latest

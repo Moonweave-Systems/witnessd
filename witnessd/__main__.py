@@ -1598,8 +1598,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    if argv is not None:
-        argv = _normalize_run_goal_argv(argv)
+    argv = _normalize_run_goal_argv(list(sys.argv[1:] if argv is None else argv))
     parser = _build_parser()
     args = parser.parse_args(argv)
     # argparse.REMAINDER keeps a leading "--"; drop it so command is the argv.

@@ -75,6 +75,19 @@ class W18DxCliTests(unittest.TestCase):
             self.assertEqual(payload["team_ledger"], str(run_dir / "team-ledger.json"))
             self.assertTrue((run_dir / "team-ledger-verdict.json").is_file())
 
+    def test_quickstart_script_and_ci_use_plain_python(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        script = root / "scripts" / "quickstart_check.sh"
+        workflow = root / ".github" / "workflows" / "ci.yml"
+
+        script_text = script.read_text(encoding="utf-8")
+        workflow_text = workflow.read_text(encoding="utf-8")
+
+        self.assertIn("python3", script_text)
+        self.assertNotIn(" uv ", f" {script_text} ")
+        self.assertNotIn("codex", script_text)
+        self.assertIn("quickstart_check.sh", workflow_text)
+
 
 if __name__ == "__main__":
     unittest.main()
