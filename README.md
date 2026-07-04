@@ -5,6 +5,21 @@ happened, signs the evidence, and leaves bytes that Depone can re-derive
 offline. The runner installs witnessd; the auditor can install only Depone and
 check the emitted run directory.
 
+## Source of truth
+
+[`SPEC3.md`](SPEC3.md) is the current witnessd × Depone final-form specification
+and the only top-level witnessd product/runtime authority. `SPEC.md` and
+`SPEC2.md` are earlier foundation specs; `docs/plans/*`, `SKILL.md`, `AGENTS.md`,
+README, and fixture notes are derived or wave-specific documents. If they
+conflict with `SPEC3.md`, `SPEC3.md` wins.
+
+For the Depone verifier contract itself, Depone's `docs/spec.md` is the authority.
+The operating sentence is:
+
+```text
+Depone verifies; witnessd executes; Moonweave exposes the workflow.
+```
+
 ## 10-minute quickstart
 
 Prerequisites:
@@ -32,8 +47,8 @@ python3 -m witnessd verify "$run_dir" --home .witnessd
 ```
 
 On a runner machine without a local Depone checkout, setup can provision the
-pinned verifier into `.witnessd/depone-pinned` and record that setup-time
-network use:
+pinned verifier into `.witnessd/depone-pinned` and record that setup-time network
+use:
 
 ```bash
 python3 -m witnessd init --home .witnessd --allow-network
@@ -59,8 +74,8 @@ quickstart_check: pass
 - `.witnessd/provision.json`
 - `.witnessd/keys/`
 
-The provision record pins the local Depone checkout by git commit and records
-the witnessd commit. Setup may use network only when explicitly allowed by the
+The provision record pins the local Depone checkout by git commit and records the
+witnessd commit. Setup may use network only when explicitly allowed by the
 operator. Runtime and verify commands do not fetch or install.
 
 `witnessd run "<goal>" --repo <path>` uses the W18 quota-free shell path by
@@ -89,6 +104,10 @@ Depone verdict from `team-ledger-verdict.json`. A session transcript or lane
 self-report is not a verdict, and a self-declared success claim remains
 evidence-pending until Depone re-derives the run bytes.
 
+The session-facing skill name is `proofrun`; engine credit is "powered by
+witnessd × Depone". Do not create separate end-user `witnessd` and `Depone`
+skills as the main product UX.
+
 ## Manual Team Runs
 
 The lower-level team command remains available for explicit lanes:
@@ -102,8 +121,8 @@ python3 -m witnessd team run \
 python3 -m witnessd verify /tmp/witnessd-team --home .witnessd
 ```
 
-Use `--merge-group` when overlapping lane regions are intentionally reconciled
-by a merge lane.
+Use `--merge-group` when overlapping lane regions are intentionally reconciled by
+a merge lane.
 
 ## Auditor Path
 
@@ -146,9 +165,3 @@ for script in scripts/revalidate_*.py; do
 done
 scripts/quickstart_check.sh
 ```
-
-Design source of truth:
-
-- `SPEC3.md`
-- `docs/plans/GOALMODE.md`
-- `docs/plans/2026-07-04-w18-distribution-dx.md`
