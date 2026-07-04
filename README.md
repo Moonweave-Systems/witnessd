@@ -1,11 +1,11 @@
 # witnessd
 
-`witnessd` is the executing runtime engine for **Moonweave Superflow**. It runs
-local lanes, records what happened, signs the evidence, and leaves bytes that
-Depone can re-derive offline.
+`witnessd` is the executing runtime engine for **Superflow**, published under the
+Moonweave account. It runs local lanes, records what happened, signs the
+evidence, and leaves bytes that Depone can re-derive offline.
 
 ```text
-Depone verifies; witnessd executes; Moonweave Superflow exposes the workflow.
+Depone verifies; witnessd executes; Superflow exposes the workflow.
 ```
 
 ## Source of truth
@@ -29,7 +29,8 @@ authority. For the repo documentation map, see [`docs/README.md`](docs/README.md
 | `superflow auto` | later resume/continuation loop behind evidence gates |
 | `superflow ultra` | future high-autonomy profile with stricter gates |
 
-`witnessd` is the engine name, not the main session skill name.
+`witnessd` is the engine name, not the main session skill name. `Moonweave` is the
+publisher/account namespace, not the tool name.
 
 ## 10-minute quickstart
 
