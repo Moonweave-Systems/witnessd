@@ -56,6 +56,12 @@ Floor invariants that must never regress, wave after wave:
 - Both platforms first-class: path comparisons via `realpath`; in-fixture
   evidence references relative; subprocess via `sys.executable` (never a
   hardcoded `uv`); no `/home/ubuntu` or `/Users/...` literals in code/tests.
+- **CI has NO sibling depone checkout.** Tests must resolve the Depone root
+  **env-first** (`WITNESSD_DEPONE_ROOT`, which CI sets to its own clone) with
+  the sibling checkout only as a local fallback; a test that *exercises*
+  sibling auto-detection must synthesize its own two-repo layout in a
+  tempdir. (Learned at W18: four DX tests hardcoded the sibling and failed
+  only in CI.)
 - **CI has NO `codex` binary and NO `uv` on PATH** (only plain `python3`).
   Any test exercising an adapter lane must pass an explicit fake binary
   (`codex_binary=...`), never rely on a real `codex`/PATH lookup; any
