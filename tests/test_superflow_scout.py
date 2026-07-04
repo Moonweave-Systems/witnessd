@@ -125,6 +125,32 @@ class SuperflowScoutTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(json.loads(stdout.getvalue())["decision"], "scouted")
 
+    def test_flowplan_alias_routes_to_plan_only_surface(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(["flowplan", "plan the next ORRO wave", "--root", "."])
+
+        self.assertEqual(code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["sealed_plan"]["goal"], "plan the next ORRO wave")
+        self.assertEqual(payload["draft_events"], [])
+        self.assertNotIn("run_dir", payload)
+        self.assertNotIn("team_ledger", payload)
+        self.assertNotIn("team_ledger_verdict", payload)
+
+    def test_orro_flowplan_alias_routes_to_plan_only_surface(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(["orro", "flowplan", "plan the next ORRO wave", "--root", "."])
+
+        self.assertEqual(code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["sealed_plan"]["goal"], "plan the next ORRO wave")
+        self.assertEqual(payload["draft_events"], [])
+        self.assertNotIn("run_dir", payload)
+        self.assertNotIn("team_ledger", payload)
+        self.assertNotIn("team_ledger_verdict", payload)
+
 
 if __name__ == "__main__":
     unittest.main()
