@@ -22,10 +22,14 @@ authority. For the repo documentation map, see [`docs/README.md`](docs/README.md
 
 | Public surface | Purpose |
 | --- | --- |
-| `superflow` | flagship goal -> plan -> run -> evidence -> verifier summary |
+| `superflow` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
+| `superflow scout` | read-only repo exploration, repo profile, context pack, and discovery notes |
 | `flowplan` | plan-only workflow design |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
+| `superflow handoff` | maintainer review package bound to evidence |
+| `superflow skillpack` | knowledge-as-code and progressive-disclosure support |
+| `superflow doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
 | `superflow auto` | later resume/continuation loop behind evidence gates |
 | `superflow ultra` | future high-autonomy profile with stricter gates |
 
@@ -51,6 +55,32 @@ marketplace manifests, host-specific plugin packaging, version locking, examples
 product docs, and end-to-end integration tests. That future repo is a wrapper and
 distribution repo, not a third engine; it must not duplicate witnessd runtime
 logic or Depone verifier logic.
+
+## Operating model
+
+Superflow is an evidence-backed agent-team operating surface. The normal loop is:
+
+```text
+scout -> flowplan -> proofrun -> proofcheck -> handoff
+```
+
+The scout step uses progressive disclosure instead of loading a whole repository
+into one model context. It produces:
+
+- `repo-profile.json`
+- `context-pack.json`
+- `discovery-notes.md`
+- optional `skillpack-lock.json`
+
+Runnable lanes may include:
+
+- `verification-recipe.json` for intended checks,
+- `verification-receipt.json` for actual command execution,
+- `mcp-tool-receipt-*.json` for declared external tool bridge calls,
+- `pr-handoff.json` for maintainer review.
+
+Depone decides what these bytes support. Skill text, MCP output, IDE terminals,
+tmux panes, and session transcripts are not verdicts by themselves.
 
 ## 10-minute quickstart
 
@@ -131,10 +161,10 @@ This repo ships two in-session guidance files:
 - `SKILL.md` for Claude Code style skill installation
 - `AGENTS.md` for Codex sessions
 
-Both instruct the session agent to design lanes, run witnessd, then report the
-Depone verdict from `team-ledger-verdict.json`. A session transcript or lane
-self-report is not a verdict, and a self-declared success claim remains
-evidence-pending until Depone re-derives the run bytes.
+Both instruct the session agent to scout when useful, design lanes, run witnessd,
+then report the Depone verdict from `team-ledger-verdict.json`. A session
+transcript or lane self-report is not a verdict, and a self-declared success
+claim remains evidence-pending until Depone re-derives the run bytes.
 
 ## Auditor path
 
