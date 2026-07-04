@@ -379,8 +379,17 @@ Outputs:
 - `repo-profile.json`,
 - `context-pack.json`,
 - `discovery-notes.md`,
-- optional `skillpack-lock.json`,
-- suggested verification recipes.
+- `lane-context.json`,
+- `skillpack-lock.json` when local knowledge files are selected,
+- `verification-recipe.json` as intended checks only,
+- MCP/tool receipts only for declared planning/tool observations,
+- `pr-handoff.json` with unresolved planning risks.
+
+`superflow scout` must not create a fake `verification-receipt.json`. It did not
+run the recipe, so there is no command execution receipt to verify. A scout-only
+artifact directory is planning evidence; Depone `proofcheck` must block it until a
+later `proofrun` or witnessd execution step emits a verifier-recognized
+verification receipt and the other required execution artifacts.
 
 Allowed terminal states: `scouted`, `blocked`, `inconclusive`. It never reports
 A1/A2 because no execution evidence exists.
@@ -446,6 +455,9 @@ Forbidden in this mode:
 - retry,
 - repair execution,
 - live MCP/server/API calls.
+
+`proofcheck` is fail-closed. Missing, empty, malformed, incomplete, or scout-only
+artifact directories block instead of passing.
 
 ### 6.5 `superflow`
 
@@ -547,6 +559,8 @@ Rules:
 - repo-profile, context-pack, and skillpack-lock are planning evidence,
 - verification-recipe describes intended checks,
 - verification-receipt records what actually ran,
+- scout-only directories omit verification-receipt by design and therefore do not
+  produce a proofcheck pass,
 - mcp-tool-receipt records external tool use,
 - pr-handoff records a review package and is not approval,
 - Depone decides which artifacts can support assurance.
@@ -617,7 +631,9 @@ pass
 
 A run may have `lifecycle=finished-emitting` and
 `evidence_status=evidence-pending`. That means the runtime stopped writing, not
-that the result is trusted.
+that the result is trusted. A scout-only run may have `lifecycle=scouted` while
+Depone correctly returns `blocked` for execution proof because no verification
+receipt exists.
 
 ---
 
@@ -681,9 +697,10 @@ packaging, not engine logic. W18 also introduces:
 - `superflow doctor` for adapter/verifier/key/policy readiness.
 
 Acceptance: quickstart passes, fresh-session skill run works, no manual
-PYTHONPATH, no separate Depone/witnessd skill install for normal users, and a
-quota-free fixture includes repo-profile, context-pack, verification-recipe, and
-proofcheck output.
+PYTHONPATH, no separate Depone/witnessd skill install for normal users, a
+quota-free scout fixture includes repo-profile, context-pack, verification-recipe,
+and a blocked proofcheck result for scout-only planning evidence, and later
+proofrun fixtures pass only after real verification receipts are emitted.
 
 ### W18.5 — MCP and enterprise tool receipts
 
