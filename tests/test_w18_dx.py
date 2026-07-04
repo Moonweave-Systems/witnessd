@@ -88,6 +88,16 @@ class W18DxCliTests(unittest.TestCase):
         self.assertNotIn("codex", script_text)
         self.assertIn("quickstart_check.sh", workflow_text)
 
+    def test_session_guidance_requires_depone_verdict_without_success_tokens(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        for rel in ("SKILL.md", "AGENTS.md"):
+            text = (root / rel).read_text(encoding="utf-8")
+            lowered = text.lower()
+            self.assertIn("depone", lowered)
+            self.assertIn("team-ledger-verdict.json", text)
+            self.assertIn("decision", lowered)
+            self.assertNotRegex(text, r"\b(DONE|VERIFIED|COMPLETE)\b")
+
 
 if __name__ == "__main__":
     unittest.main()
