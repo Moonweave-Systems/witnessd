@@ -1,17 +1,26 @@
 ---
-name: proofrun
-description: Run a goal as observer-signed parallel team execution whose completion is re-derived from evidence bytes, not self-declared. Use when the user asks for a proofrun, a verified/proven run, provable team execution, 증명 실행, or to run something with witnessd. Powered by witnessd × Depone.
+name: superflow
+description: Moonweave Superflow turns a goal into an evidence-backed workflow: plan it, run it through witnessd, seal the evidence, and check what the bytes support through Depone. Use for superflow, proofrun, provable team execution, 증명 실행, or evidence-backed automation.
 ---
 
-# proofrun — provable session runs
+# superflow — evidence-backed workflow runs
 
-Use this skill when an operator asks for a proofrun, a verified or proven run,
-provable team execution, 증명 실행, or asks to use witnessd for a goal — any time
-"done" must be evidence bytes a verifier re-derives, not the session agent's own
-claim.
+Use this skill when an operator asks for Superflow, a proofrun, provable team
+execution, 증명 실행, or evidence-backed automation.
 
 Source of truth: `SPEC3.md` is the current witnessd × Depone final-form spec.
 This skill text is derived from that spec.
+
+## Public modes
+
+| Mode | Meaning |
+| --- | --- |
+| `superflow` | goal -> plan -> run -> evidence -> verifier summary |
+| `flowplan` | plan-only workflow design |
+| `proofrun` | precise evidence-backed execution alias |
+| `proofcheck` | offline evidence verification alias |
+| `superflow auto` | later continuation loop behind evidence gates |
+| `superflow ultra` | future high-autonomy profile with stricter gates |
 
 ## Contract
 
