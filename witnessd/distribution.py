@@ -150,10 +150,6 @@ def _resolve_depone_root(config: InitConfig) -> tuple[Path, str, bool]:
             elif not config.network_allowed:
                 raise ProvisionError(ERR_WITNESSD_INIT_NETWORK_REQUIRED)
             else:
-                # W18 records setup-time network as allowed, but this checkout
-                # intentionally does not curl-pipe or fetch at runtime. Release
-                # packaging can replace this local-first branch with a pinned
-                # vendored/venv provision without changing verify semantics.
                 raise ProvisionError(ERR_WITNESSD_INIT_NETWORK_REQUIRED)
     if not (root / "depone").is_dir():
         raise ProvisionError(ERR_WITNESSD_DEPONE_ROOT_INVALID)
