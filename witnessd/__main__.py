@@ -30,8 +30,15 @@ from witnessd.status import render_status
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
+    if getattr(args, "goal", None):
+        return _cmd_run_goal(args)
+
     if args.adapter != "shell":
         return _cmd_run_adapter(args)
+
+    if not args.runner_sandbox:
+        print("ERR_WITNESSD_RUN_GOAL_OR_SANDBOX_REQUIRED", file=sys.stderr)
+        return 2
 
     sandbox = os.path.abspath(args.runner_sandbox)
     if not args.out or not args.log:
@@ -95,6 +102,108 @@ def _cmd_run(args: argparse.Namespace) -> int:
     print(f"assurance (candidate, unverified): {result['assurance']}")
     print(f"trusted-observer public key (out-of-band): {result['public_key_path']}")
     return 0
+
+
+def _cmd_run_goal(args: argparse.Namespace) -> int:
+    from witnessd.distribution import (
+        ProvisionError,
+        run_depone_team_ledger,
+        validate_depone_pin,
+    )
+    from witnessd.eventlog import EventLog
+    from witnessd.fanin import run_team
+    from witnessd.planner import dispatch, seal_plan
+    from witnessd.signing import gen_operator_keypair
+
+    repo = Path(args.repo or ".").resolve(strict=False)
+    home = Path(
+        args.home
+        or os.environ.get("WITNESSD_HOME")
+        or (repo / ".witnessd")
+    ).resolve(strict=False)
+    try:
+        validate_depone_pin(home)
+    except ProvisionError as exc:
+        print(exc.code, file=sys.stderr)
+        return 2
+
+    if args.run_dir:
+        out_dir = Path(args.run_dir).resolve(strict=False)
+    else:
+        out_dir = home / "runs" / f"run-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{time.monotonic_ns()}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    packets = _default_w18_packets(args.goal)
+    sealed = seal_plan(packets, goal=args.goal)
+    sealed_path = out_dir / "sealed-plan.json"
+    sealed_path.write_text(
+        json.dumps(sealed, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    dispatch_log = EventLog(str(out_dir / "dispatch-log.jsonl"))
+    for event in dispatch(sealed):
+        dispatch_log.append(event)
+
+    keys_dir = home / "keys"
+    keys_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(keys_dir, 0o700)
+    private_key_path, public_key_path = gen_operator_keypair(str(keys_dir))
+    lane_specs = [_lane_packet_to_run_team_spec(packet, args) for packet in sealed["packets"]]
+    result = run_team(
+        lane_specs,
+        repo_root=str(repo),
+        out_dir=str(out_dir),
+        private_key_path=private_key_path,
+        public_key_path=public_key_path,
+        leader_objective=args.goal,
+        stop_rule="evidence-pending",
+        max_parallel=args.max_parallel,
+        fail_fast=args.fail_fast,
+    )
+    verdict_path = out_dir / "team-ledger-verdict.json"
+    try:
+        verdict = run_depone_team_ledger(
+            home=home,
+            ledger_path=out_dir / "team-ledger.json",
+            verdict_path=verdict_path,
+        )
+    except ProvisionError as exc:
+        print(exc.code, file=sys.stderr)
+        return 2
+    payload = {
+        "decision": verdict["decision"],
+        "lane_count": verdict["lane_count"],
+        "run_dir": str(out_dir),
+        "sealed_plan": str(sealed_path),
+        "team_ledger": str(out_dir / "team-ledger.json"),
+        "team_ledger_verdict": str(verdict_path),
+    }
+    print(json.dumps(payload, sort_keys=True))
+    return 0 if verdict["decision"] == "pass" else 1
+
+
+def _default_w18_packets(goal: str) -> list[dict]:
+    budget = {"max_tokens": 0, "max_usd": 0.0, "max_depth": 1}
+    return [
+        {
+            "lane_id": "w18-lane-a",
+            "adapter": "shell",
+            "tier": "quick",
+            "region": ["w18/lane-a.txt"],
+            "prompt": f"Record W18 lane A evidence for {goal}",
+            "budget": budget,
+            "stop_rule": "evidence-pending",
+        },
+        {
+            "lane_id": "w18-lane-b",
+            "adapter": "shell",
+            "tier": "quick",
+            "region": ["w18/lane-b.txt"],
+            "prompt": f"Record W18 lane B evidence for {goal}",
+            "budget": budget,
+            "stop_rule": "evidence-pending",
+        },
+    ]
 
 
 def _cmd_run_adapter(args: argparse.Namespace) -> int:
@@ -330,6 +439,34 @@ def _derive_runlog_liveness(path: str) -> dict[str, str]:
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
+    if getattr(args, "run_dir", None):
+        from witnessd.distribution import ProvisionError, run_depone_team_ledger
+
+        run_dir = Path(args.run_dir).resolve(strict=False)
+        home = Path(
+            args.home
+            or os.environ.get("WITNESSD_HOME")
+            or run_dir.parent.parent
+        ).resolve(strict=False)
+        ledger_path = run_dir / "team-ledger.json"
+        verdict_path = run_dir / "team-ledger-verdict.json"
+        try:
+            verdict = run_depone_team_ledger(
+                home=home, ledger_path=ledger_path, verdict_path=verdict_path
+            )
+        except ProvisionError as exc:
+            print(exc.code, file=sys.stderr)
+            return 2
+        payload = {
+            "decision": verdict["decision"],
+            "team_ledger": str(ledger_path),
+            "team_ledger_verdict": str(verdict_path),
+        }
+        print(json.dumps(payload, sort_keys=True))
+        return 0 if verdict["decision"] == "pass" else 1
+    if not args.runlog:
+        print("ERR_VERIFY_RUN_DIR_OR_RUNLOG_REQUIRED", file=sys.stderr)
+        return 2
     from witnessd.runlog import verify_runlog
 
     result = verify_runlog(_read_runlog(args.runlog))
@@ -1147,13 +1284,19 @@ def _build_parser() -> argparse.ArgumentParser:
     init.set_defaults(func=_cmd_init)
 
     run = sub.add_parser("run", help="observe a lane and emit signed evidence")
+    run.add_argument("--goal", default=None, help=argparse.SUPPRESS)
+    run.add_argument("--repo", default=None)
+    run.add_argument("--home", default=None)
+    run.add_argument("--run-dir", default=None)
+    run.add_argument("--max-parallel", type=int, default=None)
+    run.add_argument("--fail-fast", action="store_true")
     run.add_argument(
         "--adapter",
         default="shell",
         choices=["shell", "codex", "claude", "opencode"],
     )
     run.add_argument("--root", default=".")
-    run.add_argument("--runner-sandbox", required=True)
+    run.add_argument("--runner-sandbox", default=None)
     run.add_argument(
         "--out", default=None, help="observer output path (outside sandbox)"
     )
@@ -1218,8 +1361,10 @@ def _build_parser() -> argparse.ArgumentParser:
     status.add_argument("--runlog", default=None)
     status.set_defaults(func=_cmd_status)
 
-    verify = sub.add_parser("verify", help="verify runlog integrity")
-    verify.add_argument("--runlog", required=True)
+    verify = sub.add_parser("verify", help="verify a run directory or runlog integrity")
+    verify.add_argument("run_dir", nargs="?")
+    verify.add_argument("--home", default=None)
+    verify.add_argument("--runlog", default=None)
     verify.set_defaults(func=_cmd_verify)
 
     route = sub.add_parser("route", help="dry-run W4 model routing")
@@ -1453,12 +1598,23 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if argv is not None:
+        argv = _normalize_run_goal_argv(argv)
     parser = _build_parser()
     args = parser.parse_args(argv)
     # argparse.REMAINDER keeps a leading "--"; drop it so command is the argv.
     if getattr(args, "command", None) and args.command[0] == "--":
         args.command = args.command[1:]
     return args.func(args)
+
+
+def _normalize_run_goal_argv(argv: list[str]) -> list[str]:
+    if len(argv) < 2 or argv[0] != "run" or "--" in argv or "--goal" in argv:
+        return argv
+    first = argv[1]
+    if first.startswith("-"):
+        return argv
+    return ["run", "--goal", first, *argv[2:]]
 
 
 if __name__ == "__main__":

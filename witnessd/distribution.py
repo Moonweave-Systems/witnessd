@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ ERR_WITNESSD_DEPONE_PIN_MISMATCH = "ERR_WITNESSD_DEPONE_PIN_MISMATCH"
 ERR_WITNESSD_DEPONE_PIN_MISSING = "ERR_WITNESSD_DEPONE_PIN_MISSING"
 ERR_WITNESSD_DEPONE_ROOT_INVALID = "ERR_WITNESSD_DEPONE_ROOT_INVALID"
 ERR_WITNESSD_INIT_NETWORK_REQUIRED = "ERR_WITNESSD_INIT_NETWORK_REQUIRED"
+ERR_WITNESSD_DEPONE_VERIFY_FAILED = "ERR_WITNESSD_DEPONE_VERIFY_FAILED"
 
 PROVISION_KIND = "witnessd-depone-provision"
 PROVISION_SCHEMA_VERSION = "0.1"
@@ -91,6 +93,43 @@ def validate_depone_pin(home: Path) -> dict[str, Any]:
     if current_commit != recorded_commit:
         raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISMATCH)
     return provision
+
+
+def run_depone_team_ledger(
+    *, home: Path, ledger_path: Path, verdict_path: Path
+) -> dict[str, Any]:
+    provision = validate_depone_pin(home)
+    depone = provision["depone"]
+    depone_root = Path(str(depone["root"])).resolve(strict=False)
+    env = os.environ.copy()
+    current_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        str(depone_root)
+        if not current_pythonpath
+        else f"{depone_root}{os.pathsep}{current_pythonpath}"
+    )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "depone",
+            "team-ledger",
+            "--ledger",
+            str(ledger_path),
+            "--base-dir",
+            str(ledger_path.parent),
+            "--out",
+            str(verdict_path),
+            "--json",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    if completed.returncode != 0 or not verdict_path.is_file():
+        raise ProvisionError(ERR_WITNESSD_DEPONE_VERIFY_FAILED)
+    return json.loads(verdict_path.read_text(encoding="utf-8"))
 
 
 def _resolve_depone_root(config: InitConfig) -> Path:
