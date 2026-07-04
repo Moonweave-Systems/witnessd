@@ -98,6 +98,20 @@ class W18DxCliTests(unittest.TestCase):
             self.assertIn("decision", lowered)
             self.assertNotRegex(text, r"\b(DONE|VERIFIED|COMPLETE)\b")
 
+    def test_readme_leads_with_quickstart_and_honest_limits(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        first_headings = [
+            line.strip()
+            for line in readme.splitlines()
+            if line.startswith("## ")
+        ][:3]
+        self.assertIn("## 10-minute quickstart", first_headings[:1])
+        self.assertIn("witnessd init", readme)
+        self.assertIn("witnessd run", readme)
+        self.assertIn("witnessd verify", readme)
+        self.assertIn("honest limits", readme.lower())
+
 
 if __name__ == "__main__":
     unittest.main()
