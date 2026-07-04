@@ -112,6 +112,21 @@ class W18DxCliTests(unittest.TestCase):
         self.assertIn("witnessd verify", readme)
         self.assertIn("honest limits", readme.lower())
 
+    def test_release_and_operator_docs_cover_w18_checkpoints(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        release = (root / "docs" / "releases" / "v2.3.0-draft.md").read_text(
+            encoding="utf-8"
+        )
+        operator = (
+            root / "docs" / "ops" / "w18-operator-checkpoints.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("v2.3.0", release)
+        self.assertIn("W18", release)
+        self.assertIn("WITNESSD_REVERSE_CONFORMANCE_PAT", operator)
+        self.assertIn("Contents: Read-only", operator)
+        self.assertIn("Clean-machine quickstart", operator)
+
 
 if __name__ == "__main__":
     unittest.main()
