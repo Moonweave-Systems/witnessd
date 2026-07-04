@@ -595,6 +595,38 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         )
         return 2
 
+    proofcheck_path = evidence_dir / "proofcheck-verdict.json"
+    if not proofcheck_path.is_file():
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_HANDOFF_PROOFCHECK_REQUIRED",
+            message="proofcheck-verdict.json is required before handoff",
+        )
+        return 1
+    try:
+        proofcheck_payload = json.loads(proofcheck_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_HANDOFF_PROOFCHECK_LOAD_FAILED",
+            message=f"failed to read proofcheck-verdict.json: {exc}",
+        )
+        return 1
+    if not isinstance(proofcheck_payload, dict):
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_HANDOFF_PROOFCHECK_LOAD_FAILED",
+            message="proofcheck-verdict.json must be a JSON object",
+        )
+        return 1
+    if proofcheck_payload.get("decision") != "pass":
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_HANDOFF_PROOFCHECK_NOT_PASS",
+            message="proofcheck-verdict.json decision must be pass",
+        )
+        return 1
+
     out_path = Path(args.out).resolve(strict=False) if args.out else None
     generated_names = {
         "orro-handoff.json",
@@ -620,6 +652,8 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
+            payload = {}
+        if not isinstance(payload, dict):
             payload = {}
         if isinstance(payload.get("decision"), str):
             ref["decision"] = payload["decision"]

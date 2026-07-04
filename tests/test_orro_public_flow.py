@@ -183,6 +183,102 @@ class OrroPublicFlowTests(unittest.TestCase):
                 payload["artifact_hashes"],
             )
 
+    def test_orro_handoff_requires_explicit_passing_proofcheck_verdict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _home, run_dir, _payload = self._proofrun(Path(tmp))
+            out = run_dir / "orro-handoff.json"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(["orro", "handoff", str(run_dir), "--out", str(out), "--json"])
+
+            self.assertEqual(code, 1)
+            self.assertFalse(out.exists())
+            self.assertEqual(
+                json.loads(stdout.getvalue())["error"]["code"],
+                "ERR_ORRO_HANDOFF_PROOFCHECK_REQUIRED",
+            )
+
+    def test_handoff_rejects_malformed_proofcheck_verdict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _home, run_dir, _payload = self._proofrun(Path(tmp))
+            (run_dir / "proofcheck-verdict.json").write_text("{not json\n", encoding="utf-8")
+            out = run_dir / "orro-handoff.json"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(["handoff", str(run_dir), "--out", str(out), "--json"])
+
+            self.assertEqual(code, 1)
+            self.assertFalse(out.exists())
+            self.assertEqual(
+                json.loads(stdout.getvalue())["error"]["code"],
+                "ERR_ORRO_HANDOFF_PROOFCHECK_LOAD_FAILED",
+            )
+
+    def test_handoff_rejects_non_object_proofcheck_verdict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _home, run_dir, _payload = self._proofrun(Path(tmp))
+            (run_dir / "proofcheck-verdict.json").write_text("[]\n", encoding="utf-8")
+            out = run_dir / "orro-handoff.json"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(["handoff", str(run_dir), "--out", str(out), "--json"])
+
+            self.assertEqual(code, 1)
+            self.assertFalse(out.exists())
+            self.assertEqual(
+                json.loads(stdout.getvalue())["error"]["code"],
+                "ERR_ORRO_HANDOFF_PROOFCHECK_LOAD_FAILED",
+            )
+
+    def test_orro_handoff_rejects_non_passing_proofcheck_verdict(self) -> None:
+        for decision in ("blocked", "refuted"):
+            with self.subTest(decision=decision):
+                with tempfile.TemporaryDirectory() as tmp:
+                    _home, run_dir, _payload = self._proofrun(Path(tmp))
+                    (run_dir / "proofcheck-verdict.json").write_text(
+                        json.dumps({"decision": decision}),
+                        encoding="utf-8",
+                    )
+                    out = run_dir / "orro-handoff.json"
+
+                    stdout = io.StringIO()
+                    with redirect_stdout(stdout):
+                        code = main(["orro", "handoff", str(run_dir), "--out", str(out), "--json"])
+
+                    self.assertEqual(code, 1)
+                    self.assertFalse(out.exists())
+                    self.assertEqual(
+                        json.loads(stdout.getvalue())["error"]["code"],
+                        "ERR_ORRO_HANDOFF_PROOFCHECK_NOT_PASS",
+                    )
+
+    def test_handoff_ignores_non_object_optional_decision_ref_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _home, run_dir, _payload = self._proofrun(Path(tmp))
+            (run_dir / "proofcheck-verdict.json").write_text(
+                json.dumps({"decision": "pass"}),
+                encoding="utf-8",
+            )
+            (run_dir / "team-ledger-verdict.json").write_text("[]\n", encoding="utf-8")
+            out = run_dir / "orro-handoff.json"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(["handoff", str(run_dir), "--out", str(out), "--json"])
+
+            self.assertEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            team_ref = next(
+                ref
+                for ref in payload["decision_refs"]
+                if ref["path"] == "team-ledger-verdict.json"
+            )
+            self.assertNotIn("decision", team_ref)
+            self.assertTrue(out.is_file())
+
     def test_public_orro_json_errors_are_json(self) -> None:
         proofcheck_stdout = io.StringIO()
         with redirect_stdout(proofcheck_stdout):
