@@ -1,6 +1,6 @@
 ---
 name: superflow
-description: Moonweave Superflow turns a goal into an evidence-backed workflow: plan it, run it through witnessd, seal the evidence, and check what the bytes support through Depone. Use for superflow, proofrun, provable team execution, 증명 실행, or evidence-backed automation.
+description: Superflow turns a goal into an evidence-backed workflow: plan it, run it through witnessd, seal the evidence, and check what the bytes support through Depone. Use for superflow, proofrun, provable team execution, 증명 실행, or evidence-backed automation. Published by Moonweave.
 ---
 
 # superflow — evidence-backed workflow runs
@@ -9,7 +9,8 @@ Use this skill when an operator asks for Superflow, a proofrun, provable team
 execution, 증명 실행, or evidence-backed automation.
 
 Source of truth: `SPEC3.md` is the current witnessd × Depone final-form spec.
-This skill text is derived from that spec.
+This skill text is derived from that spec. Moonweave is the publisher/account;
+Superflow is the product/tool name.
 
 ## Public modes
 
