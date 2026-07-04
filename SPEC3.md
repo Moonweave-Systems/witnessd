@@ -201,6 +201,19 @@ lane not in the plan, or region drift from plan) rejected;
   `witnessd verify <run-dir>` = local Depone re-derivation, one command.
 - Quickstart README rewrite (10-minute path from clone to verified parallel
   run), gh release notes for every tag from v2.1.0 forward, man-style help.
+- **In-session skill packaging (appended 2026-07-04; this is the primary
+  runner UX).** The operator's consumption model is OMX/OMO-style: an agent
+  *inside a session* uses witnessd as its team-execution engine. Ship
+  `witnessd/SKILL.md` (Claude Code skill): given a goal, the in-session
+  agent designs lanes (via the Depone DWM skill or explicit lanes), runs
+  `witnessd run`/`team run` for parallel provable execution, and reports the
+  Depone-re-derived verdict — never a self-declared DONE. Pair with
+  `AGENTS.md` guidance so Codex sessions drive the same CLI. This is the
+  thesis applied to sessions: the session agent's "my team did X" becomes
+  observer-signed evidence instead of an OMO-style `<promise>VERIFIED</promise>`.
+  Bar addition: from a fresh session with the skill installed, "use witnessd
+  to do <goal> with 2 lanes" yields a verified parallel run without the
+  human touching the CLI.
 - Depone CI PAT for reverse conformance (D4).
 **Bar:** on a clean macOS *and* Linux machine, `git clone && witnessd init
 && witnessd run` (shell adapter) to green verdict in under 10 minutes,
