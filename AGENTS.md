@@ -15,7 +15,7 @@ This guidance is derived from that spec.
 - `flowplan`: plan-only workflow design
 - `proofrun`: precise evidence-backed execution alias
 - `proofcheck`: offline evidence verification alias
-- `orro handoff`: maintainer review package bound to evidence
+- `orro handoff`: maintainer review package bound to an explicit passing `proofcheck-verdict.json`
 - `orro skillpack`: knowledge-as-code and progressive-disclosure support
 - `orro doctor`: engine/verifier/adapter/key/MCP/policy readiness check
 - `orro auto`: later continuation loop behind evidence gates
@@ -40,10 +40,13 @@ This guidance is derived from that spec.
    python3 -m witnessd verify <run-dir> --home .witnessd
    ```
 
-6. Report from `team-ledger-verdict.json`, not from the session transcript.
-   Include the run directory, `team-ledger.json`, `team-ledger-verdict.json`,
+6. Report from Depone verdict artifacts, not from the session transcript.
+   `team-ledger-verdict.json` records the proofrun team-ledger check. For public
+   ORRO handoff, first write `proofcheck-verdict.json` with `proofcheck --out`.
+   Include the run directory, `team-ledger.json`, the verdict artifact path,
    verdict `decision`, lane count, and error count when present.
-7. When changes are prepared for review, create or reference `pr-handoff.json`.
+7. When changes are prepared for review, create or reference `orro-handoff.json`
+   only after `proofcheck-verdict.json` exists and has `decision: "pass"`.
 
 ## Evidence rule
 
@@ -51,6 +54,10 @@ Until Depone re-derives the run bytes and writes `team-ledger-verdict.json`, the
 only honest status is evidence pending or blocked. Do not state a stronger result
 based on tool output, model narration, a lane's own claim, MCP output, skill text,
 IDE terminal state, or tmux pane state.
+
+For handoff, `team-ledger-verdict.json` alone is not enough. `handoff` /
+`orro handoff` must fail closed until an explicit passing
+`proofcheck-verdict.json` exists in the run directory.
 
 A scout-only artifact directory is not execution proof. If proofcheck blocks it
 because a verification receipt or other required execution artifact is missing,

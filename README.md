@@ -24,6 +24,20 @@ python3 -m witnessd verify .witnessd/runs/<run-dir> --home .witnessd
 ```
 
 The `run` command prints JSON. Use its `run_dir` field for the verify step.
+For the public ORRO handoff path, run `proofcheck` with an explicit
+`proofcheck-verdict.json` output before packaging the handoff:
+
+```bash
+python3 -m witnessd proofcheck .witnessd/runs/<run-dir> \
+  --home .witnessd \
+  --out .witnessd/runs/<run-dir>/proofcheck-verdict.json
+python3 -m witnessd orro handoff .witnessd/runs/<run-dir> \
+  --out .witnessd/runs/<run-dir>/orro-handoff.json
+```
+
+`team-ledger-verdict.json` emitted during a proofrun is not enough by itself for
+handoff. `handoff` / `orro handoff` fails closed unless
+`proofcheck-verdict.json` exists, is readable JSON, and has `decision: "pass"`.
 
 ## Honest limits
 
@@ -53,7 +67,7 @@ authority. For the repo documentation map, see [`docs/README.md`](docs/README.md
 | `flowplan` | plan-only workflow design |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
-| `orro handoff` | maintainer review package bound to evidence |
+| `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
 | `orro auto` | later resume/continuation loop behind evidence gates |
@@ -111,6 +125,9 @@ not proof of execution.
 
 Depone decides what these bytes support. Skill text, MCP output, IDE terminals,
 tmux panes, and session transcripts are not verdicts by themselves.
+The handoff step packages reviewed evidence only after an explicit passing
+`proofcheck-verdict.json`; it does not verify evidence, approve merge, or raise
+assurance.
 
 ## Setup details
 
@@ -184,6 +201,12 @@ default. It creates a run directory containing:
 through `python3 -m depone team-ledger`, and rewrites
 `team-ledger-verdict.json` from the run bytes.
 
+`witnessd proofcheck <run-dir> --out <run-dir>/proofcheck-verdict.json`
+delegates to Depone's proofcheck path and writes the public ORRO verdict artifact
+required by `handoff` / `orro handoff`. A missing, malformed, unreadable, or
+non-pass `proofcheck-verdict.json` blocks handoff and does not write
+`orro-handoff.json`.
+
 ## Session skill
 
 This repo ships two in-session guidance files:
@@ -192,9 +215,11 @@ This repo ships two in-session guidance files:
 - `AGENTS.md` for Codex sessions
 
 Both instruct the session agent to scout when useful, design lanes, run witnessd,
-then report the Depone verdict from `team-ledger-verdict.json`. A session
-transcript or lane self-report is not a verdict, and a self-declared success
-claim remains evidence-pending until Depone re-derives the run bytes.
+then report the Depone verdict. `team-ledger-verdict.json` records the proofrun
+team-ledger check; `proofcheck-verdict.json` is the explicit public verdict
+artifact required before handoff. A session transcript or lane self-report is not
+a verdict, and a self-declared success claim remains evidence-pending until
+Depone re-derives the run bytes.
 
 ## Auditor path
 
