@@ -1,13 +1,15 @@
 # witnessd — Agent Context
 
-`witnessd` is the executing runtime engine in the Moonweave pair. It spawns
+`witnessd` is the executing runtime engine in the Superflow pair. It spawns
 workers, owns durable sessions, creates worktrees, retries, supervises teams, and
 emits observer-signed evidence. Depone is the non-executing verifier that
 re-derives the verdict from those bytes.
 
 ```text
-Depone verifies; witnessd executes; Moonweave Superflow exposes the workflow.
+Depone verifies; witnessd executes; Superflow exposes the workflow.
 ```
+
+Moonweave is the publisher/account namespace. Superflow is the product/tool name.
 
 ## Source of truth
 
