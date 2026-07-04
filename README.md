@@ -32,6 +32,26 @@ authority. For the repo documentation map, see [`docs/README.md`](docs/README.md
 `witnessd` is the engine name, not the main session skill name. `Moonweave` is the
 publisher/account namespace, not the tool name.
 
+## Repository strategy
+
+Development currently stays in two engine repositories:
+
+```text
+Depone   = verifier engine and evidence contract
+witnessd = execution engine, evidence emitter, and near-term Superflow surface
+```
+
+The user-facing install should still be one thing: Superflow. Do not ask normal
+users to install separate Depone and witnessd skills. In the near term, this repo
+may ship the thin `superflow` command/skill because Superflow starts execution and
+witnessd owns execution. Depone remains a pinned verifier dependency.
+
+Create a separate `Superflow` repository only when distribution needs justify it:
+marketplace manifests, host-specific plugin packaging, version locking, examples,
+product docs, and end-to-end integration tests. That future repo is a wrapper and
+distribution repo, not a third engine; it must not duplicate witnessd runtime
+logic or Depone verifier logic.
+
 ## 10-minute quickstart
 
 Prerequisites:
