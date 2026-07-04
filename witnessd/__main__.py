@@ -1373,7 +1373,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "flowplan",
         help="ORRO plan-only workflow design; emits a sealed plan without execution",
     )
-    _add_plan_args(flowplan)
+    _add_flowplan_args(flowplan)
     flowplan.set_defaults(func=_cmd_plan)
 
     status = sub.add_parser("status", help="render evidence-pending status")
@@ -1634,6 +1634,25 @@ def _add_plan_args(plan: argparse.ArgumentParser) -> None:
     plan.add_argument("--max-depth", type=int, default=3)
     plan.add_argument("--predicted-tokens", type=int, default=0)
     plan.add_argument("--predicted-usd", type=float, default=0.0)
+
+
+def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
+    flowplan.add_argument("goal")
+    flowplan.add_argument("--root", default=".")
+    flowplan.add_argument("--seed", default="w11")
+    flowplan.set_defaults(
+        draft_adapter=None,
+        draft_out=None,
+        tier="agentic",
+        codex_binary="codex",
+        claude_binary="claude",
+        opencode_binary="opencode",
+        max_tokens=10**9,
+        max_usd=10**9,
+        max_depth=3,
+        predicted_tokens=0,
+        predicted_usd=0.0,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

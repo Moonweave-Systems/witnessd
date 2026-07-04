@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from witnessd.__main__ import main
@@ -150,6 +150,26 @@ class SuperflowScoutTests(unittest.TestCase):
         self.assertNotIn("run_dir", payload)
         self.assertNotIn("team_ledger", payload)
         self.assertNotIn("team_ledger_verdict", payload)
+
+    def test_flowplan_rejects_draft_adapter_worker_path(self) -> None:
+        stderr = io.StringIO()
+
+        with redirect_stderr(stderr):
+            with self.assertRaises(SystemExit) as raised:
+                main(["flowplan", "plan only", "--draft-adapter", "codex"])
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("unrecognized arguments: --draft-adapter", stderr.getvalue())
+
+    def test_legacy_plan_keeps_draft_adapter_compatibility(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(["plan", "legacy draft path", "--draft-adapter", "codex"])
+
+        self.assertEqual(code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["sealed_plan"]["goal"], "legacy draft path")
+        self.assertEqual(payload["draft_events"][0]["adapter"], "codex")
 
 
 if __name__ == "__main__":
