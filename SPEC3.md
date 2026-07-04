@@ -1,16 +1,16 @@
-# witnessd SPEC3 — Superflow Runtime Spec
+# witnessd SPEC3 - ORRO Runtime Spec
 
 Status: source-of-truth spec, 2026-07-04.
 
 One-line decision: **witnessd executes and emits evidence; Depone verifies the
-bytes; Superflow exposes the workflow.** Moonweave is the publisher/account name,
-not the product surface.
+bytes; ORRO exposes the workflow.** Moonweave is the publisher/account name, not
+the product surface.
 
 This file is the only top-level witnessd product/runtime authority. `SPEC.md`,
-`SPEC2.md`, `docs/plans/*`, `docs/conformance/*`, README, `SKILL.md`, `AGENTS.md`,
-fixture notes, and release notes are derived, wave-specific, or historical. If
-they conflict with this file, this file wins. Depone's verifier contract remains
-authoritative in the Depone repo at `docs/spec.md`.
+`SPEC2.md`, `docs/plans/*`, `docs/conformance/*`, README, `SKILL.md`,
+`AGENTS.md`, fixture notes, and release notes are derived, wave-specific, or
+historical. If they conflict with this file, this file wins. Depone's verifier
+contract remains authoritative in the Depone repo at `docs/spec.md`.
 
 ---
 
@@ -19,26 +19,32 @@ authoritative in the Depone repo at `docs/spec.md`.
 | Name | Surface | Meaning |
 | --- | --- | --- |
 | Moonweave / Moonweave Systems | publisher/account | GitHub org, operator, and release namespace. Not the product UX name. |
-| Superflow | flagship product/tool | Goal -> scout -> plan -> execute -> seal evidence -> verifier summary -> handoff. |
-| `superflow` | primary command/skill | The user-facing command surface. |
-| `superflow scout` | read-only exploration | Build repo profile, context pack, and discovery notes before planning. |
+| ORRO | flagship product/tool | Observed Run & Review Orchestrator. A goal becomes an evidence-backed workflow. |
+| `orro` | primary command/skill | User-facing command and host skill surface. |
+| ORRO Flow | workflow loop | `scout -> flowplan -> proofrun -> proofcheck -> handoff`. |
+| `orro scout` | read-only exploration | Build repo profile, context pack, and discovery notes before planning. |
 | `flowplan` | plan-only alias | Build or validate a workflow plan without running workers. |
 | `proofrun` | precise run alias | Execute with observer-signed evidence. Kept for technical invocation accuracy. |
 | `proofcheck` | verifier alias | Re-check existing evidence bytes offline. |
-| `superflow handoff` | maintainer handoff | Bind code changes to evidence for human review; not merge approval. |
-| `superflow skillpack` | knowledge-as-code support | Manage SKILL/CLAUDE/rule/MCP bundles with progressive disclosure. |
-| `superflow doctor` | readiness check | Check engines, verifier pin, adapters, MCP availability, keys, and policy gates. |
-| `superflow auto` | automation mode | Resume and continue work behind evidence gates. |
-| `superflow ultra` | future high-autonomy profile | Same gates as Superflow, but with larger budgets and longer loops. |
+| `orro handoff` | maintainer handoff | Bind code changes to evidence for human review; not merge approval. |
+| `orro skillpack` | knowledge-as-code support | Manage SKILL/CLAUDE/rule/MCP bundles with progressive disclosure. |
+| `orro doctor` | readiness check | Check engines, verifier pin, adapters, MCP availability, keys, and policy gates. |
+| `orro auto` | automation mode | Resume and continue work behind evidence gates. |
+| `orro ultra` | future high-autonomy profile | Same gates as ORRO, but with larger budgets and longer loops. |
+| Superflow | historical/compatibility name | Former surface name. Do not use for new public docs except migration notes. |
 | witnessd | engine | Runtime, adapters, sessions, worktrees, team orchestration, evidence emission. |
 | Depone | engine | Non-executing verifier and evidence-contract authority. |
 
 Naming rule: user-facing names say the job, not the engine or account. `witnessd`
 and `Depone` stay as repo/engine names. `Moonweave` stays as publisher/account
-credit. Sessions and plugin surfaces should lead with `superflow`, `proofrun`,
-and `proofcheck`.
+credit. New sessions and plugin surfaces should lead with `orro`, `flowplan`,
+`proofrun`, and `proofcheck`.
 
 Avoid names that imply trust before the verifier has re-derived the bytes.
+
+Compatibility rule: existing `superflow` commands, fixture paths, or artifact
+kinds may remain during migration, but the canonical product name is ORRO and the
+canonical workflow name is ORRO Flow.
 
 ---
 
@@ -51,7 +57,7 @@ Future development should start from this small set:
 | witnessd runtime/product architecture | `SPEC3.md` |
 | Depone verifier/evidence contract | Depone `docs/spec.md` |
 | human quickstart | `README.md` |
-| in-session Claude skill guidance | `SKILL.md` |
+| in-session skill guidance | `SKILL.md` |
 | in-session Codex guidance | `AGENTS.md` |
 | agent/developer orientation | `CLAUDE.md` |
 | docs map and legacy policy | `docs/README.md` |
@@ -69,8 +75,8 @@ User / agent host
   Claude Code, Codex, OpenCode, local shell, IDE terminal
         |
         v
-Superflow surface
-  scout | flowplan | proofrun | proofcheck | handoff | auto | ultra
+ORRO surface
+  orro | scout | flowplan | proofrun | proofcheck | handoff | auto | ultra
         |
         +-- witnessd execution plane
         |     planner bridge
@@ -107,15 +113,14 @@ Depone   = verifier engine and evidence contract
 witnessd = execution engine and evidence emitter
 ```
 
-The Superflow surface is one user-facing install, command, and skill. Normal
-users should not be told to install separate Depone and witnessd skills for one
-workflow.
+ORRO is one user-facing install, command, and skill. Normal users should not be
+told to install separate Depone and witnessd skills for one workflow.
 
-In the near term, the thin `superflow` command/skill may live in the witnessd
-repo because Superflow starts execution and witnessd owns execution. Depone is
-consumed as a pinned verifier dependency.
+In the near term, the thin `orro` command/skill may live in the witnessd repo
+because ORRO starts execution and witnessd owns execution. Depone is consumed as a
+pinned verifier dependency.
 
-Create a standalone `Superflow` repo only when distribution needs justify it:
+Create a standalone `ORRO` repo only when distribution needs justify it:
 marketplace manifests, host-specific plugin bundles, examples, product docs,
 engine version locks, and end-to-end integration tests. That repo is a wrapper and
 distribution repo, not a third engine. It must not duplicate witnessd runtime
@@ -123,17 +128,17 @@ logic or Depone verifier logic.
 
 ### 3.2 Global AI coding workflow adoption
 
-Superflow is CLI-first but not IDE-hostile. It is the autonomous background
-execution plane for work that is too large, slow, parallel, risky, or
-audit-sensitive for an inline IDE edit. Cursor, Windsurf, and similar AI-native
-IDEs remain useful for fast local edits and human steering. Superflow owns the
-slower, evidence-governed path:
+ORRO is CLI-first but not IDE-hostile. It is the autonomous background execution
+plane for work that is too large, slow, parallel, risky, or audit-sensitive for
+an inline IDE edit. Cursor, Windsurf, and similar AI-native IDEs remain useful for
+fast local edits and human steering. ORRO owns the slower, evidence-governed
+path:
 
 ```text
 IDE / human edit path
   -> fast local changes, inline edits, tactical refactors
 
-Superflow path
+ORRO Flow path
   -> read-only scout
   -> progressive context pack
   -> multi-lane worktree execution
@@ -145,12 +150,12 @@ Superflow path
 ```
 
 Each runnable lane gets an isolated worktree and state root. The operator may
-view the run through tmux, Ghostty, WezTerm, IDE terminals, or a future Superflow
+view the run through tmux, Ghostty, WezTerm, IDE terminals, or a future ORRO
 dashboard, but those views are monitoring surfaces only. They are not evidence.
 The authoritative state is the run journal, schedule receipt, lane receipts, and
 Depone verifier output.
 
-Superflow must not dump an entire monorepo into one agent context. The planner and
+ORRO must not dump an entire monorepo into one agent context. The planner and
 workers use progressive disclosure:
 
 1. read file tree and repo profile first,
@@ -172,17 +177,17 @@ lane-context.json
 read actions, the agent records the finding, path, and why it matters. This
 prevents long sessions from losing reasoning in model context.
 
-Team knowledge must be stored as files, not repeated in chat. Superflow treats
-these as first-class but non-verdict artifacts:
+Team knowledge must be stored as files, not repeated in chat. ORRO treats these
+as first-class but non-verdict artifacts:
 
 ```text
 SKILL.md
 CLAUDE.md
 AGENTS.md
 .cursorrules or equivalent IDE rules
-superflow/skillpacks/*.md
-superflow/rules/*.md
-superflow/mcp/*.json
+orro/skillpacks/*.md
+orro/rules/*.md
+orro/mcp/*.json
 ```
 
 A skillpack has short frontmatter for discovery and a body that is loaded only
@@ -211,7 +216,7 @@ be checked by commands. The recipe is intent. The receipt is evidence.
 
 ```json
 {
-  "kind": "superflow-verification-recipe",
+  "kind": "orro-verification-recipe",
   "schema_version": "1.0",
   "commands": [
     {
@@ -224,7 +229,11 @@ be checked by commands. The recipe is intent. The receipt is evidence.
 }
 ```
 
-witnessd executes or records the command receipts. Depone verifies that required
+Object kind migration rule: new artifacts should use `orro-*` kinds. Existing
+`superflow-*` artifact kinds may remain accepted as compatibility aliases until
+fixtures and code have migrated.
+
+witnessd executes or records command receipts. Depone verifies that required
 recipes ran, their receipts match, and their exit codes support the claimed
 result.
 
@@ -272,9 +281,9 @@ Depone owns:
 Depone does not spawn workers, mutate active worktrees, execute recipes, or call
 MCP servers.
 
-### 4.3 Superflow owns the user surface
+### 4.3 ORRO owns the user surface
 
-The Superflow surface owns:
+The ORRO surface owns:
 
 - one install surface,
 - host-native skill/plugin packaging,
@@ -283,43 +292,41 @@ The Superflow surface owns:
 - environment checks,
 - progressive disclosure and skillpack loading,
 - run summary rendering,
-- selection of `superflow`, `superflow scout`, `flowplan`, `proofrun`,
-  `proofcheck`, `superflow handoff`, and automation modes.
+- selection of `orro`, `orro scout`, `flowplan`, `proofrun`, `proofcheck`,
+  `orro handoff`, and automation modes.
 
-The surface may live inside witnessd while it is thin. A future standalone
-Superflow repo must remain a wrapper/distribution layer and must not duplicate
-verifier or runtime logic.
+The surface may live inside witnessd while it is thin. A future standalone ORRO
+repo must remain a wrapper/distribution layer and must not duplicate verifier or
+runtime logic.
 
 ---
 
 ## 5. Agent team operating model
 
-Superflow is not a loose chat swarm. It is a small evidence-governed team system.
+ORRO is not a loose chat swarm. It is a small evidence-governed team system.
 Every subagent is either a worker that produces bytes, a coordinator that decides
 safe structure, or a verifier that checks persisted artifacts. No subagent is
 allowed to certify its own completion.
 
-### 5.1 Team roles
+| Role | Who performs it | Output | Trust boundary |
+| --- | --- | --- | --- |
+| Operator | human or calling session | objective, risk approvals, final human decisions | may approve gates, cannot create verifier truth |
+| Scout | ORRO/session agent | repo-profile, context-pack, discovery notes | planning only |
+| Flow planner | ORRO/session agent/future wrapper | sealed plan, lane packets, regions, budgets, stop rules, verification recipes | plan-only |
+| Scheduler | witnessd | dispatch events, schedule receipt, run journal | lifecycle only |
+| Lane worker | shell/Codex/Claude/OpenCode/custom adapter | code/doc changes, command receipts, touched files | worker output is a claim until observed |
+| Review lane | optional model or shell lane | findings, test receipts, suggested repairs | advisory unless captured as evidence |
+| Merge lane | witnessd lane after source lanes | merge receipt or conflict bytes | merge is evidence, not silent approval |
+| Observer/emitter | witnessd observer path | capture manifests, bundles, ledger artifacts | creates evidence, not final verdict |
+| Verifier | Depone / proofcheck | verdict, assurance, blocked/refuted reasons | final evidence interpretation |
+| Maintainer handoff | ORRO / operator | pr-handoff artifact | review package, not approval |
 
-| Role | Who performs it | Tools | Output | Trust boundary |
-| --- | --- | --- | --- | --- |
-| Operator | human or calling session | approvals, budget, repo constraints | objective, risk approvals, final human decisions | may approve gates, cannot create verifier truth |
-| Scout | Superflow / session agent | repo tree, grep/AST/search, read-only tools | repo-profile, context-pack, discovery notes | planning only |
-| Flow planner | Superflow / session agent / future wrapper | `flowplan`, repo inspection, Depone plan validators | sealed plan, lane packets, regions, budgets, stop rules, verification recipes | plan-only, no A1/A2 claim |
-| Scheduler | witnessd | ownership registry, nursery, budget, pause/kill, session state | dispatch events, schedule receipt, run journal | lifecycle only |
-| Lane worker | shell/Codex/Claude/OpenCode/custom adapter | per-lane worktree, isolated state root, allowed tools | code/doc changes, command receipts, touched files | worker output is a claim until observed |
-| Review lane | optional model or shell lane | tests, static checks, read-only audits, diff review | findings, test receipts, suggested repairs | advisory unless captured as evidence |
-| Merge lane | witnessd lane after source lanes | git merge/reconcile tools, conflict capture | merge receipt or conflict bytes | merge is evidence, not silent approval |
-| Observer/emitter | witnessd observer path | snapshots, receipts, runlog, DSSE, provenance | capture manifests, bundles, ledger artifacts | creates evidence, not final verdict |
-| Verifier | Depone / proofcheck | schema validators, canonical hash, signature checks, policy checks | verdict, assurance, blocked/refuted reasons | final evidence interpretation |
-| Maintainer handoff | Superflow / operator | PR template, evidence links, run summary | pr-handoff artifact | review package, not approval |
-
-### 5.2 How the team moves
+Team movement:
 
 ```text
 user goal
-  -> superflow scout builds repo profile and context pack
-  -> superflow creates or imports a flowplan
+  -> orro scout builds repo profile and context pack
+  -> ORRO creates or imports a flowplan
   -> flowplan divides work into lane packets with regions, budgets, tools, dependencies, and verification recipes
   -> witnessd claims regions and starts independent lanes in parallel
   -> each lane works in its own worktree/state root through its adapter
@@ -328,45 +335,23 @@ user goal
   -> review lanes and tests run as evidence-producing lanes, not as trust authorities
   -> merge lanes reconcile only the regions that actually overlap
   -> proofcheck asks Depone to re-derive what the bytes support
-  -> superflow prepares a handoff package for human review
+  -> ORRO prepares a handoff package for human review
 ```
 
 The team is organic because lanes move as soon as their dependencies and region
 claims allow it. The system avoids a global barrier unless a merge, review, or
 policy explicitly requires one.
 
-### 5.3 How Superflow saves time
-
-- Read-only scout narrows context before expensive agent work starts.
-- Disjoint regions run in parallel instead of serial chat turns.
-- Region ownership prevents two workers from wasting time on accidental conflicts.
-- Merge lanes isolate only true overlaps, so unrelated lanes do not wait.
-- Schedule receipts let Depone prove concurrency after the fact.
-- Completed lanes are skipped on resume only when their evidence still verifies.
-- `proofcheck` avoids rerunning work just to regain confidence; it reuses bytes.
-- Shell/fake lanes support quota-free planning and validation before paid agents.
-- Adapter routing keeps engines swappable; the moat is evidence, not model brand.
-- Budget, pause, kill, and policy gates stop bad runs early instead of letting
-  long automation continue on unverified state.
-
-### 5.4 Subagent tool limits
-
-Lane workers get only the tools declared by their lane packet and adapter. A lane
-may use shell, Codex, Claude Code, OpenCode, local tests, static analysis, or
-approved MCP bridges, but it cannot write outside its allowed region without
-producing evidence that Depone can reject. Review lanes can critique and test,
-but they do not turn work into A1/A2. Merge lanes can reconcile conflicts, but
-their receipts must be verified.
-
-Human approval is required for destructive operations, paid/live adapters when not
-pre-approved, production deployment, secret access, broad network use, and any
-continuation after blocked/refuted evidence.
+ORRO saves time by narrowing context before expensive agent work starts, running
+disjoint regions in parallel, isolating true merge conflicts, skipping completed
+lanes on resume only when evidence still verifies, and reusing bytes through
+`proofcheck` instead of rerunning work just to regain confidence.
 
 ---
 
-## 6. Superflow workflows
+## 6. ORRO workflows
 
-### 6.1 `superflow scout`
+### 6.1 `orro scout`
 
 Read-only exploration mode.
 
@@ -385,10 +370,10 @@ Outputs:
 - MCP/tool receipts only for declared planning/tool observations,
 - `pr-handoff.json` with unresolved planning risks.
 
-`superflow scout` must not create a fake `verification-receipt.json`. It did not
-run the recipe, so there is no command execution receipt to verify. A scout-only
-artifact directory is planning evidence; Depone `proofcheck` must block it until a
-later `proofrun` or witnessd execution step emits a verifier-recognized
+`orro scout` must not create a fake `verification-receipt.json`. It did not run
+the recipe, so there is no command execution receipt to verify. A scout-only
+artifact directory is planning evidence; Depone `proofcheck` must block it until
+a later `proofrun` or witnessd execution step emits a verifier-recognized
 verification receipt and the other required execution artifacts.
 
 Allowed terminal states: `scouted`, `blocked`, `inconclusive`. It never reports
@@ -402,18 +387,10 @@ Plan-only mode.
 goal -> plan contract -> lane/region/budget/gate preview -> no execution
 ```
 
-Outputs:
-
-- sealed plan,
-- lane packet list,
-- region and overlap analysis,
-- budget and stop rules,
-- evidence-contract preview,
-- verification-recipe preview,
-- skillpack-lock preview.
-
-Allowed terminal states: `planned`, `blocked`, `inconclusive`. It never reports
-A1/A2 because no execution evidence exists.
+Outputs include sealed plan, lane packet list, region and overlap analysis,
+budget and stop rules, evidence-contract preview, verification-recipe preview,
+and skillpack-lock preview. It never reports A1/A2 because no execution evidence
+exists.
 
 ### 6.3 `proofrun`
 
@@ -422,20 +399,6 @@ Precise evidence-backed execution alias.
 ```text
 goal or plan -> witnessd run -> evidence tree -> optional Depone verification
 ```
-
-Outputs:
-
-- run directory,
-- run journal,
-- capture manifests,
-- observer captures,
-- runner receipts,
-- verification receipts,
-- MCP/tool receipts,
-- signed bundles,
-- worktree receipts,
-- team ledger,
-- verifier report when Depone is available.
 
 Before Depone runs, status is `evidence-pending`.
 
@@ -447,19 +410,12 @@ Verifier-only alias.
 evidence bytes + public key -> Depone -> verifier report
 ```
 
-Forbidden in this mode:
+Forbidden in this mode: worker launch, model calls, worktree mutation, retry,
+repair execution, and live MCP/server/API calls. `proofcheck` is fail-closed.
+Missing, empty, malformed, incomplete, or scout-only artifact directories block
+instead of passing.
 
-- worker launch,
-- model calls,
-- worktree mutation,
-- retry,
-- repair execution,
-- live MCP/server/API calls.
-
-`proofcheck` is fail-closed. Missing, empty, malformed, incomplete, or scout-only
-artifact directories block instead of passing.
-
-### 6.5 `superflow`
+### 6.5 `orro`
 
 Flagship mode.
 
@@ -467,11 +423,10 @@ Flagship mode.
 goal -> scout -> flowplan -> proofrun -> proofcheck -> handoff summary
 ```
 
-Superflow is the public story: a goal becomes an evidence-backed workflow. It
-scouts, plans, runs, seals, checks what the bytes support, and prepares a human
-handoff.
+ORRO is the public story: a goal becomes an evidence-backed workflow. It scouts,
+plans, runs, seals, checks what the bytes support, and prepares a human handoff.
 
-### 6.6 `superflow handoff`
+### 6.6 `orro handoff`
 
 Maintainer handoff mode.
 
@@ -482,19 +437,19 @@ verified run bytes -> pr-handoff.json -> human review package
 A handoff binds code changes to evidence. It is not merge approval and does not
 raise assurance.
 
-### 6.7 `superflow skillpack`
+### 6.7 `orro skillpack`
 
 Knowledge-as-code support mode. Skillpacks, rules, and MCP declarations are
 loaded by frontmatter first and full body only when relevant. Skillpacks may guide
 planning and execution but do not raise assurance by themselves.
 
-### 6.8 `superflow doctor`
+### 6.8 `orro doctor`
 
 Readiness-check mode for engines, verifier pin, adapter availability, MCP bridge
 availability, keys, policies, and required local commands. `doctor` may block a
 run before execution; it does not prove task completion.
 
-### 6.9 `superflow auto`
+### 6.9 `orro auto`
 
 Long-running automation mode.
 
@@ -502,18 +457,14 @@ Long-running automation mode.
 current evidence -> proofcheck -> next gate -> witnessd executes one approved step -> new evidence
 ```
 
-Rules:
+Rules: no continuation after pause, blocked, or refuted without explicit operator
+approval; no budget auto-increase; no unverified plan activation; no merge/deploy
+approval from witnessd alone.
 
-- no continuation after pause, blocked, or refuted without explicit operator
-  approval,
-- no budget auto-increase,
-- no unverified plan activation,
-- no merge/deploy approval from witnessd alone.
+### 6.10 `orro ultra`
 
-### 6.10 `superflow ultra`
-
-Future high-autonomy profile. It is not a different trust model. It is Superflow
-with larger budgets, longer loops, and stricter pause/budget/proofcheck gates.
+Future high-autonomy profile. It is not a different trust model. It is ORRO with
+larger budgets, longer loops, and stricter pause/budget/proofcheck gates.
 
 ---
 
@@ -567,7 +518,7 @@ Rules:
 
 ---
 
-## 8. Trust model
+## 8. Trust and status model
 
 Execution assurance and trust root are separate axes.
 
@@ -596,10 +547,6 @@ Rules:
 - Depone must be able to verify persisted anchor bytes offline.
 - Skill text, MCP output, and session transcripts are not trust roots unless a
   verifier-recognized receipt binds them to evidence.
-
----
-
-## 9. Status model
 
 Keep lifecycle and evidence status separate.
 
@@ -631,20 +578,16 @@ pass
 
 A run may have `lifecycle=finished-emitting` and
 `evidence_status=evidence-pending`. That means the runtime stopped writing, not
-that the result is trusted. A scout-only run may have `lifecycle=scouted` while
-Depone correctly returns `blocked` for execution proof because no verification
-receipt exists.
+that the result is trusted.
 
 ---
 
-## 10. Development roadmap
+## 9. Development roadmap
 
 The remaining work is ordered. A wave lands only when its acceptance bar is met
 and prior fixture revalidators remain green.
 
-### Cross-cutting acceptance requirements
-
-Every new wave must preserve these requirements:
+Cross-cutting acceptance requirements:
 
 1. Progressive disclosure: no lane should require whole-repo context when a repo
    profile and context pack can narrow scope.
@@ -659,101 +602,29 @@ Every new wave must preserve these requirements:
 6. Human gate: destructive, production, secret, paid/live, and merge/deploy
    actions require explicit approval unless a future policy says otherwise.
 
-### W15 — Parallel provable execution core
+Roadmap:
 
-One child process per lane with nursery semantics. Observer-derived schedule
-receipt lets Depone derive overlap/concurrency from signed intervals.
+- W15: parallel provable execution core with schedule receipts.
+- W16: merge lanes for overlapping regions.
+- W17: journaled replay-resume.
+- W18: distribution, session UX, ORRO command/skill bootstrap, scout artifacts,
+  skillpack discovery, verification-recipe receipts, and `orro doctor`.
+- W18.5: MCP and enterprise tool receipts.
+- W17.5: design-to-execute bridge.
+- W19: first live multi-agent parallel proof.
+- W20: keyless identity and transparency anchoring.
+- W21: declarative verification policy layer.
+- W22: published contract and conformance kit.
 
-Acceptance: quota-free multi-lane fixture, derived overlap, failure isolation,
-parent-crash behavior, `revalidate_w15.py`.
-
-### W16 — Merge lanes for overlapping regions
-
-Planner accepts overlap only through an explicit merge lane. Merge conflicts are
-evidence and yield blocked/refuted verdicts with conflict bytes.
-
-Acceptance: overlap fixture with merge lane, forged merge receipt negative,
-`revalidate_w16.py`.
-
-### W17 — Journaled replay-resume
-
-Interrupted runs resume from the journal. Completed lanes are skipped only when
-Depone can re-derive their evidence. Incomplete lanes get fresh attempts.
-
-Acceptance: kill-parent-mid-run fixture, tampered-completion negative,
-`revalidate_w17.py`.
-
-### W18 — Distribution, session UX, and skillpack bootstrap
-
-One command initializes witnessd with a pinned Depone and creates the first
-Superflow surface. The near-term `superflow` command/skill may live in this repo
-while thin. A separate Superflow repo is reserved for later distribution
-packaging, not engine logic. W18 also introduces:
-
-- `superflow scout`,
-- repo-profile/context-pack generation,
-- skillpack discovery by frontmatter,
-- verification-recipe execution receipts,
-- `superflow doctor` for adapter/verifier/key/policy readiness.
-
-Acceptance: quickstart passes, fresh-session skill run works, no manual
+W18 acceptance: quickstart passes, fresh-session skill run works, no manual
 PYTHONPATH, no separate Depone/witnessd skill install for normal users, a
 quota-free scout fixture includes repo-profile, context-pack, verification-recipe,
 and a blocked proofcheck result for scout-only planning evidence, and later
 proofrun fixtures pass only after real verification receipts are emitted.
 
-### W18.5 — MCP and enterprise tool receipts
-
-Superflow can call declared MCP/tool bridges through lane packets. witnessd
-records MCP/tool receipts. Depone validates receipt shape and binding but never
-calls the external service.
-
-Acceptance: fixture with a fake MCP server receipt, negative fixture with forged
-output hash, proofcheck blocks the forged case.
-
-### W17.5 — Design-to-execute bridge
-
-Order note: W18 executes before W17.5 because installability is the adoption gate.
-After W18, Depone's plan/contract output becomes a sealed witnessd execution
-input. Depone then verifies plan conformance from the produced evidence.
-
-Acceptance: multi-lane plan executes, Depone re-derives plan conformance, region
-drift negative, `revalidate_w17_5.py`.
-
-### W19 — Live parallel proof
-
-First live multi-agent parallel run with real Codex lanes on a real repository.
-Operator-authorized paid run only.
-
-Acceptance: committed flagship fixture, revalidator, honest mileage section.
-
-### W20 — Keyless identity and transparency anchoring
-
-Optional anchor component signs/seals an already-valid evidence bundle with
-keyless identity and stores inclusion proof bytes. Depone verifies offline.
-
-Acceptance: fresh machine verifies anchored evidence without an operator public
-key; forged anchor negatives fail.
-
-### W21 — Declarative verification policy layer
-
-Depone adds stdlib JSON policies for requirements such as A2-only, overlap
-minimums, keyless anchoring, region boundaries, verification recipes, and MCP/tool
-receipt constraints. witnessd can attach a policy reference to a run.
-
-Acceptance: prior fixtures rechecked through policies; failing policy produces an
-honest failure.
-
-### W22 — Published contract and conformance kit
-
-Depone publishes the evidence contract as a versioned spec with conformance
-fixtures. External emitters can target the contract without witnessd code.
-
-Acceptance: spec-only emitter conformance test, OTel/OVERT exports validate.
-
 ---
 
-## 11. Document legacy policy
+## 10. Document legacy policy
 
 Legacy docs are not deleted because they preserve implementation history and
 fixture rationale. They are not planning authorities. Any legacy doc that appears
@@ -766,15 +637,17 @@ Legacy categories:
 - `docs/plans/*`: wave notes and acceptance evidence,
 - `docs/conformance/*`: conformance notes derived from implemented artifacts,
 - fixture README files: evidence explanations,
-- old release and benchmark docs: historical process artifacts.
+- old release and benchmark docs: historical process artifacts,
+- Superflow naming: historical/compatibility product-surface naming superseded by
+  ORRO.
 
 New technical design should update this file or Depone `docs/spec.md`; do not add
 a new competing architecture document.
 
 ---
 
-## 12. Final invariant
+## 11. Final invariant
 
 ```text
-Depone verifies; witnessd executes; Superflow exposes the workflow.
+Depone verifies; witnessd executes; ORRO exposes the workflow.
 ```
