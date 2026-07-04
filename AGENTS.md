@@ -25,10 +25,13 @@ This guidance is derived from that spec.
 1. Scout non-trivial work before execution. Do not load the whole repo into one
    context. Produce or update `repo-profile.json`, `context-pack.json`, and
    `discovery-notes.md`.
-2. Record discovery notes after every two meaningful read/search actions.
-3. Design explicit lanes, regions, dependencies, budgets, and verification
+2. Treat scout output as planning-only. Scout may create `verification-recipe.json`
+   for intended checks, but it must not create or claim a fake
+   `verification-receipt.json`.
+3. Record discovery notes after every two meaningful read/search actions.
+4. Design explicit lanes, regions, dependencies, budgets, and verification
    recipes, or consume a provided Depone design artifact when one exists.
-4. Run witnessd from the repository being worked on:
+5. Run witnessd from the repository being worked on:
 
    ```bash
    python3 -m witnessd init --home .witnessd --depone-root ../depone
@@ -36,10 +39,10 @@ This guidance is derived from that spec.
    python3 -m witnessd verify <run-dir> --home .witnessd
    ```
 
-5. Report from `team-ledger-verdict.json`, not from the session transcript.
+6. Report from `team-ledger-verdict.json`, not from the session transcript.
    Include the run directory, `team-ledger.json`, `team-ledger-verdict.json`,
    verdict `decision`, lane count, and error count when present.
-6. When changes are prepared for review, create or reference `pr-handoff.json`.
+7. When changes are prepared for review, create or reference `pr-handoff.json`.
 
 ## Evidence rule
 
@@ -47,6 +50,10 @@ Until Depone re-derives the run bytes and writes `team-ledger-verdict.json`, the
 only honest status is evidence pending or blocked. Do not state a stronger result
 based on tool output, model narration, a lane's own claim, MCP output, skill text,
 IDE terminal state, or tmux pane state.
+
+A scout-only artifact directory is not execution proof. If proofcheck blocks it
+because a verification receipt or other required execution artifact is missing,
+report that as the correct result rather than upgrading it.
 
 ## Knowledge and tool receipts
 
