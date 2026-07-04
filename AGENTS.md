@@ -1,24 +1,25 @@
 # witnessd Session Guidance
 
-Use Superflow when a task asks for provable local team execution, parallel lanes,
-repo scouting, progressive context selection, or evidence that Depone can
-re-derive. Moonweave is the publisher/account; Superflow is the product/tool name.
+Use ORRO when a task asks for provable local team execution, parallel lanes, repo
+scouting, progressive context selection, or evidence that Depone can re-derive.
+Moonweave is the publisher/account; ORRO is the product/tool name. `Superflow` is
+historical compatibility naming.
 
-Source of truth: `SPEC3.md` is the current witnessd × Depone final-form spec.
+Source of truth: `SPEC3.md` is the current witnessd x Depone final-form spec.
 This guidance is derived from that spec.
 
 ## Public modes
 
-- `superflow`: goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff
-- `superflow scout`: read-only repo profile, context pack, and discovery notes
+- `orro`: goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff
+- `orro scout`: read-only repo profile, context pack, and discovery notes
 - `flowplan`: plan-only workflow design
 - `proofrun`: precise evidence-backed execution alias
 - `proofcheck`: offline evidence verification alias
-- `superflow handoff`: maintainer review package bound to evidence
-- `superflow skillpack`: knowledge-as-code and progressive-disclosure support
-- `superflow doctor`: engine/verifier/adapter/key/MCP/policy readiness check
-- `superflow auto`: later continuation loop behind evidence gates
-- `superflow ultra`: future high-autonomy profile with stricter gates
+- `orro handoff`: maintainer review package bound to evidence
+- `orro skillpack`: knowledge-as-code and progressive-disclosure support
+- `orro doctor`: engine/verifier/adapter/key/MCP/policy readiness check
+- `orro auto`: later continuation loop behind evidence gates
+- `orro ultra`: future high-autonomy profile with stricter gates
 
 ## Required flow
 
@@ -57,8 +58,8 @@ report that as the correct result rather than upgrading it.
 
 ## Knowledge and tool receipts
 
-Use `SKILL.md`, `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, and Superflow skillpacks
-as knowledge-as-code. Load relevant bodies only after frontmatter or path matching
+Use `SKILL.md`, `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, and ORRO skillpacks as
+knowledge-as-code. Load relevant bodies only after frontmatter or path matching
 shows they apply.
 
 If a lane uses an MCP server or external tool bridge, the run must include an
