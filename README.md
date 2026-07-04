@@ -78,7 +78,8 @@ This repo ships two in-session guidance files:
 
 Both instruct the session agent to design lanes, run witnessd, then report the
 Depone verdict from `team-ledger-verdict.json`. A session transcript or lane
-self-report is not a verdict.
+self-report is not a verdict, and a self-declared success claim remains
+evidence-pending until Depone re-derives the run bytes.
 
 ## Manual Team Runs
 
@@ -117,7 +118,9 @@ Depone verifies from bytes. It does not run lanes.
 - The default quickstart uses shell lanes for quota-free validation.
 - Live paid agent lanes are W19 and require an operator checkpoint.
 - Keyless transparency anchoring is W20; W18 uses operator-key DSSE bundles.
-- A2 isolation still depends on host uid setup where that path is used.
+- `DELAYED_NOTARY` evidence is explicitly post-hoc, not contemporaneous.
+- A2 isolation still depends on a dedicated observer uid and a runner workspace
+  that is not writable by that observer where that path is used.
 - Clean-machine macOS validation and release publication are operator actions.
 
 ## Development Checks
