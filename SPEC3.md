@@ -163,6 +163,14 @@ ledger; a tampered "completed" lane is *not* skipped (re-derivation fails →
 lane re-runs); `revalidate_w17.py`.
 
 ### W17.5 — Design→Execute bridge (the third face becomes first-class)
+*(Order revision 2026-07-04: **W18 executes before W17.5.** Operator-market
+signal: the two-repo install friction is the adoption gate ("I wouldn't
+install this myself"); installability unblocks external user #1, the design
+bridge does not. W18's one-command story is also the answer to that friction:
+a runner installs ONE tool — `witnessd init` provisions the pinned Depone
+internally — while an auditor installs ONLY Depone to verify bytes without
+any runtime. The two-repo split is for the auditor persona and the W20 trust
+story; no end user should ever hand-wire both.)*
 *(Appended 2026-07-04 per the append-only rule: the design face existed —
 Depone's DWM skill + `compile/` — but was unwired to execution, and witnessd's
 `plan_heuristic` is a single-lane stub. The division of labor is: Depone =
