@@ -22,7 +22,7 @@ should not be used for new public surfaces.
 | `flowplan` | plan-only workflow design |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
-| `orro handoff` | maintainer review package bound to evidence |
+| `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
 | `orro auto` | later continuation loop behind evidence gates |
@@ -59,6 +59,7 @@ Required output evidence:
 - `verification-receipt.json` path only after a command actually ran
 - `team-ledger.json` path
 - `team-ledger-verdict.json` path
+- `proofcheck-verdict.json` path before handoff
 - verdict `decision`
 - lane count and any error count present in the verdict
 
@@ -112,28 +113,30 @@ output as verifier truth.
    python3 -m witnessd run "<goal>" --repo <repo> --home .witnessd
    ```
 
-5. Re-check the emitted bytes:
+5. Re-check the emitted bytes and write the public proofcheck verdict when a
+   handoff is needed:
 
    ```bash
-   python3 -m witnessd verify <run-dir> --home .witnessd
+   python3 -m witnessd proofcheck <run-dir> \
+     --home .witnessd \
+     --out <run-dir>/proofcheck-verdict.json
    ```
 
 6. Prepare a handoff package when code/docs changed:
 
-   ```text
-   pr-handoff.json
-     run_id
-     evidence_dir
-     changed_files
-     verification_recipe_results
-     unresolved_risks
-     human_required_actions
+   ```bash
+   python3 -m witnessd orro handoff <run-dir> \
+     --out <run-dir>/orro-handoff.json
    ```
 
-7. Report the verdict fields from `team-ledger-verdict.json`. If the verdict is
-   missing, blocked, unreadable, or not re-derived, report evidence pending or
-   blocked with the exact error. Do not upgrade the result from the session
-   transcript.
+   `team-ledger-verdict.json` from proofrun is not enough by itself. Handoff
+   requires `proofcheck-verdict.json` to exist, parse as JSON, and have
+   `decision: "pass"`.
+
+7. Report the verdict fields from the Depone verdict artifact. If the verdict is
+   missing, blocked, unreadable, not pass, or not re-derived, report evidence
+   pending or blocked with the exact error. Do not upgrade the result from the
+   session transcript.
 
 ## Boundaries
 

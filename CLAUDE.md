@@ -35,7 +35,7 @@ map and legacy policy.
 | `flowplan` | plan-only workflow design |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
-| `orro handoff` | maintainer review package bound to evidence |
+| `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine/verifier/adapter/key/MCP/policy readiness check |
 | `orro auto` | later resume/continuation loop behind evidence gates |
@@ -60,6 +60,12 @@ owns the evidence-governed background path:
 ```text
 scout -> flowplan -> proofrun -> proofcheck -> handoff
 ```
+
+The handoff step is gated by an explicit `proofcheck-verdict.json` written by
+`proofcheck --out`. `team-ledger-verdict.json` from proofrun is not enough by
+itself. If the proofcheck verdict is missing, unreadable, malformed, or not
+`decision: "pass"`, `handoff` / `orro handoff` must fail closed and must not
+write `orro-handoff.json`.
 
 Non-trivial runs should use progressive disclosure:
 

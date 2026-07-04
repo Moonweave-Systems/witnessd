@@ -26,7 +26,7 @@ contract remains authoritative in the Depone repo at `docs/spec.md`.
 | `flowplan` | plan-only alias | Build or validate a workflow plan without running workers. |
 | `proofrun` | precise run alias | Execute with observer-signed evidence. Kept for technical invocation accuracy. |
 | `proofcheck` | verifier alias | Re-check existing evidence bytes offline. |
-| `orro handoff` | maintainer handoff | Bind code changes to evidence for human review; not merge approval. |
+| `orro handoff` | maintainer handoff | Bind code changes to an explicit passing proofcheck verdict for human review; not merge approval. |
 | `orro skillpack` | knowledge-as-code support | Manage SKILL/CLAUDE/rule/MCP bundles with progressive disclosure. |
 | `orro doctor` | readiness check | Check engines, verifier pin, adapters, MCP availability, keys, and policy gates. |
 | `orro auto` | automation mode | Resume and continue work behind evidence gates. |
@@ -319,7 +319,7 @@ allowed to certify its own completion.
 | Merge lane | witnessd lane after source lanes | merge receipt or conflict bytes | merge is evidence, not silent approval |
 | Observer/emitter | witnessd observer path | capture manifests, bundles, ledger artifacts | creates evidence, not final verdict |
 | Verifier | Depone / proofcheck | verdict, assurance, blocked/refuted reasons | final evidence interpretation |
-| Maintainer handoff | ORRO / operator | pr-handoff artifact | review package, not approval |
+| Maintainer handoff | ORRO / operator | orro-handoff artifact | review package, not approval |
 
 Team movement:
 
@@ -431,11 +431,22 @@ plans, runs, seals, checks what the bytes support, and prepares a human handoff.
 Maintainer handoff mode.
 
 ```text
-verified run bytes -> pr-handoff.json -> human review package
+passing proofcheck-verdict.json -> orro-handoff.json -> human review package
 ```
 
 A handoff binds code changes to evidence. It is not merge approval and does not
 raise assurance.
+
+`handoff` and `orro handoff` require an explicit
+`proofcheck-verdict.json` in the evidence/run directory with `decision: "pass"`.
+The `team-ledger-verdict.json` generated during `proofrun` is not sufficient by
+itself. If the proofcheck verdict is missing, unreadable, malformed, not a JSON
+object, or has any decision other than `pass`, handoff fails closed and must not
+write `orro-handoff.json`.
+
+This is a packaging gate, not verifier logic. witnessd may read the proofcheck
+verdict artifact to decide whether handoff packaging is allowed, but Depone
+remains the verifier and witnessd must not reimplement proofcheck.
 
 ### 6.7 `orro skillpack`
 
@@ -497,7 +508,9 @@ A run directory must be archiveable and re-checkable from bytes:
   team-schedule-receipt.json
   team-ledger.json
   team-ledger-verdict.json
+  proofcheck-verdict.json
   pr-handoff.json
+  orro-handoff.json
 ```
 
 Rules:
@@ -513,7 +526,9 @@ Rules:
 - scout-only directories omit verification-receipt by design and therefore do not
   produce a proofcheck pass,
 - mcp-tool-receipt records external tool use,
-- pr-handoff records a review package and is not approval,
+- proofcheck-verdict records the explicit Depone proofcheck decision required
+  before ORRO handoff,
+- pr-handoff and orro-handoff record review packages and are not approval,
 - Depone decides which artifacts can support assurance.
 
 ---

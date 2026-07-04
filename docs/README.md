@@ -31,7 +31,7 @@ Use these names in new user-facing docs:
 | `flowplan` | plan-only workflow design |
 | `proofrun` | evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
-| `orro handoff` | maintainer review package bound to evidence |
+| `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro auto` | continuation mode behind evidence gates |
 | `orro ultra` | future high-autonomy profile |
 | Superflow | historical/compatibility name, superseded by ORRO |
