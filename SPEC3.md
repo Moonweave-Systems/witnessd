@@ -141,9 +141,75 @@ The wrapper must not duplicate verifier or runtime logic.
 
 ---
 
-## 5. Superflow workflows
+## 5. Agent team operating model
 
-### 5.1 `flowplan`
+Superflow is not a loose chat swarm. It is a small evidence-governed team system.
+Every subagent is either a worker that produces bytes, a coordinator that decides
+safe structure, or a verifier that checks persisted artifacts. No subagent is
+allowed to certify its own completion.
+
+### 5.1 Team roles
+
+| Role | Who performs it | Tools | Output | Trust boundary |
+| --- | --- | --- | --- | --- |
+| Operator | human or calling session | approvals, budget, repo constraints | objective, risk approvals, final human decisions | may approve gates, cannot create verifier truth |
+| Flow planner | Superflow / session agent / future wrapper | `flowplan`, repo inspection, Depone plan validators | sealed plan, lane packets, regions, budgets, stop rules | plan-only, no A1/A2 claim |
+| Scheduler | witnessd | ownership registry, nursery, budget, pause/kill, session state | dispatch events, schedule receipt, run journal | lifecycle only |
+| Lane worker | shell/Codex/Claude/OpenCode/custom adapter | per-lane worktree, isolated state root, allowed tools | code/doc changes, command receipts, touched files | worker output is a claim until observed |
+| Review lane | optional model or shell lane | tests, static checks, read-only audits, diff review | findings, test receipts, suggested repairs | advisory unless captured as evidence |
+| Merge lane | witnessd lane after source lanes | git merge/reconcile tools, conflict capture | merge receipt or conflict bytes | merge is evidence, not silent approval |
+| Observer/emitter | witnessd observer path | snapshots, receipts, runlog, DSSE, provenance | capture manifests, bundles, ledger artifacts | creates evidence, not final verdict |
+| Verifier | Depone / proofcheck | schema validators, canonical hash, signature checks, policy checks | verdict, assurance, blocked/refuted reasons | final evidence interpretation |
+
+### 5.2 How the team moves
+
+```text
+user goal
+  -> superflow creates or imports a flowplan
+  -> flowplan divides work into lane packets with regions, budgets, tools, and dependencies
+  -> witnessd claims regions and starts independent lanes in parallel
+  -> each lane works in its own worktree/state root through its adapter
+  -> observer/emitter records what happened while the work happens
+  -> review lanes and tests run as evidence-producing lanes, not as trust authorities
+  -> merge lanes reconcile only the regions that actually overlap
+  -> proofcheck asks Depone to re-derive what the bytes support
+  -> superflow reports lifecycle + verifier status separately
+```
+
+The team is organic because lanes move as soon as their dependencies and region
+claims allow it. The system avoids a global barrier unless a merge, review, or
+policy explicitly requires one.
+
+### 5.3 How Superflow saves time
+
+- Disjoint regions run in parallel instead of serial chat turns.
+- Region ownership prevents two workers from wasting time on accidental conflicts.
+- Merge lanes isolate only true overlaps, so unrelated lanes do not wait.
+- Schedule receipts let Depone prove concurrency after the fact.
+- Completed lanes are skipped on resume only when their evidence still verifies.
+- `proofcheck` avoids rerunning work just to regain confidence; it reuses bytes.
+- Shell/fake lanes support quota-free planning and validation before paid agents.
+- Adapter routing keeps engines swappable; the moat is evidence, not model brand.
+- Budget, pause, kill, and policy gates stop bad runs early instead of letting
+  long automation continue on unverified state.
+
+### 5.4 Subagent tool limits
+
+Lane workers get only the tools declared by their lane packet and adapter. A lane
+may use shell, Codex, Claude Code, OpenCode, local tests, or static analysis, but
+it cannot write outside its allowed region without producing evidence that Depone
+can reject. Review lanes can critique and test, but they do not turn work into
+A1/A2. Merge lanes can reconcile conflicts, but their receipts must be verified.
+
+Human approval is required for destructive operations, paid/live adapters when not
+pre-approved, production deployment, secret access, broad network use, and any
+continuation after blocked/refuted evidence.
+
+---
+
+## 6. Superflow workflows
+
+### 6.1 `flowplan`
 
 Plan-only mode.
 
@@ -162,7 +228,7 @@ Outputs:
 Allowed terminal states: `planned`, `blocked`, `inconclusive`. It never reports
 A1/A2 because no execution evidence exists.
 
-### 5.2 `proofrun`
+### 6.2 `proofrun`
 
 Precise evidence-backed execution alias.
 
@@ -184,7 +250,7 @@ Outputs:
 
 Before Depone runs, status is `evidence-pending`.
 
-### 5.3 `proofcheck`
+### 6.3 `proofcheck`
 
 Verifier-only alias.
 
@@ -200,7 +266,7 @@ Forbidden in this mode:
 - retry,
 - repair execution.
 
-### 5.4 `superflow`
+### 6.4 `superflow`
 
 Flagship mode.
 
@@ -211,7 +277,7 @@ goal -> flowplan -> proofrun -> proofcheck summary
 Superflow is the public story: a goal becomes an evidence-backed workflow. It
 plans, runs, seals, and checks what the bytes support.
 
-### 5.5 `superflow auto`
+### 6.5 `superflow auto`
 
 Long-running automation mode.
 
@@ -227,14 +293,14 @@ Rules:
 - no unverified plan activation,
 - no merge/deploy approval from witnessd alone.
 
-### 5.6 `superflow ultra`
+### 6.6 `superflow ultra`
 
 Future high-autonomy profile. It is not a different trust model. It is Superflow
 with larger budgets, longer loops, and stricter pause/budget/proofcheck gates.
 
 ---
 
-## 6. Evidence layout
+## 7. Evidence layout
 
 A run directory must be archiveable and re-checkable from bytes:
 
@@ -267,7 +333,7 @@ Rules:
 
 ---
 
-## 7. Trust model
+## 8. Trust model
 
 Execution assurance and trust root are separate axes.
 
@@ -297,7 +363,7 @@ Rules:
 
 ---
 
-## 8. Status model
+## 9. Status model
 
 Keep lifecycle and evidence status separate.
 
@@ -331,7 +397,7 @@ that the result is trusted.
 
 ---
 
-## 9. Development roadmap
+## 10. Development roadmap
 
 The remaining work is ordered. A wave lands only when its acceptance bar is met
 and prior fixture revalidators remain green.
@@ -411,7 +477,7 @@ Acceptance: spec-only emitter conformance test, OTel/OVERT exports validate.
 
 ---
 
-## 10. Document legacy policy
+## 11. Document legacy policy
 
 Legacy docs are not deleted because they preserve implementation history and
 fixture rationale. They are not planning authorities. Any legacy doc that appears
@@ -431,7 +497,7 @@ a new competing architecture document.
 
 ---
 
-## 11. Final invariant
+## 12. Final invariant
 
 ```text
 Depone verifies; witnessd executes; Moonweave Superflow exposes the workflow.
