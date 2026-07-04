@@ -1,16 +1,17 @@
-# witnessd — Agent Context
+# witnessd - Agent Context
 
-`witnessd` is the executing runtime engine in the Superflow pair. It spawns
-workers, owns durable sessions, creates worktrees, retries, supervises teams,
-records verification and MCP/tool receipts, and emits observer-signed evidence.
-Depone is the non-executing verifier that re-derives the verdict from those
-bytes.
+`witnessd` is the executing runtime engine in the ORRO pair. It spawns workers,
+owns durable sessions, creates worktrees, retries, supervises teams, records
+verification and MCP/tool receipts, and emits observer-signed evidence. Depone is
+the non-executing verifier that re-derives the verdict from those bytes.
 
 ```text
-Depone verifies; witnessd executes; Superflow exposes the workflow.
+Depone verifies; witnessd executes; ORRO exposes the workflow.
 ```
 
-Moonweave is the publisher/account namespace. Superflow is the product/tool name.
+Moonweave is the publisher/account namespace. ORRO is the product/tool name.
+`Superflow` is historical/compatibility naming and should not be used for new
+public docs.
 
 ## Source of truth
 
@@ -27,16 +28,18 @@ map and legacy policy.
 
 | Public surface | Purpose |
 | --- | --- |
-| `superflow` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
-| `superflow scout` | read-only repo profile, context pack, and discovery notes |
+| ORRO | Observed Run & Review Orchestrator; flagship product/tool |
+| ORRO Flow | scout -> flowplan -> proofrun -> proofcheck -> handoff |
+| `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
+| `orro scout` | read-only repo profile, context pack, and discovery notes |
 | `flowplan` | plan-only workflow design |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
-| `superflow handoff` | maintainer review package bound to evidence |
-| `superflow skillpack` | knowledge-as-code and progressive-disclosure support |
-| `superflow doctor` | engine/verifier/adapter/key/MCP/policy readiness check |
-| `superflow auto` | later resume/continuation loop behind evidence gates |
-| `superflow ultra` | future high-autonomy profile with stricter gates |
+| `orro handoff` | maintainer review package bound to evidence |
+| `orro skillpack` | knowledge-as-code and progressive-disclosure support |
+| `orro doctor` | engine/verifier/adapter/key/MCP/policy readiness check |
+| `orro auto` | later resume/continuation loop behind evidence gates |
+| `orro ultra` | future high-autonomy profile with stricter gates |
 
 `witnessd` is the engine name, not the main session skill name.
 
@@ -51,8 +54,8 @@ Depone as a Python package.
 
 ## Global workflow rule
 
-Superflow is CLI-first but not IDE-hostile. IDEs are fast human steering surfaces;
-Superflow owns the evidence-governed background path:
+ORRO is CLI-first but not IDE-hostile. IDEs are fast human steering surfaces; ORRO
+owns the evidence-governed background path:
 
 ```text
 scout -> flowplan -> proofrun -> proofcheck -> handoff
