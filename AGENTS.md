@@ -1,26 +1,34 @@
 # witnessd Session Guidance
 
 Use Superflow when a task asks for provable local team execution, parallel lanes,
-or evidence that Depone can re-derive. Moonweave is the publisher/account;
-Superflow is the product/tool name.
+repo scouting, progressive context selection, or evidence that Depone can
+re-derive. Moonweave is the publisher/account; Superflow is the product/tool name.
 
 Source of truth: `SPEC3.md` is the current witnessd × Depone final-form spec.
 This guidance is derived from that spec.
 
 ## Public modes
 
-- `superflow`: goal -> plan -> run -> evidence -> verifier summary
+- `superflow`: goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff
+- `superflow scout`: read-only repo profile, context pack, and discovery notes
 - `flowplan`: plan-only workflow design
 - `proofrun`: precise evidence-backed execution alias
 - `proofcheck`: offline evidence verification alias
+- `superflow handoff`: maintainer review package bound to evidence
+- `superflow skillpack`: knowledge-as-code and progressive-disclosure support
+- `superflow doctor`: engine/verifier/adapter/key/MCP/policy readiness check
 - `superflow auto`: later continuation loop behind evidence gates
 - `superflow ultra`: future high-autonomy profile with stricter gates
 
 ## Required flow
 
-1. Design explicit lanes and regions for the requested goal, or consume a
-   provided Depone design artifact when one exists.
-2. Run witnessd from the repository being worked on:
+1. Scout non-trivial work before execution. Do not load the whole repo into one
+   context. Produce or update `repo-profile.json`, `context-pack.json`, and
+   `discovery-notes.md`.
+2. Record discovery notes after every two meaningful read/search actions.
+3. Design explicit lanes, regions, dependencies, budgets, and verification
+   recipes, or consume a provided Depone design artifact when one exists.
+4. Run witnessd from the repository being worked on:
 
    ```bash
    python3 -m witnessd init --home .witnessd --depone-root ../depone
@@ -28,15 +36,27 @@ This guidance is derived from that spec.
    python3 -m witnessd verify <run-dir> --home .witnessd
    ```
 
-3. Report from `team-ledger-verdict.json`, not from the session transcript.
+5. Report from `team-ledger-verdict.json`, not from the session transcript.
    Include the run directory, `team-ledger.json`, `team-ledger-verdict.json`,
    verdict `decision`, lane count, and error count when present.
+6. When changes are prepared for review, create or reference `pr-handoff.json`.
 
 ## Evidence rule
 
 Until Depone re-derives the run bytes and writes `team-ledger-verdict.json`, the
 only honest status is evidence pending or blocked. Do not state a stronger result
-based on tool output, model narration, or a lane's own claim.
+based on tool output, model narration, a lane's own claim, MCP output, skill text,
+IDE terminal state, or tmux pane state.
+
+## Knowledge and tool receipts
+
+Use `SKILL.md`, `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, and Superflow skillpacks
+as knowledge-as-code. Load relevant bodies only after frontmatter or path matching
+shows they apply.
+
+If a lane uses an MCP server or external tool bridge, the run must include an
+MCP/tool receipt. MCP output is an observed external fact, not final verifier
+truth.
 
 ## Boundaries
 
