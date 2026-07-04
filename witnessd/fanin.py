@@ -1083,21 +1083,16 @@ def resume_team(
         )
         if lane is not None:
             ledger_lane = dict(lane["ledger_lane"])
+            attempt = int(lane["attempt"])
             final_lanes.append(ledger_lane)
             decisions.append(
                 {
                     "lane_id": lane_id,
                     "decision": "skipped_as_proven",
                     "reason": "surviving lane evidence rederived as pass",
-                    "attempt": 1,
+                    "attempt": attempt,
                     "evidence_dir": ledger_lane.get("evidence_dir"),
-                    "attempts": [
-                        {
-                            "attempt": 1,
-                            "status": "completed",
-                            "preserved": True,
-                        }
-                    ],
+                    "attempts": _resume_attempt_history(attempt),
                 }
             )
             continue
@@ -1155,14 +1150,7 @@ def resume_team(
                     "reason": "surviving lane evidence absent or failed rederivation",
                     "attempt": attempt,
                     "evidence_dir": ledger_lane.get("evidence_dir"),
-                    "attempts": [
-                        {
-                            "attempt": number,
-                            "status": "completed" if number == attempt else "indeterminate",
-                            "preserved": True,
-                        }
-                        for number in range(1, attempt + 1)
-                    ],
+                    "attempts": _resume_attempt_history(attempt),
                 }
             )
 
@@ -1204,12 +1192,19 @@ def _load_resume_controls(base_dir: Path, *, run_id: str) -> list[dict[str, Any]
         try:
             payload = json.loads(spec_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
-            continue
+            raise ValueError("ERR_TEAM_RESUME_CONTROL_INVALID")
         if payload.get("run_id") != run_id:
             continue
         lane_id = str(payload.get("lane_id", ""))
         if not lane_id:
-            continue
+            raise ValueError("ERR_TEAM_RESUME_CONTROL_INVALID")
+        for field in ("base_commit", "repo_root", "private_key_path", "public_key_path"):
+            if not isinstance(payload.get(field), str) or not payload.get(field):
+                raise ValueError("ERR_TEAM_RESUME_CONTROL_INVALID")
+        if not isinstance(payload.get("spec"), dict) or not isinstance(
+            payload.get("allowed_touched_files"), list
+        ):
+            raise ValueError("ERR_TEAM_RESUME_CONTROL_INVALID")
         controls.append({"lane_id": lane_id, "payload": payload, "spec_path": spec_path})
     return controls
 
@@ -1224,11 +1219,20 @@ def _resume_rederived_lane(
 ) -> dict[str, Any] | None:
     lane_id = str(control["lane_id"])
     if not audited_lane or audited_lane.get("classification") != "complete":
-        return None
-    result_path = base_dir / ".lane-exec" / f"{_lane_control_stem(lane_id)}-result.json"
-    if not result_path.is_file():
-        legacy = base_dir / ".lane-exec" / f"{lane_id}-result.json"
-        result_path = legacy if legacy.is_file() else result_path
+        latest_attempt = _latest_resume_attempt_lane(base_dir, lane_id=lane_id)
+        if latest_attempt is None:
+            return None
+        attempt, ledger_lane = latest_attempt
+        return _resume_rederived_ledger_lane(
+            base_dir=base_dir,
+            control=control,
+            ledger_lane=ledger_lane,
+            leader_id=leader_id,
+            stop_rule=stop_rule,
+            attempt=attempt,
+        )
+    attempt = 1
+    result_path = _root_lane_result_path(base_dir, lane_id)
     try:
         result = json.loads(result_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
@@ -1239,6 +1243,68 @@ def _resume_rederived_lane(
     ledger_lane = dict(lane["ledger_lane"])
     if ledger_lane.get("lane_id") != lane_id:
         return None
+    latest_attempt = _latest_resume_attempt_lane(base_dir, lane_id=lane_id)
+    if latest_attempt is not None and latest_attempt[0] > attempt:
+        attempt, ledger_lane = latest_attempt
+    return _resume_rederived_ledger_lane(
+        base_dir=base_dir,
+        control=control,
+        ledger_lane=ledger_lane,
+        leader_id=leader_id,
+        stop_rule=stop_rule,
+        attempt=attempt,
+    )
+
+
+def _root_lane_result_path(base_dir: Path, lane_id: str) -> Path:
+    result_path = base_dir / ".lane-exec" / f"{_lane_control_stem(lane_id)}-result.json"
+    if not result_path.is_file():
+        legacy = base_dir / ".lane-exec" / f"{lane_id}-result.json"
+        result_path = legacy if legacy.is_file() else result_path
+    return result_path
+
+
+def _latest_resume_attempt_lane(
+    base_dir: Path, *, lane_id: str
+) -> tuple[int, dict[str, Any]] | None:
+    best: tuple[int, dict[str, Any]] | None = None
+    attempts_dir = base_dir / "attempts"
+    if not attempts_dir.is_dir():
+        return None
+    for attempt_dir in sorted(attempts_dir.iterdir()):
+        if not attempt_dir.is_dir() or not attempt_dir.name.startswith("attempt-"):
+            continue
+        suffix = attempt_dir.name.removeprefix("attempt-")
+        if not suffix.isdigit():
+            continue
+        attempt = int(suffix)
+        result_path = _root_lane_result_path(attempt_dir, lane_id)
+        if not result_path.is_file():
+            continue
+        try:
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        lane = result.get("lane")
+        if not isinstance(lane, dict) or not isinstance(lane.get("ledger_lane"), dict):
+            continue
+        ledger_lane = _prefix_resume_attempt_lane(dict(lane["ledger_lane"]), attempt=attempt)
+        if ledger_lane.get("lane_id") != lane_id:
+            continue
+        if best is None or attempt > best[0]:
+            best = (attempt, ledger_lane)
+    return best
+
+
+def _resume_rederived_ledger_lane(
+    *,
+    base_dir: Path,
+    control: dict[str, Any],
+    ledger_lane: dict[str, Any],
+    leader_id: str,
+    stop_rule: str,
+    attempt: int,
+) -> dict[str, Any] | None:
     rederive_ledger = build_team_ledger(
         leader_objective="witnessd W17 resume rederivation",
         leader_id=leader_id,
@@ -1248,7 +1314,18 @@ def _resume_rederived_lane(
     )
     if _depone_team_verdict_decision(rederive_ledger, base_dir=base_dir) != "pass":
         return None
-    return {"ledger_lane": ledger_lane}
+    return {"ledger_lane": ledger_lane, "attempt": attempt}
+
+
+def _resume_attempt_history(attempt: int) -> list[dict[str, Any]]:
+    return [
+        {
+            "attempt": number,
+            "status": "completed" if number == attempt else "indeterminate",
+            "preserved": True,
+        }
+        for number in range(1, attempt + 1)
+    ]
 
 
 def _depone_team_verdict_decision(ledger: dict[str, Any], *, base_dir: Path) -> str:

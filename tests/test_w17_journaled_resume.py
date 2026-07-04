@@ -151,6 +151,67 @@ class TestW17JournaledResume(unittest.TestCase):
         verdict = build_team_ledger_verdict(ledger, base_dir=result["base_dir"])
         self.assertEqual(verdict["decision"], "pass")
 
+    def test_resume_fails_closed_on_malformed_lane_control(self):
+        result = self._run_initial(
+            [
+                {
+                    "lane_id": "lane-a",
+                    "region": ["pkg/a.py"],
+                    "commands": [["sh", "-c", "mkdir -p pkg; echo a > pkg/a.py"]],
+                },
+                {
+                    "lane_id": "lane-b",
+                    "region": ["pkg/b.py"],
+                    "commands": [["sh", "-c", "mkdir -p pkg; echo b > pkg/b.py"]],
+                },
+            ]
+        )
+        control_path = result["base_dir"] / ".lane-exec" / f"{_lane_control_stem('lane-b')}.json"
+        control_path.write_text('{"lane_id":"lane-b","spec":', encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "ERR_TEAM_RESUME_CONTROL_INVALID"):
+            resume_team(str(result["base_dir"]), run_id="team-run", max_parallel=2)
+
+    def test_resume_rederives_newest_successful_attempt_without_rerunning_again(self):
+        result = self._run_initial(
+            [
+                {
+                    "lane_id": "lane-a",
+                    "region": ["pkg/a.py"],
+                    "commands": [["sh", "-c", "mkdir -p pkg; echo a > pkg/a.py"]],
+                }
+            ]
+        )
+        verdict_path = result["base_dir"] / "lane-a" / "evidence-next-verdict.json"
+        verdict_path.write_text(
+            json.dumps(
+                {
+                    "command": "evidence-next",
+                    "decision": "blocked",
+                    "blocking_reasons": ["tampered after journal claimed completion"],
+                },
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        resume_team(str(result["base_dir"]), run_id="team-run", max_parallel=1)
+
+        resumed = resume_team(str(result["base_dir"]), run_id="team-run", max_parallel=1)
+
+        self.assertFalse((result["base_dir"] / "attempts" / "attempt-3").exists())
+        ledger = resumed["ledger"]
+        verdict = build_team_ledger_verdict(ledger, base_dir=result["base_dir"])
+        self.assertEqual(verdict["decision"], "pass")
+        lane = ledger["lanes"][0]
+        self.assertEqual(lane["evidence_dir"], "attempts/attempt-2/lane-a")
+        receipt = json.loads((result["base_dir"] / ledger["resume_receipt"]).read_text())
+        self.assertEqual(receipt["decisions"][0]["decision"], "skipped_as_proven")
+        self.assertEqual(receipt["decisions"][0]["attempt"], 2)
+        self.assertEqual(
+            [item["status"] for item in receipt["decisions"][0]["attempts"]],
+            ["indeterminate", "completed"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
