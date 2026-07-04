@@ -1,0 +1,57 @@
+# witnessd Documentation Map
+
+This file exists to prevent doc drift. It is a map, not a second spec.
+
+## Canonical docs
+
+| Role | Document |
+| --- | --- |
+| Product/runtime source of truth | [`../SPEC3.md`](../SPEC3.md) |
+| Depone verifier-contract authority | Depone `docs/spec.md` |
+| Human quickstart | [`../README.md`](../README.md) |
+| Claude session skill | [`../SKILL.md`](../SKILL.md) |
+| Codex session guidance | [`../AGENTS.md`](../AGENTS.md) |
+| Agent/developer orientation | [`../CLAUDE.md`](../CLAUDE.md) |
+
+When these conflict, `SPEC3.md` wins for witnessd runtime/product decisions.
+Depone `docs/spec.md` wins for verifier-contract decisions.
+
+## Public naming
+
+Use these names in new user-facing docs:
+
+| Name | Meaning |
+| --- | --- |
+| Moonweave Superflow | flagship product workflow |
+| `superflow` | plan -> run -> evidence -> verifier summary |
+| `flowplan` | plan-only workflow design |
+| `proofrun` | evidence-backed execution alias |
+| `proofcheck` | offline evidence verification alias |
+| `superflow auto` | continuation mode behind evidence gates |
+| `superflow ultra` | future high-autonomy profile |
+
+Use `witnessd` only when discussing the engine or CLI.
+
+## Legacy docs
+
+The following categories are historical or wave-specific unless `SPEC3.md`
+explicitly promotes them:
+
+- `SPEC.md` and `SPEC2.md` — foundation history,
+- `docs/plans/*` — wave notes and acceptance artifacts,
+- `docs/conformance/*` — conformance notes derived from implemented evidence,
+- fixture notes — explanations of committed evidence,
+- old release notes — historical state.
+
+Do not start new work from a legacy doc. Start from `SPEC3.md`, then follow the
+current wave's acceptance bar.
+
+## Edit rule
+
+When product direction, architecture, layer ownership, skill naming, or the
+roadmap changes:
+
+1. update `SPEC3.md`,
+2. update this map if the canonical set changed,
+3. update README / SKILL / AGENTS / CLAUDE as derived summaries,
+4. leave legacy docs as historical unless they actively mislead current work.
