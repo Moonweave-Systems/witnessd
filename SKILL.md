@@ -1,13 +1,14 @@
 ---
-name: witnessd
-description: Use witnessd to run an in-session goal through observer-signed team execution and Depone re-derivation.
+name: proofrun
+description: Run a goal as observer-signed parallel team execution whose completion is re-derived from evidence bytes, not self-declared. Use when the user asks for a proofrun, a verified/proven run, provable team execution, 증명 실행, or to run something "with witnessd". Powered by witnessd × Depone.
 ---
 
-# witnessd Session Runner
+# proofrun — provable session runs (powered by witnessd × Depone)
 
-Use this skill when an operator asks the session agent to use witnessd for a
-goal, asks for provable team execution, or wants a local run that can be checked
-by Depone.
+Use this skill when an operator asks for a proofrun, a verified or proven run,
+provable team execution, 증명 실행, or asks to use witnessd for a goal — any
+time "done" must be evidence bytes a verifier re-derives, not the session
+agent's own claim.
 
 ## Contract
 
