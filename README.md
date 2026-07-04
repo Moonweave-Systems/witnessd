@@ -1,12 +1,17 @@
 # witnessd
 
-`witnessd` is the executing runtime engine for **Superflow**, published under the
-Moonweave account. It runs local lanes, records what happened, signs the
-evidence, and leaves bytes that Depone can re-derive offline.
+`witnessd` is the executing runtime engine for **ORRO** (Observed Run & Review
+Orchestrator), published under the Moonweave account. It runs local lanes,
+records what happened, signs the evidence, and leaves bytes that Depone can
+re-derive offline.
 
 ```text
-Depone verifies; witnessd executes; Superflow exposes the workflow.
+Depone verifies; witnessd executes; ORRO exposes the workflow.
 ```
+
+`Superflow` was the earlier product-surface name. New public docs should use
+ORRO. Existing `superflow` commands, fixture paths, or artifact kinds may remain
+as compatibility aliases during migration.
 
 ## 10-minute quickstart
 
@@ -41,16 +46,18 @@ authority. For the repo documentation map, see [`docs/README.md`](docs/README.md
 
 | Public surface | Purpose |
 | --- | --- |
-| `superflow` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
-| `superflow scout` | read-only repo exploration, repo profile, context pack, and discovery notes |
+| ORRO | flagship product/tool: evidence-governed agent workflow orchestrator |
+| ORRO Flow | `scout -> flowplan -> proofrun -> proofcheck -> handoff` |
+| `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
+| `orro scout` | read-only repo exploration, repo profile, context pack, and discovery notes |
 | `flowplan` | plan-only workflow design |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
-| `superflow handoff` | maintainer review package bound to evidence |
-| `superflow skillpack` | knowledge-as-code and progressive-disclosure support |
-| `superflow doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
-| `superflow auto` | later resume/continuation loop behind evidence gates |
-| `superflow ultra` | future high-autonomy profile with stricter gates |
+| `orro handoff` | maintainer review package bound to evidence |
+| `orro skillpack` | knowledge-as-code and progressive-disclosure support |
+| `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
+| `orro auto` | later resume/continuation loop behind evidence gates |
+| `orro ultra` | future high-autonomy profile with stricter gates |
 
 `witnessd` is the engine name, not the main session skill name. `Moonweave` is the
 publisher/account namespace, not the tool name.
@@ -61,15 +68,15 @@ Development currently stays in two engine repositories:
 
 ```text
 Depone   = verifier engine and evidence contract
-witnessd = execution engine, evidence emitter, and near-term Superflow surface
+witnessd = execution engine, evidence emitter, and near-term ORRO surface
 ```
 
-The user-facing install should still be one thing: Superflow. Do not ask normal
-users to install separate Depone and witnessd skills. In the near term, this repo
-may ship the thin `superflow` command/skill because Superflow starts execution and
-witnessd owns execution. Depone remains a pinned verifier dependency.
+The user-facing install should still be one thing: ORRO. Do not ask normal users
+to install separate Depone and witnessd skills. In the near term, this repo may
+ship the thin `orro` command/skill because ORRO starts execution and witnessd owns
+execution. Depone remains a pinned verifier dependency.
 
-Create a separate `Superflow` repository only when distribution needs justify it:
+Create a separate `ORRO` repository only when distribution needs justify it:
 marketplace manifests, host-specific plugin packaging, version locking, examples,
 product docs, and end-to-end integration tests. That future repo is a wrapper and
 distribution repo, not a third engine; it must not duplicate witnessd runtime
@@ -77,7 +84,7 @@ logic or Depone verifier logic.
 
 ## Operating model
 
-Superflow is an evidence-backed agent-team operating surface. The normal loop is:
+ORRO is an evidence-backed agent-team operating surface. The normal loop is:
 
 ```text
 scout -> flowplan -> proofrun -> proofcheck -> handoff
@@ -181,7 +188,7 @@ through `python3 -m depone team-ledger`, and rewrites
 
 This repo ships two in-session guidance files:
 
-- `SKILL.md` for Claude Code style skill installation
+- `SKILL.md` for host skill installation
 - `AGENTS.md` for Codex sessions
 
 Both instruct the session agent to scout when useful, design lanes, run witnessd,
