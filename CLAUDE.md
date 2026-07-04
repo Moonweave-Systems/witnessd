@@ -1,24 +1,37 @@
-# witnessd — Agent Context (READ FIRST)
+# witnessd — Agent Context
 
-`witnessd` is the **executing runtime engine** in the Moonweave pair. It spawns
+`witnessd` is the executing runtime engine in the Moonweave pair. It spawns
 workers, owns durable sessions, creates worktrees, retries, supervises teams, and
 emits observer-signed evidence. Depone is the non-executing verifier that
 re-derives the verdict from those bytes.
 
+```text
+Depone verifies; witnessd executes; Moonweave Superflow exposes the workflow.
+```
+
 ## Source of truth
 
-[`SPEC3.md`](SPEC3.md) is the current witnessd × Depone final-form specification
-and the only top-level witnessd product/runtime authority. `SPEC.md` and
-`SPEC2.md` are earlier foundation specs; `docs/plans/*`, `SKILL.md`, `AGENTS.md`,
-README, and fixture notes are derived or wave-specific documents. If they
-conflict with `SPEC3.md`, `SPEC3.md` wins.
+[`SPEC3.md`](SPEC3.md) is the only top-level witnessd product/runtime authority.
+`SPEC.md`, `SPEC2.md`, `docs/plans/*`, `docs/conformance/*`, README, `SKILL.md`,
+`AGENTS.md`, fixture notes, and release notes are derived, wave-specific, or
+historical. If they conflict with `SPEC3.md`, `SPEC3.md` wins.
 
 For the Depone verifier contract itself, Depone's `docs/spec.md` is the
-authority.
+authority. See [`docs/README.md`](docs/README.md) for the witnessd documentation
+map and legacy policy.
 
-```text
-Depone verifies; witnessd executes; Moonweave exposes the workflow.
-```
+## Public names
+
+| Public surface | Purpose |
+| --- | --- |
+| `superflow` | flagship goal -> plan -> run -> evidence -> verifier summary |
+| `flowplan` | plan-only workflow design |
+| `proofrun` | precise evidence-backed execution alias |
+| `proofcheck` | offline evidence verification alias |
+| `superflow auto` | later resume/continuation loop behind evidence gates |
+| `superflow ultra` | future high-autonomy profile with stricter gates |
+
+`witnessd` is the engine name, not the main session skill name.
 
 ## Runtime dependency rule
 
@@ -29,11 +42,11 @@ Depone may be provisioned or pinned for verification, and tests may import Depon
 validators. Shipped witnessd capture/runtime paths must not depend on importing
 Depone as a Python package.
 
-## The Depone contract (do not drift)
+## The Depone contract
 
-`witnessd` emits evidence that must satisfy **Depone's** contract, which is the
-source of truth for capture-manifest / runner-receipt / isolation / DSSE /
-team-ledger schemas and their error codes, plus:
+`witnessd` emits evidence that must satisfy Depone's contract, which is the source
+of truth for capture-manifest / runner-receipt / isolation / DSSE / team-ledger
+schemas and their error codes, plus:
 
 ```python
 canonical_hash = sha256(json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8"))
@@ -41,17 +54,10 @@ canonical_hash = sha256(json.dumps(obj, sort_keys=True, separators=(",", ":")).e
 
 Rules:
 
-- **Do not invent schema fields.** Match Depone exactly or the evidence fails
-  re-derivation.
+- Do not invent schema fields.
 - Contract capability changes land in Depone first, then witnessd consumes them.
 - Runtime receipt emission belongs in witnessd; receipt verification belongs in
   Depone.
-
-## User-surface rule
-
-The session-facing skill name is `proofrun`, not `witnessd`. It is powered by
-witnessd × Depone. Do not create separate end-user `witnessd` and `Depone` skills
-as the main product UX.
 
 ## Testing / dogfood
 
@@ -75,5 +81,5 @@ scripts/quickstart_check.sh
 - Worker output is not its own trust verdict; the observer and emitter create the
   evidence that Depone later re-derives.
 - witnessd does not grant A1/A2 final trust by itself.
-- Each wave's Acceptance Bar = committed fixture + revalidator that Depone
-  re-derives. Land a wave only when that is green.
+- Each wave's acceptance bar is a committed fixture plus a revalidator that
+  Depone re-derives.
