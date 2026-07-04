@@ -111,6 +111,20 @@ class SuperflowScoutTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(json.loads(stdout.getvalue())["decision"], "scouted")
 
+    def test_orro_scout_alias_routes_to_scout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(["orro", "scout", "alias goal", "--repo", str(repo)])
+
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(stdout.getvalue())["decision"], "scouted")
+
 
 if __name__ == "__main__":
     unittest.main()

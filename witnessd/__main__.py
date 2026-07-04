@@ -1301,7 +1301,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     init.set_defaults(func=_cmd_init)
 
-    scout = sub.add_parser("scout", help="run read-only Superflow repo scout")
+    scout = sub.add_parser("scout", help="run read-only ORRO repo scout")
     scout.add_argument("goal")
     scout.add_argument("--repo", default=".")
     scout.add_argument("--home", default=None)
@@ -1623,8 +1623,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    argv = _normalize_superflow_argv(
-        _normalize_run_goal_argv(list(sys.argv[1:] if argv is None else argv))
+    argv = _normalize_orro_argv(
+        _normalize_superflow_argv(
+            _normalize_run_goal_argv(list(sys.argv[1:] if argv is None else argv))
+        )
     )
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -1645,6 +1647,14 @@ def _normalize_run_goal_argv(argv: list[str]) -> list[str]:
 
 def _normalize_superflow_argv(argv: list[str]) -> list[str]:
     if not argv or argv[0] != "superflow":
+        return argv
+    if len(argv) >= 2 and argv[1] == "scout":
+        return ["scout", *argv[2:]]
+    return argv
+
+
+def _normalize_orro_argv(argv: list[str]) -> list[str]:
+    if not argv or argv[0] != "orro":
         return argv
     if len(argv) >= 2 and argv[1] == "scout":
         return ["scout", *argv[2:]]

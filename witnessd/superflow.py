@@ -1,4 +1,8 @@
-"""Thin Superflow scout artifact producer for witnessd."""
+"""Thin ORRO scout artifact producer for witnessd.
+
+The module name and ``superflow-*`` artifact kinds remain compatibility
+surfaces while ORRO naming becomes the public workflow surface.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +20,7 @@ SCHEMA_VERSION = "1.0"
 
 
 def run_scout(goal: str, *, repo: Path, home: Path, out_dir: Path | None = None) -> dict[str, Any]:
-    """Create read-only Superflow scout artifacts for a repository."""
+    """Create read-only ORRO scout artifacts for a repository."""
 
     repo = repo.resolve(strict=False)
     home = home.resolve(strict=False)
@@ -31,7 +35,7 @@ def run_scout(goal: str, *, repo: Path, home: Path, out_dir: Path | None = None)
     branch = _git_stdout(repo, ["branch", "--show-current"]) or "unknown"
     head_commit = _git_stdout(repo, ["rev-parse", "HEAD"]) or "unknown"
     repo_profile = {
-        "kind": "superflow-repo-profile",
+        "kind": "orro-repo-profile",
         "schema_version": SCHEMA_VERSION,
         "repo_root": str(repo),
         "branch": branch,
@@ -42,18 +46,18 @@ def run_scout(goal: str, *, repo: Path, home: Path, out_dir: Path | None = None)
 
     selected_paths = _select_context_paths(goal, files)
     context_pack = {
-        "kind": "superflow-context-pack",
+        "kind": "orro-context-pack",
         "schema_version": SCHEMA_VERSION,
         "repo_profile_hash": canonical_hash(repo_profile),
         "selected_paths": selected_paths,
-        "reason": "read-only Superflow scout context selection",
+        "reason": "read-only ORRO scout context selection",
     }
     _write_json(run_dir / "context-pack.json", context_pack)
     _write_discovery_notes(run_dir / "discovery-notes.md", goal, repo, selected_paths)
     _write_json(
         run_dir / "lane-context.json",
         {
-            "kind": "superflow-lane-context",
+            "kind": "orro-lane-context",
             "schema_version": SCHEMA_VERSION,
             "goal": goal,
             "selected_paths": selected_paths,
@@ -71,7 +75,7 @@ def run_scout(goal: str, *, repo: Path, home: Path, out_dir: Path | None = None)
     _write_json(run_dir / "mcp-tool-receipt-fake.json", mcp_receipt)
 
     handoff = {
-        "kind": "superflow-pr-handoff",
+        "kind": "orro-pr-handoff",
         "schema_version": SCHEMA_VERSION,
         "run_id": run_dir.name,
         "evidence_dir": str(run_dir),
@@ -138,7 +142,7 @@ def _select_context_paths(goal: str, files: list[str]) -> list[str]:
 
 def _write_discovery_notes(path: Path, goal: str, repo: Path, selected_paths: list[str]) -> None:
     lines = [
-        "# Superflow Scout Discovery Notes",
+        "# ORRO Scout Discovery Notes",
         "",
         f"- Goal: {goal}",
         f"- Repo: {repo}",
@@ -171,7 +175,7 @@ def _build_skillpack_lock(repo: Path, run_dir: Path) -> dict[str, Any]:
             }
         )
     return {
-        "kind": "superflow-skillpack-lock",
+        "kind": "orro-skillpack-lock",
         "schema_version": SCHEMA_VERSION,
         "entries": entries,
     }
@@ -193,7 +197,7 @@ def _frontmatter(text: str) -> dict[str, str]:
 
 def _build_verification_recipe() -> dict[str, Any]:
     return {
-        "kind": "superflow-verification-recipe",
+        "kind": "orro-verification-recipe",
         "schema_version": SCHEMA_VERSION,
         "commands": [
             {
@@ -211,7 +215,7 @@ def _build_fake_mcp_receipt(goal: str) -> dict[str, Any]:
     redacted_input = {"goal": goal}
     observed_output = {"mode": "fixture", "items": []}
     return {
-        "kind": "superflow-mcp-tool-receipt",
+        "kind": "orro-mcp-tool-receipt",
         "schema_version": SCHEMA_VERSION,
         "tool_name": "fake.repo_lookup",
         "server_id": "fake-mcp",
