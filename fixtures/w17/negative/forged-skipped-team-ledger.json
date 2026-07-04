@@ -1,0 +1,27 @@
+{
+  "kind": "depone-team-ledger",
+  "lanes": [
+    {
+      "end_commit": "2c45f8c765db712731a8a4a002dca3d02caf67a5",
+      "env_kind": "local",
+      "evidence_dir": "lane-a",
+      "evidence_next_verdict": "lane-a/evidence-next-verdict.json",
+      "lane_id": "lane-a",
+      "objective": "lane-a objective",
+      "runner_adapter_kind": "shell",
+      "start_commit": "98aa3c94739a765b89d28eff041b6a4b30762d94",
+      "team_adapter_kind": "shell",
+      "touched_files": [
+        "pkg/a.py"
+      ],
+      "verification_state": "pass",
+      "worktree_receipt": "lane-a/worktree-lane-receipt.json"
+    }
+  ],
+  "leader_id": "leader-fixed",
+  "leader_objective": "forged W17 skipped lane",
+  "resume_receipt": "negative/forged-skipped-resume-receipt.json",
+  "schema_version": "0.1",
+  "start_commit": "98aa3c94739a765b89d28eff041b6a4b30762d94",
+  "stop_rule": "forged skipped lane must be rejected"
+}

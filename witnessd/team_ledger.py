@@ -32,6 +32,7 @@ def build_team_ledger(
     stop_rule: str,
     lanes: list[dict[str, Any]],
     merge_receipt: str | None = None,
+    resume_receipt: str | None = None,
     schedule_receipt: str | None = None,
 ) -> dict[str, Any]:
     ledger: dict[str, Any] = {
@@ -45,6 +46,8 @@ def build_team_ledger(
     }
     if merge_receipt is not None:
         ledger["merge_receipt"] = merge_receipt
+    if resume_receipt is not None:
+        ledger["resume_receipt"] = resume_receipt
     if schedule_receipt is not None:
         ledger["schedule_receipt"] = schedule_receipt
     return ledger

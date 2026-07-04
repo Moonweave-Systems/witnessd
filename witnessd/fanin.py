@@ -46,6 +46,8 @@ ERR_TEAM_LANE_INDETERMINATE_PARENT_CRASH = "ERR_TEAM_LANE_INDETERMINATE_PARENT_C
 ERR_TEAM_MERGE_CONFLICT_UNRESOLVED = "ERR_TEAM_MERGE_CONFLICT_UNRESOLVED"
 TEAM_SCHEDULE_RECEIPT = "team-schedule-receipt.json"
 TEAM_SCHEDULE_BUNDLE = "team-schedule-receipt-bundle.json"
+TEAM_RESUME_RECEIPT = "team-resume-receipt.json"
+TEAM_RESUME_BUNDLE = "team-resume-receipt-bundle.json"
 
 
 def run_team(
@@ -1040,6 +1042,339 @@ def resume_audit(out_dir: str, *, run_id: str = "w15-resume-audit") -> dict[str,
         encoding="utf-8",
     )
     return audit
+
+
+def resume_team(
+    out_dir: str,
+    *,
+    run_id: str = "w3-team",
+    leader_objective: str = "witnessd W17 team resume",
+    leader_id: str = "leader-fixed",
+    stop_rule: str = "resume proven lanes and re-execute unproven lanes",
+    max_parallel: int | None = None,
+    fail_fast: bool = False,
+) -> dict[str, Any]:
+    base_dir = Path(out_dir).resolve(strict=False)
+    base_dir.mkdir(parents=True, exist_ok=True)
+    log = EventLog(str(base_dir / "runlog.jsonl"))
+    controls = _load_resume_controls(base_dir, run_id=run_id)
+    if not controls:
+        raise ValueError("ERR_TEAM_RESUME_NO_LANES")
+
+    audit = resume_audit(str(base_dir), run_id=run_id)
+    audited = {str(lane["lane_id"]): lane for lane in audit["lanes"]}
+    decisions: list[dict[str, Any]] = []
+    final_lanes: list[dict[str, Any]] = []
+    rerunnable: list[dict[str, Any]] = []
+    start_commit = str(controls[0]["payload"]["base_commit"])
+    private_key_path = str(controls[0]["payload"]["private_key_path"])
+    public_key_path = str(controls[0]["payload"]["public_key_path"])
+    repo_root = Path(str(controls[0]["payload"]["repo_root"])).resolve(strict=False)
+    observer_path = base_dir / "observer"
+
+    for order, control in enumerate(controls):
+        lane_id = str(control["lane_id"])
+        lane = _resume_rederived_lane(
+            base_dir=base_dir,
+            control=control,
+            audited_lane=audited.get(lane_id),
+            leader_id=leader_id,
+            stop_rule=stop_rule,
+        )
+        if lane is not None:
+            ledger_lane = dict(lane["ledger_lane"])
+            final_lanes.append(ledger_lane)
+            decisions.append(
+                {
+                    "lane_id": lane_id,
+                    "decision": "skipped_as_proven",
+                    "reason": "surviving lane evidence rederived as pass",
+                    "attempt": 1,
+                    "evidence_dir": ledger_lane.get("evidence_dir"),
+                    "attempts": [
+                        {
+                            "attempt": 1,
+                            "status": "completed",
+                            "preserved": True,
+                        }
+                    ],
+                }
+            )
+            continue
+
+        payload = control["payload"]
+        rerunnable.append(
+            {
+                "order": order,
+                "lane_id": lane_id,
+                "spec": dict(payload["spec"]),
+                "commands": _commands(dict(payload["spec"])),
+                "allowed_touched_files": list(payload["allowed_touched_files"]),
+            }
+        )
+
+    attempt = _next_resume_attempt(base_dir)
+    if rerunnable:
+        attempt_dir = base_dir / "attempts" / f"attempt-{attempt}"
+        attempt_dir.mkdir(parents=True, exist_ok=False)
+        supervisor = WorkerSupervisor(log, run_id=run_id)
+        schedule_lanes: list[dict[str, Any]] = []
+        rerun_outputs = _run_claimed_lanes_parallel(
+            rerunnable,
+            repo_root=repo_root,
+            base_commit=start_commit,
+            base_dir=attempt_dir,
+            observer_dir=observer_path,
+            private_key_path=private_key_path,
+            public_key_path=public_key_path,
+            log=log,
+            run_id=run_id,
+            state_root=None,
+            max_parallel=max_parallel,
+            fail_fast=fail_fast,
+            supervisor=supervisor,
+            schedule_lanes=schedule_lanes,
+        )
+        for output in rerun_outputs:
+            lane_id = str(output["lane_id"])
+            ledger_lane = _prefix_resume_attempt_lane(
+                dict(output["ledger_lane"]),
+                attempt=attempt,
+            )
+            _rewrite_resume_attempt_worktree_receipt(
+                base_dir=base_dir,
+                ledger_lane=ledger_lane,
+                log=log,
+                run_id=run_id,
+            )
+            final_lanes.append(ledger_lane)
+            decisions.append(
+                {
+                    "lane_id": lane_id,
+                    "decision": "re_executed",
+                    "reason": "surviving lane evidence absent or failed rederivation",
+                    "attempt": attempt,
+                    "evidence_dir": ledger_lane.get("evidence_dir"),
+                    "attempts": [
+                        {
+                            "attempt": number,
+                            "status": "completed" if number == attempt else "indeterminate",
+                            "preserved": True,
+                        }
+                        for number in range(1, attempt + 1)
+                    ],
+                }
+            )
+
+    final_lanes = sorted(final_lanes, key=lambda lane: str(lane["lane_id"]))
+    decisions = sorted(decisions, key=lambda decision: str(decision["lane_id"]))
+    _write_resume_receipt(
+        log=log,
+        run_id=run_id,
+        base_dir=base_dir,
+        leader_id=leader_id,
+        decisions=decisions,
+        private_key_path=private_key_path,
+        public_key_path=public_key_path,
+    )
+    ledger = build_team_ledger(
+        leader_objective=leader_objective,
+        leader_id=leader_id,
+        start_commit=start_commit,
+        stop_rule=stop_rule,
+        lanes=final_lanes,
+        resume_receipt=TEAM_RESUME_RECEIPT,
+    )
+    _write_json_artifact(log, run_id, base_dir / "team-ledger.json", ledger)
+    return {
+        "base_dir": base_dir,
+        "ledger": ledger,
+        "resume_audit": audit,
+        "resume_receipt": base_dir / TEAM_RESUME_RECEIPT,
+        "runlog": log.read(),
+    }
+
+
+def _load_resume_controls(base_dir: Path, *, run_id: str) -> list[dict[str, Any]]:
+    controls: list[dict[str, Any]] = []
+    control_dir = base_dir / ".lane-exec"
+    for spec_path in sorted(control_dir.glob("*.json")):
+        if spec_path.name.endswith("-result.json"):
+            continue
+        try:
+            payload = json.loads(spec_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if payload.get("run_id") != run_id:
+            continue
+        lane_id = str(payload.get("lane_id", ""))
+        if not lane_id:
+            continue
+        controls.append({"lane_id": lane_id, "payload": payload, "spec_path": spec_path})
+    return controls
+
+
+def _resume_rederived_lane(
+    *,
+    base_dir: Path,
+    control: dict[str, Any],
+    audited_lane: dict[str, Any] | None,
+    leader_id: str,
+    stop_rule: str,
+) -> dict[str, Any] | None:
+    lane_id = str(control["lane_id"])
+    if not audited_lane or audited_lane.get("classification") != "complete":
+        return None
+    result_path = base_dir / ".lane-exec" / f"{_lane_control_stem(lane_id)}-result.json"
+    if not result_path.is_file():
+        legacy = base_dir / ".lane-exec" / f"{lane_id}-result.json"
+        result_path = legacy if legacy.is_file() else result_path
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    lane = result.get("lane")
+    if not isinstance(lane, dict) or not isinstance(lane.get("ledger_lane"), dict):
+        return None
+    ledger_lane = dict(lane["ledger_lane"])
+    if ledger_lane.get("lane_id") != lane_id:
+        return None
+    rederive_ledger = build_team_ledger(
+        leader_objective="witnessd W17 resume rederivation",
+        leader_id=leader_id,
+        start_commit=str(control["payload"]["base_commit"]),
+        stop_rule=stop_rule,
+        lanes=[ledger_lane],
+    )
+    if _depone_team_verdict_decision(rederive_ledger, base_dir=base_dir) != "pass":
+        return None
+    return {"ledger_lane": ledger_lane}
+
+
+def _depone_team_verdict_decision(ledger: dict[str, Any], *, base_dir: Path) -> str:
+    with tempfile.TemporaryDirectory(prefix="witnessd-resume-rederive-") as tmp:
+        tmp_dir = Path(tmp)
+        ledger_path = tmp_dir / "team-ledger.json"
+        verdict_path = tmp_dir / "team-ledger-verdict.json"
+        ledger_path.write_text(
+            json.dumps(ledger, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "depone",
+                "team-ledger",
+                "--ledger",
+                str(ledger_path),
+                "--base-dir",
+                str(base_dir),
+                "--out",
+                str(verdict_path),
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0 or not verdict_path.is_file():
+            return "blocked"
+        try:
+            verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return "blocked"
+    return str(verdict.get("decision"))
+
+
+def _next_resume_attempt(base_dir: Path) -> int:
+    attempts_dir = base_dir / "attempts"
+    found = [1]
+    if attempts_dir.is_dir():
+        for path in attempts_dir.iterdir():
+            if not path.is_dir() or not path.name.startswith("attempt-"):
+                continue
+            suffix = path.name.removeprefix("attempt-")
+            if suffix.isdigit():
+                found.append(int(suffix))
+    return max(found) + 1
+
+
+def _prefix_resume_attempt_lane(lane: dict[str, Any], *, attempt: int) -> dict[str, Any]:
+    prefix = f"attempts/attempt-{attempt}"
+    for key in ("evidence_dir", "worktree_receipt", "evidence_next_verdict"):
+        value = lane.get(key)
+        if isinstance(value, str) and value:
+            lane[key] = f"{prefix}/{value}"
+    return lane
+
+
+def _rewrite_resume_attempt_worktree_receipt(
+    *,
+    base_dir: Path,
+    ledger_lane: dict[str, Any],
+    log: EventLog,
+    run_id: str,
+) -> None:
+    receipt_rel = ledger_lane.get("worktree_receipt")
+    evidence_dir = ledger_lane.get("evidence_dir")
+    if not isinstance(receipt_rel, str) or not isinstance(evidence_dir, str):
+        return
+    receipt_path = base_dir / receipt_rel
+    try:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+    if isinstance(receipt, dict):
+        receipt["evidence_dir"] = evidence_dir
+        _write_json_artifact(
+            log,
+            run_id,
+            receipt_path,
+            receipt,
+            artifact_name=receipt_rel,
+        )
+
+
+def _write_resume_receipt(
+    *,
+    log: EventLog,
+    run_id: str,
+    base_dir: Path,
+    leader_id: str,
+    decisions: list[dict[str, Any]],
+    private_key_path: str,
+    public_key_path: str,
+) -> None:
+    receipt = {
+        "kind": "depone-team-resume-receipt",
+        "schema_version": "0.1",
+        "observed_by": leader_id,
+        "captured_at": _utc_now(),
+        "decisions": decisions,
+        "boundary": {
+            "executes_commands": False,
+            "launches_agents": False,
+            "raises_assurance": False,
+            "trusts_journal_completion": False,
+            "skip_requires_rederivation": True,
+            "append_only_attempt_history": True,
+        },
+    }
+    receipt_path = base_dir / TEAM_RESUME_RECEIPT
+    _write_json_artifact(log, run_id, receipt_path, receipt)
+    bundle = build_bundle(
+        {
+            "kind": "depone-team-resume-receipt",
+            "assurance": "A2",
+            "decision": "observed",
+            "evidence_mode": "contemporaneous",
+        },
+        {"team-resume-receipt": str(receipt_path)},
+        private_key_path,
+        public_key_path,
+    )
+    _write_json_artifact(log, run_id, base_dir / TEAM_RESUME_BUNDLE, bundle)
 
 
 def _write_team_run_manifest(

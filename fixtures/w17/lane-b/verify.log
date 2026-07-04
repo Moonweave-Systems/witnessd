@@ -1,0 +1,4 @@
+$ sh -c mkdir -p pkg; echo b > pkg/b.py
+exit=0
+$ sh -c true
+exit=0

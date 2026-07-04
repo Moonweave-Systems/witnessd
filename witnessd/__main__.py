@@ -923,6 +923,26 @@ def _cmd_team_resume_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_team_resume(args: argparse.Namespace) -> int:
+    from witnessd.fanin import resume_team
+
+    try:
+        result = resume_team(
+            args.run_dir,
+            run_id=args.run_id,
+            max_parallel=args.max_parallel,
+            fail_fast=args.fail_fast,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps({"ledger": str(result["base_dir"] / "team-ledger.json")}, sort_keys=True))
+    else:
+        print(f"team_resume: {result['base_dir'] / 'team-ledger.json'}")
+    return 0
+
+
 def _cmd_team_kill(args: argparse.Namespace) -> int:
     runlog = args.runlog
     if runlog is None and args.state_root is not None:
@@ -1279,6 +1299,14 @@ def _build_parser() -> argparse.ArgumentParser:
     team_resume_audit.add_argument("--run-id", default="w15-resume-audit")
     team_resume_audit.add_argument("--json", action="store_true")
     team_resume_audit.set_defaults(func=_cmd_team_resume_audit)
+
+    team_resume = team_sub.add_parser("resume", help="resume an interrupted team run")
+    team_resume.add_argument("run_dir")
+    team_resume.add_argument("--run-id", default="w3-team")
+    team_resume.add_argument("--max-parallel", type=int, default=None)
+    team_resume.add_argument("--fail-fast", action="store_true")
+    team_resume.add_argument("--json", action="store_true")
+    team_resume.set_defaults(func=_cmd_team_resume)
 
     team_kill = team_sub.add_parser("kill", help="kill all live team lanes")
     team_kill.add_argument("--runlog", default=None)
