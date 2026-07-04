@@ -1,52 +1,136 @@
 ---
-name: proofrun
-description: Run a goal as observer-signed parallel team execution whose completion is re-derived from evidence bytes, not self-declared. Use when the user asks for a proofrun, a verified/proven run, provable team execution, 증명 실행, or to run something "with witnessd". Powered by witnessd × Depone.
+name: orro
+description: ORRO, the Observed Run & Review Orchestrator, turns a goal into an evidence-backed workflow: scout the repo, plan it, run it through witnessd, seal the evidence, and check what the bytes support through Depone. Use for orro, scout, flowplan, proofrun, proofcheck, provable team execution, evidence-backed automation, and 증명 실행. Published by Moonweave.
 ---
 
-# proofrun — provable session runs (powered by witnessd × Depone)
+# orro - evidence-backed workflow runs
 
-Use this skill when an operator asks for a proofrun, a verified or proven run,
-provable team execution, 증명 실행, or asks to use witnessd for a goal — any
-time "done" must be evidence bytes a verifier re-derives, not the session
-agent's own claim.
+Use this skill when an operator asks for ORRO, a proofrun, provable team
+execution, 증명 실행, repo scouting, or evidence-backed automation.
+
+Source of truth: `SPEC3.md` is the current witnessd x Depone final-form spec.
+This skill text is derived from that spec. Moonweave is the publisher/account;
+ORRO is the product/tool name. `Superflow` is historical/compatibility naming and
+should not be used for new public surfaces.
+
+## Public modes
+
+| Mode | Meaning |
+| --- | --- |
+| `orro` | goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
+| `orro scout` | read-only repo exploration and context-pack creation |
+| `flowplan` | plan-only workflow design |
+| `proofrun` | precise evidence-backed execution alias |
+| `proofcheck` | offline evidence verification alias |
+| `orro handoff` | maintainer review package bound to evidence |
+| `orro skillpack` | knowledge-as-code and progressive-disclosure support |
+| `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
+| `orro auto` | later continuation loop behind evidence gates |
+| `orro ultra` | future high-autonomy profile with stricter gates |
+
+## Repository and install boundary
+
+This is the single user-facing skill surface. Do not ask normal users to install
+separate Depone and witnessd skills for one workflow.
+
+The skill may live in the witnessd repo while the product surface is thin,
+because ORRO starts execution and witnessd owns execution. Depone stays a pinned
+verifier dependency and is invoked only to re-derive persisted evidence bytes.
+
+A future standalone `ORRO` repo may package marketplace manifests, host-specific
+plugin files, examples, product docs, and engine version locks. It must remain a
+wrapper/distribution repo, not a place to duplicate witnessd runtime logic or
+Depone verifier logic.
+
+Compatibility aliases such as `superflow` may remain during migration, but ORRO
+is the canonical product and skill surface.
 
 ## Contract
 
-The session agent does not certify its own work. It designs or receives lanes,
-runs witnessd, and reports only evidence that Depone re-derived from bytes.
+The session agent does not certify its own work. It scouts, designs or receives
+lanes, runs witnessd, and reports only evidence that Depone re-derived from bytes.
 
 Required output evidence:
 
 - run directory path
+- `repo-profile.json` path when a scout step ran
+- `context-pack.json` path when a scout step ran
+- `verification-recipe.json` path when checks are declared
+- `verification-receipt.json` path only after a command actually ran
 - `team-ledger.json` path
 - `team-ledger-verdict.json` path
 - verdict `decision`
 - lane count and any error count present in the verdict
 
+Scout artifacts are planning-only. `orro scout` must not create a fake
+`verification-receipt.json`, and a scout-only directory must not be reported as a
+`proofcheck` pass.
+
+## Progressive disclosure rules
+
+Do not load the whole repository into context. For non-trivial work:
+
+1. run a read-only scout step,
+2. create or update `repo-profile.json`,
+3. build `context-pack.json` for relevant paths only,
+4. write `discovery-notes.md` after every two meaningful read/search actions,
+5. create a `verification-recipe.json` before implementation when checks exist,
+6. run witnessd only after the plan and checks are clear.
+
+Use existing `SKILL.md`, `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, and ORRO
+skillpacks as knowledge-as-code. Load only the relevant skill body after
+frontmatter matching.
+
+If MCP or external tools are used, require receipts. Do not treat external tool
+output as verifier truth.
+
 ## Workflow
 
-1. Choose explicit lanes for the goal. If a Depone design artifact is already
+1. Scout before non-trivial implementation:
+
+   ```bash
+   python3 -m witnessd scout "<goal>" --repo <repo> --home .witnessd
+   ```
+
+   If `scout` is not implemented yet, perform read-only repo inspection and write
+   the same artifacts manually in the run directory. Scout may create planning
+   artifacts and verification recipes, but it does not prove execution.
+
+2. Choose explicit lanes for the goal. If a Depone design artifact is already
    available, use its lane/region shape. If not, use explicit witnessd lanes or
    the default shell-lane quickstart path.
-2. Initialize once per repo or session:
+
+3. Initialize once per repo or session:
 
    ```bash
    python3 -m witnessd init --home .witnessd --depone-root ../depone
    ```
 
-3. Run the goal:
+4. Run the goal:
 
    ```bash
    python3 -m witnessd run "<goal>" --repo <repo> --home .witnessd
    ```
 
-4. Re-check the emitted bytes:
+5. Re-check the emitted bytes:
 
    ```bash
    python3 -m witnessd verify <run-dir> --home .witnessd
    ```
 
-5. Report the verdict fields from `team-ledger-verdict.json`. If the verdict is
+6. Prepare a handoff package when code/docs changed:
+
+   ```text
+   pr-handoff.json
+     run_id
+     evidence_dir
+     changed_files
+     verification_recipe_results
+     unresolved_risks
+     human_required_actions
+   ```
+
+7. Report the verdict fields from `team-ledger-verdict.json`. If the verdict is
    missing, blocked, unreadable, or not re-derived, report evidence pending or
    blocked with the exact error. Do not upgrade the result from the session
    transcript.
@@ -57,4 +141,7 @@ Required output evidence:
   running or verifying.
 - Depone verifies; witnessd executes. Do not import Depone into witnessd runtime
   code.
+- Skill text, MCP output, IDE terminals, tmux panes, and session transcripts are
+  not verdicts.
+- Scout-only planning artifacts are not execution proof.
 - No public claim is stronger than the persisted verdict bytes.

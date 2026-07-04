@@ -119,15 +119,19 @@ def _process_group_confirmed_dead(pgid: int | None) -> bool:
     except ProcessLookupError:
         return True
     except PermissionError:
-        return False
+        return True
     return False
 
 
 def _signal_target(target: KillTarget, sig: int) -> None:
     if target.pgid is not None:
-        os.killpg(target.pgid, sig)
-    else:
-        os.kill(target.pid, sig)
+        try:
+            os.killpg(target.pgid, sig)
+            return
+        except PermissionError:
+            os.kill(target.pid, sig)
+            return
+    os.kill(target.pid, sig)
 
 
 def _target_confirmed_dead(target: KillTarget) -> bool:

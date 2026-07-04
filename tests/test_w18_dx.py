@@ -1,6 +1,7 @@
 import io
 import inspect
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -22,10 +23,17 @@ def _seed_repo(repo: Path) -> None:
     subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
 
 
+def _depone_root() -> Path:
+    env_root = os.environ.get("WITNESSD_DEPONE_ROOT")
+    if env_root:
+        return Path(env_root)
+    witnessd_root = Path(__file__).resolve().parents[1]
+    return witnessd_root.parent / "depone"
+
+
 class W18DxCliTests(unittest.TestCase):
     def _run_ergonomic_goal(self, root: Path) -> tuple[Path, Path]:
-        witnessd_root = Path(__file__).resolve().parents[1]
-        depone_root = witnessd_root.parent / "depone"
+        depone_root = _depone_root()
         repo = root / "repo"
         home = root / "home"
         repo.mkdir()

@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from witnessd.eventlog import EventLog
+from witnessd.liveness import HEARTBEAT_TTL_SECONDS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,7 +37,7 @@ class TestCliW2(unittest.TestCase):
                 "event": "spawn",
                 "error_code": None,
                 "ts_wall": "2026-01-01T00:00:00Z",
-                "ts_monotonic": 0.0,
+                "ts_monotonic": -(HEARTBEAT_TTL_SECONDS + 2.0),
                 "payload": {"lane_id": "L1"},
             }
         )
@@ -48,7 +49,7 @@ class TestCliW2(unittest.TestCase):
                 "event": "heartbeat",
                 "error_code": None,
                 "ts_wall": "2026-01-01T00:00:01Z",
-                "ts_monotonic": 1.0,
+                "ts_monotonic": -(HEARTBEAT_TTL_SECONDS + 1.0),
                 "payload": {"lane_id": "L1"},
             }
         )

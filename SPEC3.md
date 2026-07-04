@@ -1,306 +1,653 @@
-# SPEC — Part III: The Endgame
+# witnessd SPEC3 - ORRO Runtime Spec
 
-**This document is the final-form specification for the witnessd × Depone
-product pair.** Part I (`SPEC.md`) defined the evidence substrate and trust
-ladder; Part II (`SPEC2.md`) defined the execution half through v2.0. Part III
-defines everything from here to the finished product: the target architecture,
-every remaining wave in order with acceptance bars, and **every open decision,
-decided**. Nothing below is a menu. Deviate only on a stop-condition
-(security finding, contract break, or an acceptance bar that cannot be met
-honestly) — and record the deviation here.
+Status: source-of-truth spec, 2026-07-04.
 
----
+One-line decision: **witnessd executes and emits evidence; Depone verifies the
+bytes; ORRO exposes the workflow.** Moonweave is the publisher/account name, not
+the product surface.
 
-## 0. Definition of DONE (what "finished" means)
-
-The product is finished when all six hold, each provable, not claimed:
-
-1. **Install:** one command on macOS and Linux gets a working witnessd with a
-   pinned Depone. No manual PYTHONPATH, no second clone by hand.
-2. **Run:** one command executes a real goal across **N genuinely parallel,
-   provably isolated agent lanes** on a real repository.
-3. **Prove:** every run emits observer-signed evidence from which Depone —
-   non-executing, offline, on any machine — re-derives what happened,
-   including *that* the lanes ran in parallel and *what* each touched.
-4. **Trust:** a third party who does **not** trust the operator can verify the
-   evidence (keyless identity + transparency-log inclusion, verified offline
-   from persisted bytes). This is AAL-4 and it is in scope, not deferred
-   rhetoric.
-5. **Survive:** crashes, kills, and failures always yield honest evidence
-   (blocked/indeterminate lanes, never fabricated completions), and
-   interrupted runs resume from their journal without re-executing completed
-   work.
-6. **Interoperate:** the evidence contract is a published, versioned spec;
-   evidence exports cleanly to OTel GenAI telemetry and maps to OVERT's
-   governance view. Depone verifies; it never executes. Forever.
-
-## 1. Final architecture
-
-```
-┌─ witnessd (execution plane — the runtime) ──────────────────────────────┐
-│ orchestrator      nursery semantics: claims regions, spawns lane-exec    │
-│                   children, no orphans, cancel-then-wait, stop rules     │
-│ lane executor     one process per lane: worktree + isolated state root   │
-│                   + uid-isolated observer (A2) + adapter                 │
-│ adapters          codex / claude / opencode / shell / custom — one       │
-│                   crisp interface; engines are swappable commodities     │
-│ evidence spine    capture-manifest → runner-receipt → DSSE bundle →      │
-│                   team ledger + schedule receipt + worktree receipts,    │
-│                   all content-addressed, hash-chained runlog (journal)   │
-│ trust anchor      ISOLATED component (see D1): keyless signing +         │
-│                   transparency-log submission; never in capture path     │
-└──────────────────────────────────────────────────────────────────────────┘
-                     │ evidence bytes only (the one coupling)
-┌─ Depone (verification plane — non-executing, offline) ──────────────────┐
-│ contract SoT      schemas + error codes + canonical_hash                 │
-│ validators        capture / receipt / isolation / DSSE / ledger /        │
-│                   schedule (max_overlap derivation) / rotation / keyless │
-│ policy layer      declarative JSON verification policies (stdlib)        │
-│ trust audit       offline verification of keyless identity + Rekor       │
-│                   inclusion proofs from persisted bytes                  │
-└──────────────────────────────────────────────────────────────────────────┘
-```
-
-Trust model, final form: **assurance** (A0 claims / A1 observed / A2
-isolated-observed — execution axis) × **trust root** (operator-key →
-keyless identity → transparency-logged — verification axis). AAL-4 =
-A2 evidence whose signatures a stranger can verify offline.
-
-## 2. Standing decisions (decided now; do not re-litigate)
-
-- **D1 — the no-network invariant, resolved.** The collision between
-  "stdlib+openssl, no network" and live keyless is resolved by **splitting
-  the invariant by plane**:
-  - *Capture and verification stay offline forever.* Depone never makes a
-    network call. The evidence-capture path in witnessd never makes a
-    network call. An evidence bundle is always valid without any network.
-  - *The runtime gains one explicitly-scoped network component*,
-    `witnessd/anchor/` — the trust anchor: Sigstore Fulcio (keyless cert)
-    + Rekor (transparency log) submission. It is a separate process,
-    feature-gated (`--anchor`), allowed to reach only Fulcio/Rekor, and
-    runs *after* evidence is sealed (anchoring is an enrichment of an
-    already-valid bundle, never a dependency of it). This is the same kind
-    of carve-out as the `openssl` CLI: a narrow, auditable exception, not
-    an erosion.
-  - *Depone verifies anchors offline*: a Rekor inclusion proof is a Merkle
-    proof — verifiable from persisted bytes against a pinned checkpoint.
-    Online freshness checking is a separate optional tool, not Depone core.
-- **D2 — third-party dependency for the anchor.** stdlib cannot do Fulcio
-  OIDC + Rekor. The anchor component may use the official `sigstore`
-  tooling **as an external CLI invoked by the anchor process only** (like
-  openssl), never as a Python import in witnessd core, never required for
-  capture or verification. If the CLI is absent, `--anchor` fails closed
-  with `ERR_WITNESSD_ANCHOR_UNAVAILABLE` and the run still produces valid
-  operator-key evidence.
-- **D3 — `ps` starttime resolution.** The macOS second-resolution PID
-  binding weakness is encoded into the contract at W20 (when the contract
-  is already being extended for anchoring): capture manifests gain
-  `process_identity_source: proc-jiffies | ps-lstart | unavailable`, and
-  Depone's verdict carries the strength. Until W20 it remains a documented
-  limitation. No hidden downgrade.
-- **D4 — repo visibility & the broken reverse-conformance CI job.** witnessd
-  goes **public at W22** (contract publication makes the runtime publishable;
-  the thesis wants scrutiny). Until then, the depone CI
-  `witnessd reverse conformance` job authenticates with a fine-grained PAT
-  (repo-read only) added at W18. Fix at W18, not before (it blocks nothing).
-- **D5 — scope ceilings for 1.0.** Single-host parallelism only (distributed
-  is post-1.0). uid isolation is the A2 ceiling (containers post-1.0).
-  Personas, MEASURE, dwm dual-engine remain permanently out of scope.
-- **D6 — engine strategy.** witnessd does not build an agent loop. Engines
-  (codex, claude, opencode) are commodities behind the adapter interface.
-  The moat is the evidence spine + verification plane, made too deep to
-  absorb: concurrency proof, isolation receipts, offline re-derivation,
-  transparency anchoring. Depth is the defense; do not chase engine
-  features.
-- **D7 — working protocol.** Each wave: Codex implements from this spec →
-  Claude verifies adversarially (independent re-execution; no
-  report-trusting) → operator reviews diff and pushes (Depone first whenever
-  the contract changes — witnessd CI clones Depone main) → CI green → next
-  wave begins **without asking**. Operator-only acts, permanently: pushes,
-  gate/status changes, operator reviews, paid codex runs.
-
-## 3. The remaining build — every wave to the end
-
-Waves are strictly ordered. Each has an acceptance bar; a wave lands only
-when its bar is met and all prior revalidators stay green (the standing
-regression floor: full suites both repos, both platforms; every
-`scripts/revalidate_*.py` PASS; gate stays open; `ingest_signed_evidence_bundle`
-untouched; no quota spent except where a bar explicitly says "operator,
-paid").
-
-### W15 — Parallel provable execution core  *(specced: `docs/plans/2026-07-03-w15-parallel-execution-core.md`; in flight)*
-One child process per lane; nursery semantics (no orphans, cancel-then-wait
-fail-fast); observer-derived **team-schedule receipt**; Depone derives
-`max_overlap` from signed intervals — concurrency proven, never
-self-declared. **Bar:** committed quota-free 3-lane fixture with derived
-overlap ≥ 2 + failure-isolation/fail-fast/parent-crash tests +
-`revalidate_w15.py`.
-
-### W16 — Merge lanes (overlapping regions)
-Wire the witnessd bridge to Depone's existing `merge_receipt` contract:
-planner accepts overlapping regions by emitting an explicit merge lane;
-the merge lane runs *after* its source lanes (sequenced by the scheduler,
-recorded in the schedule receipt), applies/reconciles their worktree
-outputs, and emits a merge receipt Depone validates (it already does —
-`validate_team_merge_attempt_receipt`). Conflicts are evidence, not
-failures: an unresolvable merge yields `blocked:
-ERR_TEAM_MERGE_CONFLICT_UNRESOLVED` with the conflict bytes attached.
-**Bar:** committed fixture — two lanes touching one shared file + merge
-lane; Depone re-derives pass-with-merge; negative fixture where a forged
-merge receipt is rejected; `revalidate_w16.py`.
-
-### W17 — Journaled replay-resume (durable execution)
-The hash-chained runlog becomes a true journal (Temporal-consensus
-semantics): `witnessd team resume <run-dir>` re-enters an interrupted run,
-treats lanes with complete, verifiable evidence as done (never re-executed),
-re-executes incomplete lanes into **fresh** lane attempts (attempt N+1 —
-prior partial evidence is retained, never overwritten), and the final
-ledger records the full attempt history. Resume is itself evidence: a
-`resume-receipt` records what was skipped-as-proven vs re-run and why.
-Contract addition (Depone PR first): `resume_receipt` (additive).
-**Bar:** kill-parent-mid-run fixture that resumes to a complete honest
-ledger; a tampered "completed" lane is *not* skipped (re-derivation fails →
-lane re-runs); `revalidate_w17.py`.
-
-### W17.5 — Design→Execute bridge (the third face becomes first-class)
-*(Order revision 2026-07-04: **W18 executes before W17.5.** Operator-market
-signal: the two-repo install friction is the adoption gate ("I wouldn't
-install this myself"); installability unblocks external user #1, the design
-bridge does not. W18's one-command story is also the answer to that friction:
-a runner installs ONE tool — `witnessd init` provisions the pinned Depone
-internally — while an auditor installs ONLY Depone to verify bytes without
-any runtime. The two-repo split is for the auditor persona and the W20 trust
-story; no end user should ever hand-wire both.)*
-*(Appended 2026-07-04 per the append-only rule: the design face existed —
-Depone's DWM skill + `compile/` — but was unwired to execution, and witnessd's
-`plan_heuristic` is a single-lane stub. The division of labor is: Depone =
-design + verification (both non-executing judgment), witnessd = execution.)*
-Depone (contract PR first, additive): a **workflow-plan contract** — the DWM
-design output (phases, workers/lanes, regions, budgets, gates, stop rules)
-normalized into a canonical, hashable plan document that `compile/` emits and
-a validator checks (structure, region sanity, budget shape; design is
-non-executing, so this stays within Depone's invariant). witnessd: replace the
-`plan_heuristic` stub — `witnessd run "<goal>" --plan <plan.json>` (or via the
-DWM skill emitting the plan) consumes the contract, seals it (existing
-`seal_plan`/plan_hash from W11), and dispatches real multi-lane parallel
-execution (W15) with merge lanes where regions overlap (W16). Depone's ledger
-verdict gains plan conformance: the executed lanes are re-derived **against
-the sealed plan** (lanes match, regions match, nothing off-plan) — design
-compliance becomes evidence, not intention. **Bar:** committed fixture where
-a DWM-designed multi-lane plan executes in parallel and Depone re-derives
-both the work AND its conformance to the sealed plan; negative fixture (a
-lane not in the plan, or region drift from plan) rejected;
-`revalidate_w17_5.py`. Quota-free (shell/fake adapters).
-
-### W18 — Distribution & DX (the tool becomes installable)
-- `witnessd init`: one command creates config, keys dir (0600), pinned
-  Depone (pip-installs Depone from its repo at a pinned tag into an isolated
-  venv, or vendors the pin — installer decides, records both hashes).
-- CLI ergonomics: `witnessd run "<goal>" --repo <path>` = plan → parallel
-  lanes → evidence → verdict, with today's flags as advanced overrides.
-  `witnessd verify <run-dir>` = local Depone re-derivation, one command.
-- Quickstart README rewrite (10-minute path from clone to verified parallel
-  run), gh release notes for every tag from v2.1.0 forward, man-style help.
-- **In-session skill packaging (appended 2026-07-04; this is the primary
-  runner UX).** The operator's consumption model is OMX/OMO-style: an agent
-  *inside a session* uses witnessd as its team-execution engine. Ship
-  `witnessd/SKILL.md` (Claude Code skill): given a goal, the in-session
-  agent designs lanes (via the Depone DWM skill or explicit lanes), runs
-  `witnessd run`/`team run` for parallel provable execution, and reports the
-  Depone-re-derived verdict — never a self-declared DONE. Pair with
-  `AGENTS.md` guidance so Codex sessions drive the same CLI. This is the
-  thesis applied to sessions: the session agent's "my team did X" becomes
-  observer-signed evidence instead of an OMO-style `<promise>VERIFIED</promise>`.
-  Bar addition: from a fresh session with the skill installed, "use witnessd
-  to do <goal> with 2 lanes" yields a verified parallel run without the
-  human touching the CLI.
-  **Naming principle (appended 2026-07-04): skill names are task-verbs, not
-  engine brands.** Repos keep their brand names (witnessd/Depone — renaming
-  public repos and contract kind strings is churn for no user value), but
-  what a session sees must say the job: the runner skill ships as
-  **`proofrun`** ("provable run" in one word; triggers include verified run
-  / proven / 증명 실행), the audit skill as **`verify-evidence`**, with
-  "powered by witnessd × Depone" as the engine credit. Skill discovery is
-  name+description matching, so intuitive naming is invocation accuracy,
-  not cosmetics.
-- Depone CI PAT for reverse conformance (D4).
-**Bar:** on a clean macOS *and* Linux machine, `git clone && witnessd init
-&& witnessd run` (shell adapter) to green verdict in under 10 minutes,
-scripted as `scripts/quickstart_check.sh` and run in CI.
-
-### W19 — Live parallel proof + dogfood default  *(operator, paid)*
-The first **live** multi-agent parallel run: ≥2 real codex lanes on a real
-external repository, concurrently, full evidence, Depone re-derivation,
-committed as the flagship fixture (like the W10/pilot lineage). From this
-wave on, the operator's own real tasks run through `witnessd run` by
-default — every real use accrues fixture-grade mileage. **Bar:** flagship
-fixture committed + `revalidate_w19.py`; a "mileage" README section that
-counts real runs honestly.
-
-### W20 — AAL-4: keyless identity + transparency log  *(the thesis completed)*
-Implements D1/D2/D3. witnessd `--anchor`: after a bundle is sealed, the
-anchor process obtains a Fulcio keyless cert (operator OIDC identity),
-countersigns the bundle digest, submits to Rekor, and stores cert + Rekor
-inclusion proof + checkpoint **into the evidence directory as bytes**.
-Depone (contract PR first, additive): `validate_keyless_anchor` — verifies
-the certificate chain to Fulcio roots, the signature, and the Rekor Merkle
-inclusion proof against the pinned checkpoint, **entirely offline from
-persisted bytes**; verdicts gain `trust_root: operator-key |
-keyless-anchored`. The W6a linter's fixture-only boundary is retired in
-favor of real verification; `ERR_WITNESSD_KEYLESS_LIVE_UNIMPLEMENTED`
-disappears. D3 lands here too. **Bar:** an anchored run whose evidence a
-fresh machine verifies offline to `keyless-anchored` **without any operator
-public key configured**; negative fixtures (wrong cert chain, forged
-inclusion proof, checkpoint mismatch) all rejected; `revalidate_w20.py`.
-*This is the wave after which a stranger can trust a witnessd run.*
-
-### W21 — Declarative verification policy layer
-Depone gains stdlib-evaluated JSON policies ("this repo requires: A2 lanes
-only, max_overlap ≥ 2, keyless-anchored, regions within src/") replacing
-hardcoded revalidator logic for *requirements* (validators stay for
-*integrity*). witnessd `run` can carry a policy reference; the verdict
-reports policy compliance. Witness/OPA is the consensus shape; ours stays
-stdlib. **Bar:** the W15/W19/W20 fixtures re-verified through policies;
-a policy that today's evidence *fails* produces an honest fail;
-`revalidate_w21.py`.
-
-### W22 — The standard: publish the contract
-- Evidence contract published as a versioned spec document in Depone
-  (schemas, error codes, canonical hash, assurance/trust axes) with
-  conformance fixtures as the test kit.
-- OVERT interop: a mapping document + exporter producing OVERT-compatible
-  governance views from witnessd evidence (interop, not adoption).
-- OTel GenAI: schedule/lane spans exported via the existing `otel_spans`
-  path, aligned to the GenAI semantic conventions.
-- witnessd goes public (D4). gh releases for both repos; the README leads
-  with the thesis and the live W19/W20 fixtures as proof.
-**Bar:** an external implementer could build a compatible emitter from the
-published spec alone (checked by a "spec-only" conformance test that uses
-no witnessd code); OVERT/OTel exports validate against their schemas.
-
-### Post-1.0 (recorded, not planned): distributed multi-host lanes,
-container-grade isolation, replay-determinism hardening, third-party
-adapter SDK, independent notary federation (beyond single Rekor).
-
-## 4. Release map
-
-| Version | Waves | Meaning |
-|---|---|---|
-| v2.2.0 | W15+W16 | true parallel runtime, merge-complete |
-| v2.3.0 | W17+W18 | durable + installable (a real tool) |
-| **v3.0.0** | W19+W20 | **thesis complete: live parallel + stranger-verifiable (AAL-4)** |
-| v3.1.0 | W21+W22 | policy + published standard, repos public |
-
-## 5. Adoption track (parallel to all waves; not code)
-
-Runs alongside, never blocks, never blocked: (1) every real operator task
-goes through witnessd from W19 on; (2) external user #1 is recruited after
-W18 (installable) and their run becomes fixture-grade evidence after W20
-(they need not trust us — that is the point); (3) feedback lands as issues
-tagged to waves, not as re-litigation of this spec.
+This file is the only top-level witnessd product/runtime authority. `SPEC.md`,
+`SPEC2.md`, `docs/plans/*`, `docs/conformance/*`, README, `SKILL.md`,
+`AGENTS.md`, fixture notes, and release notes are derived, wave-specific, or
+historical. If they conflict with this file, this file wins. Depone's verifier
+contract remains authoritative in the Depone repo at `docs/spec.md`.
 
 ---
 
-*Maintenance rule: this file changes only by append (new decisions, wave
-outcome notes) or by an explicit versioned revision commit. It is the answer
-to "what's next" — the answer is always: the next unfinished wave above.*
+## 1. Product names
+
+| Name | Surface | Meaning |
+| --- | --- | --- |
+| Moonweave / Moonweave Systems | publisher/account | GitHub org, operator, and release namespace. Not the product UX name. |
+| ORRO | flagship product/tool | Observed Run & Review Orchestrator. A goal becomes an evidence-backed workflow. |
+| `orro` | primary command/skill | User-facing command and host skill surface. |
+| ORRO Flow | workflow loop | `scout -> flowplan -> proofrun -> proofcheck -> handoff`. |
+| `orro scout` | read-only exploration | Build repo profile, context pack, and discovery notes before planning. |
+| `flowplan` | plan-only alias | Build or validate a workflow plan without running workers. |
+| `proofrun` | precise run alias | Execute with observer-signed evidence. Kept for technical invocation accuracy. |
+| `proofcheck` | verifier alias | Re-check existing evidence bytes offline. |
+| `orro handoff` | maintainer handoff | Bind code changes to evidence for human review; not merge approval. |
+| `orro skillpack` | knowledge-as-code support | Manage SKILL/CLAUDE/rule/MCP bundles with progressive disclosure. |
+| `orro doctor` | readiness check | Check engines, verifier pin, adapters, MCP availability, keys, and policy gates. |
+| `orro auto` | automation mode | Resume and continue work behind evidence gates. |
+| `orro ultra` | future high-autonomy profile | Same gates as ORRO, but with larger budgets and longer loops. |
+| Superflow | historical/compatibility name | Former surface name. Do not use for new public docs except migration notes. |
+| witnessd | engine | Runtime, adapters, sessions, worktrees, team orchestration, evidence emission. |
+| Depone | engine | Non-executing verifier and evidence-contract authority. |
+
+Naming rule: user-facing names say the job, not the engine or account. `witnessd`
+and `Depone` stay as repo/engine names. `Moonweave` stays as publisher/account
+credit. New sessions and plugin surfaces should lead with `orro`, `flowplan`,
+`proofrun`, and `proofcheck`.
+
+Avoid names that imply trust before the verifier has re-derived the bytes.
+
+Compatibility rule: existing `superflow` commands, fixture paths, or artifact
+kinds may remain during migration, but the canonical product name is ORRO and the
+canonical workflow name is ORRO Flow.
+
+---
+
+## 2. Canonical document set
+
+Future development should start from this small set:
+
+| Purpose | Canonical document |
+| --- | --- |
+| witnessd runtime/product architecture | `SPEC3.md` |
+| Depone verifier/evidence contract | Depone `docs/spec.md` |
+| human quickstart | `README.md` |
+| in-session skill guidance | `SKILL.md` |
+| in-session Codex guidance | `AGENTS.md` |
+| agent/developer orientation | `CLAUDE.md` |
+| docs map and legacy policy | `docs/README.md` |
+
+Everything else is legacy, historical, fixture-specific, or wave evidence unless
+this file explicitly promotes it. Do not create another product source of truth.
+When a decision changes, edit this file first, then update derived summaries.
+
+---
+
+## 3. Final architecture
+
+```text
+User / agent host
+  Claude Code, Codex, OpenCode, local shell, IDE terminal
+        |
+        v
+ORRO surface
+  orro | scout | flowplan | proofrun | proofcheck | handoff | auto | ultra
+        |
+        +-- witnessd execution plane
+        |     planner bridge
+        |     scheduler / nursery
+        |     lane executor
+        |     adapter interface
+        |     worktree and state roots
+        |     observer and evidence emitter
+        |     verification-recipe runner
+        |     MCP/tool receipt recorder
+        |     run journal
+        |
+        +-- Depone verification plane
+              schemas and error codes
+              canonical_hash
+              validators
+              verification-recipe and receipt checks
+              MCP/tool receipt checks
+              team ledger verdicts
+              policy checks
+              offline trust-root checks
+```
+
+The engines stay separate because the executor must not be the component that
+raises trust. The user-facing install surface should be one product because users
+should not have to hand-wire two repositories.
+
+### 3.1 Repository and distribution strategy
+
+Development stays in two engine repositories:
+
+```text
+Depone   = verifier engine and evidence contract
+witnessd = execution engine and evidence emitter
+```
+
+ORRO is one user-facing install, command, and skill. Normal users should not be
+told to install separate Depone and witnessd skills for one workflow.
+
+In the near term, the thin `orro` command/skill may live in the witnessd repo
+because ORRO starts execution and witnessd owns execution. Depone is consumed as a
+pinned verifier dependency.
+
+Create a standalone `ORRO` repo only when distribution needs justify it:
+marketplace manifests, host-specific plugin bundles, examples, product docs,
+engine version locks, and end-to-end integration tests. That repo is a wrapper and
+distribution repo, not a third engine. It must not duplicate witnessd runtime
+logic or Depone verifier logic.
+
+### 3.2 Global AI coding workflow adoption
+
+ORRO is CLI-first but not IDE-hostile. It is the autonomous background execution
+plane for work that is too large, slow, parallel, risky, or audit-sensitive for
+an inline IDE edit. Cursor, Windsurf, and similar AI-native IDEs remain useful for
+fast local edits and human steering. ORRO owns the slower, evidence-governed
+path:
+
+```text
+IDE / human edit path
+  -> fast local changes, inline edits, tactical refactors
+
+ORRO Flow path
+  -> read-only scout
+  -> progressive context pack
+  -> multi-lane worktree execution
+  -> adapter workers
+  -> verification recipes
+  -> evidence sealing
+  -> Depone re-derivation
+  -> maintainer handoff
+```
+
+Each runnable lane gets an isolated worktree and state root. The operator may
+view the run through tmux, Ghostty, WezTerm, IDE terminals, or a future ORRO
+dashboard, but those views are monitoring surfaces only. They are not evidence.
+The authoritative state is the run journal, schedule receipt, lane receipts, and
+Depone verifier output.
+
+ORRO must not dump an entire monorepo into one agent context. The planner and
+workers use progressive disclosure:
+
+1. read file tree and repo profile first,
+2. use grep, AST/search tools, and dependency hints to narrow scope,
+3. write findings to disk after bounded discovery,
+4. load only the relevant files into each lane context,
+5. keep lane context aligned to declared ownership regions.
+
+Required planning artifacts:
+
+```text
+repo-profile.json
+context-pack.json
+discovery-notes.md
+lane-context.json
+```
+
+`discovery-notes.md` follows the two-action rule: after two meaningful search or
+read actions, the agent records the finding, path, and why it matters. This
+prevents long sessions from losing reasoning in model context.
+
+Team knowledge must be stored as files, not repeated in chat. ORRO treats these
+as first-class but non-verdict artifacts:
+
+```text
+SKILL.md
+CLAUDE.md
+AGENTS.md
+.cursorrules or equivalent IDE rules
+orro/skillpacks/*.md
+orro/rules/*.md
+orro/mcp/*.json
+```
+
+A skillpack has short frontmatter for discovery and a body that is loaded only
+when relevant. This keeps context small while preserving domain knowledge.
+
+MCP servers and external tools are allowed as tool bridges, not as trust roots.
+They may query databases, internal APIs, monitoring systems, issue trackers, or
+SaaS systems. Every external tool use that affects a run must produce a receipt.
+
+```text
+mcp-tool-receipt.json
+  tool_name
+  server_id
+  invocation_hash
+  redacted_input_hash
+  output_hash
+  captured_at
+  policy_flags
+```
+
+MCP output is an observed external fact. It is not final trust. Depone may verify
+the receipt shape and hashes, but it does not call the MCP server.
+
+Every lane should carry a machine-readable verification recipe when the task can
+be checked by commands. The recipe is intent. The receipt is evidence.
+
+```json
+{
+  "kind": "orro-verification-recipe",
+  "schema_version": "1.0",
+  "commands": [
+    {
+      "id": "unit-tests",
+      "argv": ["python", "-m", "pytest", "tests/payments"],
+      "expected_exit_code": 0,
+      "required": true
+    }
+  ]
+}
+```
+
+Object kind migration rule: new artifacts should use `orro-*` kinds. Existing
+`superflow-*` artifact kinds may remain accepted as compatibility aliases until
+fixtures and code have migrated.
+
+witnessd executes or records command receipts. Depone verifies that required
+recipes ran, their receipts match, and their exit codes support the claimed
+result.
+
+---
+
+## 4. Responsibilities
+
+### 4.1 witnessd owns execution
+
+witnessd owns:
+
+- lane planning bridge from a sealed plan to runnable lane specs,
+- worker spawn, supervision, cancellation, and resume,
+- session and state roots,
+- git worktree creation and cleanup,
+- adapter invocation for shell, Codex, Claude Code, OpenCode, and future engines,
+- ownership-region enforcement,
+- budget, pause, kill, and lifecycle controls,
+- observer capture and evidence emission,
+- verification-recipe execution receipts,
+- MCP/tool receipt recording for declared tool bridges,
+- run journal and schedule receipts,
+- operator-key signing and optional later anchoring.
+
+witnessd does not issue final trust. It may report lifecycle and
+`evidence-pending`; Depone reports what the evidence supports.
+
+### 4.2 Depone owns verification
+
+Depone owns:
+
+- evidence schemas,
+- canonical hash convention,
+- capture, receipt, isolation, DSSE, evidence-contract, schedule, and ledger
+  validation,
+- verification-recipe and verification-receipt validation,
+- repo-profile, context-pack, and skillpack-lock binding validation,
+- MCP/tool receipt validation as observed external facts,
+- PR handoff evidence validation,
+- verdict/error vocabulary,
+- offline re-derivation,
+- policy compliance checks,
+- offline verification of future keyless/transparency anchoring.
+
+Depone does not spawn workers, mutate active worktrees, execute recipes, or call
+MCP servers.
+
+### 4.3 ORRO owns the user surface
+
+The ORRO surface owns:
+
+- one install surface,
+- host-native skill/plugin packaging,
+- command aliases and UX copy,
+- engine version lock,
+- environment checks,
+- progressive disclosure and skillpack loading,
+- run summary rendering,
+- selection of `orro`, `orro scout`, `flowplan`, `proofrun`, `proofcheck`,
+  `orro handoff`, and automation modes.
+
+The surface may live inside witnessd while it is thin. A future standalone ORRO
+repo must remain a wrapper/distribution layer and must not duplicate verifier or
+runtime logic.
+
+---
+
+## 5. Agent team operating model
+
+ORRO is not a loose chat swarm. It is a small evidence-governed team system.
+Every subagent is either a worker that produces bytes, a coordinator that decides
+safe structure, or a verifier that checks persisted artifacts. No subagent is
+allowed to certify its own completion.
+
+| Role | Who performs it | Output | Trust boundary |
+| --- | --- | --- | --- |
+| Operator | human or calling session | objective, risk approvals, final human decisions | may approve gates, cannot create verifier truth |
+| Scout | ORRO/session agent | repo-profile, context-pack, discovery notes | planning only |
+| Flow planner | ORRO/session agent/future wrapper | sealed plan, lane packets, regions, budgets, stop rules, verification recipes | plan-only |
+| Scheduler | witnessd | dispatch events, schedule receipt, run journal | lifecycle only |
+| Lane worker | shell/Codex/Claude/OpenCode/custom adapter | code/doc changes, command receipts, touched files | worker output is a claim until observed |
+| Review lane | optional model or shell lane | findings, test receipts, suggested repairs | advisory unless captured as evidence |
+| Merge lane | witnessd lane after source lanes | merge receipt or conflict bytes | merge is evidence, not silent approval |
+| Observer/emitter | witnessd observer path | capture manifests, bundles, ledger artifacts | creates evidence, not final verdict |
+| Verifier | Depone / proofcheck | verdict, assurance, blocked/refuted reasons | final evidence interpretation |
+| Maintainer handoff | ORRO / operator | pr-handoff artifact | review package, not approval |
+
+Team movement:
+
+```text
+user goal
+  -> orro scout builds repo profile and context pack
+  -> ORRO creates or imports a flowplan
+  -> flowplan divides work into lane packets with regions, budgets, tools, dependencies, and verification recipes
+  -> witnessd claims regions and starts independent lanes in parallel
+  -> each lane works in its own worktree/state root through its adapter
+  -> observer/emitter records what happened while the work happens
+  -> verification receipts record commands, exit codes, and output hashes
+  -> review lanes and tests run as evidence-producing lanes, not as trust authorities
+  -> merge lanes reconcile only the regions that actually overlap
+  -> proofcheck asks Depone to re-derive what the bytes support
+  -> ORRO prepares a handoff package for human review
+```
+
+The team is organic because lanes move as soon as their dependencies and region
+claims allow it. The system avoids a global barrier unless a merge, review, or
+policy explicitly requires one.
+
+ORRO saves time by narrowing context before expensive agent work starts, running
+disjoint regions in parallel, isolating true merge conflicts, skipping completed
+lanes on resume only when evidence still verifies, and reusing bytes through
+`proofcheck` instead of rerunning work just to regain confidence.
+
+---
+
+## 6. ORRO workflows
+
+### 6.1 `orro scout`
+
+Read-only exploration mode.
+
+```text
+goal + repo -> repo-profile -> context-pack -> discovery-notes -> no execution
+```
+
+Outputs:
+
+- `repo-profile.json`,
+- `context-pack.json`,
+- `discovery-notes.md`,
+- `lane-context.json`,
+- `skillpack-lock.json` when local knowledge files are selected,
+- `verification-recipe.json` as intended checks only,
+- MCP/tool receipts only for declared planning/tool observations,
+- `pr-handoff.json` with unresolved planning risks.
+
+`orro scout` must not create a fake `verification-receipt.json`. It did not run
+the recipe, so there is no command execution receipt to verify. A scout-only
+artifact directory is planning evidence; Depone `proofcheck` must block it until
+a later `proofrun` or witnessd execution step emits a verifier-recognized
+verification receipt and the other required execution artifacts.
+
+Allowed terminal states: `scouted`, `blocked`, `inconclusive`. It never reports
+A1/A2 because no execution evidence exists.
+
+### 6.2 `flowplan`
+
+Plan-only mode.
+
+```text
+goal -> plan contract -> lane/region/budget/gate preview -> no execution
+```
+
+Outputs include sealed plan, lane packet list, region and overlap analysis,
+budget and stop rules, evidence-contract preview, verification-recipe preview,
+and skillpack-lock preview. It never reports A1/A2 because no execution evidence
+exists.
+
+### 6.3 `proofrun`
+
+Precise evidence-backed execution alias.
+
+```text
+goal or plan -> witnessd run -> evidence tree -> optional Depone verification
+```
+
+Before Depone runs, status is `evidence-pending`.
+
+### 6.4 `proofcheck`
+
+Verifier-only alias.
+
+```text
+evidence bytes + public key -> Depone -> verifier report
+```
+
+Forbidden in this mode: worker launch, model calls, worktree mutation, retry,
+repair execution, and live MCP/server/API calls. `proofcheck` is fail-closed.
+Missing, empty, malformed, incomplete, or scout-only artifact directories block
+instead of passing.
+
+### 6.5 `orro`
+
+Flagship mode.
+
+```text
+goal -> scout -> flowplan -> proofrun -> proofcheck -> handoff summary
+```
+
+ORRO is the public story: a goal becomes an evidence-backed workflow. It scouts,
+plans, runs, seals, checks what the bytes support, and prepares a human handoff.
+
+### 6.6 `orro handoff`
+
+Maintainer handoff mode.
+
+```text
+verified run bytes -> pr-handoff.json -> human review package
+```
+
+A handoff binds code changes to evidence. It is not merge approval and does not
+raise assurance.
+
+### 6.7 `orro skillpack`
+
+Knowledge-as-code support mode. Skillpacks, rules, and MCP declarations are
+loaded by frontmatter first and full body only when relevant. Skillpacks may guide
+planning and execution but do not raise assurance by themselves.
+
+### 6.8 `orro doctor`
+
+Readiness-check mode for engines, verifier pin, adapter availability, MCP bridge
+availability, keys, policies, and required local commands. `doctor` may block a
+run before execution; it does not prove task completion.
+
+### 6.9 `orro auto`
+
+Long-running automation mode.
+
+```text
+current evidence -> proofcheck -> next gate -> witnessd executes one approved step -> new evidence
+```
+
+Rules: no continuation after pause, blocked, or refuted without explicit operator
+approval; no budget auto-increase; no unverified plan activation; no merge/deploy
+approval from witnessd alone.
+
+### 6.10 `orro ultra`
+
+Future high-autonomy profile. It is not a different trust model. It is ORRO with
+larger budgets, longer loops, and stricter pause/budget/proofcheck gates.
+
+---
+
+## 7. Evidence layout
+
+A run directory must be archiveable and re-checkable from bytes:
+
+```text
+.witnessd/runs/<run_id>/
+  run-summary.json
+  repo-profile.json
+  context-pack.json
+  discovery-notes.md
+  skillpack-lock.json
+  sealed-plan.json
+  verification-recipe.json
+  dispatch-log.jsonl
+  runlog.jsonl
+  lane-*/
+    lane-context.json
+    capture-manifest.json
+    observer-capture.json
+    runner-receipt.json
+    verification-receipt.json
+    mcp-tool-receipt-*.json
+    bundle.json
+    provenance.json
+    worktree-lane-receipt.json
+    evidence-next-verdict.json
+  team-schedule-receipt.json
+  team-ledger.json
+  team-ledger-verdict.json
+  pr-handoff.json
+```
+
+Rules:
+
+- private keys stay outside evidence directories,
+- host auth/subscription files stay in isolated state roots,
+- evidence directories may be archived after secret scan,
+- verifier reports are derived and may be regenerated,
+- runlog and capture manifests are append-only evidence,
+- repo-profile, context-pack, and skillpack-lock are planning evidence,
+- verification-recipe describes intended checks,
+- verification-receipt records what actually ran,
+- scout-only directories omit verification-receipt by design and therefore do not
+  produce a proofcheck pass,
+- mcp-tool-receipt records external tool use,
+- pr-handoff records a review package and is not approval,
+- Depone decides which artifacts can support assurance.
+
+---
+
+## 8. Trust and status model
+
+Execution assurance and trust root are separate axes.
+
+Execution assurance:
+
+```text
+A0-claims-only
+A1-local-observed
+A2-isolated-observed
+```
+
+Trust root:
+
+```text
+operator-key
+keyless-anchored        # future W20
+transparency-logged     # future W20+
+```
+
+Rules:
+
+- A1/A2 are never granted by witnessd alone.
+- Operator-key DSSE is report-level provenance; it does not create A3.
+- Keyless/transparency anchoring is a future optional enrichment of already-valid
+  evidence, not a dependency of capture.
+- Depone must be able to verify persisted anchor bytes offline.
+- Skill text, MCP output, and session transcripts are not trust roots unless a
+  verifier-recognized receipt binds them to evidence.
+
+Keep lifecycle and evidence status separate.
+
+Lifecycle examples:
+
+```text
+scouted
+planned
+running
+paused
+dead
+resumed
+finished-emitting
+handoff-ready
+```
+
+Evidence/verifier examples:
+
+```text
+evidence-pending
+A0-claims-only
+A1-local-observed
+A2-isolated-observed
+blocked
+refuted
+inconclusive
+pass
+```
+
+A run may have `lifecycle=finished-emitting` and
+`evidence_status=evidence-pending`. That means the runtime stopped writing, not
+that the result is trusted.
+
+---
+
+## 9. Development roadmap
+
+The remaining work is ordered. A wave lands only when its acceptance bar is met
+and prior fixture revalidators remain green.
+
+Cross-cutting acceptance requirements:
+
+1. Progressive disclosure: no lane should require whole-repo context when a repo
+   profile and context pack can narrow scope.
+2. Verification recipes: executable success criteria must be machine-readable and
+   receipt-bound.
+3. Knowledge as code: domain guidance lives in skillpacks, rules, `CLAUDE.md`,
+   `AGENTS.md`, or equivalent files, not only in chat.
+4. MCP/tool receipts: external tool outputs are hash-bound observations, not
+   trust roots.
+5. Checkpoint recovery: scout, plan, run, check, and handoff artifacts must allow
+   restart or audit without replaying successful work.
+6. Human gate: destructive, production, secret, paid/live, and merge/deploy
+   actions require explicit approval unless a future policy says otherwise.
+
+Roadmap:
+
+- W15: parallel provable execution core with schedule receipts.
+- W16: merge lanes for overlapping regions.
+- W17: journaled replay-resume.
+- W18: distribution, session UX, ORRO command/skill bootstrap, scout artifacts,
+  skillpack discovery, verification-recipe receipts, and `orro doctor`.
+- W18.5: MCP and enterprise tool receipts.
+- W17.5: design-to-execute bridge.
+- W19: first live multi-agent parallel proof.
+- W20: keyless identity and transparency anchoring.
+- W21: declarative verification policy layer.
+- W22: published contract and conformance kit.
+
+W18 acceptance: quickstart passes, fresh-session skill run works, no manual
+PYTHONPATH, no separate Depone/witnessd skill install for normal users, a
+quota-free scout fixture includes repo-profile, context-pack, verification-recipe,
+and a blocked proofcheck result for scout-only planning evidence, and later
+proofrun fixtures pass only after real verification receipts are emitted.
+
+---
+
+## 10. Document legacy policy
+
+Legacy docs are not deleted because they preserve implementation history and
+fixture rationale. They are not planning authorities. Any legacy doc that appears
+to conflict with this file must be read as historical context until explicitly
+promoted here.
+
+Legacy categories:
+
+- `SPEC.md` and `SPEC2.md`: foundation history,
+- `docs/plans/*`: wave notes and acceptance evidence,
+- `docs/conformance/*`: conformance notes derived from implemented artifacts,
+- fixture README files: evidence explanations,
+- old release and benchmark docs: historical process artifacts,
+- Superflow naming: historical/compatibility product-surface naming superseded by
+  ORRO.
+
+New technical design should update this file or Depone `docs/spec.md`; do not add
+a new competing architecture document.
+
+---
+
+## 11. Final invariant
+
+```text
+Depone verifies; witnessd executes; ORRO exposes the workflow.
+```

@@ -7,6 +7,7 @@ import shutil
 import time
 
 from witnessd.eventlog import EventLog
+from witnessd.liveness import HEARTBEAT_TTL_SECONDS
 from witnessd.pause import PauseError, append_user_pause, assert_not_paused
 from witnessd.runlog import append_runlog
 
@@ -23,7 +24,7 @@ def zombie_hang(
             "event": "spawn",
             "error_code": None,
             "ts_wall": "2026-01-01T00:00:00Z",
-            "ts_monotonic": 0.0,
+            "ts_monotonic": -(HEARTBEAT_TTL_SECONDS + 2.0),
             "payload": {"lane_id": lane_id},
         }
     )
@@ -35,7 +36,7 @@ def zombie_hang(
             "event": "heartbeat",
             "error_code": None,
             "ts_wall": "2026-01-01T00:00:01Z",
-            "ts_monotonic": 1.0,
+            "ts_monotonic": -(HEARTBEAT_TTL_SECONDS + 1.0),
             "payload": {"lane_id": lane_id},
         }
     )

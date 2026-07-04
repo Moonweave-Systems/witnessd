@@ -1,11 +1,118 @@
 # witnessd
 
-`witnessd` is the executing half of Moonweave. It runs local lanes, records what
-happened, signs the evidence, and leaves bytes that Depone can re-derive
-offline. The runner installs witnessd; the auditor can install only Depone and
-check the emitted run directory.
+`witnessd` is the executing runtime engine for **ORRO** (Observed Run & Review
+Orchestrator), published under the Moonweave account. It runs local lanes,
+records what happened, signs the evidence, and leaves bytes that Depone can
+re-derive offline.
+
+```text
+Depone verifies; witnessd executes; ORRO exposes the workflow.
+```
+
+`Superflow` was the earlier product-surface name. New public docs should use
+ORRO. Existing `superflow` commands, fixture paths, or artifact kinds may remain
+as compatibility aliases during migration.
 
 ## 10-minute quickstart
+
+```bash
+cd witnessd
+python3 -m witnessd init --home .witnessd --depone-root ../depone
+python3 -m witnessd scout "map the repo before planning" --repo . --home .witnessd
+python3 -m witnessd run "write two independent files" --repo . --home .witnessd
+python3 -m witnessd verify .witnessd/runs/<run-dir> --home .witnessd
+```
+
+The `run` command prints JSON. Use its `run_dir` field for the verify step.
+
+## Honest limits
+
+witnessd may emit self-declared runtime facts and `DELAYED_NOTARY` style
+post-hoc records, but those records do not upgrade trust. A2 requires a
+dedicated observer uid, a separate runner, and observer-owned evidence paths that
+are not writable by the runner. Depone decides what the persisted bytes support.
+
+## Source of truth
+
+[`SPEC3.md`](SPEC3.md) is the only top-level witnessd product/runtime authority.
+`SPEC.md`, `SPEC2.md`, `docs/plans/*`, `docs/conformance/*`, README, `SKILL.md`,
+`AGENTS.md`, fixture notes, and release notes are derived, wave-specific, or
+historical. If they conflict with `SPEC3.md`, `SPEC3.md` wins.
+
+For the Depone verifier contract itself, Depone's `docs/spec.md` is the
+authority. For the repo documentation map, see [`docs/README.md`](docs/README.md).
+
+## User-facing names
+
+| Public surface | Purpose |
+| --- | --- |
+| ORRO | flagship product/tool: evidence-governed agent workflow orchestrator |
+| ORRO Flow | `scout -> flowplan -> proofrun -> proofcheck -> handoff` |
+| `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
+| `orro scout` | read-only repo exploration, repo profile, context pack, and discovery notes |
+| `flowplan` | plan-only workflow design |
+| `proofrun` | precise evidence-backed execution alias |
+| `proofcheck` | offline evidence verification alias |
+| `orro handoff` | maintainer review package bound to evidence |
+| `orro skillpack` | knowledge-as-code and progressive-disclosure support |
+| `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
+| `orro auto` | later resume/continuation loop behind evidence gates |
+| `orro ultra` | future high-autonomy profile with stricter gates |
+
+`witnessd` is the engine name, not the main session skill name. `Moonweave` is the
+publisher/account namespace, not the tool name.
+
+## Repository strategy
+
+Development currently stays in two engine repositories:
+
+```text
+Depone   = verifier engine and evidence contract
+witnessd = execution engine, evidence emitter, and near-term ORRO surface
+```
+
+The user-facing install should still be one thing: ORRO. Do not ask normal users
+to install separate Depone and witnessd skills. In the near term, this repo may
+ship the thin `orro` command/skill because ORRO starts execution and witnessd owns
+execution. Depone remains a pinned verifier dependency.
+
+Create a separate `ORRO` repository only when distribution needs justify it:
+marketplace manifests, host-specific plugin packaging, version locking, examples,
+product docs, and end-to-end integration tests. That future repo is a wrapper and
+distribution repo, not a third engine; it must not duplicate witnessd runtime
+logic or Depone verifier logic.
+
+## Operating model
+
+ORRO is an evidence-backed agent-team operating surface. The normal loop is:
+
+```text
+scout -> flowplan -> proofrun -> proofcheck -> handoff
+```
+
+The scout step uses progressive disclosure instead of loading a whole repository
+into one model context. It produces:
+
+- `repo-profile.json`
+- `context-pack.json`
+- `discovery-notes.md`
+- optional `skillpack-lock.json`
+
+Runnable lanes may include:
+
+- `verification-recipe.json` for intended checks,
+- `verification-receipt.json` for actual command execution,
+- `mcp-tool-receipt-*.json` for declared external tool bridge calls,
+- `pr-handoff.json` for maintainer review.
+
+Scout does not write `verification-receipt.json`; it has not run the recipe.
+Depone proofcheck treats a scout-only artifact directory as planning evidence,
+not proof of execution.
+
+Depone decides what these bytes support. Skill text, MCP output, IDE terminals,
+tmux panes, and session transcripts are not verdicts by themselves.
+
+## Setup details
 
 Prerequisites:
 
@@ -32,8 +139,8 @@ python3 -m witnessd verify "$run_dir" --home .witnessd
 ```
 
 On a runner machine without a local Depone checkout, setup can provision the
-pinned verifier into `.witnessd/depone-pinned` and record that setup-time
-network use:
+pinned verifier into `.witnessd/depone-pinned` and record that setup-time network
+use:
 
 ```bash
 python3 -m witnessd init --home .witnessd --allow-network
@@ -51,7 +158,7 @@ Expected output:
 quickstart_check: pass
 ```
 
-## What The Commands Do
+## What the commands do
 
 `witnessd init` creates:
 
@@ -59,8 +166,8 @@ quickstart_check: pass
 - `.witnessd/provision.json`
 - `.witnessd/keys/`
 
-The provision record pins the local Depone checkout by git commit and records
-the witnessd commit. Setup may use network only when explicitly allowed by the
+The provision record pins the local Depone checkout by git commit and records the
+witnessd commit. Setup may use network only when explicitly allowed by the
 operator. Runtime and verify commands do not fetch or install.
 
 `witnessd run "<goal>" --repo <path>` uses the W18 quota-free shell path by
@@ -77,35 +184,19 @@ default. It creates a run directory containing:
 through `python3 -m depone team-ledger`, and rewrites
 `team-ledger-verdict.json` from the run bytes.
 
-## Session Skill
+## Session skill
 
 This repo ships two in-session guidance files:
 
-- `SKILL.md` for Claude Code style skill installation
+- `SKILL.md` for host skill installation
 - `AGENTS.md` for Codex sessions
 
-Both instruct the session agent to design lanes, run witnessd, then report the
-Depone verdict from `team-ledger-verdict.json`. A session transcript or lane
-self-report is not a verdict, and a self-declared success claim remains
-evidence-pending until Depone re-derives the run bytes.
+Both instruct the session agent to scout when useful, design lanes, run witnessd,
+then report the Depone verdict from `team-ledger-verdict.json`. A session
+transcript or lane self-report is not a verdict, and a self-declared success
+claim remains evidence-pending until Depone re-derives the run bytes.
 
-## Manual Team Runs
-
-The lower-level team command remains available for explicit lanes:
-
-```bash
-python3 -m witnessd team run \
-  --repo . \
-  --out /tmp/witnessd-team \
-  --lane alpha:pkg/alpha.txt \
-  --lane beta:pkg/beta.txt
-python3 -m witnessd verify /tmp/witnessd-team --home .witnessd
-```
-
-Use `--merge-group` when overlapping lane regions are intentionally reconciled
-by a merge lane.
-
-## Auditor Path
+## Auditor path
 
 An auditor does not need witnessd to execute anything. Given a run directory and
 Depone:
@@ -120,18 +211,7 @@ python3 -m depone team-ledger \
 
 Depone verifies from bytes. It does not run lanes.
 
-## Honest Limits
-
-- W18 is single-host execution. Distributed lanes are out of scope.
-- The default quickstart uses shell lanes for quota-free validation.
-- Live paid agent lanes are W19 and require an operator checkpoint.
-- Keyless transparency anchoring is W20; W18 uses operator-key DSSE bundles.
-- `DELAYED_NOTARY` evidence is explicitly post-hoc, not contemporaneous.
-- A2 isolation still depends on a dedicated observer uid and a runner workspace
-  that is not writable by that observer where that path is used.
-- Clean-machine macOS validation and release publication are operator actions.
-
-## Development Checks
+## Development checks
 
 From the Moonweave workspace:
 
@@ -146,9 +226,3 @@ for script in scripts/revalidate_*.py; do
 done
 scripts/quickstart_check.sh
 ```
-
-Design source of truth:
-
-- `SPEC3.md`
-- `docs/plans/GOALMODE.md`
-- `docs/plans/2026-07-04-w18-distribution-dx.md`

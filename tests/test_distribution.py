@@ -20,6 +20,13 @@ from witnessd.distribution import (
 
 
 class DistributionInitTests(unittest.TestCase):
+    def _depone_root(self) -> Path:
+        env_root = os.environ.get("WITNESSD_DEPONE_ROOT")
+        if env_root:
+            return Path(env_root)
+        witnessd_root = Path(__file__).resolve().parents[1]
+        return witnessd_root.parent / "depone"
+
     def _seed_git_repo(self, root: Path, files: dict[str, str]) -> None:
         subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
         subprocess.run(
@@ -37,7 +44,7 @@ class DistributionInitTests(unittest.TestCase):
 
     def test_init_records_config_keys_and_repo_hashes(self) -> None:
         witnessd_root = Path(__file__).resolve().parents[1]
-        depone_root = witnessd_root.parent / "depone"
+        depone_root = self._depone_root()
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
 
@@ -71,7 +78,7 @@ class DistributionInitTests(unittest.TestCase):
 
     def test_validate_depone_pin_rejects_forged_hash(self) -> None:
         witnessd_root = Path(__file__).resolve().parents[1]
-        depone_root = witnessd_root.parent / "depone"
+        depone_root = self._depone_root()
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             init_witnessd_home(
@@ -95,8 +102,7 @@ class DistributionInitTests(unittest.TestCase):
             self.assertEqual(cm.exception.code, ERR_WITNESSD_DEPONE_PIN_MISMATCH)
 
     def test_cli_init_writes_home_and_prints_config_path(self) -> None:
-        witnessd_root = Path(__file__).resolve().parents[1]
-        depone_root = witnessd_root.parent / "depone"
+        depone_root = self._depone_root()
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             out = io.StringIO()
@@ -121,6 +127,8 @@ class DistributionInitTests(unittest.TestCase):
     def test_cli_init_auto_detects_sibling_depone_checkout(self) -> None:
         witnessd_root = Path(__file__).resolve().parents[1]
         depone_root = witnessd_root.parent / "depone"
+        if os.environ.get("WITNESSD_DEPONE_ROOT"):
+            self.skipTest("sibling auto-detection requires a sibling Depone checkout")
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             out = io.StringIO()
