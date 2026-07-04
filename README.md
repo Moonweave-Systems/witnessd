@@ -1,24 +1,35 @@
 # witnessd
 
-`witnessd` is the executing half of Moonweave. It runs local lanes, records what
-happened, signs the evidence, and leaves bytes that Depone can re-derive
-offline. The runner installs witnessd; the auditor can install only Depone and
-check the emitted run directory.
+`witnessd` is the executing runtime engine for **Moonweave Superflow**. It runs
+local lanes, records what happened, signs the evidence, and leaves bytes that
+Depone can re-derive offline.
+
+```text
+Depone verifies; witnessd executes; Moonweave Superflow exposes the workflow.
+```
 
 ## Source of truth
 
-[`SPEC3.md`](SPEC3.md) is the current witnessd × Depone final-form specification
-and the only top-level witnessd product/runtime authority. `SPEC.md` and
-`SPEC2.md` are earlier foundation specs; `docs/plans/*`, `SKILL.md`, `AGENTS.md`,
-README, and fixture notes are derived or wave-specific documents. If they
-conflict with `SPEC3.md`, `SPEC3.md` wins.
+[`SPEC3.md`](SPEC3.md) is the only top-level witnessd product/runtime authority.
+`SPEC.md`, `SPEC2.md`, `docs/plans/*`, `docs/conformance/*`, README, `SKILL.md`,
+`AGENTS.md`, fixture notes, and release notes are derived, wave-specific, or
+historical. If they conflict with `SPEC3.md`, `SPEC3.md` wins.
 
-For the Depone verifier contract itself, Depone's `docs/spec.md` is the authority.
-The operating sentence is:
+For the Depone verifier contract itself, Depone's `docs/spec.md` is the
+authority. For the repo documentation map, see [`docs/README.md`](docs/README.md).
 
-```text
-Depone verifies; witnessd executes; Moonweave exposes the workflow.
-```
+## User-facing names
+
+| Public surface | Purpose |
+| --- | --- |
+| `superflow` | flagship goal -> plan -> run -> evidence -> verifier summary |
+| `flowplan` | plan-only workflow design |
+| `proofrun` | precise evidence-backed execution alias |
+| `proofcheck` | offline evidence verification alias |
+| `superflow auto` | later resume/continuation loop behind evidence gates |
+| `superflow ultra` | future high-autonomy profile with stricter gates |
+
+`witnessd` is the engine name, not the main session skill name.
 
 ## 10-minute quickstart
 
@@ -66,7 +77,7 @@ Expected output:
 quickstart_check: pass
 ```
 
-## What The Commands Do
+## What the commands do
 
 `witnessd init` creates:
 
@@ -92,7 +103,7 @@ default. It creates a run directory containing:
 through `python3 -m depone team-ledger`, and rewrites
 `team-ledger-verdict.json` from the run bytes.
 
-## Session Skill
+## Session skill
 
 This repo ships two in-session guidance files:
 
@@ -104,27 +115,7 @@ Depone verdict from `team-ledger-verdict.json`. A session transcript or lane
 self-report is not a verdict, and a self-declared success claim remains
 evidence-pending until Depone re-derives the run bytes.
 
-The session-facing skill name is `proofrun`; engine credit is "powered by
-witnessd × Depone". Do not create separate end-user `witnessd` and `Depone`
-skills as the main product UX.
-
-## Manual Team Runs
-
-The lower-level team command remains available for explicit lanes:
-
-```bash
-python3 -m witnessd team run \
-  --repo . \
-  --out /tmp/witnessd-team \
-  --lane alpha:pkg/alpha.txt \
-  --lane beta:pkg/beta.txt
-python3 -m witnessd verify /tmp/witnessd-team --home .witnessd
-```
-
-Use `--merge-group` when overlapping lane regions are intentionally reconciled by
-a merge lane.
-
-## Auditor Path
+## Auditor path
 
 An auditor does not need witnessd to execute anything. Given a run directory and
 Depone:
@@ -139,18 +130,7 @@ python3 -m depone team-ledger \
 
 Depone verifies from bytes. It does not run lanes.
 
-## Honest Limits
-
-- W18 is single-host execution. Distributed lanes are out of scope.
-- The default quickstart uses shell lanes for quota-free validation.
-- Live paid agent lanes are W19 and require an operator checkpoint.
-- Keyless transparency anchoring is W20; W18 uses operator-key DSSE bundles.
-- `DELAYED_NOTARY` evidence is explicitly post-hoc, not contemporaneous.
-- A2 isolation still depends on a dedicated observer uid and a runner workspace
-  that is not writable by that observer where that path is used.
-- Clean-machine macOS validation and release publication are operator actions.
-
-## Development Checks
+## Development checks
 
 From the Moonweave workspace:
 
