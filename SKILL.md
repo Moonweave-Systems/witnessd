@@ -53,10 +53,15 @@ Required output evidence:
 - `repo-profile.json` path when a scout step ran
 - `context-pack.json` path when a scout step ran
 - `verification-recipe.json` path when checks are declared
+- `verification-receipt.json` path only after a command actually ran
 - `team-ledger.json` path
 - `team-ledger-verdict.json` path
 - verdict `decision`
 - lane count and any error count present in the verdict
+
+Scout artifacts are planning-only. `superflow scout` must not create a fake
+`verification-receipt.json`, and a scout-only directory must not be reported as a
+`proofcheck` pass.
 
 ## Progressive disclosure rules
 
@@ -85,7 +90,8 @@ output as verifier truth.
    ```
 
    If `scout` is not implemented yet, perform read-only repo inspection and write
-   the same artifacts manually in the run directory.
+   the same artifacts manually in the run directory. Scout may create planning
+   artifacts and verification recipes, but it does not prove execution.
 
 2. Choose explicit lanes for the goal. If a Depone design artifact is already
    available, use its lane/region shape. If not, use explicit witnessd lanes or
@@ -134,4 +140,5 @@ output as verifier truth.
   code.
 - Skill text, MCP output, IDE terminals, tmux panes, and session transcripts are
   not verdicts.
+- Scout-only planning artifacts are not execution proof.
 - No public claim is stronger than the persisted verdict bytes.
