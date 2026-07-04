@@ -98,6 +98,10 @@ Runnable lanes may include:
 - `mcp-tool-receipt-*.json` for declared external tool bridge calls,
 - `pr-handoff.json` for maintainer review.
 
+Scout does not write `verification-receipt.json`; it has not run the recipe.
+Depone proofcheck treats a scout-only artifact directory as planning evidence,
+not proof of execution.
+
 Depone decides what these bytes support. Skill text, MCP output, IDE terminals,
 tmux panes, and session transcripts are not verdicts by themselves.
 

@@ -28,7 +28,7 @@ def _seed_repo(repo: Path) -> None:
 
 
 class SuperflowScoutTests(unittest.TestCase):
-    def test_scout_writes_depone_verifiable_artifacts(self) -> None:
+    def test_scout_writes_read_only_planning_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo = root / "repo"
@@ -53,6 +53,7 @@ class SuperflowScoutTests(unittest.TestCase):
             payload = json.loads(stdout.getvalue())
             run_dir = Path(payload["run_dir"])
             self.assertEqual(payload["decision"], "scouted")
+            self.assertNotIn("verification_receipt", payload)
             for name in (
                 "repo-profile.json",
                 "context-pack.json",
@@ -60,15 +61,19 @@ class SuperflowScoutTests(unittest.TestCase):
                 "lane-context.json",
                 "skillpack-lock.json",
                 "verification-recipe.json",
-                "verification-receipt.json",
                 "mcp-tool-receipt-fake.json",
                 "pr-handoff.json",
             ):
                 self.assertTrue((run_dir / name).is_file(), name)
+            self.assertFalse((run_dir / "verification-receipt.json").exists())
 
             context = json.loads((run_dir / "context-pack.json").read_text(encoding="utf-8"))
             self.assertIn("README.md", context["selected_paths"])
             self.assertTrue((run_dir / "skillpacks" / "skill-copy.md").is_file())
+
+            handoff = json.loads((run_dir / "pr-handoff.json").read_text(encoding="utf-8"))
+            self.assertEqual(handoff["verification_receipt_hashes"], [])
+            self.assertIn("no commands were executed", handoff["unresolved_risks"][0])
 
             proofcheck = subprocess.run(
                 [
@@ -84,9 +89,13 @@ class SuperflowScoutTests(unittest.TestCase):
                 capture_output=True,
                 check=False,
             )
-            self.assertEqual(proofcheck.returncode, 0, proofcheck.stderr)
+            self.assertNotEqual(proofcheck.returncode, 0)
             verdict = json.loads(proofcheck.stdout)
-            self.assertEqual(verdict["decision"], "pass")
+            self.assertEqual(verdict["decision"], "blocked")
+            self.assertIn(
+                "ERR_SUPERFLOW_ARTIFACT_REQUIRED_MISSING",
+                {error["code"] for error in verdict["errors"]},
+            )
 
     def test_superflow_scout_alias_routes_to_scout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

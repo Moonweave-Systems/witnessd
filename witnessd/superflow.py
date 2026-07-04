@@ -66,8 +66,6 @@ def run_scout(goal: str, *, repo: Path, home: Path, out_dir: Path | None = None)
 
     recipe = _build_verification_recipe()
     _write_json(run_dir / "verification-recipe.json", recipe)
-    receipt = _build_verification_receipt(recipe)
-    _write_json(run_dir / "verification-receipt.json", receipt)
 
     mcp_receipt = _build_fake_mcp_receipt(goal)
     _write_json(run_dir / "mcp-tool-receipt-fake.json", mcp_receipt)
@@ -78,10 +76,12 @@ def run_scout(goal: str, *, repo: Path, home: Path, out_dir: Path | None = None)
         "run_id": run_dir.name,
         "evidence_dir": str(run_dir),
         "changed_files": [],
-        "verification_receipt_hashes": [canonical_hash(receipt)],
+        "verification_receipt_hashes": [],
         "mcp_tool_receipt_hashes": [canonical_hash(mcp_receipt)],
-        "unresolved_risks": ["scout is planning evidence only"],
-        "human_required_actions": ["review scout context before execution"],
+        "unresolved_risks": ["scout is planning evidence only; no commands were executed"],
+        "human_required_actions": [
+            "run proofrun or another witnessd execution step before proofcheck can pass"
+        ],
         "approves_merge": False,
         "boundary": {"raises_assurance": False, "approves_merge": False},
     }
@@ -95,7 +95,6 @@ def run_scout(goal: str, *, repo: Path, home: Path, out_dir: Path | None = None)
         "discovery_notes": str(run_dir / "discovery-notes.md"),
         "skillpack_lock": str(run_dir / "skillpack-lock.json"),
         "verification_recipe": str(run_dir / "verification-recipe.json"),
-        "verification_receipt": str(run_dir / "verification-receipt.json"),
         "mcp_tool_receipt": str(run_dir / "mcp-tool-receipt-fake.json"),
         "pr_handoff": str(run_dir / "pr-handoff.json"),
     }
@@ -202,30 +201,6 @@ def _build_verification_recipe() -> dict[str, Any]:
                 "argv": ["python3", "-m", "witnessd", "self-test", "--all"],
                 "expected_exit_code": 0,
                 "required": True,
-            }
-        ],
-    }
-
-
-def _build_verification_receipt(recipe: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "kind": "superflow-verification-receipt",
-        "schema_version": SCHEMA_VERSION,
-        "recipe_hash": canonical_hash(recipe),
-        "runner_receipt_hash": "0" * 64,
-        "transcript_sha256": hashlib.sha256(b"superflow scout receipt fixture").hexdigest(),
-        "raises_assurance": False,
-        "command_results": [
-            {
-                "id": "scout-artifact-smoke",
-                "argv": ["python3", "-m", "witnessd", "self-test", "--all"],
-                "expected_exit_code": 0,
-                "exit_code": 0,
-                "required": True,
-                "stdout_sha256": hashlib.sha256(b"fixture-only").hexdigest(),
-                "stderr_sha256": hashlib.sha256(b"").hexdigest(),
-                "started_at": "2026-07-04T00:00:00Z",
-                "ended_at": "2026-07-04T00:00:00Z",
             }
         ],
     }
