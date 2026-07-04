@@ -720,6 +720,20 @@ def _cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_scout(args: argparse.Namespace) -> int:
+    from witnessd.superflow import run_scout
+
+    home = Path(
+        args.home
+        or os.environ.get("WITNESSD_HOME")
+        or (Path(args.repo).resolve(strict=False) / ".witnessd")
+    )
+    out_dir = Path(args.out_dir) if args.out_dir else None
+    result = run_scout(args.goal, repo=Path(args.repo), home=home, out_dir=out_dir)
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
 def _cmd_route(args: argparse.Namespace) -> int:
     from witnessd.eventlog import EventLog
     from witnessd.router import RouteExhaustedError, route_model
@@ -1287,6 +1301,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     init.set_defaults(func=_cmd_init)
 
+    scout = sub.add_parser("scout", help="run read-only Superflow repo scout")
+    scout.add_argument("goal")
+    scout.add_argument("--repo", default=".")
+    scout.add_argument("--home", default=None)
+    scout.add_argument("--out-dir", default=None)
+    scout.set_defaults(func=_cmd_scout)
+
     run = sub.add_parser("run", help="observe a lane and emit signed evidence")
     run.add_argument("--goal", default=None, help=argparse.SUPPRESS)
     run.add_argument("--repo", default=None)
@@ -1602,7 +1623,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    argv = _normalize_run_goal_argv(list(sys.argv[1:] if argv is None else argv))
+    argv = _normalize_superflow_argv(
+        _normalize_run_goal_argv(list(sys.argv[1:] if argv is None else argv))
+    )
     parser = _build_parser()
     args = parser.parse_args(argv)
     # argparse.REMAINDER keeps a leading "--"; drop it so command is the argv.
@@ -1618,6 +1641,14 @@ def _normalize_run_goal_argv(argv: list[str]) -> list[str]:
     if first.startswith("-"):
         return argv
     return ["run", "--goal", first, *argv[2:]]
+
+
+def _normalize_superflow_argv(argv: list[str]) -> list[str]:
+    if not argv or argv[0] != "superflow":
+        return argv
+    if len(argv) >= 2 and argv[1] == "scout":
+        return ["scout", *argv[2:]]
+    return argv
 
 
 if __name__ == "__main__":

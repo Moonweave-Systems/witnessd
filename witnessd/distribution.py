@@ -41,7 +41,9 @@ class InitConfig:
 
 
 def init_witnessd_home(config: InitConfig) -> dict[str, str]:
-    home = config.home.resolve(strict=False)
+    home = config.home.expanduser()
+    if not home.is_absolute():
+        home = home.resolve(strict=False)
     home.mkdir(parents=True, exist_ok=True)
     keys_dir = home / "keys"
     keys_dir.mkdir(parents=True, exist_ok=True)

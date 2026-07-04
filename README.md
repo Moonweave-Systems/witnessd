@@ -8,6 +8,25 @@ evidence, and leaves bytes that Depone can re-derive offline.
 Depone verifies; witnessd executes; Superflow exposes the workflow.
 ```
 
+## 10-minute quickstart
+
+```bash
+cd witnessd
+python3 -m witnessd init --home .witnessd --depone-root ../depone
+python3 -m witnessd scout "map the repo before planning" --repo . --home .witnessd
+python3 -m witnessd run "write two independent files" --repo . --home .witnessd
+python3 -m witnessd verify .witnessd/runs/<run-dir> --home .witnessd
+```
+
+The `run` command prints JSON. Use its `run_dir` field for the verify step.
+
+## Honest limits
+
+witnessd may emit self-declared runtime facts and `DELAYED_NOTARY` style
+post-hoc records, but those records do not upgrade trust. A2 requires a
+dedicated observer uid, a separate runner, and observer-owned evidence paths that
+are not writable by the runner. Depone decides what the persisted bytes support.
+
 ## Source of truth
 
 [`SPEC3.md`](SPEC3.md) is the only top-level witnessd product/runtime authority.
@@ -82,7 +101,7 @@ Runnable lanes may include:
 Depone decides what these bytes support. Skill text, MCP output, IDE terminals,
 tmux panes, and session transcripts are not verdicts by themselves.
 
-## 10-minute quickstart
+## Setup details
 
 Prerequisites:
 
