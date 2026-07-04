@@ -1,58 +1,79 @@
 # witnessd — Agent Context (READ FIRST)
 
-`witnessd` is an **executing** team/agent orchestration runtime: it spawns
-workers, owns durable sessions, creates worktrees, retries — and every action it
-runs **emits observer-signed evidence** that an independent, **non-executing**
-verifier (**Depone**, a separate repo: github.com/Moonweave-Systems/Depone)
-re-derives A0/A1/A2 assurance from. The one-line thesis: *done is defined by
-observer-signed bytes, not by a self-reported "VERIFIED" string.*
+`witnessd` is the **executing runtime engine** in the Moonweave pair. It spawns
+workers, owns durable sessions, creates worktrees, retries, supervises teams, and
+emits observer-signed evidence. Depone is the non-executing verifier that
+re-derives the verdict from those bytes.
 
-- **Source of truth:** `SPEC.md` (full design). Wave plans: `docs/plans/`.
-  Waves W1→W5 are implemented in committed fixtures: evidence substrate,
-  supervised liveness/durable sessions, team fan-in, adapter routing/cost
-  controls, and autonomy safety. Depone re-derives the wave claims from
-  `scripts/revalidate_w1.py` through `scripts/revalidate_w5.py`.
-- **Runtime deps:** Python **stdlib + the `openssl` CLI only**. Never add a
-  third-party package. `depone` is a **dev/test-only** dependency (to run
-  conformance), never a runtime import of the shipped runtime.
+## Source of truth
+
+[`SPEC3.md`](SPEC3.md) is the current witnessd × Depone final-form specification
+and the only top-level witnessd product/runtime authority. `SPEC.md` and
+`SPEC2.md` are earlier foundation specs; `docs/plans/*`, `SKILL.md`, `AGENTS.md`,
+README, and fixture notes are derived or wave-specific documents. If they
+conflict with `SPEC3.md`, `SPEC3.md` wins.
+
+For the Depone verifier contract itself, Depone's `docs/spec.md` is the
+authority.
+
+```text
+Depone verifies; witnessd executes; Moonweave exposes the workflow.
+```
+
+## Runtime dependency rule
+
+Runtime deps are Python **stdlib + the `openssl` CLI only**. Never add a
+third-party runtime dependency to witnessd core.
+
+Depone may be provisioned or pinned for verification, and tests may import Depone
+validators. Shipped witnessd capture/runtime paths must not depend on importing
+Depone as a Python package.
 
 ## The Depone contract (do not drift)
 
 `witnessd` emits evidence that must satisfy **Depone's** contract, which is the
-**source of truth**: the capture-manifest / runner-receipt / isolation / DSSE /
-team-ledger schemas and their error codes live in `depone/agent_fabric/*` and
-`depone/verify/*`, plus
-`canonical_hash = sha256(json.dumps(obj, sort_keys=True, separators=(",",":")).encode("utf-8"))`.
+source of truth for capture-manifest / runner-receipt / isolation / DSSE /
+team-ledger schemas and their error codes, plus:
 
-- **Do NOT invent schema fields.** Match Depone exactly or the evidence fails
-  re-derivation.
-- witnessd targets **Depone `main`** (which includes the observer-provenance
-  contract as of 2026-07-01).
-- **Need a new contract capability** (e.g. a new `runner_kind`, a `lane_kind`)?
-  It is a **Depone PR first** → then witnessd uses it. Never depend on an
-  unmerged/local-only Depone change; that hides drift until CI.
-
-## Testing / dogfood (needs Depone importable, dev-only)
-
-Depone is not a runtime dep, but the tests re-derive verdicts through the real
-Depone validators, so Depone must be on `PYTHONPATH` for tests:
-
+```python
+canonical_hash = sha256(json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8"))
 ```
-# from the moonweave workspace (preferred):
-make test        # full suite against pinned depone
-make dogfood     # emit evidence -> depone re-derives A1/A2
 
-# standalone:
-PYTHONPATH=/path/to/depone uv run python3 -m unittest discover -s tests
-PYTHONPATH=/home/ubuntu/moonweave/depone uv run python3 scripts/revalidate_wN.py
+Rules:
+
+- **Do not invent schema fields.** Match Depone exactly or the evidence fails
+  re-derivation.
+- Contract capability changes land in Depone first, then witnessd consumes them.
+- Runtime receipt emission belongs in witnessd; receipt verification belongs in
+  Depone.
+
+## User-surface rule
+
+The session-facing skill name is `proofrun`, not `witnessd`. It is powered by
+witnessd × Depone. Do not create separate end-user `witnessd` and `Depone` skills
+as the main product UX.
+
+## Testing / dogfood
+
+From the Moonweave workspace:
+
+```bash
+cd depone
+python3 -m unittest discover -s tests
+cd ../witnessd
+PYTHONPATH=../depone python3 -m unittest discover -s tests
+PYTHONPATH=../depone python3 -m witnessd self-test --all
+for script in scripts/revalidate_*.py; do
+  PYTHONPATH=../depone python3 "$script"
+done
+scripts/quickstart_check.sh
 ```
 
 ## Invariants
 
-- **evidence-pending is a hard rule.** No user-facing output may print
-  `VERIFIED`/`DONE`/`COMPLETE`/`ORCHESTRATION COMPLETE` alone. All status goes
-  through the single `render_status()` enum (see `witnessd/status.py`) — this is
-  the whole point of the product; do not weaken it for UX.
-- **worker cannot seal/validate its own success**; the observer + emitter do.
-- Each wave's Acceptance Bar = a committed fixture + `revalidate_wN.py` that
-  Depone re-derives. Land a wave only when that is green.
+- Pre-verification user status is `evidence-pending`.
+- Worker output is not its own trust verdict; the observer and emitter create the
+  evidence that Depone later re-derives.
+- witnessd does not grant A1/A2 final trust by itself.
+- Each wave's Acceptance Bar = committed fixture + revalidator that Depone
+  re-derives. Land a wave only when that is green.
