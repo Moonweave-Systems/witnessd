@@ -19,6 +19,7 @@ import argparse
 import hashlib
 import json
 import os
+import subprocess
 import shutil
 import shlex
 import sys
@@ -149,7 +150,7 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     os.chmod(keys_dir, 0o700)
     private_key_path, public_key_path = gen_operator_keypair(str(keys_dir))
     lane_specs = [_lane_packet_to_run_team_spec(packet, args) for packet in sealed["packets"]]
-    result = run_team(
+    run_team(
         lane_specs,
         repo_root=str(repo),
         out_dir=str(out_dir),
@@ -475,6 +476,238 @@ def _cmd_verify(args: argparse.Namespace) -> int:
         return 0
     print(f"runlog: broken_at={result['broken_at']}", file=sys.stderr)
     return 1
+
+
+def _depone_subprocess_env(home: Path | None = None) -> dict[str, str]:
+    env = os.environ.copy()
+    if home is None:
+        return env
+    from witnessd.distribution import validate_depone_pin
+
+    provision = validate_depone_pin(home)
+    depone_root = Path(str(provision["depone"]["root"])).resolve(strict=False)
+    current_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        str(depone_root)
+        if not current_pythonpath
+        else f"{depone_root}{os.pathsep}{current_pythonpath}"
+    )
+    return env
+
+
+def _run_depone_json(command: list[str], *, env: dict[str, str]) -> tuple[int, dict]:
+    completed = subprocess.run(
+        [sys.executable, "-m", "depone", *command, "--json"],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    if not completed.stdout.strip():
+        return completed.returncode, {
+            "error": {
+                "code": "ERR_ORRO_DEPONE_DELEGATION_FAILED",
+                "message": completed.stderr.strip()
+                or "Depone verifier produced no JSON output",
+            }
+        }
+    try:
+        return completed.returncode, json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return completed.returncode, {
+            "error": {
+                "code": "ERR_ORRO_DEPONE_DELEGATION_INVALID_JSON",
+                "message": completed.stdout,
+            }
+        }
+
+
+def _emit_orro_error(args: argparse.Namespace, *, code: str, message: str) -> None:
+    if getattr(args, "json", False):
+        print(json.dumps({"error": {"code": code, "message": message}}, sort_keys=True))
+        return
+    print(code, file=sys.stderr)
+
+
+def _cmd_proofcheck(args: argparse.Namespace) -> int:
+    evidence_arg = args.evidence_dir_option or args.evidence_dir
+    if not evidence_arg:
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_PROOFCHECK_INPUT_REQUIRED",
+            message="evidence directory is required",
+        )
+        return 2
+    evidence_dir = Path(evidence_arg).resolve(strict=False)
+    home = Path(args.home).resolve(strict=False) if args.home else None
+    try:
+        env = _depone_subprocess_env(home)
+    except Exception as exc:  # noqa: BLE001 - surface pin/readiness failure as usage
+        _emit_orro_error(
+            args,
+            code=str(exc),
+            message="Depone verifier readiness is blocked",
+        )
+        return 2
+
+    out_path = Path(args.out).resolve(strict=False) if args.out else None
+    command = ["proofcheck", "--evidence-dir", str(evidence_dir)]
+    if out_path is not None:
+        command.extend(["--out", str(out_path)])
+    code, payload = _run_depone_json(command, env=env)
+    result = {
+        "command": "proofcheck",
+        "verifier_command": payload.get("verifier_command", "proofcheck"),
+        "decision": payload.get("decision", "blocked"),
+        "evidence_dir": str(evidence_dir),
+        "error_count": payload.get("error_count", 1 if payload.get("error") else 0),
+        **({"out": payload["out"]} if payload.get("out") else {}),
+        **({"errors": payload["errors"]} if payload.get("errors") else {}),
+        **({"error": payload["error"]} if payload.get("error") else {}),
+    }
+    print(json.dumps(result, sort_keys=True))
+    return 0 if code == 0 and result["decision"] == "pass" else 1
+
+
+def _hash_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _cmd_handoff(args: argparse.Namespace) -> int:
+    evidence_arg = args.evidence_dir_option or args.evidence_dir
+    if not evidence_arg:
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_HANDOFF_INPUT_REQUIRED",
+            message="evidence directory is required",
+        )
+        return 2
+    evidence_dir = Path(evidence_arg).resolve(strict=False)
+    if not evidence_dir.is_dir():
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_HANDOFF_EVIDENCE_DIR_MISSING",
+            message=f"evidence directory is missing: {evidence_dir}",
+        )
+        return 2
+
+    out_path = Path(args.out).resolve(strict=False) if args.out else None
+    generated_names = {
+        "orro-handoff.json",
+        "proofcheck-verdict.json",
+        "team-ledger-verdict.json",
+    }
+    artifact_hashes = []
+    for path in sorted(p for p in evidence_dir.rglob("*") if p.is_file()):
+        if path.name in generated_names or (out_path is not None and path == out_path):
+            continue
+        artifact_hashes.append(
+            {
+                "path": str(path.relative_to(evidence_dir)),
+                "sha256": _hash_file(path),
+            }
+        )
+    decision_refs = []
+    for name in ("proofcheck-verdict.json", "team-ledger-verdict.json"):
+        path = evidence_dir / name
+        if not path.is_file():
+            continue
+        ref = {"path": name, "sha256": _hash_file(path)}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            payload = {}
+        if isinstance(payload.get("decision"), str):
+            ref["decision"] = payload["decision"]
+        decision_refs.append(ref)
+
+    payload = {
+        "kind": "orro-handoff",
+        "schema_version": "1.0",
+        "evidence_dir": str(evidence_dir),
+        "artifact_hashes": artifact_hashes,
+        "decision_refs": decision_refs,
+        "boundary": {
+            "approves_merge": False,
+            "raises_assurance": False,
+        },
+    }
+    if out_path is not None:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
+def _cmd_orro_doctor(args: argparse.Namespace) -> int:
+    checks = []
+    checks.append({"name": "witnessd_import", "status": "pass"})
+    home = Path(args.home).resolve(strict=False) if args.home else None
+    env = os.environ.copy()
+    if home is not None:
+        try:
+            env = _depone_subprocess_env(home)
+        except Exception as exc:  # noqa: BLE001 - readiness check reports pin failure
+            checks.append(
+                {
+                    "name": "depone_pin",
+                    "status": "blocked",
+                    "code": str(exc),
+                    "path": str(home / "provision.json"),
+                }
+            )
+        else:
+            checks.append(
+                {
+                    "name": "depone_pin",
+                    "status": "pass",
+                    "path": str(home / "provision.json"),
+                }
+            )
+    completed = subprocess.run(
+        [sys.executable, "-m", "depone", "doctor", "--self-test"],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    checks.append(
+        {
+            "name": "depone_doctor",
+            "status": "pass" if completed.returncode == 0 else "blocked",
+            "detail": completed.stdout.strip() or completed.stderr.strip(),
+        }
+    )
+
+    for adapter in args.adapter or ["codex", "claude", "opencode"]:
+        checks.append(
+            {
+                "name": f"adapter:{adapter}",
+                "status": "pass" if shutil.which(adapter) else "missing",
+            }
+        )
+    decision = (
+        "blocked" if any(check["status"] == "blocked" for check in checks) else "pass"
+    )
+    payload = {
+        "command": "orro doctor",
+        "decision": decision,
+        "checks": checks,
+        "boundary": {
+            "verifier_refuted": False,
+            "executes_recipes": False,
+            "raises_assurance": False,
+        },
+    }
+    print(json.dumps(payload, sort_keys=True))
+    return 0 if decision == "pass" else 1
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
@@ -1309,42 +1542,15 @@ def _build_parser() -> argparse.ArgumentParser:
     scout.set_defaults(func=_cmd_scout)
 
     run = sub.add_parser("run", help="observe a lane and emit signed evidence")
-    run.add_argument("--goal", default=None, help=argparse.SUPPRESS)
-    run.add_argument("--repo", default=None)
-    run.add_argument("--home", default=None)
-    run.add_argument("--run-dir", default=None)
-    run.add_argument("--max-parallel", type=int, default=None)
-    run.add_argument("--fail-fast", action="store_true")
-    run.add_argument(
-        "--adapter",
-        default="shell",
-        choices=["shell", "codex", "claude", "opencode"],
-    )
-    run.add_argument("--root", default=".")
-    run.add_argument("--runner-sandbox", default=None)
-    run.add_argument(
-        "--out", default=None, help="observer output path (outside sandbox)"
-    )
-    run.add_argument("--log", default=None, help="observer log path (outside sandbox)")
-    run.add_argument("--keys-dir", default=None)
-    run.add_argument("--task-id", default="witnessd-lane")
-    run.add_argument("--arm", default="direct", choices=["direct", "governed"])
-    run.add_argument(
-        "--tier", default="agentic", choices=["quick", "agentic", "frontier"]
-    )
-    run.add_argument("--codex-binary", default="codex")
-    run.add_argument("--claude-binary", default="claude")
-    run.add_argument("--opencode-binary", default="opencode")
-    run.add_argument("--max-tokens", type=int, default=10**9)
-    run.add_argument("--max-usd", type=float, default=10**9)
-    run.add_argument("--max-depth", type=int, default=3)
-    run.add_argument("--predicted-tokens", type=int, default=0)
-    run.add_argument("--predicted-usd", type=float, default=0.0)
-    run.add_argument(
-        "--allow", action="append", default=[], help="allowed touched file"
-    )
-    run.add_argument("command", nargs=argparse.REMAINDER)
+    _add_run_args(run)
     run.set_defaults(func=_cmd_run)
+
+    proofrun = sub.add_parser(
+        "proofrun",
+        help="ORRO evidence-backed execution alias; emits evidence without final trust",
+    )
+    _add_run_args(proofrun)
+    proofrun.set_defaults(func=_cmd_run)
 
     a2 = sub.add_parser(
         "a2-observer-run",
@@ -1387,6 +1593,27 @@ def _build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--runlog", default=None)
     verify.set_defaults(func=_cmd_verify)
 
+    proofcheck = sub.add_parser(
+        "proofcheck",
+        help="ORRO offline proof verification wrapper delegated to Depone",
+    )
+    proofcheck.add_argument("evidence_dir", nargs="?")
+    proofcheck.add_argument("--evidence-dir", dest="evidence_dir_option", default=None)
+    proofcheck.add_argument("--home", default=None)
+    proofcheck.add_argument("--out", default=None)
+    proofcheck.add_argument("--json", action="store_true")
+    proofcheck.set_defaults(func=_cmd_proofcheck)
+
+    handoff = sub.add_parser(
+        "handoff",
+        help="package ORRO evidence hashes and verifier decision references",
+    )
+    handoff.add_argument("evidence_dir", nargs="?")
+    handoff.add_argument("--evidence-dir", dest="evidence_dir_option", default=None)
+    handoff.add_argument("--out", default=None)
+    handoff.add_argument("--json", action="store_true")
+    handoff.set_defaults(func=_cmd_handoff)
+
     route = sub.add_parser("route", help="dry-run W4 model routing")
     route.add_argument("--root", default=".")
     route.add_argument("--runlog", default=None)
@@ -1402,6 +1629,17 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--root", default=".")
     doctor.add_argument("--external-worktree", action="append", default=[])
     doctor.set_defaults(func=_cmd_doctor)
+
+    orro_doctor = sub.add_parser("orro-doctor", help=argparse.SUPPRESS)
+    orro_doctor.add_argument("--home", default=None)
+    orro_doctor.add_argument(
+        "--adapter",
+        action="append",
+        default=None,
+        choices=["codex", "claude", "opencode"],
+    )
+    orro_doctor.add_argument("--json", action="store_true")
+    orro_doctor.set_defaults(func=_cmd_orro_doctor)
 
     isolation = sub.add_parser("isolation", help="isolation contract checks")
     isolation.add_argument("--self-test", action="store_true")
@@ -1636,6 +1874,44 @@ def _add_plan_args(plan: argparse.ArgumentParser) -> None:
     plan.add_argument("--predicted-usd", type=float, default=0.0)
 
 
+def _add_run_args(run: argparse.ArgumentParser) -> None:
+    run.add_argument("--goal", default=None, help=argparse.SUPPRESS)
+    run.add_argument("--repo", default=None)
+    run.add_argument("--home", default=None)
+    run.add_argument("--run-dir", default=None)
+    run.add_argument("--max-parallel", type=int, default=None)
+    run.add_argument("--fail-fast", action="store_true")
+    run.add_argument(
+        "--adapter",
+        default="shell",
+        choices=["shell", "codex", "claude", "opencode"],
+    )
+    run.add_argument("--root", default=".")
+    run.add_argument("--runner-sandbox", default=None)
+    run.add_argument(
+        "--out", default=None, help="observer output path (outside sandbox)"
+    )
+    run.add_argument("--log", default=None, help="observer log path (outside sandbox)")
+    run.add_argument("--keys-dir", default=None)
+    run.add_argument("--task-id", default="witnessd-lane")
+    run.add_argument("--arm", default="direct", choices=["direct", "governed"])
+    run.add_argument(
+        "--tier", default="agentic", choices=["quick", "agentic", "frontier"]
+    )
+    run.add_argument("--codex-binary", default="codex")
+    run.add_argument("--claude-binary", default="claude")
+    run.add_argument("--opencode-binary", default="opencode")
+    run.add_argument("--max-tokens", type=int, default=10**9)
+    run.add_argument("--max-usd", type=float, default=10**9)
+    run.add_argument("--max-depth", type=int, default=3)
+    run.add_argument("--predicted-tokens", type=int, default=0)
+    run.add_argument("--predicted-usd", type=float, default=0.0)
+    run.add_argument(
+        "--allow", action="append", default=[], help="allowed touched file"
+    )
+    run.add_argument("command", nargs=argparse.REMAINDER)
+
+
 def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
     flowplan.add_argument("goal")
     flowplan.add_argument("--root", default=".")
@@ -1656,9 +1932,9 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    argv = _normalize_orro_argv(
-        _normalize_superflow_argv(
-            _normalize_run_goal_argv(list(sys.argv[1:] if argv is None else argv))
+    argv = _normalize_run_goal_argv(
+        _normalize_orro_argv(
+            _normalize_superflow_argv(list(sys.argv[1:] if argv is None else argv))
         )
     )
     parser = _build_parser()
@@ -1670,12 +1946,17 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _normalize_run_goal_argv(argv: list[str]) -> list[str]:
-    if len(argv) < 2 or argv[0] != "run" or "--" in argv or "--goal" in argv:
+    if (
+        len(argv) < 2
+        or argv[0] not in {"run", "proofrun"}
+        or "--" in argv
+        or "--goal" in argv
+    ):
         return argv
     first = argv[1]
     if first.startswith("-"):
         return argv
-    return ["run", "--goal", first, *argv[2:]]
+    return [argv[0], "--goal", first, *argv[2:]]
 
 
 def _normalize_superflow_argv(argv: list[str]) -> list[str]:
@@ -1693,6 +1974,14 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
         return ["scout", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "flowplan":
         return ["flowplan", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "proofrun":
+        return ["proofrun", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "proofcheck":
+        return ["proofcheck", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "handoff":
+        return ["handoff", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "doctor":
+        return ["orro-doctor", *argv[2:]]
     return argv
 
 
