@@ -1,9 +1,10 @@
-# witnessd SPEC3 — Moonweave Superflow Runtime Spec
+# witnessd SPEC3 — Superflow Runtime Spec
 
 Status: source-of-truth spec, 2026-07-04.
 
 One-line decision: **witnessd executes and emits evidence; Depone verifies the
-bytes; Moonweave exposes the workflow as Superflow.**
+bytes; Superflow exposes the workflow.** Moonweave is the publisher/account name,
+not the product surface.
 
 This file is the only top-level witnessd product/runtime authority. `SPEC.md`,
 `SPEC2.md`, `docs/plans/*`, `docs/conformance/*`, README, `SKILL.md`, `AGENTS.md`,
@@ -17,19 +18,21 @@ authoritative in the Depone repo at `docs/spec.md`.
 
 | Name | Surface | Meaning |
 | --- | --- | --- |
-| Moonweave | product | The single install/user surface that wraps the engines. |
-| Superflow | flagship skill | Goal -> plan -> execute -> seal evidence -> verifier summary. |
-| flowplan | plan-only alias | Build or validate a workflow plan without running workers. |
-| proofrun | precise run alias | Execute with observer-signed evidence. Kept for technical invocation accuracy. |
-| proofcheck | verifier alias | Re-check existing evidence bytes offline. |
-| superflow auto | automation mode | Resume and continue work behind evidence gates. |
-| superflow ultra | future high-autonomy profile | Same gates as Superflow, but with larger budgets and longer loops. |
+| Moonweave / Moonweave Systems | publisher/account | GitHub org, operator, and release namespace. Not the product UX name. |
+| Superflow | flagship product/tool | Goal -> plan -> execute -> seal evidence -> verifier summary. |
+| `superflow` | primary command/skill | The user-facing command surface. |
+| `flowplan` | plan-only alias | Build or validate a workflow plan without running workers. |
+| `proofrun` | precise run alias | Execute with observer-signed evidence. Kept for technical invocation accuracy. |
+| `proofcheck` | verifier alias | Re-check existing evidence bytes offline. |
+| `superflow auto` | automation mode | Resume and continue work behind evidence gates. |
+| `superflow ultra` | future high-autonomy profile | Same gates as Superflow, but with larger budgets and longer loops. |
 | witnessd | engine | Runtime, adapters, sessions, worktrees, team orchestration, evidence emission. |
 | Depone | engine | Non-executing verifier and evidence-contract authority. |
 
-Naming rule: user-facing names say the job, not the engine. `witnessd` and
-`Depone` stay as repo/engine names; sessions and plugin surfaces should lead with
-`superflow`, `proofrun`, and `proofcheck`.
+Naming rule: user-facing names say the job, not the engine or account. `witnessd`
+and `Depone` stay as repo/engine names. `Moonweave` stays as publisher/account
+credit. Sessions and plugin surfaces should lead with `superflow`, `proofrun`,
+and `proofcheck`.
 
 Avoid names that imply trust before the verifier has re-derived the bytes.
 
@@ -62,7 +65,7 @@ User / agent host
   Claude Code, Codex, OpenCode, local shell
         |
         v
-Moonweave Superflow surface
+Superflow surface
   superflow | flowplan | proofrun | proofcheck | superflow auto
         |
         +-- witnessd execution plane
@@ -124,7 +127,7 @@ Depone owns:
 
 Depone does not spawn workers or mutate active worktrees.
 
-### 4.3 Moonweave owns the user surface
+### 4.3 Superflow owns the user surface
 
 The planned wrapper/plugin owns:
 
@@ -500,5 +503,5 @@ a new competing architecture document.
 ## 12. Final invariant
 
 ```text
-Depone verifies; witnessd executes; Moonweave Superflow exposes the workflow.
+Depone verifies; witnessd executes; Superflow exposes the workflow.
 ```
