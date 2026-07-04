@@ -23,6 +23,21 @@ Superflow is the product/tool name.
 | `superflow auto` | later continuation loop behind evidence gates |
 | `superflow ultra` | future high-autonomy profile with stricter gates |
 
+## Repository and install boundary
+
+This is the single user-facing skill surface. Do not ask normal users to install
+separate Depone and witnessd skills for one workflow.
+
+The skill may live in the witnessd repo while the product surface is thin,
+because Superflow starts execution and witnessd owns execution. Depone stays a
+pinned verifier dependency and is invoked only to re-derive persisted evidence
+bytes.
+
+A future standalone `Superflow` repo may package marketplace manifests,
+host-specific plugin files, examples, product docs, and engine version locks. It
+must remain a wrapper/distribution repo, not a place to duplicate witnessd runtime
+logic or Depone verifier logic.
+
 ## Contract
 
 The session agent does not certify its own work. It designs or receives lanes,
