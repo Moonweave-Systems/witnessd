@@ -162,6 +162,28 @@ Contract addition (Depone PR first): `resume_receipt` (additive).
 ledger; a tampered "completed" lane is *not* skipped (re-derivation fails →
 lane re-runs); `revalidate_w17.py`.
 
+### W17.5 — Design→Execute bridge (the third face becomes first-class)
+*(Appended 2026-07-04 per the append-only rule: the design face existed —
+Depone's DWM skill + `compile/` — but was unwired to execution, and witnessd's
+`plan_heuristic` is a single-lane stub. The division of labor is: Depone =
+design + verification (both non-executing judgment), witnessd = execution.)*
+Depone (contract PR first, additive): a **workflow-plan contract** — the DWM
+design output (phases, workers/lanes, regions, budgets, gates, stop rules)
+normalized into a canonical, hashable plan document that `compile/` emits and
+a validator checks (structure, region sanity, budget shape; design is
+non-executing, so this stays within Depone's invariant). witnessd: replace the
+`plan_heuristic` stub — `witnessd run "<goal>" --plan <plan.json>` (or via the
+DWM skill emitting the plan) consumes the contract, seals it (existing
+`seal_plan`/plan_hash from W11), and dispatches real multi-lane parallel
+execution (W15) with merge lanes where regions overlap (W16). Depone's ledger
+verdict gains plan conformance: the executed lanes are re-derived **against
+the sealed plan** (lanes match, regions match, nothing off-plan) — design
+compliance becomes evidence, not intention. **Bar:** committed fixture where
+a DWM-designed multi-lane plan executes in parallel and Depone re-derives
+both the work AND its conformance to the sealed plan; negative fixture (a
+lane not in the plan, or region drift from plan) rejected;
+`revalidate_w17_5.py`. Quota-free (shell/fake adapters).
+
 ### W18 — Distribution & DX (the tool becomes installable)
 - `witnessd init`: one command creates config, keys dir (0600), pinned
   Depone (pip-installs Depone from its repo at a pinned tag into an isolated
