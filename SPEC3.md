@@ -90,6 +90,29 @@ The engines stay separate because the executor must not be the component that
 raises trust. The user-facing install surface should be one product because users
 should not have to hand-wire two repositories.
 
+### 3.1 Repository and distribution strategy
+
+Development stays in two engine repositories:
+
+```text
+Depone   = verifier engine and evidence contract
+witnessd = execution engine and evidence emitter
+```
+
+The Superflow surface is one user-facing install, command, and skill. Normal
+users should not be told to install separate Depone and witnessd skills for one
+workflow.
+
+In the near term, the thin `superflow` command/skill may live in the witnessd
+repo because Superflow starts execution and witnessd owns execution. Depone is
+consumed as a pinned verifier dependency.
+
+Create a standalone `Superflow` repo only when distribution needs justify it:
+marketplace manifests, host-specific plugin bundles, examples, product docs,
+engine version locks, and end-to-end integration tests. That repo is a wrapper and
+distribution repo, not a third engine. It must not duplicate witnessd runtime
+logic or Depone verifier logic.
+
 ---
 
 ## 4. Responsibilities
@@ -129,7 +152,7 @@ Depone does not spawn workers or mutate active worktrees.
 
 ### 4.3 Superflow owns the user surface
 
-The planned wrapper/plugin owns:
+The Superflow surface owns:
 
 - one install surface,
 - host-native skill/plugin packaging,
@@ -140,7 +163,9 @@ The planned wrapper/plugin owns:
 - selection of `superflow`, `flowplan`, `proofrun`, `proofcheck`, and automation
   modes.
 
-The wrapper must not duplicate verifier or runtime logic.
+The surface may live inside witnessd while it is thin. A future standalone
+Superflow repo must remain a wrapper/distribution layer and must not duplicate
+verifier or runtime logic.
 
 ---
 
@@ -431,7 +456,9 @@ Acceptance: kill-parent-mid-run fixture, tampered-completion negative,
 
 ### W18 — Distribution and session UX
 
-One command initializes witnessd with a pinned Depone. `proofrun`/Superflow
+One command initializes witnessd with a pinned Depone. The near-term `superflow`
+surface may live in this repo while it remains thin; a separate Superflow repo is
+reserved for later distribution packaging, not engine logic. `proofrun`/Superflow
 session guidance becomes the primary runner UX. Clean quickstart works on macOS
 and Linux.
 
