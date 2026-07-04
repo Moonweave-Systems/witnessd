@@ -101,6 +101,23 @@ class DistributionInitTests(unittest.TestCase):
             self.assertEqual(payload["config"], str(home / "config.json"))
             self.assertTrue((home / "provision.json").is_file())
 
+    def test_cli_init_auto_detects_sibling_depone_checkout(self) -> None:
+        witnessd_root = Path(__file__).resolve().parents[1]
+        depone_root = witnessd_root.parent / "depone"
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            out = io.StringIO()
+            err = io.StringIO()
+
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(["init", "--home", str(home)])
+
+            self.assertEqual(code, 0, err.getvalue())
+            provision = json.loads((home / "provision.json").read_text(encoding="utf-8"))
+            self.assertEqual(provision["depone"]["root"], str(depone_root.resolve()))
+            self.assertEqual(provision["depone"]["source"], "sibling-checkout")
+            self.assertFalse(provision["depone"]["network_used"])
+
 
 if __name__ == "__main__":
     unittest.main()

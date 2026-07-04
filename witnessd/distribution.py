@@ -50,12 +50,13 @@ def init_witnessd_home(config: InitConfig) -> dict[str, str]:
         )
     os.chmod(private_placeholder, 0o600)
 
-    depone_root = _resolve_depone_root(config)
+    depone_root, depone_source, network_used = _resolve_depone_root(config)
     witnessd_root = config.witnessd_root.resolve(strict=False)
     provision = _build_provision(
         witnessd_root=witnessd_root,
         depone_root=depone_root,
-        network_used=False,
+        network_used=network_used,
+        depone_source=depone_source,
     )
     config_payload = {
         "kind": "witnessd-config",
@@ -132,25 +133,36 @@ def run_depone_team_ledger(
     return json.loads(verdict_path.read_text(encoding="utf-8"))
 
 
-def _resolve_depone_root(config: InitConfig) -> Path:
+def _resolve_depone_root(config: InitConfig) -> tuple[Path, str, bool]:
     if config.depone_root is not None:
         root = config.depone_root.resolve(strict=False)
+        source = "local-checkout"
     else:
         env_root = os.environ.get("WITNESSD_DEPONE_ROOT")
         if env_root:
             root = Path(env_root).expanduser().resolve(strict=False)
-        elif not config.network_allowed:
-            raise ProvisionError(ERR_WITNESSD_INIT_NETWORK_REQUIRED)
+            source = "env-checkout"
         else:
-            raise ProvisionError(ERR_WITNESSD_INIT_NETWORK_REQUIRED)
+            sibling = config.witnessd_root.resolve(strict=False).parent / "depone"
+            if (sibling / "depone").is_dir():
+                root = sibling.resolve(strict=False)
+                source = "sibling-checkout"
+            elif not config.network_allowed:
+                raise ProvisionError(ERR_WITNESSD_INIT_NETWORK_REQUIRED)
+            else:
+                # W18 records setup-time network as allowed, but this checkout
+                # intentionally does not curl-pipe or fetch at runtime. Release
+                # packaging can replace this local-first branch with a pinned
+                # vendored/venv provision without changing verify semantics.
+                raise ProvisionError(ERR_WITNESSD_INIT_NETWORK_REQUIRED)
     if not (root / "depone").is_dir():
         raise ProvisionError(ERR_WITNESSD_DEPONE_ROOT_INVALID)
     _git_commit(root)
-    return root
+    return root, source, False
 
 
 def _build_provision(
-    *, witnessd_root: Path, depone_root: Path, network_used: bool
+    *, witnessd_root: Path, depone_root: Path, network_used: bool, depone_source: str
 ) -> dict[str, Any]:
     return {
         "kind": PROVISION_KIND,
@@ -163,7 +175,7 @@ def _build_provision(
             "root": str(depone_root),
             "commit": _git_commit(depone_root),
             "network_used": network_used,
-            "source": "local-checkout",
+            "source": depone_source,
         },
         "boundary": {
             "setup_may_use_network": True,

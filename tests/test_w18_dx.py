@@ -1,4 +1,5 @@
 import io
+import inspect
 import json
 import os
 import subprocess
@@ -7,7 +8,10 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
+import witnessd.__main__ as witnessd_cli
+import witnessd.distribution as distribution
 from witnessd.__main__ import main
+from witnessd.distribution import ERR_WITNESSD_DEPONE_PIN_MISMATCH
 
 
 def _seed_repo(repo: Path) -> None:
@@ -74,6 +78,49 @@ class W18DxCliTests(unittest.TestCase):
             self.assertEqual(payload["decision"], "pass")
             self.assertEqual(payload["team_ledger"], str(run_dir / "team-ledger.json"))
             self.assertTrue((run_dir / "team-ledger-verdict.json").is_file())
+
+    def test_verify_run_dir_rejects_forged_depone_pin_before_verdict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home, run_dir = self._run_ergonomic_goal(Path(tmp))
+            (run_dir / "team-ledger-verdict.json").unlink()
+            provision_path = home / "provision.json"
+            provision = json.loads(provision_path.read_text(encoding="utf-8"))
+            provision["depone"]["commit"] = "0" * 40
+            provision_path.write_text(
+                json.dumps(provision, sort_keys=True), encoding="utf-8"
+            )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(["verify", str(run_dir), "--home", str(home)])
+
+            self.assertEqual(code, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn(ERR_WITNESSD_DEPONE_PIN_MISMATCH, stderr.getvalue())
+            self.assertFalse((run_dir / "team-ledger-verdict.json").exists())
+
+    def test_runtime_and_verify_paths_do_not_contain_network_provision_actions(self) -> None:
+        runtime_sources = "\n".join(
+            inspect.getsource(obj)
+            for obj in (
+                witnessd_cli._cmd_run_goal,
+                witnessd_cli._cmd_verify,
+                distribution.run_depone_team_ledger,
+            )
+        )
+        forbidden_tokens = (
+            "git clone",
+            "git fetch",
+            "pip install",
+            "curl ",
+            "http://",
+            "https://",
+            "allow_network",
+            "init_witnessd_home",
+        )
+        for token in forbidden_tokens:
+            self.assertNotIn(token, runtime_sources)
 
     def test_quickstart_script_and_ci_use_plain_python(self) -> None:
         root = Path(__file__).resolve().parents[1]
