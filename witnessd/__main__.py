@@ -320,7 +320,7 @@ def _cmd_pilot_canary(args: argparse.Namespace) -> int:
 def _cmd_pilot_archive_evidence(args: argparse.Namespace) -> int:
     from witnessd.pilot import record_archive_evidence
 
-    artifacts: dict[str, str] = {}
+    artifacts: dict[str, str | Path] = {}
     for entry in args.artifact:
         if "=" not in entry:
             print("ERR_ARCHIVE_ARTIFACT_FORMAT", file=sys.stderr)
@@ -1362,24 +1362,19 @@ def _build_parser() -> argparse.ArgumentParser:
     a2.add_argument("command", nargs=argparse.REMAINDER)
     a2.set_defaults(func=_cmd_a2_observer_run)
 
-    plan = sub.add_parser("plan", help="emit a sealed W11 plan")
-    plan.add_argument("goal")
-    plan.add_argument("--root", default=".")
-    plan.add_argument("--seed", default="w11")
-    plan.add_argument("--draft-adapter", choices=["codex", "claude", "opencode"])
-    plan.add_argument("--draft-out", default=None)
-    plan.add_argument(
-        "--tier", default="agentic", choices=["quick", "agentic", "frontier"]
+    plan = sub.add_parser(
+        "plan",
+        help="compatibility name for flowplan; emits a sealed plan without execution",
     )
-    plan.add_argument("--codex-binary", default="codex")
-    plan.add_argument("--claude-binary", default="claude")
-    plan.add_argument("--opencode-binary", default="opencode")
-    plan.add_argument("--max-tokens", type=int, default=10**9)
-    plan.add_argument("--max-usd", type=float, default=10**9)
-    plan.add_argument("--max-depth", type=int, default=3)
-    plan.add_argument("--predicted-tokens", type=int, default=0)
-    plan.add_argument("--predicted-usd", type=float, default=0.0)
+    _add_plan_args(plan)
     plan.set_defaults(func=_cmd_plan)
+
+    flowplan = sub.add_parser(
+        "flowplan",
+        help="ORRO plan-only workflow design; emits a sealed plan without execution",
+    )
+    _add_plan_args(flowplan)
+    flowplan.set_defaults(func=_cmd_plan)
 
     status = sub.add_parser("status", help="render evidence-pending status")
     status.add_argument("--evidence-dir", default=".")
@@ -1622,6 +1617,25 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _add_plan_args(plan: argparse.ArgumentParser) -> None:
+    plan.add_argument("goal")
+    plan.add_argument("--root", default=".")
+    plan.add_argument("--seed", default="w11")
+    plan.add_argument("--draft-adapter", choices=["codex", "claude", "opencode"])
+    plan.add_argument("--draft-out", default=None)
+    plan.add_argument(
+        "--tier", default="agentic", choices=["quick", "agentic", "frontier"]
+    )
+    plan.add_argument("--codex-binary", default="codex")
+    plan.add_argument("--claude-binary", default="claude")
+    plan.add_argument("--opencode-binary", default="opencode")
+    plan.add_argument("--max-tokens", type=int, default=10**9)
+    plan.add_argument("--max-usd", type=float, default=10**9)
+    plan.add_argument("--max-depth", type=int, default=3)
+    plan.add_argument("--predicted-tokens", type=int, default=0)
+    plan.add_argument("--predicted-usd", type=float, default=0.0)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = _normalize_orro_argv(
         _normalize_superflow_argv(
@@ -1658,6 +1672,8 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
         return argv
     if len(argv) >= 2 and argv[1] == "scout":
         return ["scout", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "flowplan":
+        return ["flowplan", *argv[2:]]
     return argv
 
 
