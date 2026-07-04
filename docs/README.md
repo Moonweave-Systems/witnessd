@@ -22,7 +22,7 @@ Use these names in new user-facing docs:
 
 | Name | Meaning |
 | --- | --- |
-| Moonweave Superflow | flagship product workflow |
+| Superflow | flagship product/tool, published by Moonweave |
 | `superflow` | plan -> run -> evidence -> verifier summary |
 | `flowplan` | plan-only workflow design |
 | `proofrun` | evidence-backed execution alias |
@@ -30,7 +30,8 @@ Use these names in new user-facing docs:
 | `superflow auto` | continuation mode behind evidence gates |
 | `superflow ultra` | future high-autonomy profile |
 
-Use `witnessd` only when discussing the engine or CLI.
+Use `witnessd` only when discussing the engine or CLI. Use `Moonweave` only when
+discussing the publisher/account namespace.
 
 ## Legacy docs
 
