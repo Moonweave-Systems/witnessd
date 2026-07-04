@@ -556,6 +556,31 @@ def _cmd_install(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_init(args: argparse.Namespace) -> int:
+    from witnessd.distribution import InitConfig, ProvisionError, init_witnessd_home
+
+    home = Path(
+        args.home
+        or os.environ.get("WITNESSD_HOME")
+        or (Path(args.repo).resolve(strict=False) / ".witnessd")
+    )
+    depone_root = Path(args.depone_root).expanduser() if args.depone_root else None
+    try:
+        result = init_witnessd_home(
+            InitConfig(
+                home=home,
+                witnessd_root=Path(__file__).resolve().parents[1],
+                depone_root=depone_root,
+                network_allowed=args.allow_network,
+            )
+        )
+    except ProvisionError as exc:
+        print(exc.code, file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
 def _cmd_route(args: argparse.Namespace) -> int:
     from witnessd.eventlog import EventLog
     from witnessd.router import RouteExhaustedError, route_model
@@ -1109,6 +1134,17 @@ def _cmd_self_test(args: argparse.Namespace) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="witnessd")
     sub = parser.add_subparsers(dest="cmd", required=True)
+
+    init = sub.add_parser("init", help="initialize witnessd config and pinned Depone")
+    init.add_argument("--home", default=None)
+    init.add_argument("--repo", default=".")
+    init.add_argument("--depone-root", default=None)
+    init.add_argument(
+        "--allow-network",
+        action="store_true",
+        help="allow setup-time network provisioning when no local Depone root is supplied",
+    )
+    init.set_defaults(func=_cmd_init)
 
     run = sub.add_parser("run", help="observe a lane and emit signed evidence")
     run.add_argument(

@@ -1,0 +1,150 @@
+"""Distribution and local Depone pinning helpers for W18."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+ERR_WITNESSD_DEPONE_PIN_MISMATCH = "ERR_WITNESSD_DEPONE_PIN_MISMATCH"
+ERR_WITNESSD_DEPONE_PIN_MISSING = "ERR_WITNESSD_DEPONE_PIN_MISSING"
+ERR_WITNESSD_DEPONE_ROOT_INVALID = "ERR_WITNESSD_DEPONE_ROOT_INVALID"
+ERR_WITNESSD_INIT_NETWORK_REQUIRED = "ERR_WITNESSD_INIT_NETWORK_REQUIRED"
+
+PROVISION_KIND = "witnessd-depone-provision"
+PROVISION_SCHEMA_VERSION = "0.1"
+
+
+class ProvisionError(Exception):
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
+@dataclass(frozen=True)
+class InitConfig:
+    home: Path
+    witnessd_root: Path
+    depone_root: Path | None = None
+    network_allowed: bool = False
+
+
+def init_witnessd_home(config: InitConfig) -> dict[str, str]:
+    home = config.home.resolve(strict=False)
+    home.mkdir(parents=True, exist_ok=True)
+    keys_dir = home / "keys"
+    keys_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(keys_dir, 0o700)
+
+    private_placeholder = keys_dir / "operator-private-key.placeholder"
+    if not private_placeholder.exists():
+        private_placeholder.write_text(
+            "placeholder: generated run keys are created per evidence run\n",
+            encoding="utf-8",
+        )
+    os.chmod(private_placeholder, 0o600)
+
+    depone_root = _resolve_depone_root(config)
+    witnessd_root = config.witnessd_root.resolve(strict=False)
+    provision = _build_provision(
+        witnessd_root=witnessd_root,
+        depone_root=depone_root,
+        network_used=False,
+    )
+    config_payload = {
+        "kind": "witnessd-config",
+        "schema_version": "0.1",
+        "home": str(home),
+        "keys_dir": str(keys_dir),
+        "depone_provision": "provision.json",
+    }
+    _write_json(home / "config.json", config_payload)
+    _write_json(home / "provision.json", provision)
+    return {
+        "home": str(home),
+        "config": str(home / "config.json"),
+        "provision": str(home / "provision.json"),
+        "keys_dir": str(keys_dir),
+    }
+
+
+def validate_depone_pin(home: Path) -> dict[str, Any]:
+    provision_path = home.resolve(strict=False) / "provision.json"
+    if not provision_path.is_file():
+        raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISSING)
+    provision = json.loads(provision_path.read_text(encoding="utf-8"))
+    if provision.get("kind") != PROVISION_KIND:
+        raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISSING)
+    depone = provision.get("depone")
+    if not isinstance(depone, dict):
+        raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISSING)
+    root = depone.get("root")
+    recorded_commit = depone.get("commit")
+    if not isinstance(root, str) or not isinstance(recorded_commit, str):
+        raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISSING)
+    depone_root = Path(root).resolve(strict=False)
+    current_commit = _git_commit(depone_root)
+    if current_commit != recorded_commit:
+        raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISMATCH)
+    return provision
+
+
+def _resolve_depone_root(config: InitConfig) -> Path:
+    if config.depone_root is not None:
+        root = config.depone_root.resolve(strict=False)
+    else:
+        env_root = os.environ.get("WITNESSD_DEPONE_ROOT")
+        if env_root:
+            root = Path(env_root).expanduser().resolve(strict=False)
+        elif not config.network_allowed:
+            raise ProvisionError(ERR_WITNESSD_INIT_NETWORK_REQUIRED)
+        else:
+            raise ProvisionError(ERR_WITNESSD_INIT_NETWORK_REQUIRED)
+    if not (root / "depone").is_dir():
+        raise ProvisionError(ERR_WITNESSD_DEPONE_ROOT_INVALID)
+    _git_commit(root)
+    return root
+
+
+def _build_provision(
+    *, witnessd_root: Path, depone_root: Path, network_used: bool
+) -> dict[str, Any]:
+    return {
+        "kind": PROVISION_KIND,
+        "schema_version": PROVISION_SCHEMA_VERSION,
+        "witnessd": {
+            "root": str(witnessd_root),
+            "commit": _git_commit(witnessd_root),
+        },
+        "depone": {
+            "root": str(depone_root),
+            "commit": _git_commit(depone_root),
+            "network_used": network_used,
+            "source": "local-checkout",
+        },
+        "boundary": {
+            "setup_may_use_network": True,
+            "runtime_may_use_network": False,
+            "verify_may_use_network": False,
+        },
+    }
+
+
+def _git_commit(root: Path) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise ProvisionError(ERR_WITNESSD_DEPONE_ROOT_INVALID)
+    return completed.stdout.strip()
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
