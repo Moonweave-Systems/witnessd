@@ -2,10 +2,12 @@ import io
 import json
 import os
 import stat
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from witnessd.__main__ import main
 from witnessd.distribution import (
@@ -18,6 +20,21 @@ from witnessd.distribution import (
 
 
 class DistributionInitTests(unittest.TestCase):
+    def _seed_git_repo(self, root: Path, files: dict[str, str]) -> None:
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "w18@example.invalid"],
+            cwd=root,
+            check=True,
+        )
+        subprocess.run(["git", "config", "user.name", "w18"], cwd=root, check=True)
+        for rel, text in files.items():
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "seed"], cwd=root, check=True)
+
     def test_init_records_config_keys_and_repo_hashes(self) -> None:
         witnessd_root = Path(__file__).resolve().parents[1]
         depone_root = witnessd_root.parent / "depone"
@@ -109,14 +126,53 @@ class DistributionInitTests(unittest.TestCase):
             out = io.StringIO()
             err = io.StringIO()
 
-            with redirect_stdout(out), redirect_stderr(err):
-                code = main(["init", "--home", str(home)])
+            with patch.dict(os.environ, {"WITNESSD_DEPONE_ROOT": ""}):
+                os.environ.pop("WITNESSD_DEPONE_ROOT", None)
+                with redirect_stdout(out), redirect_stderr(err):
+                    code = main(["init", "--home", str(home)])
 
             self.assertEqual(code, 0, err.getvalue())
             provision = json.loads((home / "provision.json").read_text(encoding="utf-8"))
             self.assertEqual(provision["depone"]["root"], str(depone_root.resolve()))
             self.assertEqual(provision["depone"]["source"], "sibling-checkout")
             self.assertFalse(provision["depone"]["network_used"])
+
+    def test_init_allow_network_provisions_depone_when_no_local_checkout_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_witnessd = root / "isolated" / "witnessd"
+            fake_depone_remote = root / "remote-depone"
+            fake_witnessd.mkdir(parents=True)
+            fake_depone_remote.mkdir()
+            self._seed_git_repo(fake_witnessd, {"README.md": "witnessd\n"})
+            self._seed_git_repo(
+                fake_depone_remote,
+                {
+                    "depone/__init__.py": "",
+                    "README.md": "depone\n",
+                },
+            )
+            home = root / "home"
+
+            with patch.dict(os.environ, {"WITNESSD_DEPONE_ROOT": ""}):
+                os.environ.pop("WITNESSD_DEPONE_ROOT", None)
+                result = init_witnessd_home(
+                    InitConfig(
+                        home=home,
+                        witnessd_root=fake_witnessd,
+                        network_allowed=True,
+                        depone_repository=str(fake_depone_remote),
+                        depone_ref="main",
+                    )
+                )
+
+            provision = json.loads(Path(result["provision"]).read_text(encoding="utf-8"))
+            depone_root = Path(provision["depone"]["root"])
+            self.assertEqual(depone_root, home.resolve() / "depone-pinned")
+            self.assertTrue((depone_root / "depone").is_dir())
+            self.assertEqual(provision["depone"]["source"], "setup-clone")
+            self.assertTrue(provision["depone"]["network_used"])
+            self.assertRegex(provision["depone"]["commit"], r"^[0-9a-f]{40}$")
 
 
 if __name__ == "__main__":

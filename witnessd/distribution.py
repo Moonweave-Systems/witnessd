@@ -15,10 +15,13 @@ ERR_WITNESSD_DEPONE_PIN_MISMATCH = "ERR_WITNESSD_DEPONE_PIN_MISMATCH"
 ERR_WITNESSD_DEPONE_PIN_MISSING = "ERR_WITNESSD_DEPONE_PIN_MISSING"
 ERR_WITNESSD_DEPONE_ROOT_INVALID = "ERR_WITNESSD_DEPONE_ROOT_INVALID"
 ERR_WITNESSD_INIT_NETWORK_REQUIRED = "ERR_WITNESSD_INIT_NETWORK_REQUIRED"
+ERR_WITNESSD_DEPONE_PROVISION_FAILED = "ERR_WITNESSD_DEPONE_PROVISION_FAILED"
 ERR_WITNESSD_DEPONE_VERIFY_FAILED = "ERR_WITNESSD_DEPONE_VERIFY_FAILED"
 
 PROVISION_KIND = "witnessd-depone-provision"
 PROVISION_SCHEMA_VERSION = "0.1"
+DEFAULT_DEPONE_REPOSITORY = "https://github.com/Moonweave-Systems/Depone.git"
+DEFAULT_DEPONE_REF = "main"
 
 
 class ProvisionError(Exception):
@@ -33,6 +36,8 @@ class InitConfig:
     witnessd_root: Path
     depone_root: Path | None = None
     network_allowed: bool = False
+    depone_repository: str | None = None
+    depone_ref: str | None = None
 
 
 def init_witnessd_home(config: InitConfig) -> dict[str, str]:
@@ -150,11 +155,45 @@ def _resolve_depone_root(config: InitConfig) -> tuple[Path, str, bool]:
             elif not config.network_allowed:
                 raise ProvisionError(ERR_WITNESSD_INIT_NETWORK_REQUIRED)
             else:
-                raise ProvisionError(ERR_WITNESSD_INIT_NETWORK_REQUIRED)
+                root = _provision_depone_checkout(config)
+                source = "setup-clone"
     if not (root / "depone").is_dir():
         raise ProvisionError(ERR_WITNESSD_DEPONE_ROOT_INVALID)
     _git_commit(root)
-    return root, source, False
+    return root, source, source == "setup-clone"
+
+
+def _provision_depone_checkout(config: InitConfig) -> Path:
+    target = config.home.resolve(strict=False) / "depone-pinned"
+    if (target / "depone").is_dir():
+        _git_commit(target)
+        return target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    repository = (
+        config.depone_repository
+        or os.environ.get("WITNESSD_DEPONE_REPOSITORY")
+        or DEFAULT_DEPONE_REPOSITORY
+    )
+    ref = (
+        config.depone_ref
+        or os.environ.get("WITNESSD_DEPONE_REF")
+        or DEFAULT_DEPONE_REF
+    )
+    command = ["git", "clone", "--depth=1"]
+    if ref:
+        command.extend(["--branch", ref])
+    command.extend([repository, str(target)])
+    completed = subprocess.run(
+        command,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise ProvisionError(ERR_WITNESSD_DEPONE_PROVISION_FAILED)
+    if not (target / "depone").is_dir():
+        raise ProvisionError(ERR_WITNESSD_DEPONE_ROOT_INVALID)
+    return target
 
 
 def _build_provision(

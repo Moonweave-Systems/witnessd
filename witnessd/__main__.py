@@ -709,6 +709,8 @@ def _cmd_init(args: argparse.Namespace) -> int:
                 witnessd_root=Path(__file__).resolve().parents[1],
                 depone_root=depone_root,
                 network_allowed=args.allow_network,
+                depone_repository=args.depone_repository,
+                depone_ref=args.depone_ref,
             )
         )
     except ProvisionError as exc:
@@ -1276,6 +1278,8 @@ def _build_parser() -> argparse.ArgumentParser:
     init.add_argument("--home", default=None)
     init.add_argument("--repo", default=".")
     init.add_argument("--depone-root", default=None)
+    init.add_argument("--depone-repository", default=None)
+    init.add_argument("--depone-ref", default=None)
     init.add_argument(
         "--allow-network",
         action="store_true",
