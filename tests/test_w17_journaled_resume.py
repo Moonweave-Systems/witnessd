@@ -236,6 +236,29 @@ class TestW17JournaledResume(unittest.TestCase):
         self.assertEqual(receipt["decisions"][0]["decision"], "re_executed")
         self.assertEqual(receipt["decisions"][0]["attempt"], 3)
 
+    def test_resume_does_not_fall_back_past_partial_newer_attempt_without_result(self):
+        result = self._run_initial(
+            [
+                {
+                    "lane_id": "lane-a",
+                    "region": ["pkg/a.py"],
+                    "commands": [["sh", "-c", "mkdir -p pkg; echo a > pkg/a.py"]],
+                }
+            ]
+        )
+        partial_dir = result["base_dir"] / "attempts" / "attempt-2" / "lane-a"
+        partial_dir.mkdir(parents=True)
+        (partial_dir / "partial-marker.txt").write_text("partial\n", encoding="utf-8")
+
+        resumed = resume_team(str(result["base_dir"]), run_id="team-run", max_parallel=1)
+
+        self.assertTrue((result["base_dir"] / "attempts" / "attempt-3" / "lane-a").is_dir())
+        lane = resumed["ledger"]["lanes"][0]
+        self.assertEqual(lane["evidence_dir"], "attempts/attempt-3/lane-a")
+        receipt = json.loads((result["base_dir"] / resumed["ledger"]["resume_receipt"]).read_text())
+        self.assertEqual(receipt["decisions"][0]["decision"], "re_executed")
+        self.assertEqual(receipt["decisions"][0]["attempt"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1284,6 +1284,8 @@ def _latest_resume_attempt_lane(
         attempt = int(suffix)
         result_path = _root_lane_result_path(attempt_dir, lane_id)
         if not result_path.is_file():
+            if (attempt_dir / lane_id).exists() and (best is None or attempt > best[0]):
+                best = (attempt, None)
             continue
         try:
             result = json.loads(result_path.read_text(encoding="utf-8"))

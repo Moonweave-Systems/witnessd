@@ -54,10 +54,10 @@ W18 deployment/DX, W19 paid live parallel run, W20 keyless anchor/OIDC, distribu
 Landed in witnessd only:
 - `witnessd team resume <run-dir>` performs re-derivation-only skips and re-executes unproven lanes into `attempts/attempt-N`.
 - Team Ledger emission links `resume_receipt` additively.
-- W17 tests cover missing lane result, tampered completed lane, malformed lane control fail-closed behavior, repeated resume over a successful newer attempt, corrupted historical attempt bytes, and CLI.
+- W17 tests cover missing lane result, tampered completed lane, malformed lane control fail-closed behavior, repeated resume over a successful newer attempt, corrupted historical attempt bytes, partial historical attempt bytes without a result file, and CLI.
 - W17 fixture proves a tampered lane is re-executed and a clean lane is skipped only after re-derivation.
 - Negative fixture proves forged `skipped_as_proven` is rejected by Depone.
-- Post-review hardening prevents malformed controls from disappearing from the final resumed ledger, re-derives the newest preserved attempt before deciding whether another rerun is required, and refuses to fall back past corrupted newer attempt bytes.
+- Post-review hardening prevents malformed controls from disappearing from the final resumed ledger, re-derives the newest preserved attempt before deciding whether another rerun is required, and refuses to fall back past corrupted or partial newer attempt bytes.
 
 Verification captured before commit:
 - `PYTHONPATH=/home/ubuntu/moonweave/depone python3 -m unittest tests.test_w17_journaled_resume tests.test_runtime_depone_decoupling` PASS.
