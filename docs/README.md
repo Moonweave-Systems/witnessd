@@ -47,7 +47,8 @@ delegates subcommands to the witnessd-hosted ORRO command surface. The engine
 lock is distribution metadata only, not evidence verification, merge approval, or
 an assurance increase. A standalone ORRO repo remains deferred until packaging,
 marketplace, or version-lock distribution needs justify it. The bare `orro`
-console script is also deferred until packaging metadata exists.
+console script points at `orro.__main__:main` and remains an alias layer over the
+same product surface.
 
 ## Legacy docs
 
