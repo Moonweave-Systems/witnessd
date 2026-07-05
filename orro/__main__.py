@@ -7,7 +7,7 @@ import sys
 from witnessd.__main__ import main as witnessd_main
 
 
-ORRO_HELP = """usage: orro [-h] {init,scout,flowplan,proofrun,proofcheck,handoff,next,auto,doctor,engine-lock} ...
+ORRO_HELP = """usage: orro [-h] {init,advise,scout,flowplan,proofrun,proofcheck,handoff,next,auto,doctor,engine-lock} ...
 
 ORRO - Observed Run & Review Orchestrator
 
@@ -16,6 +16,7 @@ ORRO Flow:
 
 public commands:
   init         setup readiness/provision metadata; does not verify evidence
+  advise       non-executing workstyle router for the smallest safe workflow
   scout        read-only repository exploration and context packaging
   flowplan     plan-only workflow design; does not run workers
   proofrun     evidence-backed execution through witnessd
@@ -28,9 +29,10 @@ public commands:
 
 boundary:
   Depone verifies; witnessd executes; ORRO exposes the workflow.
-  next reads status only; auto --dry-run recommends commands only; auto --once
-  executes at most one proofcheck or handoff step; auto --until-complete loops
-  over those post-run steps with --max-steps. None is proof or assurance.
+  advise and next read status/intent only; auto --dry-run recommends commands
+  only; auto --once executes at most one proofcheck or handoff step; auto
+  --until-complete loops over those post-run steps with --max-steps. None is
+  proof or assurance.
 
 options:
   -h, --help   show this help message and exit

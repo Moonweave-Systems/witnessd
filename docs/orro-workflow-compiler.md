@@ -3,6 +3,10 @@
 ORRO has a deterministic rolepack/workflow compiler v0. It maps a user goal and
 built-in profile into an `orro-workflow-plan` intent artifact.
 
+`orro advise` sits before this compiler as the workstyle router. It may
+recommend a profile and path, but its `orro-workstyle-decision` is advice only:
+not proof, not verifier truth, not approval, and not assurance.
+
 Supported profiles:
 
 - `code-change`

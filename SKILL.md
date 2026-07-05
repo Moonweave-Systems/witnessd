@@ -19,6 +19,7 @@ should not be used for new public surfaces.
 | --- | --- |
 | `orro` | goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
+| `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo exploration and context-pack creation |
 | `flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
 | `proofrun` | precise evidence-backed execution alias |
@@ -64,6 +65,14 @@ verifier-refuted. The lock is not proof, evidence verification, merge approval,
 or assurance.
 
 `orro doctor` checks readiness, not evidence truth.
+
+`python3 -m orro advise "<goal>" --repo <repo> --home .witnessd --json` is the
+developer-judgment/workstyle layer. It returns an `orro-workstyle-decision` with
+the recommended task class, profile, path, skip list, gates, and reasons. It is
+non-executing advice only and is not proof, verifier truth, approval, or
+assurance. It helps non-developers avoid wasteful or risky AI workflows, but it
+does not replace proofrun, proofcheck, handoff, or human review for risky
+changes.
 
 `python3 -m orro flowplan "<goal>" --root <repo> --profile code-change --out workflow-plan.json`
 emits a deterministic `orro-workflow-plan` intent artifact. Supported profiles

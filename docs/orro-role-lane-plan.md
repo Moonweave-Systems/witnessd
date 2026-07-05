@@ -64,6 +64,11 @@ does not execute the role-lane plan, run proofcheck, retry lanes, repair
 evidence, or raise assurance. Role status is derived from observed artifacts
 only and is not proof.
 
+`orro advise <goal>` may recommend skipping role-lane/team execution for
+trivial, review-only, or verification-only work. That recommendation is
+developer-judgment context only; it does not execute and does not replace
+proofrun/proofcheck/handoff gates.
+
 `orro auto --dry-run <run-dir> --home .witnessd --json` may consume the
 continuation decision and emit an `orro-auto-plan` recommendation. It does not
 execute role-lane plans, run proofcheck, call Depone, write handoff, retry

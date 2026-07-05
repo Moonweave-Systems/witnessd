@@ -12,6 +12,7 @@ This guidance is derived from that spec.
 
 - `orro`: goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff
 - `orro init`: setup readiness/provision metadata; not proof or assurance
+- `orro advise`: non-executing workstyle router for the smallest safe workflow
 - `orro scout`: read-only repo profile, context pack, and discovery notes
 - `flowplan`: plan-only workflow design and rolepack/workflow compiler surface
 - `proofrun`: precise evidence-backed execution alias
@@ -32,8 +33,8 @@ This guidance is derived from that spec.
 the witnessd repo and delegates to the existing `witnessd orro ...` surface. It
 is not a standalone ORRO repository and not a third engine.
 `python3 -m orro --help` is product-facing and lists only public ORRO commands:
-`init`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `next`,
-`auto`, `doctor`, and `engine-lock`.
+`init`, `advise`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`,
+`next`, `auto`, `doctor`, and `engine-lock`.
 
 Use `python3 -m orro init --home .witnessd --depone-root ../Depone` as the
 public setup path. It delegates to existing witnessd initialization/provisioning
@@ -49,6 +50,13 @@ matching lock is readiness alignment only. A mismatch is readiness-blocked, not
 verifier-refuted. The lock is not proof, evidence verification, merge approval,
 or assurance, and it must not execute workers.
 `orro doctor` checks readiness, not evidence truth.
+
+Use `python3 -m orro advise "<goal>" --repo <repo> --home .witnessd --json` to
+get a deterministic workstyle decision before planning or execution. It
+recommends the smallest safe workflow and helps non-developers avoid wasteful or
+risky AI workflows. It is non-executing advice only: not proof, verifier truth,
+approval, or assurance, and it does not replace proofrun, proofcheck, handoff,
+or human review for risky changes.
 
 Use `python3 -m orro flowplan "<goal>" --root <repo> --profile code-change` to
 compile a deterministic `orro-workflow-plan` for supported profiles:

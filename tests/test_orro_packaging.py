@@ -64,10 +64,24 @@ class OrroPackagingTests(unittest.TestCase):
             self.assertEqual(help_result.returncode, 0, help_result.stderr)
             self.assertIn("ORRO Flow", help_result.stdout)
             self.assertIn("init", help_result.stdout)
+            self.assertIn("advise", help_result.stdout)
             self.assertIn("next", help_result.stdout)
             self.assertIn("auto", help_result.stdout)
             self.assertIn("engine-lock", help_result.stdout)
             self.assertNotIn("self-test", help_result.stdout)
+
+            advise = subprocess.run(
+                [str(orro), "advise", "review this PR", "--repo", str(tmp_path), "--json"],
+                cwd=tmp_path,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(advise.returncode, 0, advise.stderr)
+            advise_payload = json.loads(advise.stdout)
+            self.assertEqual(advise_payload["kind"], "orro-workstyle-decision")
+            self.assertEqual(advise_payload["task_class"], "review-only")
+            self.assertFalse(advise_payload["boundary"]["executes_commands"])
 
             missing_next = subprocess.run(
                 [str(orro), "next", str(tmp_path / "missing-run"), "--json"],

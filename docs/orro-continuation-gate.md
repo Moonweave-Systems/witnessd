@@ -14,6 +14,10 @@ execute workers, run proofcheck automatically, call live models, call MCP, repai
 evidence, retry failed lanes, write handoff, approve merge, verify evidence, or
 raise assurance.
 
+`orro advise` is the earlier workstyle router. It helps choose the smallest safe
+workflow before planning or execution. `orro next` starts after a run directory
+exists and derives status from persisted artifacts only.
+
 Decision meanings:
 
 - `needs-proofcheck`: run proofcheck next.

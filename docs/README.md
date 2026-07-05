@@ -12,6 +12,8 @@ This file exists to prevent doc drift. It is a map, not a second spec.
 | Host session skill | [`../SKILL.md`](../SKILL.md) |
 | Codex session guidance | [`../AGENTS.md`](../AGENTS.md) |
 | Agent/developer orientation | [`../CLAUDE.md`](../CLAUDE.md) |
+| ORRO workstyle doctrine v0 | [`orro-workstyle-doctrine.md`](orro-workstyle-doctrine.md) |
+| ORRO product reality check | [`orro-product-reality-check.md`](orro-product-reality-check.md) |
 | ORRO workflow compiler v0 | [`orro-workflow-compiler.md`](orro-workflow-compiler.md) |
 | ORRO continuation gate v0 | [`orro-continuation-gate.md`](orro-continuation-gate.md) |
 | ORRO auto dry-run v0 | [`orro-auto-dry-run.md`](orro-auto-dry-run.md) |
@@ -33,6 +35,7 @@ Use these names in new user-facing docs:
 | ORRO Flow | scout -> flowplan -> proofrun -> proofcheck -> handoff |
 | `orro` | primary command/skill surface |
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
+| `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo exploration and context packaging |
 | `flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
 | `proofrun` | evidence-backed execution alias |
@@ -65,6 +68,13 @@ standalone ORRO repo remains deferred until packaging, marketplace, or
 version-lock distribution needs justify it. The bare `orro` console script
 points at `orro.__main__:main` and remains an alias layer over the same product
 surface.
+
+`orro advise "<goal>" --repo <repo> --home <home> --json` is the developer
+judgment/workstyle layer. It recommends the smallest safe workflow for the goal
+and returns an `orro-workstyle-decision`. It is non-executing advice: not proof,
+not verifier truth, not approval, and not assurance. It helps non-developers
+avoid wasteful or risky AI workflows, but it does not replace proofrun,
+proofcheck, handoff, or human review for risky changes.
 
 `orro flowplan --profile <profile>` emits an `orro-workflow-plan` intent
 artifact for deterministic profiles such as `code-change`, `review-only`,

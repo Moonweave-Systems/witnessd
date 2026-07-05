@@ -3,6 +3,10 @@
 `orro auto --once` is the limited one-step execution mode after `orro next` and
 `orro auto --dry-run`.
 
+It is not the workstyle router. Use `orro advise` before planning/execution to
+decide whether proofrun, review-only, verification-only, or human review is the
+right path.
+
 ```bash
 orro auto --once .witnessd/runs/<run-dir> --home .witnessd --json
 python3 -m orro auto --once .witnessd/runs/<run-dir> --home .witnessd --json

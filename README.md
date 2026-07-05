@@ -21,6 +21,7 @@ python3 -m orro init --home .witnessd --depone-root ../depone
 python3 -m orro doctor --home .witnessd --json
 python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
+python3 -m orro advise "write two independent files" --repo . --home .witnessd --json
 python3 -m orro scout "map the repo before planning" --repo . --home .witnessd
 python3 -m orro flowplan "write two independent files" --root . --profile code-change --out .witnessd/workflow-plan.json --role-lanes-out .witnessd/role-lane-plan.json
 run_json="$(python3 -m orro proofrun "write two independent files" --repo . --home .witnessd --workflow-plan .witnessd/workflow-plan.json --role-lane-plan .witnessd/role-lane-plan.json)"
@@ -72,6 +73,7 @@ authority. For the repo documentation map, see [`docs/README.md`](docs/README.md
 | ORRO | flagship product/tool: evidence-governed agent workflow orchestrator |
 | ORRO Flow | `scout -> flowplan -> proofrun -> proofcheck -> handoff` |
 | `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
+| `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo exploration, repo profile, context pack, and discovery notes |
 | `flowplan` | plan-only workflow design and ORRO workflow compiler surface |
 | `proofrun` | precise evidence-backed execution alias |
@@ -125,6 +127,15 @@ witnessd/Depone pin metadata; `--check` compares the current local environment
 against that metadata to detect distribution drift. A matching lock means
 readiness alignment only. It is not proof, evidence verification, merge approval,
 or an assurance increase. A mismatch is readiness-blocked, not verifier-refuted.
+
+`orro advise "<goal>" --repo . --home .witnessd --json` is the non-executing
+workstyle router. It classifies the goal into a deterministic task class such as
+`trivial-change`, `docs-change`, `code-change`, `review-only`,
+`verification-only`, `release-readiness`, or `risky-change`, then recommends the
+smallest safe ORRO path. It helps non-developers avoid wasteful or risky AI
+workflows, but it does not replace proofrun, proofcheck, handoff, or human
+review for risky changes. Its `orro-workstyle-decision` is advice only: not
+proof, verifier truth, merge approval, or assurance.
 
 `orro flowplan --profile <profile>` compiles a deterministic rolepack/workflow
 plan for `code-change`, `review-only`, `verification-only`, `docs-change`, or
@@ -329,8 +340,9 @@ blocks handoff and does not write `orro-handoff.json`.
 
 `python3 -m orro <subcommand>` is the product-name entrypoint hosted in this repo.
 Its help shows only the ORRO public commands: `init`, `scout`, `flowplan`,
-`proofrun`, `proofcheck`, `handoff`, `next`, `auto`, `doctor`, and `engine-lock`. Subcommands
-delegate to the same ORRO parser used by `python3 -m witnessd orro ...`.
+`advise`, `proofrun`, `proofcheck`, `handoff`, `next`, `auto`, `doctor`, and
+`engine-lock`. Subcommands delegate to the same ORRO parser used by
+`python3 -m witnessd orro ...`.
 
 This checkout defines minimal packaging metadata for an installed `orro` console
 script that points to the same module entrypoint. ORRO remains a wrapper/product
