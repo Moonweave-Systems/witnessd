@@ -138,6 +138,18 @@ proofrun evidence, Depone proofcheck still decides what the bytes support, and
 neither artifact is proof, verification, approval, or assurance. `proofcheck`
 and `handoff` preserve these references when they are present.
 
+`orro flowplan --role-lanes-out <path>` writes an `orro-role-lane-plan` that
+maps executable workflow roles to witnessd team lanes. The default lane adapter
+is deterministic `shell`; live model adapters are not used by default.
+`orro proofrun --workflow-plan <path> --role-lane-plan <path>` validates that the
+role-lane plan is bound to the workflow plan, that proofrun is allowed, and that
+execution is explicitly allowed before creating a run directory. It then reuses
+existing witnessd team execution, fan-in, observer, and ledger machinery.
+Role-lane plans are executable intent, not proof. `review-only`,
+`verification-only`, and `release-readiness` role-lane plans do not launch
+proofrun. Formal `orro handoff` still requires a passing bound
+`proofcheck-verdict.json`.
+
 Create a separate `ORRO` repository only when distribution needs justify it:
 marketplace manifests, host-specific plugin packaging, version locking, examples,
 product docs, and end-to-end integration tests. That future repo is a wrapper and

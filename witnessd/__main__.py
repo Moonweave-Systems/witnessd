@@ -117,7 +117,9 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
         OrroWorkflowError,
         assert_workflow_phase_allowed,
         load_workflow_plan,
+        load_role_lane_plan,
         write_workflow_plan_binding,
+        write_role_lane_plan_binding,
         write_workflow_role_dispatch,
     )
     from witnessd.planner import dispatch, seal_plan
@@ -137,10 +139,36 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
 
     workflow_plan: dict[str, object] | None = None
     workflow_plan_source: Path | None = None
+    role_lane_plan: dict[str, object] | None = None
+    role_lane_plan_source: Path | None = None
     if getattr(args, "workflow_plan", None):
         workflow_plan_source = Path(args.workflow_plan).resolve(strict=False)
         try:
             workflow_plan = load_workflow_plan(workflow_plan_source, expected_goal=args.goal)
+        except OrroWorkflowError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 2
+
+    if getattr(args, "role_lane_plan", None):
+        if workflow_plan is None:
+            _emit_orro_error(
+                args,
+                code="ERR_ORRO_ROLE_LANE_PLAN_INVALID",
+                message="--role-lane-plan requires --workflow-plan",
+            )
+            return 2
+        role_lane_plan_source = Path(args.role_lane_plan).resolve(strict=False)
+        try:
+            role_lane_plan = load_role_lane_plan(
+                role_lane_plan_source,
+                workflow_plan=workflow_plan,
+            )
+        except OrroWorkflowError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 2
+
+    if workflow_plan is not None:
+        try:
             assert_workflow_phase_allowed(workflow_plan, "proofrun")
         except OrroWorkflowError as exc:
             _emit_orro_error(args, code=exc.code, message=str(exc))
@@ -164,7 +192,23 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 1
 
-    packets = _default_w18_packets(args.goal)
+    role_lane_plan_ref: dict[str, object] | None = None
+    if role_lane_plan is not None and role_lane_plan_source is not None:
+        try:
+            role_lane_plan_ref = write_role_lane_plan_binding(
+                role_lane_plan=role_lane_plan,
+                source_path=role_lane_plan_source,
+                run_dir=out_dir,
+            )
+        except OrroWorkflowError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 1
+
+    packets = (
+        _role_lane_plan_packets(role_lane_plan)
+        if role_lane_plan is not None
+        else _default_w18_packets(args.goal)
+    )
     sealed = seal_plan(packets, goal=args.goal)
     sealed_path = out_dir / "sealed-plan.json"
     sealed_path.write_text(
@@ -179,7 +223,11 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     keys_dir.mkdir(parents=True, exist_ok=True)
     os.chmod(keys_dir, 0o700)
     private_key_path, public_key_path = gen_operator_keypair(str(keys_dir))
-    lane_specs = [_lane_packet_to_run_team_spec(packet, args) for packet in sealed["packets"]]
+    lane_specs = (
+        _role_lane_plan_team_specs(role_lane_plan, args)
+        if role_lane_plan is not None
+        else [_lane_packet_to_run_team_spec(packet, args) for packet in sealed["packets"]]
+    )
     run_team(
         lane_specs,
         repo_root=str(repo),
@@ -211,6 +259,8 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     }
     if workflow_plan_ref is not None:
         payload["workflow_plan"] = workflow_plan_ref
+    if role_lane_plan_ref is not None:
+        payload["role_lane_plan"] = role_lane_plan_ref
     if workflow_plan is not None:
         try:
             payload["workflow_role_dispatch"] = write_workflow_role_dispatch(
@@ -246,6 +296,72 @@ def _default_w18_packets(goal: str) -> list[dict]:
             "stop_rule": "evidence-pending",
         },
     ]
+
+
+def _role_lane_plan_packets(role_lane_plan: dict[str, object] | None) -> list[dict]:
+    if role_lane_plan is None:
+        return []
+    lanes = role_lane_plan.get("lanes", [])
+    packets = []
+    if not isinstance(lanes, list):
+        return packets
+    for lane in lanes:
+        if not isinstance(lane, dict):
+            continue
+        packets.append(
+            {
+                "lane_id": lane["lane_id"],
+                "adapter": lane["adapter"],
+                "tier": lane["tier"],
+                "region": list(lane["region"]),
+                "prompt": lane["prompt"],
+                "budget": dict(lane["budget"]),
+                "stop_rule": "evidence-pending",
+            }
+        )
+    return packets
+
+
+def _role_lane_plan_team_specs(
+    role_lane_plan: dict[str, object] | None,
+    args: argparse.Namespace,
+) -> list[dict]:
+    if role_lane_plan is None:
+        return []
+    lanes = role_lane_plan.get("lanes", [])
+    specs = []
+    if not isinstance(lanes, list):
+        return specs
+    for lane in lanes:
+        if not isinstance(lane, dict):
+            continue
+        adapter = str(lane["adapter"])
+        region = list(lane["region"])
+        if adapter == "shell":
+            specs.append(
+                {
+                    "lane_id": lane["lane_id"],
+                    "region": region,
+                    "commands": [
+                        _default_team_lane_command(str(lane["lane_id"]), region)
+                    ],
+                }
+            )
+            continue
+        spec = {
+            "lane_id": lane["lane_id"],
+            "adapter": adapter,
+            "tier": lane["tier"],
+            "region": region,
+            "allowed_touched_files": region,
+            "prompt": lane["prompt"],
+            "budget": dict(lane["budget"]),
+            "codex_binary": args.codex_binary,
+            "claude_binary": args.claude_binary,
+            "opencode_binary": args.opencode_binary,
+        }
+        specs.append(spec)
+    return specs
 
 
 def _cmd_run_adapter(args: argparse.Namespace) -> int:
@@ -387,7 +503,12 @@ def _cmd_pilot_archive_evidence(args: argparse.Namespace) -> int:
 
 def _cmd_plan(args: argparse.Namespace) -> int:
     from witnessd.adapter_run import LaneBlocked, run_adapter_lane
-    from witnessd.orro_workflow import OrroWorkflowError, compile_workflow_plan
+    from witnessd.orro_workflow import (
+        OrroWorkflowError,
+        compile_role_lane_plan,
+        compile_workflow_plan,
+        write_role_lane_plan,
+    )
     from witnessd.planner import (
         PlannerError,
         parse_draft_packets,
@@ -399,6 +520,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     packets: list[dict] | None = None
     root = os.path.abspath(args.root)
     workflow_plan = None
+    role_lane_plan_ref: dict[str, object] | None = None
 
     if getattr(args, "profile", None):
         try:
@@ -469,6 +591,23 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     payload: dict[str, object] = {"sealed_plan": sealed, "draft_events": draft_events}
     if workflow_plan is not None:
         payload["workflow_plan"] = workflow_plan
+    if getattr(args, "role_lanes_out", None):
+        if workflow_plan is None:
+            workflow_plan = compile_workflow_plan(goal=args.goal, profile="code-change")
+            payload["workflow_plan"] = workflow_plan
+        try:
+            role_lane_plan = compile_role_lane_plan(
+                workflow_plan=workflow_plan,
+                lane_adapter=args.lane_adapter,
+            )
+            role_lane_plan_ref = write_role_lane_plan(
+                Path(args.role_lanes_out).resolve(strict=False),
+                role_lane_plan,
+            )
+        except OrroWorkflowError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 1
+        payload["role_lane_plan"] = role_lane_plan_ref
     if getattr(args, "out", None):
         out_path = Path(args.out).resolve(strict=False)
         try:
@@ -660,7 +799,11 @@ def _proofcheck_binding(
 
 
 def _cmd_proofcheck(args: argparse.Namespace) -> int:
-    from witnessd.orro_workflow import workflow_plan_binding_ref, workflow_role_dispatch_ref
+    from witnessd.orro_workflow import (
+        role_lane_plan_binding_ref,
+        workflow_plan_binding_ref,
+        workflow_role_dispatch_ref,
+    )
 
     evidence_arg = args.evidence_dir_option or args.evidence_dir
     if not evidence_arg:
@@ -692,6 +835,7 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
     if code == 0 and payload.get("decision") == "pass":
         binding = _proofcheck_binding(evidence_dir, out_path=out_path)
     workflow_plan_ref = workflow_plan_binding_ref(evidence_dir)
+    role_lane_plan_ref = role_lane_plan_binding_ref(evidence_dir)
     workflow_role_dispatch = workflow_role_dispatch_ref(evidence_dir)
     if code == 0 and payload.get("decision") == "pass" and out_path is not None:
         try:
@@ -703,6 +847,8 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
             verdict_payload["orro_binding"] = binding
             if workflow_plan_ref is not None:
                 verdict_payload["workflow_plan"] = workflow_plan_ref
+            if role_lane_plan_ref is not None:
+                verdict_payload["role_lane_plan"] = role_lane_plan_ref
             if workflow_role_dispatch is not None:
                 verdict_payload["workflow_role_dispatch"] = workflow_role_dispatch
             try:
@@ -733,6 +879,7 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         "evidence_dir": str(evidence_dir),
         **({"orro_binding": binding} if binding is not None and binding_error is None else {}),
         **({"workflow_plan": workflow_plan_ref} if workflow_plan_ref is not None else {}),
+        **({"role_lane_plan": role_lane_plan_ref} if role_lane_plan_ref is not None else {}),
         **({"workflow_role_dispatch": workflow_role_dispatch} if workflow_role_dispatch is not None else {}),
         "error_count": payload.get("error_count", 1 if payload.get("error") else 0),
         **({"out": payload["out"]} if payload.get("out") else {}),
@@ -752,7 +899,11 @@ def _hash_file(path: Path) -> str:
 
 
 def _cmd_handoff(args: argparse.Namespace) -> int:
-    from witnessd.orro_workflow import workflow_plan_binding_ref, workflow_role_dispatch_ref
+    from witnessd.orro_workflow import (
+        role_lane_plan_binding_ref,
+        workflow_plan_binding_ref,
+        workflow_role_dispatch_ref,
+    )
 
     evidence_arg = args.evidence_dir_option or args.evidence_dir
     if not evidence_arg:
@@ -822,6 +973,7 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
 
     artifact_hashes = _collect_orro_artifact_hashes(evidence_dir, out_path=out_path)
     workflow_plan_ref = workflow_plan_binding_ref(evidence_dir)
+    role_lane_plan_ref = role_lane_plan_binding_ref(evidence_dir)
     workflow_role_dispatch = workflow_role_dispatch_ref(evidence_dir)
     decision_refs = []
     for name in ("proofcheck-verdict.json", "team-ledger-verdict.json"):
@@ -846,6 +998,7 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         "artifact_hashes": artifact_hashes,
         "decision_refs": decision_refs,
         **({"workflow_plan": workflow_plan_ref} if workflow_plan_ref is not None else {}),
+        **({"role_lane_plan": role_lane_plan_ref} if role_lane_plan_ref is not None else {}),
         **({"workflow_role_dispatch": workflow_role_dispatch} if workflow_role_dispatch is not None else {}),
         "boundary": {
             "approves_merge": False,
@@ -2217,6 +2370,7 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
     run.add_argument("--home", default=None)
     run.add_argument("--run-dir", default=None)
     run.add_argument("--workflow-plan", default=None)
+    run.add_argument("--role-lane-plan", default=None)
     run.add_argument("--json", action="store_true")
     run.add_argument("--max-parallel", type=int, default=None)
     run.add_argument("--fail-fast", action="store_true")
@@ -2257,6 +2411,12 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
     flowplan.add_argument("--seed", default="w11")
     flowplan.add_argument("--profile", default=None)
     flowplan.add_argument("--out", default=None)
+    flowplan.add_argument("--role-lanes-out", default=None)
+    flowplan.add_argument(
+        "--lane-adapter",
+        default="shell",
+        choices=["shell", "codex", "claude", "opencode"],
+    )
     flowplan.add_argument("--json", action="store_true")
     flowplan.set_defaults(
         draft_adapter=None,

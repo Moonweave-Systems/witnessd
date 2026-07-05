@@ -79,6 +79,31 @@ class OrroPackagingTests(unittest.TestCase):
             self.assertEqual(flowplan.returncode, 0, flowplan.stderr)
             self.assertEqual(json.loads(flowplan.stdout)["sealed_plan"]["goal"], "package smoke")
 
+            role_lanes = tmp_path / "role-lane-plan.json"
+            flowplan_role_lanes = subprocess.run(
+                [
+                    str(orro),
+                    "flowplan",
+                    "package smoke",
+                    "--root",
+                    str(root),
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(role_lanes),
+                ],
+                cwd=tmp_path,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(flowplan_role_lanes.returncode, 0, flowplan_role_lanes.stderr)
+            self.assertTrue(role_lanes.is_file())
+            self.assertEqual(
+                json.loads(role_lanes.read_text(encoding="utf-8"))["kind"],
+                "orro-role-lane-plan",
+            )
+
             lock = subprocess.run(
                 [str(orro), "engine-lock", "--json"],
                 cwd=tmp_path,

@@ -81,6 +81,14 @@ proofcheck still decides what the evidence supports. A `review-only` profile
 does not authorize proofrun or make `orro handoff` succeed without a passing
 bound `proofcheck-verdict.json`.
 
+`python3 -m orro flowplan "<goal>" --root <repo> --profile code-change --role-lanes-out role-lane-plan.json`
+writes executable role-lane intent. `python3 -m orro proofrun "<goal>" --repo
+<repo> --home .witnessd --workflow-plan workflow-plan.json --role-lane-plan
+role-lane-plan.json` validates the role-lane plan against the workflow hash and
+executes allowed lanes through existing witnessd team machinery. Role-lane plans
+are not proof, approval, or assurance. `review-only`, `verification-only`, and
+default `release-readiness` role-lane plans cannot launch proofrun.
+
 A future standalone `ORRO` repo may package marketplace manifests, host-specific
 plugin files, examples, product docs, and engine version locks. It must remain a
 wrapper/distribution repo, not a place to duplicate witnessd runtime logic or

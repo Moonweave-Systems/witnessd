@@ -136,6 +136,108 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(json.loads(out.read_text(encoding="utf-8")), payload)
 
+    def test_flowplan_role_lanes_out_writes_executable_intent_for_code_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out = root / "role-lane-plan.json"
+            code, payload = self._flowplan(
+                [
+                    "fix parser",
+                    "--root",
+                    str(root),
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(out),
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            self.assertTrue(out.is_file())
+            role_lanes = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(role_lanes["kind"], "orro-role-lane-plan")
+            self.assertEqual(role_lanes["schema_version"], "0.1")
+            self.assertEqual(role_lanes["workflow_profile"], "code-change")
+            self.assertEqual(role_lanes["goal"], "fix parser")
+            self.assertTrue(role_lanes["execution_allowed"])
+            self.assertRegex(role_lanes["workflow_plan_hash"], r"^[0-9a-f]{64}$")
+            self.assertEqual(payload["role_lane_plan"]["path"], str(out.resolve(strict=False)))
+            self.assertRegex(payload["role_lane_plan"]["sha256"], r"^[0-9a-f]{64}$")
+            self.assertEqual(
+                payload["role_lane_plan"]["workflow_plan_hash"],
+                role_lanes["workflow_plan_hash"],
+            )
+            self.assertFalse(role_lanes["boundary"]["role_lane_plan_is_proof"])
+            self.assertFalse(role_lanes["boundary"]["raises_assurance"])
+            self.assertFalse(role_lanes["boundary"]["approves_merge"])
+            self.assertGreaterEqual(len(role_lanes["lanes"]), 1)
+            for lane in role_lanes["lanes"]:
+                self.assertEqual(lane["adapter"], "shell")
+                self.assertTrue(lane["may_execute"])
+                self.assertFalse(lane["may_verify"])
+                self.assertFalse(lane["raises_assurance"])
+            self.assertFalse((root / ".witnessd" / "runs").exists())
+            self.assertFalse((root / "team-ledger.json").exists())
+
+    def test_flowplan_role_lanes_profiles_block_non_execution_profiles(self) -> None:
+        for profile in ("review-only", "verification-only", "release-readiness"):
+            with self.subTest(profile=profile), tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "role-lane-plan.json"
+                code, _payload = self._flowplan(
+                    [
+                        "review safely",
+                        "--root",
+                        tmp,
+                        "--profile",
+                        profile,
+                        "--role-lanes-out",
+                        str(out),
+                    ]
+                )
+
+                self.assertEqual(code, 0)
+                role_lanes = json.loads(out.read_text(encoding="utf-8"))
+                self.assertFalse(role_lanes["execution_allowed"])
+                self.assertEqual(role_lanes["lanes"], [])
+
+    def test_flowplan_role_lanes_docs_change_is_executable_plan_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            code, _payload = self._flowplan(
+                [
+                    "update docs",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "docs-change",
+                    "--role-lanes-out",
+                    str(out),
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            role_lanes = json.loads(out.read_text(encoding="utf-8"))
+            self.assertTrue(role_lanes["execution_allowed"])
+            self.assertEqual(role_lanes["workflow_profile"], "docs-change")
+            self.assertGreaterEqual(len(role_lanes["lanes"]), 1)
+            self.assertFalse((Path(tmp) / ".witnessd" / "runs").exists())
+
+    def test_flowplan_role_lanes_invalid_adapter_fails_closed(self) -> None:
+        with self.assertRaises(SystemExit):
+            main(
+                [
+                    "orro",
+                    "flowplan",
+                    "bad adapter",
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    "role-lane-plan.json",
+                    "--lane-adapter",
+                    "networked",
+                ]
+            )
+
     def test_invalid_profile_fails_closed(self) -> None:
         stdout = io.StringIO()
         with redirect_stdout(stdout):
