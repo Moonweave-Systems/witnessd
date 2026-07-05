@@ -49,6 +49,23 @@ class OrroPublicFlowTests(unittest.TestCase):
             check=False,
         )
 
+    def _orro_module_run(self, args: list[str]) -> subprocess.CompletedProcess[str]:
+        root = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+        depone_root = str(_depone_root())
+        current_pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = (
+            depone_root if not current_pythonpath else f"{depone_root}{os.pathsep}{current_pythonpath}"
+        )
+        return subprocess.run(
+            [sys.executable, "-m", "orro", *args],
+            cwd=root,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
     def _init_home(self, root: Path) -> tuple[Path, Path]:
         repo = root / "repo"
         home = root / "home"
@@ -88,6 +105,155 @@ class OrroPublicFlowTests(unittest.TestCase):
 
             self.assertEqual(payload["decision"], "pass")
             self.assertTrue((run_dir / "team-ledger.json").is_file())
+
+    def test_orro_module_scout_matches_witnessd_orro_public_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, _home = self._init_home(root)
+
+            witnessd_scout = self._module_run(
+                ["orro", "scout", "inspect repo", "--repo", str(repo)]
+            )
+            orro_scout = self._orro_module_run(["scout", "inspect repo", "--repo", str(repo)])
+
+            self.assertEqual(witnessd_scout.returncode, 0, witnessd_scout.stderr)
+            self.assertEqual(orro_scout.returncode, 0, orro_scout.stderr)
+            witnessd_payload = json.loads(witnessd_scout.stdout)
+            orro_payload = json.loads(orro_scout.stdout)
+            self.assertEqual(set(orro_payload), set(witnessd_payload))
+            self.assertEqual(orro_payload["decision"], "scouted")
+            self.assertTrue(Path(orro_payload["repo_profile"]).is_file())
+            self.assertTrue(Path(orro_payload["context_pack"]).is_file())
+
+    def test_orro_module_flowplan_remains_plan_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            root.mkdir(exist_ok=True)
+
+            flowplan = self._orro_module_run(["flowplan", "plan goal", "--root", str(root)])
+
+            self.assertEqual(flowplan.returncode, 0, flowplan.stderr)
+            payload = json.loads(flowplan.stdout)
+            self.assertEqual(payload["sealed_plan"]["goal"], "plan goal")
+            self.assertNotIn("team_ledger", payload)
+            self.assertFalse((root / ".witnessd").exists())
+
+    def test_orro_module_doctor_json_works(self) -> None:
+        doctor = self._orro_module_run(["doctor", "--json"])
+
+        self.assertIn(doctor.returncode, {0, 1}, doctor.stderr)
+        payload = json.loads(doctor.stdout)
+        self.assertEqual(payload["command"], "orro doctor")
+        self.assertFalse(payload["boundary"]["executes_recipes"])
+        self.assertFalse(payload["boundary"]["raises_assurance"])
+
+    def test_orro_module_help_shows_orro_subcommands(self) -> None:
+        help_result = self._orro_module_run(["--help"])
+
+        self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        self.assertIn("engine-lock", help_result.stdout)
+        self.assertIn("proofcheck", help_result.stdout)
+
+    def test_orro_module_without_args_shows_orro_help(self) -> None:
+        help_result = self._orro_module_run([])
+
+        self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        self.assertIn("engine-lock", help_result.stdout)
+        self.assertIn("proofrun", help_result.stdout)
+
+    def test_orro_engine_lock_writes_distribution_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _repo, home = self._init_home(root)
+            out = root / "orro-engine-lock.json"
+
+            lock = self._orro_module_run(["engine-lock", "--home", str(home), "--out", str(out)])
+
+            self.assertEqual(lock.returncode, 0, lock.stderr)
+            payload = json.loads(lock.stdout)
+            self.assertEqual(payload["kind"], "orro-engine-lock")
+            self.assertEqual(payload["schema_version"], "1.0")
+            self.assertEqual(payload, json.loads(out.read_text(encoding="utf-8")))
+            self.assertEqual(payload["witnessd"]["repository"], "Moonweave-Systems/witnessd")
+            self.assertRegex(payload["witnessd"]["commit"], r"^[0-9a-f]{40}$")
+            self.assertEqual(payload["depone"]["repository"], "Moonweave-Systems/Depone")
+            self.assertRegex(payload["depone"]["commit"], r"^[0-9a-f]{40}$")
+            self.assertFalse(payload["boundary"]["approves_merge"])
+            self.assertFalse(payload["boundary"]["raises_assurance"])
+            self.assertFalse(payload["boundary"]["executes_commands"])
+            self.assertFalse(payload["boundary"]["verifies_evidence"])
+            self.assertFalse((home / "runs").exists())
+
+    def test_witnessd_orro_engine_lock_alias_writes_distribution_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _repo, home = self._init_home(root)
+            out = root / "lock.json"
+
+            lock = self._module_run(
+                ["orro", "engine-lock", "--home", str(home), "--out", str(out)]
+            )
+
+            self.assertEqual(lock.returncode, 0, lock.stderr)
+            payload = json.loads(lock.stdout)
+            self.assertEqual(payload["kind"], "orro-engine-lock")
+            self.assertTrue(out.is_file())
+
+    def test_orro_engine_lock_blocks_on_uninitialized_home(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / "home"
+            out = root / "orro-engine-lock.json"
+
+            lock = self._orro_module_run(
+                ["engine-lock", "--home", str(home), "--out", str(out), "--json"]
+            )
+
+            self.assertEqual(lock.returncode, 2)
+            self.assertFalse(out.exists())
+            self.assertEqual(
+                json.loads(lock.stdout)["error"]["code"],
+                "ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISSING",
+            )
+
+    def test_orro_engine_lock_blocks_on_malformed_provision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / "home"
+            home.mkdir()
+            (home / "provision.json").write_text("{not json", encoding="utf-8")
+
+            lock = self._orro_module_run(["engine-lock", "--home", str(home), "--json"])
+
+            self.assertEqual(lock.returncode, 2)
+            self.assertEqual(
+                json.loads(lock.stdout)["error"]["code"],
+                "ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISSING",
+            )
+
+    def test_orro_engine_lock_blocks_on_non_object_provision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / "home"
+            home.mkdir()
+            (home / "provision.json").write_text("[]", encoding="utf-8")
+
+            lock = self._orro_module_run(["engine-lock", "--home", str(home), "--json"])
+
+            self.assertEqual(lock.returncode, 2)
+            self.assertEqual(
+                json.loads(lock.stdout)["error"]["code"],
+                "ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISSING",
+            )
+
+    def test_orro_engine_lock_requires_home(self) -> None:
+        lock = self._orro_module_run(["engine-lock", "--json"])
+
+        self.assertEqual(lock.returncode, 2)
+        self.assertEqual(
+            json.loads(lock.stdout)["error"]["code"],
+            "ERR_ORRO_ENGINE_LOCK_HOME_REQUIRED",
+        )
 
     def test_proofcheck_delegates_team_ledger_run_dir_to_depone(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

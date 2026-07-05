@@ -17,6 +17,8 @@ ERR_WITNESSD_DEPONE_ROOT_INVALID = "ERR_WITNESSD_DEPONE_ROOT_INVALID"
 ERR_WITNESSD_INIT_NETWORK_REQUIRED = "ERR_WITNESSD_INIT_NETWORK_REQUIRED"
 ERR_WITNESSD_DEPONE_PROVISION_FAILED = "ERR_WITNESSD_DEPONE_PROVISION_FAILED"
 ERR_WITNESSD_DEPONE_VERIFY_FAILED = "ERR_WITNESSD_DEPONE_VERIFY_FAILED"
+ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISSING = "ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISSING"
+ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISMATCH = "ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISMATCH"
 
 PROVISION_KIND = "witnessd-depone-provision"
 PROVISION_SCHEMA_VERSION = "0.1"
@@ -86,7 +88,12 @@ def validate_depone_pin(home: Path) -> dict[str, Any]:
     provision_path = home.resolve(strict=False) / "provision.json"
     if not provision_path.is_file():
         raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISSING)
-    provision = json.loads(provision_path.read_text(encoding="utf-8"))
+    try:
+        provision = json.loads(provision_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISSING) from exc
+    if not isinstance(provision, dict):
+        raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISSING)
     if provision.get("kind") != PROVISION_KIND:
         raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISSING)
     depone = provision.get("depone")
@@ -138,6 +145,43 @@ def run_depone_team_ledger(
     if completed.returncode != 0 or not verdict_path.is_file():
         raise ProvisionError(ERR_WITNESSD_DEPONE_VERIFY_FAILED)
     return json.loads(verdict_path.read_text(encoding="utf-8"))
+
+
+def build_orro_engine_lock(*, home: Path, witnessd_root: Path) -> dict[str, Any]:
+    try:
+        provision = validate_depone_pin(home)
+    except ProvisionError as exc:
+        if exc.code == ERR_WITNESSD_DEPONE_PIN_MISMATCH:
+            raise ProvisionError(ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISMATCH) from exc
+        raise ProvisionError(ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISSING) from exc
+
+    depone = provision["depone"]
+    depone_root = Path(str(depone["root"])).resolve(strict=False)
+    payload: dict[str, Any] = {
+        "kind": "orro-engine-lock",
+        "schema_version": "1.0",
+        "witnessd": {
+            "repository": "Moonweave-Systems/witnessd",
+            "commit": _git_commit(witnessd_root.resolve(strict=False)),
+        },
+        "depone": {
+            "repository": "Moonweave-Systems/Depone",
+            "commit": str(depone["commit"]),
+        },
+        "boundary": {
+            "approves_merge": False,
+            "raises_assurance": False,
+            "executes_commands": False,
+            "verifies_evidence": False,
+        },
+    }
+    witnessd_ref = _git_ref_name(witnessd_root.resolve(strict=False))
+    depone_ref = _git_ref_name(depone_root)
+    if witnessd_ref:
+        payload["witnessd"]["ref_name"] = witnessd_ref
+    if depone_ref:
+        payload["depone"]["ref_name"] = depone_ref
+    return payload
 
 
 def _resolve_depone_root(config: InitConfig) -> tuple[Path, str, bool]:
@@ -232,6 +276,19 @@ def _git_commit(root: Path) -> str:
     if completed.returncode != 0:
         raise ProvisionError(ERR_WITNESSD_DEPONE_ROOT_INVALID)
     return completed.stdout.strip()
+
+
+def _git_ref_name(root: Path) -> str | None:
+    completed = subprocess.run(
+        ["git", "-C", str(root), "symbolic-ref", "--short", "-q", "HEAD"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    ref_name = completed.stdout.strip()
+    return ref_name or None
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

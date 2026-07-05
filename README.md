@@ -28,10 +28,10 @@ For the public ORRO handoff path, run `proofcheck` with an explicit
 `proofcheck-verdict.json` output before packaging the handoff:
 
 ```bash
-python3 -m witnessd proofcheck .witnessd/runs/<run-dir> \
+python3 -m orro proofcheck .witnessd/runs/<run-dir> \
   --home .witnessd \
   --out .witnessd/runs/<run-dir>/proofcheck-verdict.json
-python3 -m witnessd orro handoff .witnessd/runs/<run-dir> \
+python3 -m orro handoff .witnessd/runs/<run-dir> \
   --out .witnessd/runs/<run-dir>/orro-handoff.json
 ```
 
@@ -87,9 +87,20 @@ witnessd = execution engine, evidence emitter, and near-term ORRO surface
 ```
 
 The user-facing install should still be one thing: ORRO. Do not ask normal users
-to install separate Depone and witnessd skills. In the near term, this repo may
-ship the thin `orro` command/skill because ORRO starts execution and witnessd owns
-execution. Depone remains a pinned verifier dependency.
+to install separate Depone and witnessd skills. In the near term, this repo hosts
+the thin ORRO entrypoint because ORRO starts execution and witnessd owns
+execution. `python3 -m orro ...` delegates to the existing `witnessd orro ...`
+surface; it is not a standalone ORRO repository and not a third engine. Depone
+remains a pinned verifier dependency.
+
+An engine lock records the pinned engine commits for distribution tooling:
+
+```bash
+python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
+```
+
+`orro-engine-lock.json` is distribution metadata only. It is not proof, evidence
+verification, merge approval, or an assurance increase.
 
 Create a separate `ORRO` repository only when distribution needs justify it:
 marketplace manifests, host-specific plugin packaging, version locking, examples,
@@ -211,6 +222,11 @@ delegates to Depone's proofcheck path and writes the public ORRO verdict artifac
 required by `handoff` / `orro handoff`. A missing, malformed, unreadable, or
 non-pass `proofcheck-verdict.json`, or one copied from another evidence snapshot,
 blocks handoff and does not write `orro-handoff.json`.
+
+`python3 -m orro <subcommand>` is the product-name entrypoint hosted in this repo.
+It delegates to the same ORRO parser used by `python3 -m witnessd orro ...`.
+Console-script packaging for a bare `orro` executable is deferred until the
+packaging / marketplace manifest wave.
 
 ## Session skill
 

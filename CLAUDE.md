@@ -43,6 +43,22 @@ map and legacy policy.
 
 `witnessd` is the engine name, not the main session skill name.
 
+## Entrypoint and repository boundary
+
+`python3 -m orro ...` is a thin product-name entrypoint hosted in this witnessd
+repo. It delegates to the existing `witnessd orro ...` surfaces and does not add
+execution or verifier logic. It is not a standalone ORRO repo and not a third
+engine.
+
+`python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
+writes distribution metadata for the pinned witnessd and Depone commits. The
+engine lock is not proof, does not verify evidence, does not approve merge, and
+does not raise assurance.
+
+A standalone ORRO repo remains deferred until packaging, marketplace manifests,
+host-specific distribution, or version-lock distribution needs justify it.
+Console-script packaging for a bare `orro` executable is future packaging work.
+
 ## Runtime dependency rule
 
 Runtime deps are Python **stdlib + the `openssl` CLI only**. Never add a

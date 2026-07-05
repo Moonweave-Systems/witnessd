@@ -31,22 +31,28 @@ Depone verifies; witnessd executes; ORRO exposes the workflow.
 - ORRO handoff requires an explicit passing `proofcheck-verdict.json` produced
   for the current evidence snapshot.
 
-The current entrypoint strategy is:
+The current entrypoint strategy is `python3 -m orro`, hosted inside witnessd:
 
 ```bash
-python3 -m witnessd orro scout "inspect repo" --repo .
-python3 -m witnessd orro flowplan "goal" --root .
-python3 -m witnessd orro proofrun "goal" --repo . --home .witnessd
-python3 -m witnessd orro proofcheck .witnessd/runs/<run-dir> \
+python3 -m orro scout "inspect repo" --repo .
+python3 -m orro flowplan "goal" --root .
+python3 -m orro proofrun "goal" --repo . --home .witnessd
+python3 -m orro proofcheck .witnessd/runs/<run-dir> \
   --home .witnessd \
   --out .witnessd/runs/<run-dir>/proofcheck-verdict.json
-python3 -m witnessd orro handoff .witnessd/runs/<run-dir> \
+python3 -m orro handoff .witnessd/runs/<run-dir> \
   --out .witnessd/runs/<run-dir>/orro-handoff.json
+python3 -m orro doctor --json
+python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
 ```
 
+The module entrypoint delegates to the same wrapper surface as
+`python3 -m witnessd orro ...`. It is not a standalone ORRO repo and not a third
+engine. It must not replace or break existing `witnessd` commands.
+
 A future console script named `orro` may point at the same wrapper surface, but
-it must remain an alias layer. It must not replace or break existing `witnessd`
-commands.
+it is deferred until packaging support is explicit and testable. It must remain
+an alias layer.
 
 ## Engine Boundary Contract
 
@@ -130,6 +136,12 @@ A standalone wrapper or packaged ORRO release must lock both engines explicitly:
     "repository": "Moonweave-Systems/Depone",
     "commit": "<40-hex-commit>",
     "ref_name": "<optional provenance label>"
+  },
+  "boundary": {
+    "approves_merge": false,
+    "raises_assurance": false,
+    "executes_commands": false,
+    "verifies_evidence": false
   }
 }
 ```
@@ -138,6 +150,19 @@ The lock is product distribution metadata. It is not a schema extension, trust
 verdict, or replacement for Depone's persisted evidence verification. The
 `commit` fields are authoritative. `ref_name`, when present, is descriptive
 provenance only and must not be used as a moving target.
+
+The current v0 command is:
+
+```bash
+python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
+python3 -m witnessd orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
+```
+
+`engine-lock` validates the Depone pin recorded in `.witnessd/provision.json` and
+reads the local witnessd git commit. If the home is missing or the pin cannot be
+validated, it fails closed. It does not fetch network, update Depone, execute
+workers, verify evidence, approve merge, or raise assurance. `orro lock` is a
+compatibility alias for the same command; `engine-lock` is the public name.
 
 ## E2E Smoke Contract
 

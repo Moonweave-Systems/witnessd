@@ -34,10 +34,18 @@ Use these names in new user-facing docs:
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro auto` | continuation mode behind evidence gates |
 | `orro ultra` | future high-autonomy profile |
+| `python3 -m orro` | thin product-name entrypoint hosted in witnessd |
+| `orro engine-lock` | distribution metadata for pinned witnessd and Depone commits |
 | Superflow | historical/compatibility name, superseded by ORRO |
 
 Use `witnessd` only when discussing the engine or CLI. Use `Moonweave` only when
 discussing the publisher/account namespace.
+
+The current ORRO entrypoint is not a standalone ORRO repository and not a third
+engine. It delegates to the witnessd-hosted ORRO command surface. The engine lock
+is distribution metadata only, not evidence verification, merge approval, or an
+assurance increase. A standalone ORRO repo remains deferred until packaging,
+marketplace, or version-lock distribution needs justify it.
 
 ## Legacy docs
 
