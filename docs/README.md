@@ -42,10 +42,12 @@ Use `witnessd` only when discussing the engine or CLI. Use `Moonweave` only when
 discussing the publisher/account namespace.
 
 The current ORRO entrypoint is not a standalone ORRO repository and not a third
-engine. It delegates to the witnessd-hosted ORRO command surface. The engine lock
-is distribution metadata only, not evidence verification, merge approval, or an
-assurance increase. A standalone ORRO repo remains deferred until packaging,
-marketplace, or version-lock distribution needs justify it.
+engine. Its help text is product-facing and lists only public ORRO commands. It
+delegates subcommands to the witnessd-hosted ORRO command surface. The engine
+lock is distribution metadata only, not evidence verification, merge approval, or
+an assurance increase. A standalone ORRO repo remains deferred until packaging,
+marketplace, or version-lock distribution needs justify it. The bare `orro`
+console script is also deferred until packaging metadata exists.
 
 ## Legacy docs
 

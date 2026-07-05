@@ -151,15 +151,43 @@ class OrroPublicFlowTests(unittest.TestCase):
         help_result = self._orro_module_run(["--help"])
 
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
-        self.assertIn("engine-lock", help_result.stdout)
-        self.assertIn("proofcheck", help_result.stdout)
+        for command in (
+            "scout",
+            "flowplan",
+            "proofrun",
+            "proofcheck",
+            "handoff",
+            "doctor",
+            "engine-lock",
+        ):
+            self.assertIn(command, help_result.stdout)
+        for internal_command in (
+            "self-test",
+            "team-ledger",
+            "lane-exec",
+            "a2-observer-run",
+            "faultkit",
+            "install",
+            "upgrade",
+        ):
+            self.assertNotIn(internal_command, help_result.stdout)
 
     def test_orro_module_without_args_shows_orro_help(self) -> None:
         help_result = self._orro_module_run([])
 
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        self.assertEqual(help_result.stderr, "")
+        self.assertIn("ORRO Flow", help_result.stdout)
         self.assertIn("engine-lock", help_result.stdout)
-        self.assertIn("proofrun", help_result.stdout)
+        self.assertNotIn("self-test", help_result.stdout)
+
+    def test_witnessd_help_remains_engine_facing(self) -> None:
+        witnessd_help = self._module_run(["--help"])
+
+        self.assertEqual(witnessd_help.returncode, 0, witnessd_help.stderr)
+        self.assertIn("self-test", witnessd_help.stdout)
+        self.assertIn("team-ledger", witnessd_help.stdout)
+        self.assertIn("engine-lock", witnessd_help.stdout)
 
     def test_orro_engine_lock_writes_distribution_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

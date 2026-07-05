@@ -137,6 +137,14 @@ python3 -m orro doctor --json
 python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
 ```
 
+`python3 -m orro --help` is product-facing and lists only the public ORRO Flow
+commands: `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `doctor`,
+and `engine-lock`. It must not promote witnessd engine-internal commands.
+Subcommand behavior still delegates to the witnessd-hosted ORRO surface.
+
+The bare `orro` console script is deferred until packaging metadata exists and
+entrypoint installation can be tested without inventing a packaging structure.
+
 The engine lock is distribution metadata only. It records pinned engine commits
 and does not verify evidence, approve merge, raise assurance, or execute workers.
 The `engine-lock` command may read the local witnessd git HEAD and the validated

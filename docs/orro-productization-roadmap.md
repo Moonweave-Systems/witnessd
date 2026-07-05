@@ -50,9 +50,14 @@ The module entrypoint delegates to the same wrapper surface as
 `python3 -m witnessd orro ...`. It is not a standalone ORRO repo and not a third
 engine. It must not replace or break existing `witnessd` commands.
 
+`python3 -m orro --help` is product-facing and lists only public ORRO commands:
+`scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `doctor`, and
+`engine-lock`. It must not promote witnessd engine-internal commands.
+
 A future console script named `orro` may point at the same wrapper surface, but
-it is deferred until packaging support is explicit and testable. It must remain
-an alias layer.
+it is deferred because this checkout has no packaging metadata for installed
+entrypoints. It must remain an alias layer and must be covered by an install
+smoke test when packaging exists.
 
 ## Engine Boundary Contract
 
