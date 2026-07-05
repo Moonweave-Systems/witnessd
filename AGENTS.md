@@ -21,6 +21,21 @@ This guidance is derived from that spec.
 - `orro auto`: later continuation loop behind evidence gates
 - `orro ultra`: future high-autonomy profile with stricter gates
 
+## Entrypoint and distribution metadata
+
+`python3 -m orro ...` is the current product-name entrypoint. It is hosted in
+the witnessd repo and delegates to the existing `witnessd orro ...` surface. It
+is not a standalone ORRO repository and not a third engine.
+
+Use `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
+to write distribution metadata for the pinned witnessd and Depone commits. The
+lock is not proof, evidence verification, merge approval, or assurance, and it
+must not execute workers.
+
+The standalone ORRO repo remains deferred until packaging, marketplace, and
+version-lock distribution needs justify it. Console-script packaging for a bare
+`orro` executable belongs to that packaging wave.
+
 ## Required flow
 
 1. Scout non-trivial work before execution. Do not load the whole repo into one

@@ -818,6 +818,46 @@ def _cmd_orro_doctor(args: argparse.Namespace) -> int:
     return 0 if decision == "pass" else 1
 
 
+def _cmd_orro_engine_lock(args: argparse.Namespace) -> int:
+    if not args.home:
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_ENGINE_LOCK_HOME_REQUIRED",
+            message="--home is required to read the pinned Depone provision",
+        )
+        return 2
+    from witnessd.distribution import ProvisionError, build_orro_engine_lock
+
+    try:
+        payload = build_orro_engine_lock(
+            home=Path(args.home).resolve(strict=False),
+            witnessd_root=Path(__file__).resolve().parents[1],
+        )
+    except ProvisionError as exc:
+        _emit_orro_error(
+            args,
+            code=exc.code,
+            message="ORRO engine lock cannot be produced from the current provision",
+        )
+        return 2
+    if args.out:
+        out_path = Path(args.out).resolve(strict=False)
+        try:
+            out_path.write_text(
+                json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            _emit_orro_error(
+                args,
+                code="ERR_ORRO_ENGINE_LOCK_WRITE_FAILED",
+                message=str(exc),
+            )
+            return 1
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
 def _cmd_doctor(args: argparse.Namespace) -> int:
     if args.external_worktree:
         from witnessd.state import detect_state_contention
@@ -1749,6 +1789,15 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_doctor.add_argument("--json", action="store_true")
     orro_doctor.set_defaults(func=_cmd_orro_doctor)
 
+    engine_lock = sub.add_parser(
+        "engine-lock",
+        help="write ORRO distribution metadata for pinned engine commits",
+    )
+    engine_lock.add_argument("--home", default=None)
+    engine_lock.add_argument("--out", default=None)
+    engine_lock.add_argument("--json", action="store_true")
+    engine_lock.set_defaults(func=_cmd_orro_engine_lock)
+
     isolation = sub.add_parser("isolation", help="isolation contract checks")
     isolation.add_argument("--self-test", action="store_true")
     isolation.set_defaults(func=_cmd_isolation)
@@ -2090,6 +2139,10 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
         return ["handoff", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "doctor":
         return ["orro-doctor", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "engine-lock":
+        return ["engine-lock", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "lock":
+        return ["engine-lock", *argv[2:]]
     return argv
 
 

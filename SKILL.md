@@ -36,6 +36,13 @@ separate Depone and witnessd skills for one workflow.
 The skill may live in the witnessd repo while the product surface is thin,
 because ORRO starts execution and witnessd owns execution. Depone stays a pinned
 verifier dependency and is invoked only to re-derive persisted evidence bytes.
+The current product-name CLI is `python3 -m orro ...`, a thin module entrypoint
+hosted in witnessd that delegates to the existing `witnessd orro ...` command
+surface. It is not a standalone ORRO repo and not a third engine.
+
+`python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
+writes distribution metadata for the pinned witnessd and Depone commits. The lock
+is not proof, evidence verification, merge approval, or assurance.
 
 A future standalone `ORRO` repo may package marketplace manifests, host-specific
 plugin files, examples, product docs, and engine version locks. It must remain a
@@ -90,7 +97,7 @@ output as verifier truth.
 1. Scout before non-trivial implementation:
 
    ```bash
-   python3 -m witnessd scout "<goal>" --repo <repo> --home .witnessd
+   python3 -m orro scout "<goal>" --repo <repo> --home .witnessd
    ```
 
    If `scout` is not implemented yet, perform read-only repo inspection and write
@@ -117,7 +124,7 @@ output as verifier truth.
    handoff is needed:
 
    ```bash
-   python3 -m witnessd proofcheck <run-dir> \
+   python3 -m orro proofcheck <run-dir> \
      --home .witnessd \
      --out <run-dir>/proofcheck-verdict.json
    ```
@@ -125,7 +132,7 @@ output as verifier truth.
 6. Prepare a handoff package when code/docs changed:
 
    ```bash
-   python3 -m witnessd orro handoff <run-dir> \
+   python3 -m orro handoff <run-dir> \
      --out <run-dir>/orro-handoff.json
    ```
 

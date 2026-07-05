@@ -116,9 +116,32 @@ witnessd = execution engine and evidence emitter
 ORRO is one user-facing install, command, and skill. Normal users should not be
 told to install separate Depone and witnessd skills for one workflow.
 
-In the near term, the thin `orro` command/skill may live in the witnessd repo
-because ORRO starts execution and witnessd owns execution. Depone is consumed as a
-pinned verifier dependency.
+In the near term, the thin ORRO entrypoint lives in the witnessd repo because
+ORRO starts execution and witnessd owns execution. `python3 -m orro ...`
+delegates to the existing `witnessd orro ...` surface. It is not a standalone
+ORRO repository and not a third engine. Depone is consumed as a pinned verifier
+dependency.
+
+The current public entrypoints are:
+
+```bash
+python3 -m orro scout "inspect repo" --repo .
+python3 -m orro flowplan "plan goal" --root .
+python3 -m orro proofrun "run goal" --repo . --home .witnessd
+python3 -m orro proofcheck .witnessd/runs/<run-dir> \
+  --home .witnessd \
+  --out .witnessd/runs/<run-dir>/proofcheck-verdict.json
+python3 -m orro handoff .witnessd/runs/<run-dir> \
+  --out .witnessd/runs/<run-dir>/orro-handoff.json
+python3 -m orro doctor --json
+python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
+```
+
+The engine lock is distribution metadata only. It records pinned engine commits
+and does not verify evidence, approve merge, raise assurance, or execute workers.
+The `engine-lock` command may read the local witnessd git HEAD and the validated
+Depone pin in `.witnessd/provision.json`, but it must not fetch network, update
+Depone, or duplicate verifier/runtime logic.
 
 Create a standalone `ORRO` repo only when distribution needs justify it:
 marketplace manifests, host-specific plugin bundles, examples, product docs,
@@ -627,7 +650,8 @@ Roadmap:
 - W16: merge lanes for overlapping regions.
 - W17: journaled replay-resume.
 - W18: distribution, session UX, ORRO command/skill bootstrap, scout artifacts,
-  skillpack discovery, verification-recipe receipts, and `orro doctor`.
+  skillpack discovery, verification-recipe receipts, `orro doctor`, the thin
+  `python3 -m orro` module entrypoint, and ORRO engine-lock v0.
 - W18.5: MCP and enterprise tool receipts.
 - W17.5: design-to-execute bridge.
 - W19: first live multi-agent parallel proof.
