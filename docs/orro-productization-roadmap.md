@@ -41,7 +41,7 @@ python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.
 python3 -m orro scout "inspect repo" --repo .
 python3 -m orro flowplan "goal" --root .
 python3 -m orro flowplan "goal" --root . --profile code-change --out workflow-plan.json
-python3 -m orro proofrun "goal" --repo . --home .witnessd
+python3 -m orro proofrun "goal" --repo . --home .witnessd --workflow-plan workflow-plan.json
 python3 -m orro proofcheck .witnessd/runs/<run-dir> \
   --home .witnessd \
   --out .witnessd/runs/<run-dir>/proofcheck-verdict.json
@@ -76,6 +76,13 @@ assurance sources. They are not evidence. Roles do not create assurance by
 existing. `proofrun` is the first execution phase, `proofcheck` is the verifier
 phase, `handoff` is review packaging only, and full `orro auto` remains future
 work.
+
+`proofrun --workflow-plan <path>` records workflow-plan intent context in the
+run directory as `workflow-plan.json` plus `workflow-plan-binding.json`. The
+binding lets proofcheck and handoff preserve the intended workflow hash for
+review. It is not proof, evidence verification, approval, or assurance. A
+`review-only` profile remains review intent; actual `orro handoff` still
+requires a passing proofcheck verdict bound to the current evidence snapshot.
 
 ## Engine Boundary Contract
 

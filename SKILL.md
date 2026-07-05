@@ -70,6 +70,14 @@ existing. `proofrun` is the first execution phase, `proofcheck` is the verifier
 phase, `handoff` is review packaging only, and full `orro auto` remains future
 work.
 
+`python3 -m orro proofrun "<goal>" --repo <repo> --home .witnessd --workflow-plan workflow-plan.json`
+binds that intent to the emitted run by recording `workflow-plan.json` and
+`workflow-plan-binding.json` in the run directory. The binding is review context
+only. It is not proof that execution followed the plan, not approval, and not
+assurance. Depone proofcheck still decides what the evidence supports. A
+`review-only` profile does not make `orro handoff` succeed without a passing
+bound `proofcheck-verdict.json`.
+
 A future standalone `ORRO` repo may package marketplace manifests, host-specific
 plugin files, examples, product docs, and engine version locks. It must remain a
 wrapper/distribution repo, not a place to duplicate witnessd runtime logic or
@@ -151,7 +159,7 @@ output as verifier truth.
 4. Run the goal:
 
    ```bash
-   python3 -m witnessd run "<goal>" --repo <repo> --home .witnessd
+   python3 -m witnessd run "<goal>" --repo <repo> --home .witnessd --workflow-plan workflow-plan.json
    ```
 
 5. Re-check the emitted bytes and write the public proofcheck verdict when a

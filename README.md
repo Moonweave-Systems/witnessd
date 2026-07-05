@@ -22,7 +22,8 @@ python3 -m orro doctor --home .witnessd --json
 python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 python3 -m orro scout "map the repo before planning" --repo . --home .witnessd
-run_json="$(python3 -m orro proofrun "write two independent files" --repo . --home .witnessd)"
+python3 -m orro flowplan "write two independent files" --root . --profile code-change --out .witnessd/workflow-plan.json
+run_json="$(python3 -m orro proofrun "write two independent files" --repo . --home .witnessd --workflow-plan .witnessd/workflow-plan.json)"
 run_dir="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["run_dir"])' "$run_json")"
 python3 -m orro proofcheck "$run_dir" --home .witnessd --out "$run_dir/proofcheck-verdict.json"
 python3 -m orro handoff "$run_dir" --out "$run_dir/orro-handoff.json"
@@ -126,6 +127,14 @@ evidence. Roles do not create assurance by existing. `proofrun` is the first
 execution phase, `proofcheck` is the verifier phase, and `handoff` is review
 packaging only.
 
+`orro proofrun --workflow-plan <path>` records which workflow the run intended
+to follow by copying the normalized plan into the run directory and writing a
+`workflow-plan-binding.json` hash reference. That binding is review context only:
+actual execution proof still begins with proofrun evidence, Depone proofcheck
+still decides what the bytes support, and the binding is not proof, approval, or
+assurance. `proofcheck` and `handoff` preserve the binding reference when it is
+present.
+
 Create a separate `ORRO` repository only when distribution needs justify it:
 marketplace manifests, host-specific plugin packaging, version locking, examples,
 product docs, and end-to-end integration tests. That future repo is a wrapper and
@@ -168,6 +177,12 @@ not proof of execution.
 gates, and forbidden assurance sources. It does not run workers, call live
 models, call Depone verification, mutate worktrees, approve merge, or raise
 assurance. Full `orro auto` remains future work.
+
+The optional workflow-plan binding connects that intent artifact to later
+proofrun evidence by hash. It does not let the plan override actual execution
+evidence. A `review-only` profile may include handoff intent for review
+packaging, but actual `orro handoff` still requires a passing bound
+`proofcheck-verdict.json`.
 
 Depone decides what these bytes support. Skill text, MCP output, IDE terminals,
 tmux panes, and session transcripts are not verdicts by themselves.
@@ -237,6 +252,7 @@ operator. Runtime and verify commands do not fetch or install.
 `witnessd run "<goal>" --repo <path>` uses the W18 quota-free shell path by
 default. It creates a run directory containing:
 
+- optional `workflow-plan.json` and `workflow-plan-binding.json`
 - `sealed-plan.json`
 - `dispatch-log.jsonl`
 - lane evidence directories

@@ -65,6 +65,12 @@ not evidence, roles do not create assurance by existing, `proofrun` is the first
 execution phase, `proofcheck` is the verifier phase, and `handoff` is review
 packaging only.
 
+`proofrun --workflow-plan <path>` may bind that intent to emitted run evidence by
+recording `workflow-plan.json` and `workflow-plan-binding.json` in the run
+directory. The binding is review context only. It is not proof, approval, or
+assurance, and formal `orro handoff` still requires a passing bound proofcheck
+verdict.
+
 ## Legacy docs
 
 The following categories are historical or wave-specific unless `SPEC3.md`

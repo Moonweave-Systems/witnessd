@@ -133,7 +133,7 @@ python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.
 python3 -m orro scout "inspect repo" --repo .
 python3 -m orro flowplan "plan goal" --root .
 python3 -m orro flowplan "fix bug in parser" --root . --profile code-change --out workflow-plan.json
-python3 -m orro proofrun "run goal" --repo . --home .witnessd
+python3 -m orro proofrun "fix bug in parser" --repo . --home .witnessd --workflow-plan workflow-plan.json
 python3 -m orro proofcheck .witnessd/runs/<run-dir> \
   --home .witnessd \
   --out .witnessd/runs/<run-dir>/proofcheck-verdict.json
@@ -185,6 +185,15 @@ an `orro-workflow-plan` intent artifact that maps a goal to roles, phases,
 engine calls, required gates, and forbidden assurance sources. It does not run
 workers, call live models, call Depone verification, mutate worktrees, approve
 merge, raise assurance, or turn ORRO into a third engine.
+
+`orro proofrun --workflow-plan <path>` binds a workflow-plan intent artifact to
+the emitted run evidence by recording `workflow-plan.json` and
+`workflow-plan-binding.json` in the run directory. The binding records which
+workflow the run intended to follow. It is not proof that the run followed the
+plan, does not override actual execution receipts, does not approve merge, and
+does not raise assurance. `proofcheck` and `handoff` may preserve the binding
+hash for review context, but Depone still decides what the persisted evidence
+supports.
 
 Create a standalone `ORRO` repo only when distribution needs justify it:
 marketplace manifests, host-specific plugin bundles, examples, product docs,
@@ -468,6 +477,10 @@ phase and belongs to witnessd. `proofcheck` is the verifier phase and delegates
 to Depone. `handoff` is review packaging only. `doctor` and `engine-lock` are
 readiness/distribution checks only. Full `orro auto` remains future work.
 
+`review-only` remains review intent. If a formal ORRO handoff artifact is
+needed, the actual `orro handoff` command still requires a passing
+`proofcheck-verdict.json` bound to the current evidence snapshot.
+
 ### 6.3 `proofrun`
 
 Precise evidence-backed execution alias.
@@ -568,6 +581,8 @@ A run directory must be archiveable and re-checkable from bytes:
   context-pack.json
   discovery-notes.md
   skillpack-lock.json
+  workflow-plan.json
+  workflow-plan-binding.json
   sealed-plan.json
   verification-recipe.json
   dispatch-log.jsonl
@@ -599,6 +614,7 @@ Rules:
 - verifier reports are derived and may be regenerated,
 - runlog and capture manifests are append-only evidence,
 - repo-profile, context-pack, and skillpack-lock are planning evidence,
+- workflow-plan and workflow-plan-binding record intended workflow context only,
 - verification-recipe describes intended checks,
 - verification-receipt records what actually ran,
 - scout-only directories omit verification-receipt by design and therefore do not
