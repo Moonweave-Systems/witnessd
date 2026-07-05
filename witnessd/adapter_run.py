@@ -149,6 +149,7 @@ def run_adapter_lane(
     opencode_binary: str = "opencode",
     timeout_seconds: int = 120,
     evidence_dir: str | None = None,
+    state_root: str | None = None,
     private_key_path: str | None = None,
     public_key_path: str | None = None,
     allowed_touched_files: list[str] | None = None,
@@ -167,7 +168,7 @@ def run_adapter_lane(
     except PreflightError as exc:
         raise LaneBlocked("preflight_blocked", exc.message) from exc
 
-    with StateNamespace(root) as namespace:
+    with StateNamespace(state_root or root) as namespace:
         log = EventLog(namespace.runlog_path)
         try:
             route_decision = route_model(

@@ -297,7 +297,9 @@ The ORRO surface owns:
 
 The surface may live inside witnessd while it is thin. A future standalone ORRO
 repo must remain a wrapper/distribution layer and must not duplicate verifier or
-runtime logic.
+runtime logic. The concrete standalone-repo trigger, allowed skeleton, engine
+version lock format, boundary contract, and e2e smoke contract are maintained in
+`docs/orro-productization-roadmap.md`.
 
 ---
 
@@ -439,10 +441,12 @@ raise assurance.
 
 `handoff` and `orro handoff` require an explicit
 `proofcheck-verdict.json` in the evidence/run directory with `decision: "pass"`.
-The `team-ledger-verdict.json` generated during `proofrun` is not sufficient by
-itself. If the proofcheck verdict is missing, unreadable, malformed, not a JSON
-object, or has any decision other than `pass`, handoff fails closed and must not
-write `orro-handoff.json`.
+The verdict must also contain the ORRO binding for the current evidence
+snapshot. The `team-ledger-verdict.json` generated during `proofrun` is not
+sufficient by itself. If the proofcheck verdict is missing, unreadable,
+malformed, not a JSON object, copied from another evidence snapshot, or has any
+decision other than `pass`, handoff fails closed and must not write
+`orro-handoff.json`.
 
 This is a packaging gate, not verifier logic. witnessd may read the proofcheck
 verdict artifact to decide whether handoff packaging is allowed, but Depone
@@ -526,8 +530,8 @@ Rules:
 - scout-only directories omit verification-receipt by design and therefore do not
   produce a proofcheck pass,
 - mcp-tool-receipt records external tool use,
-- proofcheck-verdict records the explicit Depone proofcheck decision required
-  before ORRO handoff,
+- proofcheck-verdict records the explicit Depone proofcheck decision and ORRO
+  evidence binding required before ORRO handoff,
 - pr-handoff and orro-handoff record review packages and are not approval,
 - Depone decides which artifacts can support assurance.
 

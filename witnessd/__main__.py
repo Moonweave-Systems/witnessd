@@ -358,6 +358,11 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     root = os.path.abspath(args.root)
 
     if args.draft_adapter:
+        draft_root = f"{root.rstrip(os.sep)}-witnessd-plan-draft"
+        draft_out = (
+            args.draft_out
+            or os.path.join(draft_root, "evidence")
+        )
         try:
             result = run_adapter_lane(
                 root=root,
@@ -378,7 +383,8 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                 codex_binary=args.codex_binary,
                 claude_binary=args.claude_binary,
                 opencode_binary=args.opencode_binary,
-                evidence_dir=args.draft_out,
+                evidence_dir=draft_out,
+                state_root=draft_root,
             )
             transcript = (
                 Path(result["evidence_dir"]).resolve(strict=False).parent
@@ -529,6 +535,38 @@ def _emit_orro_error(args: argparse.Namespace, *, code: str, message: str) -> No
     print(code, file=sys.stderr)
 
 
+def _collect_orro_artifact_hashes(
+    evidence_dir: Path, *, out_path: Path | None = None
+) -> list[dict[str, str]]:
+    generated_names = {
+        "orro-handoff.json",
+        "proofcheck-verdict.json",
+        "team-ledger-verdict.json",
+    }
+    artifact_hashes = []
+    for path in sorted(p for p in evidence_dir.rglob("*") if p.is_file()):
+        if path.name in generated_names or (out_path is not None and path == out_path):
+            continue
+        artifact_hashes.append(
+            {
+                "path": str(path.relative_to(evidence_dir)),
+                "sha256": _hash_file(path),
+            }
+        )
+    return artifact_hashes
+
+
+def _proofcheck_binding(
+    evidence_dir: Path, *, out_path: Path | None = None
+) -> dict[str, object]:
+    return {
+        "kind": "orro-proofcheck-binding",
+        "schema_version": "1.0",
+        "evidence_dir": str(evidence_dir),
+        "artifact_hashes": _collect_orro_artifact_hashes(evidence_dir, out_path=out_path),
+    }
+
+
 def _cmd_proofcheck(args: argparse.Namespace) -> int:
     evidence_arg = args.evidence_dir_option or args.evidence_dir
     if not evidence_arg:
@@ -555,11 +593,45 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
     if out_path is not None:
         command.extend(["--out", str(out_path)])
     code, payload = _run_depone_json(command, env=env)
+    binding: dict[str, object] | None = None
+    binding_error: str | None = None
+    if code == 0 and payload.get("decision") == "pass":
+        binding = _proofcheck_binding(evidence_dir, out_path=out_path)
+    if code == 0 and payload.get("decision") == "pass" and out_path is not None:
+        try:
+            verdict_payload = json.loads(out_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            verdict_payload = None
+            binding_error = str(exc)
+        if isinstance(verdict_payload, dict):
+            verdict_payload["orro_binding"] = binding
+            try:
+                out_path.write_text(
+                    json.dumps(verdict_payload, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+            except OSError as exc:
+                binding_error = str(exc)
+            else:
+                binding_error = None
+        elif binding_error is None:
+            binding_error = "proofcheck-verdict.json must be a JSON object"
+    if binding_error is not None:
+        payload = {
+            "decision": "blocked",
+            "verifier_command": payload.get("verifier_command", "proofcheck"),
+            "error": {
+                "code": "ERR_ORRO_PROOFCHECK_VERDICT_BINDING_FAILED",
+                "message": binding_error,
+            },
+        }
+        code = 1
     result = {
         "command": "proofcheck",
         "verifier_command": payload.get("verifier_command", "proofcheck"),
         "decision": payload.get("decision", "blocked"),
         "evidence_dir": str(evidence_dir),
+        **({"orro_binding": binding} if binding is not None and binding_error is None else {}),
         "error_count": payload.get("error_count", 1 if payload.get("error") else 0),
         **({"out": payload["out"]} if payload.get("out") else {}),
         **({"errors": payload["errors"]} if payload.get("errors") else {}),
@@ -626,23 +698,25 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
             message="proofcheck-verdict.json decision must be pass",
         )
         return 1
-
     out_path = Path(args.out).resolve(strict=False) if args.out else None
-    generated_names = {
-        "orro-handoff.json",
-        "proofcheck-verdict.json",
-        "team-ledger-verdict.json",
-    }
-    artifact_hashes = []
-    for path in sorted(p for p in evidence_dir.rglob("*") if p.is_file()):
-        if path.name in generated_names or (out_path is not None and path == out_path):
-            continue
-        artifact_hashes.append(
-            {
-                "path": str(path.relative_to(evidence_dir)),
-                "sha256": _hash_file(path),
-            }
+    expected_binding = _proofcheck_binding(evidence_dir, out_path=out_path)
+    proofcheck_binding = proofcheck_payload.get("orro_binding")
+    if not isinstance(proofcheck_binding, dict):
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_HANDOFF_PROOFCHECK_UNBOUND",
+            message="proofcheck-verdict.json must include an ORRO proofcheck binding",
         )
+        return 1
+    if proofcheck_binding != expected_binding:
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_HANDOFF_PROOFCHECK_BINDING_MISMATCH",
+            message="proofcheck-verdict.json does not match this evidence directory",
+        )
+        return 1
+
+    artifact_hashes = _collect_orro_artifact_hashes(evidence_dir, out_path=out_path)
     decision_refs = []
     for name in ("proofcheck-verdict.json", "team-ledger-verdict.json"):
         path = evidence_dir / name

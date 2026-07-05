@@ -37,7 +37,8 @@ python3 -m witnessd orro handoff .witnessd/runs/<run-dir> \
 
 `team-ledger-verdict.json` emitted during a proofrun is not enough by itself for
 handoff. `handoff` / `orro handoff` fails closed unless
-`proofcheck-verdict.json` exists, is readable JSON, and has `decision: "pass"`.
+`proofcheck-verdict.json` exists, is readable JSON, has `decision: "pass"`, and
+contains the ORRO binding for the current evidence snapshot.
 
 ## Honest limits
 
@@ -96,6 +97,10 @@ product docs, and end-to-end integration tests. That future repo is a wrapper an
 distribution repo, not a third engine; it must not duplicate witnessd runtime
 logic or Depone verifier logic.
 
+The concrete migration trigger, allowed standalone skeleton, version lock
+format, engine boundary contract, and e2e smoke contract are recorded in
+[`docs/orro-productization-roadmap.md`](docs/orro-productization-roadmap.md).
+
 ## Operating model
 
 ORRO is an evidence-backed agent-team operating surface. The normal loop is:
@@ -126,8 +131,8 @@ not proof of execution.
 Depone decides what these bytes support. Skill text, MCP output, IDE terminals,
 tmux panes, and session transcripts are not verdicts by themselves.
 The handoff step packages reviewed evidence only after an explicit passing
-`proofcheck-verdict.json`; it does not verify evidence, approve merge, or raise
-assurance.
+`proofcheck-verdict.json` bound to the current evidence snapshot; it does not
+verify evidence, approve merge, or raise assurance.
 
 ## Setup details
 
@@ -204,8 +209,8 @@ through `python3 -m depone team-ledger`, and rewrites
 `witnessd proofcheck <run-dir> --out <run-dir>/proofcheck-verdict.json`
 delegates to Depone's proofcheck path and writes the public ORRO verdict artifact
 required by `handoff` / `orro handoff`. A missing, malformed, unreadable, or
-non-pass `proofcheck-verdict.json` blocks handoff and does not write
-`orro-handoff.json`.
+non-pass `proofcheck-verdict.json`, or one copied from another evidence snapshot,
+blocks handoff and does not write `orro-handoff.json`.
 
 ## Session skill
 

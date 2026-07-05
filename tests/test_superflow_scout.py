@@ -192,14 +192,31 @@ class SuperflowScoutTests(unittest.TestCase):
         self.assertIn("unrecognized arguments: --draft-adapter", stderr.getvalue())
 
     def test_legacy_plan_keeps_draft_adapter_compatibility(self) -> None:
-        stdout = io.StringIO()
-        with redirect_stdout(stdout):
-            code = main(["plan", "legacy draft path", "--draft-adapter", "codex"])
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "plan",
+                        "legacy draft path",
+                        "--root",
+                        str(repo),
+                        "--draft-adapter",
+                        "codex",
+                    ]
+                )
 
-        self.assertEqual(code, 0)
-        payload = json.loads(stdout.getvalue())
-        self.assertEqual(payload["sealed_plan"]["goal"], "legacy draft path")
-        self.assertEqual(payload["draft_events"][0]["adapter"], "codex")
+            self.assertEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["sealed_plan"]["goal"], "legacy draft path")
+            self.assertEqual(payload["draft_events"][0]["adapter"], "codex")
+            self.assertNotEqual(
+                payload["draft_events"][0].get("reason"),
+                "ERR_OBSERVER_NOT_SEPARATED",
+            )
+            self.assertFalse((repo / ".witnessd").exists())
 
 
 if __name__ == "__main__":

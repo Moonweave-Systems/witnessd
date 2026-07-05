@@ -31,6 +31,8 @@ If they ever conflict, stop and flag; do not improvise around a conflict.
 
 From `~/moonweave-check` (or the workspace root in use); Depone path may be
 derived from the sibling checkout — never hardcode absolute machine paths.
+Tests that need Depone should resolve `WITNESSD_DEPONE_ROOT` first, then the
+sibling checkout. CI and isolated worktrees may not have a sibling Depone path.
 
 ```bash
 # Depone

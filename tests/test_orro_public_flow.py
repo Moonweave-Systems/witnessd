@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from witnessd.__main__ import main
 
@@ -27,7 +28,7 @@ def _depone_root() -> Path:
     env_root = os.environ.get("WITNESSD_DEPONE_ROOT")
     if env_root:
         return Path(env_root)
-    return Path(__file__).resolve().parents[1].parent / "Depone"
+    return Path(__file__).resolve().parents[1].parent / "depone"
 
 
 class OrroPublicFlowTests(unittest.TestCase):
@@ -102,6 +103,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(payload["verifier_command"], "team-ledger")
             self.assertEqual(payload["decision"], "pass")
             self.assertEqual(payload["out"], str(out))
+            self.assertEqual(payload["orro_binding"]["kind"], "orro-proofcheck-binding")
             self.assertTrue(out.is_file())
 
     def test_proofcheck_without_out_does_not_write_verdict(self) -> None:
@@ -120,6 +122,71 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(payload["decision"], "pass")
             self.assertNotIn("out", payload)
             self.assertFalse(verdict.exists())
+
+    def test_proofcheck_out_fails_closed_when_depone_writes_no_verdict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            evidence_dir = root / "evidence"
+            evidence_dir.mkdir()
+            out = evidence_dir / "proofcheck-verdict.json"
+
+            with patch(
+                "witnessd.__main__._run_depone_json",
+                return_value=(
+                    0,
+                    {
+                        "decision": "pass",
+                        "verifier_command": "proofcheck",
+                        "out": str(out),
+                    },
+                ),
+            ):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    code = main(["proofcheck", str(evidence_dir), "--out", str(out)])
+
+            self.assertEqual(code, 1)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["decision"], "blocked")
+            self.assertEqual(
+                payload["error"]["code"],
+                "ERR_ORRO_PROOFCHECK_VERDICT_BINDING_FAILED",
+            )
+            self.assertNotIn("orro_binding", payload)
+
+    def test_proofcheck_out_fails_closed_when_depone_writes_bad_verdict(self) -> None:
+        for contents in ("{not json\n", "[]\n"):
+            with self.subTest(contents=contents):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    evidence_dir = root / "evidence"
+                    evidence_dir.mkdir()
+                    out = evidence_dir / "proofcheck-verdict.json"
+
+                    def fake_depone(_command: list[str], *, env: dict[str, str]) -> tuple[int, dict]:
+                        out.write_text(contents, encoding="utf-8")
+                        return (
+                            0,
+                            {
+                                "decision": "pass",
+                                "verifier_command": "proofcheck",
+                                "out": str(out),
+                            },
+                        )
+
+                    with patch("witnessd.__main__._run_depone_json", side_effect=fake_depone):
+                        stdout = io.StringIO()
+                        with redirect_stdout(stdout):
+                            code = main(["proofcheck", str(evidence_dir), "--out", str(out)])
+
+                    self.assertEqual(code, 1)
+                    payload = json.loads(stdout.getvalue())
+                    self.assertEqual(payload["decision"], "blocked")
+                    self.assertEqual(
+                        payload["error"]["code"],
+                        "ERR_ORRO_PROOFCHECK_VERDICT_BINDING_FAILED",
+                    )
+                    self.assertNotIn("orro_binding", payload)
 
     def test_orro_proofcheck_blocks_scout_only_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -157,6 +224,13 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(payload["kind"], "orro-handoff")
             self.assertFalse(payload["boundary"]["approves_merge"])
             self.assertFalse(payload["boundary"]["raises_assurance"])
+            proofcheck_payload = json.loads(
+                (run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                proofcheck_payload["orro_binding"]["artifact_hashes"],
+                payload["artifact_hashes"],
+            )
             hashed_paths = {item["path"] for item in payload["artifact_hashes"]}
             self.assertIn("team-ledger.json", hashed_paths)
             self.assertNotIn("proofcheck-verdict.json", hashed_paths)
@@ -255,13 +329,83 @@ class OrroPublicFlowTests(unittest.TestCase):
                         "ERR_ORRO_HANDOFF_PROOFCHECK_NOT_PASS",
                     )
 
-    def test_handoff_ignores_non_object_optional_decision_ref_metadata(self) -> None:
+    def test_handoff_rejects_unbound_passing_proofcheck_verdict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _home, run_dir, _payload = self._proofrun(Path(tmp))
             (run_dir / "proofcheck-verdict.json").write_text(
                 json.dumps({"decision": "pass"}),
                 encoding="utf-8",
             )
+            out = run_dir / "orro-handoff.json"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(["orro", "handoff", str(run_dir), "--out", str(out), "--json"])
+
+            self.assertEqual(code, 1)
+            self.assertFalse(out.exists())
+            self.assertEqual(
+                json.loads(stdout.getvalue())["error"]["code"],
+                "ERR_ORRO_HANDOFF_PROOFCHECK_UNBOUND",
+            )
+
+    def test_handoff_rejects_stale_passing_proofcheck_verdict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first_root = root / "first"
+            second_root = root / "second"
+            first_root.mkdir()
+            second_root.mkdir()
+            home, first_run_dir, _payload = self._proofrun(first_root)
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main(
+                        [
+                            "proofcheck",
+                            str(first_run_dir),
+                            "--home",
+                            str(home),
+                            "--out",
+                            str(first_run_dir / "proofcheck-verdict.json"),
+                        ]
+                    ),
+                    0,
+                )
+            _home, second_run_dir, _payload = self._proofrun(second_root)
+            (second_run_dir / "proofcheck-verdict.json").write_text(
+                (first_run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            out = second_run_dir / "orro-handoff.json"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(["orro", "handoff", str(second_run_dir), "--out", str(out), "--json"])
+
+            self.assertEqual(code, 1)
+            self.assertFalse(out.exists())
+            self.assertEqual(
+                json.loads(stdout.getvalue())["error"]["code"],
+                "ERR_ORRO_HANDOFF_PROOFCHECK_BINDING_MISMATCH",
+            )
+
+    def test_handoff_ignores_non_object_optional_decision_ref_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home, run_dir, _payload = self._proofrun(Path(tmp))
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main(
+                        [
+                            "proofcheck",
+                            str(run_dir),
+                            "--home",
+                            str(home),
+                            "--out",
+                            str(run_dir / "proofcheck-verdict.json"),
+                        ]
+                    ),
+                    0,
+                )
             (run_dir / "team-ledger-verdict.json").write_text("[]\n", encoding="utf-8")
             out = run_dir / "orro-handoff.json"
 
