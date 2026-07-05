@@ -16,6 +16,7 @@ This file exists to prevent doc drift. It is a map, not a second spec.
 | ORRO continuation gate v0 | [`orro-continuation-gate.md`](orro-continuation-gate.md) |
 | ORRO auto dry-run v0 | [`orro-auto-dry-run.md`](orro-auto-dry-run.md) |
 | ORRO auto once v0 | [`orro-auto-once.md`](orro-auto-once.md) |
+| ORRO auto until-complete v0 | [`orro-auto-until-complete.md`](orro-auto-until-complete.md) |
 
 When these conflict, `SPEC3.md` wins for witnessd runtime/product decisions.
 Depone `docs/spec.md` wins for verifier-contract decisions.
@@ -40,7 +41,8 @@ Use these names in new user-facing docs:
 | `orro next` | non-executing continuation/status gate over persisted run artifacts |
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
-| `orro auto` | future multi-step continuation mode behind evidence gates |
+| `orro auto --until-complete` | bounded post-run loop over proofcheck and handoff only |
+| `orro auto` | future broader continuation mode behind evidence gates |
 | `orro ultra` | future high-autonomy profile |
 | `python3 -m orro` | thin product-name entrypoint hosted in witnessd |
 | `orro engine-lock` | write/check distribution metadata for pinned witnessd and Depone commits |
@@ -100,7 +102,7 @@ without human/verifier intervention. Role status is derived context, not proof.
 state and emits an `orro-auto-plan` with the exact command it would run next. It
 does not run the command, call Depone, launch workers, write proofcheck verdicts
 or handoff packages, mutate worktrees, verify evidence, approve merge, or raise
-assurance. The auto-plan is recommendation context only, not proof. Multi-step
+assurance. The auto-plan is recommendation context only, not proof. Broader
 autonomous `orro auto` remains future work.
 
 `orro auto --once <run-dir> --home <home> --json` re-checks continuation state
@@ -108,6 +110,12 @@ and executes at most one allowed step: proofcheck, handoff, or complete no-op.
 It never launches proofrun or workers, calls live models or MCP, repairs
 artifacts, retries or resumes lanes, approves merge, or raises assurance. The
 auto receipt is orchestration metadata only, not proof or verifier truth.
+
+`orro auto --until-complete <run-dir> --home <home> --max-steps 2 --json` is a
+bounded post-run loop over the same safe steps. It requires `--max-steps`; v0
+allows only 1 or 2. It re-checks continuation state before every step and may
+run proofcheck then handoff, but never proofrun or workers. The auto session is
+orchestration metadata only, not proof, verifier truth, approval, or assurance.
 
 ## Legacy docs
 

@@ -71,6 +71,11 @@ complete no-op only. It does not launch proofrun or workers, execute role-lane
 plans, retry or resume lanes, call live models or MCP, approve merge, or raise
 assurance.
 
+`orro auto --until-complete <run-dir> --home <home> --max-steps 2 --json` is the
+bounded post-run loop over proofcheck and handoff only. It re-checks state before
+every step and never launches proofrun or workers. Its auto session is
+orchestration metadata, not proof.
+
 Phase ownership:
 
 - `init`, `doctor`, and `engine-lock` are setup/readiness/distribution checks.
@@ -96,5 +101,5 @@ Depone verifies; witnessd executes; ORRO exposes the workflow.
 ```
 
 The compiler does not run workers, call live models, call Depone verification,
-mutate worktrees, approve merge, or turn ORRO into a third engine. Multi-step
-autonomous `orro auto` remains future work.
+mutate worktrees, approve merge, or turn ORRO into a third engine. Broader
+autonomous `orro auto` and `orro ultra` remain future work.

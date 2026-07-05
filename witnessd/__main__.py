@@ -1219,22 +1219,39 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
         OrroAutoError,
         build_auto_plan,
         build_auto_receipt,
+        build_auto_session,
         write_auto_plan,
         write_auto_receipt,
+        write_auto_session,
     )
 
-    if args.dry_run and args.once:
+    mode_count = sum(bool(mode) for mode in (args.dry_run, args.once, args.until_complete))
+    if mode_count > 1:
         _emit_orro_error(
             args,
             code="ERR_ORRO_AUTO_MODE_CONFLICT",
-            message="choose exactly one of --dry-run or --once",
+            message="choose exactly one of --dry-run, --once, or --until-complete",
         )
         return 2
-    if not args.dry_run and not args.once:
+    if mode_count == 0:
         _emit_orro_error(
             args,
             code="ERR_ORRO_AUTO_DRY_RUN_REQUIRED",
-            message="orro auto requires --dry-run or --once",
+            message="orro auto requires --dry-run, --once, or --until-complete",
+        )
+        return 2
+    if args.until_complete and args.max_steps is None:
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_AUTO_MAX_STEPS_REQUIRED",
+            message="orro auto --until-complete requires --max-steps",
+        )
+        return 2
+    if args.until_complete and args.max_steps not in {1, 2}:
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_AUTO_MAX_STEPS_INVALID",
+            message="orro auto --until-complete supports --max-steps 1 or 2 in v0",
         )
         return 2
     if not args.run_dir:
@@ -1256,6 +1273,93 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
     if args.dry_run:
         print(json.dumps(payload, sort_keys=True))
         return code
+
+    if args.until_complete:
+        max_steps = int(args.max_steps)
+        decision_initial = str(payload.get("decision", "blocked"))
+        current_code = code
+        current_payload = payload
+        steps: list[dict[str, object]] = []
+        error = None
+        reasons: list[str] = []
+
+        while len(steps) < max_steps:
+            decision = str(current_payload.get("decision", "blocked"))
+            if decision == "complete":
+                break
+            would_run = current_payload.get("would_run", [])
+            if current_code != 0 or not would_run:
+                payload_reasons = current_payload.get("reasons", [])
+                reasons = list(payload_reasons) if isinstance(payload_reasons, list) else []
+                maybe_error = current_payload.get("error")
+                error = maybe_error if isinstance(maybe_error, dict) else None
+                break
+            child_code, receipt, after_code, after_payload = _run_orro_auto_step(
+                run_dir,
+                home=home,
+            )
+            steps.append(
+                {
+                    "step_index": len(steps) + 1,
+                    "decision_before": receipt["decision_before"],
+                    "executed_phase": receipt["executed_phase"],
+                    "command": receipt["command"],
+                    "exit_code": receipt["exit_code"],
+                    "decision_after": receipt["decision_after"],
+                    "wrote": receipt["wrote"],
+                    "launches_workers": False,
+                    "executes_proofrun": False,
+                    "raises_assurance": False,
+                }
+            )
+            current_code = after_code
+            current_payload = after_payload
+            if child_code != 0:
+                maybe_error = receipt.get("error")
+                error = maybe_error if isinstance(maybe_error, dict) else None
+                break
+
+        decision_final = str(current_payload.get("decision", "blocked"))
+        complete = decision_final == "complete"
+        blocked = not complete
+        if blocked and error is None:
+            if len(steps) >= max_steps and decision_final in {"needs-proofcheck", "ready-for-handoff"}:
+                error = {
+                    "code": "ERR_ORRO_AUTO_MAX_STEPS_REACHED",
+                    "message": "orro auto --until-complete stopped before complete because --max-steps was reached",
+                }
+                reasons = [*reasons, "max steps reached before completion"]
+            else:
+                maybe_error = current_payload.get("error")
+                error = maybe_error if isinstance(maybe_error, dict) else {
+                    "code": "ERR_ORRO_AUTO_BLOCKED",
+                    "message": "ORRO auto until-complete is blocked by continuation state",
+                }
+                payload_reasons = current_payload.get("reasons", reasons)
+                reasons = list(payload_reasons) if isinstance(payload_reasons, list) else reasons
+        session = build_auto_session(
+            run_dir,
+            max_steps=max_steps,
+            steps=steps,
+            decision_initial=decision_initial,
+            decision_final=decision_final,
+            complete=complete,
+            blocked=blocked,
+            reasons=reasons,
+            error=error,
+        )
+        if args.out:
+            try:
+                write_auto_session(Path(args.out).resolve(strict=False), session)
+            except OrroAutoError as exc:
+                _emit_orro_error(args, code=exc.code, message=str(exc))
+                return 1
+        print(json.dumps(session, sort_keys=True))
+        if complete:
+            return 0
+        if decision_final == "invalid-run-dir":
+            return 2
+        return 1
 
     decision_before = str(payload.get("decision", "blocked"))
     would_run = payload.get("would_run", [])
@@ -1283,7 +1387,31 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
             return 0
         return code
 
-    step = would_run[0]
+    child_code, receipt, _after_code, _after_payload = _run_orro_auto_step(
+        run_dir,
+        home=home,
+    )
+    if args.out:
+        try:
+            write_auto_receipt(Path(args.out).resolve(strict=False), receipt)
+        except OrroAutoError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 1
+    print(json.dumps(receipt, sort_keys=True))
+    return child_code
+
+
+def _run_orro_auto_step(
+    run_dir: Path,
+    *,
+    home: Path | None,
+) -> tuple[int, dict[str, object], int, dict[str, object]]:
+    from witnessd.orro_auto import build_auto_plan, build_auto_receipt
+
+    before_code, before_payload = build_auto_plan(run_dir, home=home)
+    decision_before = str(before_payload.get("decision", "blocked"))
+    would_run = before_payload.get("would_run", [])
+    step = would_run[0] if isinstance(would_run, list) and would_run else None
     command = list(step.get("command", [])) if isinstance(step, dict) else []
     phase = str(step.get("phase", "")) if isinstance(step, dict) else ""
     if phase not in {"proofcheck", "handoff"} or not command:
@@ -1299,16 +1427,15 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
             reasons=["unsupported auto continuation decision"],
             error={
                 "code": "ERR_ORRO_AUTO_UNSUPPORTED_DECISION",
-                "message": "orro auto --once only supports proofcheck and handoff",
+                "message": "orro auto execution only supports proofcheck and handoff",
             },
         )
-        print(json.dumps(receipt, sort_keys=True))
-        return 1
+        return 1, receipt, before_code, before_payload
 
     child_stdout = io.StringIO()
     with redirect_stdout(child_stdout):
         child_code = main(command)
-    _after_code, after_payload = build_auto_plan(run_dir, home=home)
+    after_code, after_payload = build_auto_plan(run_dir, home=home)
     decision_after = str(after_payload.get("decision", "blocked"))
     wrote = []
     if phase == "proofcheck" and (run_dir / "proofcheck-verdict.json").is_file():
@@ -1332,14 +1459,7 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
         wrote=wrote,
         error=error,
     )
-    if args.out:
-        try:
-            write_auto_receipt(Path(args.out).resolve(strict=False), receipt)
-        except OrroAutoError as exc:
-            _emit_orro_error(args, code=exc.code, message=str(exc))
-            return 1
-    print(json.dumps(receipt, sort_keys=True))
-    return child_code
+    return child_code, receipt, after_code if before_code == 0 or child_code == 0 else before_code, after_payload
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
@@ -2295,6 +2415,8 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_auto.add_argument("run_dir", nargs="?")
     orro_auto.add_argument("--dry-run", action="store_true")
     orro_auto.add_argument("--once", action="store_true")
+    orro_auto.add_argument("--until-complete", action="store_true")
+    orro_auto.add_argument("--max-steps", type=int, default=None)
     orro_auto.add_argument("--home", default=None)
     orro_auto.add_argument("--out", default=None)
     orro_auto.add_argument("--json", action="store_true")

@@ -34,6 +34,17 @@ proofcheck, handoff, or complete no-op. It does not launch proofrun or workers,
 repair artifacts, retry or resume lanes, call live models or MCP, approve merge,
 or raise assurance.
 
+The paired bounded post-run loop is:
+
+```bash
+orro auto --until-complete .witnessd/runs/<run-dir> --home .witnessd --max-steps 2 --json
+```
+
+`--until-complete` re-checks continuation state before every step and may run
+only proofcheck and handoff. It never launches proofrun or workers, repairs,
+retries, resumes lanes, calls live models or MCP, approves merge, or raises
+assurance. Its `orro-auto-session` is orchestration metadata only.
+
 Decision mapping:
 
 - `needs-proofcheck`: recommend proofcheck.
@@ -51,4 +62,4 @@ Depone verifies; witnessd executes; ORRO exposes the workflow.
 
 The auto-plan is recommendation context only. It is not proof, not evidence
 verification, not merge approval, and not assurance. Calling `orro auto` without
-`--dry-run` or `--once` must fail closed.
+exactly one mode must fail closed.

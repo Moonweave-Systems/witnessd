@@ -13,6 +13,8 @@ AUTO_PLAN_KIND = "orro-auto-plan"
 AUTO_PLAN_SCHEMA_VERSION = "0.1"
 AUTO_RECEIPT_KIND = "orro-auto-receipt"
 AUTO_RECEIPT_SCHEMA_VERSION = "0.1"
+AUTO_SESSION_KIND = "orro-auto-session"
+AUTO_SESSION_SCHEMA_VERSION = "0.1"
 
 ERR_ORRO_AUTO_BLOCKED = "ERR_ORRO_AUTO_BLOCKED"
 ERR_ORRO_AUTO_WRITE_FAILED = "ERR_ORRO_AUTO_WRITE_FAILED"
@@ -153,6 +155,57 @@ def build_auto_receipt(
 
 
 def write_auto_receipt(path: Path, payload: dict[str, Any]) -> None:
+    write_auto_plan(path, payload)
+
+
+def build_auto_session(
+    run_dir: Path,
+    *,
+    max_steps: int,
+    steps: list[dict[str, Any]],
+    decision_initial: str,
+    decision_final: str,
+    complete: bool,
+    blocked: bool,
+    reasons: list[str] | None = None,
+    error: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    delegates_verification = any(step.get("executed_phase") == "proofcheck" for step in steps)
+    payload: dict[str, Any] = {
+        "kind": AUTO_SESSION_KIND,
+        "schema_version": AUTO_SESSION_SCHEMA_VERSION,
+        "mode": "until-complete",
+        "run_dir": str(run_dir.resolve(strict=False)),
+        "max_steps": max_steps,
+        "steps_executed": len(steps),
+        "decision_initial": decision_initial,
+        "decision_final": decision_final,
+        "complete": complete,
+        "blocked": blocked,
+        "reasons": reasons or [],
+        "steps": steps,
+        "boundary": {
+            "auto_until_complete": True,
+            "bounded": True,
+            "max_steps_enforced": True,
+            "launches_workers": False,
+            "executes_proofrun": False,
+            "mutates_worktree": False,
+            "verifies_evidence_itself": False,
+            "delegates_verification_to_depone": delegates_verification,
+            "approves_merge": False,
+            "raises_assurance": False,
+            "depone_verifies": True,
+            "witnessd_executes": True,
+            "orro_exposes_workflow": True,
+        },
+    }
+    if error is not None:
+        payload["error"] = error
+    return payload
+
+
+def write_auto_session(path: Path, payload: dict[str, Any]) -> None:
     write_auto_plan(path, payload)
 
 

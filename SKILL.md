@@ -27,9 +27,10 @@ should not be used for new public surfaces.
 | `orro next` | non-executing continuation gate over persisted run artifacts |
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
+| `orro auto --until-complete` | bounded post-run proofcheck/handoff loop; orchestration metadata only |
 | `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
-| `orro auto` | future multi-step continuation loop behind evidence gates |
+| `orro auto` | future broader continuation loop behind evidence gates |
 | `orro ultra` | future high-autonomy profile with stricter gates |
 
 ## Repository and install boundary
@@ -70,8 +71,8 @@ are `code-change`, `review-only`, `verification-only`, `docs-change`, and
 `release-readiness`. The plan maps roles, phases, engine calls, gates, and
 forbidden assurance sources. It is not evidence. Roles do not create assurance by
 existing. `proofrun` is the first execution phase, `proofcheck` is the verifier
-phase, `handoff` is review packaging only, and multi-step autonomous
-`orro auto` remains future work.
+phase, `handoff` is review packaging only, and broader autonomous `orro auto`
+and `orro ultra` remain future work.
 
 `python3 -m orro proofrun "<goal>" --repo <repo> --home .witnessd --workflow-plan workflow-plan.json`
 first checks that the workflow plan allows `proofrun` through a witnessd engine
@@ -105,7 +106,7 @@ artifacts only and is not proof.
 run next. It does not run proofcheck, call Depone, launch workers, write
 handoff, mutate worktrees, approve merge, verify evidence, or raise assurance.
 The auto-plan is recommendation context only, not proof. `orro auto` without
-`--dry-run` or `--once` must fail closed.
+exactly one mode must fail closed.
 
 `python3 -m orro auto --once <run-dir> --home .witnessd --json` re-checks
 continuation state and executes at most one allowed step. In v0 that means
@@ -114,6 +115,13 @@ workers, calls live models or MCP, repairs artifacts, retries or resumes lanes,
 approves merge, or raises assurance. When it runs proofcheck, verification is
 delegated to Depone. The auto receipt is orchestration metadata, not proof or
 verifier truth.
+
+`python3 -m orro auto --until-complete <run-dir> --home .witnessd --max-steps 2 --json`
+is a bounded post-run loop over proofcheck and handoff only. It requires
+`--max-steps`, re-checks continuation state before every step, and stops on
+blocked, evidence-pending, invalid-run-dir, max-steps, or complete. It never
+launches proofrun or workers. The auto session is orchestration metadata, not
+proof or verifier truth.
 
 A future standalone `ORRO` repo may package marketplace manifests, host-specific
 plugin files, examples, product docs, and engine version locks. It must remain a
