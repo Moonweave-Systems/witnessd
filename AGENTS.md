@@ -55,11 +55,14 @@ create assurance by existing. `proofrun` is the first execution phase,
 `orro auto` remains future work.
 
 `python3 -m orro proofrun "<goal>" --repo <repo> --home .witnessd --workflow-plan workflow-plan.json`
-records `workflow-plan.json` and `workflow-plan-binding.json` in the run
-directory as intended-workflow context. The binding is not proof that execution
-followed the plan, not approval, and not assurance. Depone proofcheck still
-decides what evidence supports. `review-only` handoff remains intent unless a
-formal `orro handoff` is backed by a passing bound proofcheck verdict.
+first applies a phase gate: the plan must allow `proofrun` through a witnessd
+engine call that executes and does not verify. If allowed, proofrun records
+`workflow-plan.json`, `workflow-plan-binding.json`, and
+`workflow-role-dispatch.json` in the run directory as intended-workflow context.
+The binding and role dispatch are not proof that execution followed the plan,
+not approval, and not assurance. Depone proofcheck still decides what evidence
+supports. `review-only` does not authorize proofrun; formal `orro handoff` still
+requires a passing bound proofcheck verdict.
 
 The standalone ORRO repo remains deferred until packaging, marketplace, and
 version-lock distribution needs justify it. The packaged bare `orro` executable

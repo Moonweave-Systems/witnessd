@@ -186,14 +186,17 @@ engine calls, required gates, and forbidden assurance sources. It does not run
 workers, call live models, call Depone verification, mutate worktrees, approve
 merge, raise assurance, or turn ORRO into a third engine.
 
-`orro proofrun --workflow-plan <path>` binds a workflow-plan intent artifact to
-the emitted run evidence by recording `workflow-plan.json` and
-`workflow-plan-binding.json` in the run directory. The binding records which
-workflow the run intended to follow. It is not proof that the run followed the
-plan, does not override actual execution receipts, does not approve merge, and
-does not raise assurance. `proofcheck` and `handoff` may preserve the binding
-hash for review context, but Depone still decides what the persisted evidence
-supports.
+`orro proofrun --workflow-plan <path>` first gates execution against the supplied
+workflow plan. The plan must allow `proofrun` and must include a witnessd
+`proofrun` engine call that executes but does not verify. If the gate fails,
+proofrun fails closed before creating a run directory. If the gate passes,
+proofrun records `workflow-plan.json`, `workflow-plan-binding.json`, and
+`workflow-role-dispatch.json` in the run directory. The binding records which
+workflow the run intended to follow, and role dispatch maps roles to actual or
+pending engine phases. These artifacts are not proof that the run followed the
+plan, do not override actual execution receipts, do not approve merge, and do
+not raise assurance. `proofcheck` and `handoff` may preserve the references for
+review context, but Depone still decides what persisted evidence supports.
 
 Create a standalone `ORRO` repo only when distribution needs justify it:
 marketplace manifests, host-specific plugin bundles, examples, product docs,
@@ -480,6 +483,8 @@ readiness/distribution checks only. Full `orro auto` remains future work.
 `review-only` remains review intent. If a formal ORRO handoff artifact is
 needed, the actual `orro handoff` command still requires a passing
 `proofcheck-verdict.json` bound to the current evidence snapshot.
+The `review-only` flow does not authorize `proofrun` and does not imply that the
+formal `orro handoff` command can run without proofcheck.
 
 ### 6.3 `proofrun`
 
@@ -583,6 +588,7 @@ A run directory must be archiveable and re-checkable from bytes:
   skillpack-lock.json
   workflow-plan.json
   workflow-plan-binding.json
+  workflow-role-dispatch.json
   sealed-plan.json
   verification-recipe.json
   dispatch-log.jsonl
@@ -614,7 +620,8 @@ Rules:
 - verifier reports are derived and may be regenerated,
 - runlog and capture manifests are append-only evidence,
 - repo-profile, context-pack, and skillpack-lock are planning evidence,
-- workflow-plan and workflow-plan-binding record intended workflow context only,
+- workflow-plan, workflow-plan-binding, and workflow-role-dispatch record
+  intended workflow context only,
 - verification-recipe describes intended checks,
 - verification-receipt records what actually ran,
 - scout-only directories omit verification-receipt by design and therefore do not

@@ -71,11 +71,14 @@ phase, `handoff` is review packaging only, and full `orro auto` remains future
 work.
 
 `python3 -m orro proofrun "<goal>" --repo <repo> --home .witnessd --workflow-plan workflow-plan.json`
-binds that intent to the emitted run by recording `workflow-plan.json` and
-`workflow-plan-binding.json` in the run directory. The binding is review context
-only. It is not proof that execution followed the plan, not approval, and not
-assurance. Depone proofcheck still decides what the evidence supports. A
-`review-only` profile does not make `orro handoff` succeed without a passing
+first checks that the workflow plan allows `proofrun` through a witnessd engine
+call that executes and does not verify. If the phase is forbidden, it fails
+before creating a run directory. If allowed, it records `workflow-plan.json`,
+`workflow-plan-binding.json`, and `workflow-role-dispatch.json` in the run
+directory. The binding and role dispatch are review context only. They are not
+proof that execution followed the plan, not approval, and not assurance. Depone
+proofcheck still decides what the evidence supports. A `review-only` profile
+does not authorize proofrun or make `orro handoff` succeed without a passing
 bound `proofcheck-verdict.json`.
 
 A future standalone `ORRO` repo may package marketplace manifests, host-specific

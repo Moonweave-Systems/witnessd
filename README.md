@@ -127,13 +127,16 @@ evidence. Roles do not create assurance by existing. `proofrun` is the first
 execution phase, `proofcheck` is the verifier phase, and `handoff` is review
 packaging only.
 
-`orro proofrun --workflow-plan <path>` records which workflow the run intended
-to follow by copying the normalized plan into the run directory and writing a
-`workflow-plan-binding.json` hash reference. That binding is review context only:
-actual execution proof still begins with proofrun evidence, Depone proofcheck
-still decides what the bytes support, and the binding is not proof, approval, or
-assurance. `proofcheck` and `handoff` preserve the binding reference when it is
-present.
+`orro proofrun --workflow-plan <path>` first applies a workflow phase gate. The
+plan must allow `proofrun` and include a witnessd engine call that executes but
+does not verify. If the plan does not allow the phase, proofrun fails before it
+creates a run directory. When the phase is allowed, proofrun records
+`workflow-plan.json`, `workflow-plan-binding.json`, and
+`workflow-role-dispatch.json` in the run directory. The binding and role
+dispatch are review context only: actual execution proof still begins with
+proofrun evidence, Depone proofcheck still decides what the bytes support, and
+neither artifact is proof, verification, approval, or assurance. `proofcheck`
+and `handoff` preserve these references when they are present.
 
 Create a separate `ORRO` repository only when distribution needs justify it:
 marketplace manifests, host-specific plugin packaging, version locking, examples,
@@ -179,10 +182,11 @@ models, call Depone verification, mutate worktrees, approve merge, or raise
 assurance. Full `orro auto` remains future work.
 
 The optional workflow-plan binding connects that intent artifact to later
-proofrun evidence by hash. It does not let the plan override actual execution
-evidence. A `review-only` profile may include handoff intent for review
-packaging, but actual `orro handoff` still requires a passing bound
-`proofcheck-verdict.json`.
+proofrun evidence by hash. Phase gates prevent using a plan for a phase it does
+not allow. `workflow-role-dispatch.json` maps workflow roles to actual or
+pending engine phases and may reference `team-ledger.json`; it does not let role
+names count as evidence. A `review-only` profile is review intent only; actual
+`orro handoff` still requires a passing bound `proofcheck-verdict.json`.
 
 Depone decides what these bytes support. Skill text, MCP output, IDE terminals,
 tmux panes, and session transcripts are not verdicts by themselves.
@@ -252,7 +256,8 @@ operator. Runtime and verify commands do not fetch or install.
 `witnessd run "<goal>" --repo <path>` uses the W18 quota-free shell path by
 default. It creates a run directory containing:
 
-- optional `workflow-plan.json` and `workflow-plan-binding.json`
+- optional `workflow-plan.json`, `workflow-plan-binding.json`, and
+  `workflow-role-dispatch.json`
 - `sealed-plan.json`
 - `dispatch-log.jsonl`
 - lane evidence directories

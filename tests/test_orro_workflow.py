@@ -8,6 +8,11 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from witnessd.__main__ import main
+from witnessd.orro_workflow import (
+    OrroWorkflowError,
+    assert_workflow_phase_allowed,
+    compile_workflow_plan,
+)
 
 
 class OrroWorkflowTests(unittest.TestCase):
@@ -52,6 +57,8 @@ class OrroWorkflowTests(unittest.TestCase):
         plan = payload["workflow_plan"]
         self.assertEqual(plan["profile"], "review-only")
         self.assertFalse(any(role["may_execute"] for role in plan["roles"]))
+        self.assertNotIn("proofrun", plan["flow"])
+        self.assertFalse(any(call["phase"] == "proofrun" for call in plan["engine_calls"]))
         self.assertNotIn("proofrun emits evidence", plan["required_gates"])
         self.assertIn("review-only handoff is intent; formal ORRO handoff still requires proofcheck", plan["required_gates"])
         self.assertIn("model confidence", plan["forbidden_assurance_sources"])
@@ -69,6 +76,20 @@ class OrroWorkflowTests(unittest.TestCase):
         self.assertFalse(proofcheck["executes"])
         self.assertTrue(proofcheck["verifies"])
         self.assertFalse(any(call["executes"] for call in plan["engine_calls"]))
+
+    def test_workflow_phase_gate_allows_only_declared_execution_phase(self) -> None:
+        code_change = compile_workflow_plan(goal="fix parser", profile="code-change")
+        assert_workflow_phase_allowed(code_change, "proofrun")
+
+        review_only = compile_workflow_plan(goal="review this PR", profile="review-only")
+        with self.assertRaises(OrroWorkflowError) as cm:
+            assert_workflow_phase_allowed(review_only, "proofrun")
+        self.assertEqual(cm.exception.code, "ERR_ORRO_WORKFLOW_PLAN_PHASE_FORBIDDEN")
+
+        verification_only = compile_workflow_plan(goal="verify evidence", profile="verification-only")
+        with self.assertRaises(OrroWorkflowError) as cm:
+            assert_workflow_phase_allowed(verification_only, "proofrun")
+        self.assertEqual(cm.exception.code, "ERR_ORRO_WORKFLOW_PLAN_PHASE_FORBIDDEN")
 
     def test_docs_change_requires_evidence_gates_before_handoff_when_executing(self) -> None:
         code, payload = self._flowplan(
