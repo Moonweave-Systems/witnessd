@@ -46,6 +46,7 @@ python3 -m orro proofcheck .witnessd/runs/<run-dir> \
   --home .witnessd \
   --out .witnessd/runs/<run-dir>/proofcheck-verdict.json
 python3 -m orro next .witnessd/runs/<run-dir> --home .witnessd --json
+python3 -m orro auto --dry-run .witnessd/runs/<run-dir> --home .witnessd --json
 python3 -m orro handoff .witnessd/runs/<run-dir> \
   --out .witnessd/runs/<run-dir>/orro-handoff.json
 ```
@@ -62,7 +63,7 @@ preserve the existing witnessd initialization behavior.
 
 `python3 -m orro --help` is product-facing and lists only public ORRO commands:
 `init`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `next`,
-`doctor`, and `engine-lock`. It must not promote witnessd engine-internal
+`auto`, `doctor`, and `engine-lock`. It must not promote witnessd engine-internal
 commands.
 
 The console script named `orro` points at the same wrapper surface through
@@ -76,8 +77,8 @@ deterministic `orro-workflow-plan` intent artifact for `code-change`,
 Workflow plans map goals to roles, phases, engine calls, gates, and forbidden
 assurance sources. They are not evidence. Roles do not create assurance by
 existing. `proofrun` is the first execution phase, `proofcheck` is the verifier
-phase, `handoff` is review packaging only, and full `orro auto` remains future
-work.
+phase, `handoff` is review packaging only, and executing `orro auto` remains
+future work.
 
 `proofrun --workflow-plan <path>` gates execution against workflow-plan intent
 before any run directory is created. The plan must allow `proofrun` through a
@@ -105,6 +106,14 @@ lanes, approve merge, verify evidence, or raise assurance. Role status is
 derived only from observed artifacts. Future `orro auto` must consume this kind
 of decision before attempting any continuation.
 
+`orro auto --dry-run <run-dir> --home <home> --json` is the first auto surface.
+It consumes `orro next` state and emits an `orro-auto-plan` with the exact next
+command it would run. It does not execute that command, call Depone, run
+proofcheck, write handoff, launch workers, mutate worktrees, approve merge,
+verify evidence, or raise assurance. The auto-plan is recommendation context,
+not proof. Executing `orro auto` remains deferred until this dry-run contract is
+stable.
+
 ## Engine Boundary Contract
 
 ### Depone Verifier API Surface
@@ -131,6 +140,7 @@ Allowed ORRO calls into witnessd are runtime and wrapper calls:
 - `witnessd orro proofcheck`
 - `witnessd orro handoff`
 - `witnessd orro next`
+- `witnessd orro auto --dry-run`
 - existing lower-level `witnessd run`, `witnessd verify`, `witnessd proofcheck`,
   and `witnessd team *` commands used as implementation surfaces
 

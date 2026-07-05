@@ -38,9 +38,10 @@ map and legacy policy.
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro next` | non-executing continuation gate over persisted run artifacts |
+| `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine/verifier/adapter/key/MCP/policy readiness check |
-| `orro auto` | later resume/continuation loop behind evidence gates |
+| `orro auto` | future executing resume/continuation loop behind evidence gates |
 | `orro ultra` | future high-autonomy profile with stricter gates |
 
 `witnessd` is the engine name, not the main session skill name.
@@ -74,7 +75,7 @@ a deterministic `orro-workflow-plan` intent artifact. Supported profiles are
 `code-change`, `review-only`, `verification-only`, `docs-change`, and
 `release-readiness`. Workflow plans are not evidence. Roles do not create
 assurance by existing. `proofrun` is the first execution phase, `proofcheck` is
-the verifier phase, `handoff` is review packaging only, and full `orro auto`
+the verifier phase, `handoff` is review packaging only, and executing `orro auto`
 remains future work.
 
 `python3 -m orro proofrun "<goal>" --repo <repo> --home .witnessd --workflow-plan workflow-plan.json`
@@ -102,6 +103,14 @@ approve merge, or raise assurance. `needs-proofcheck` means run proofcheck next;
 `ready-for-handoff` means a passing bound proofcheck verdict exists; `complete`
 means handoff exists after proofcheck pass. Role status is observed context, not
 proof.
+
+`python3 -m orro auto --dry-run <run-dir> --home .witnessd --json` consumes
+the continuation decision and emits an `orro-auto-plan` with the exact command
+it would run next. It does not execute that command, call Depone, launch
+workers, write proofcheck verdicts, write handoff packages, mutate worktrees,
+verify evidence, approve merge, or raise assurance. The auto-plan is
+recommendation context only, not proof. Executing `orro auto` remains future
+work.
 
 A standalone ORRO repo remains deferred until packaging, marketplace manifests,
 host-specific distribution, or version-lock distribution needs justify it.

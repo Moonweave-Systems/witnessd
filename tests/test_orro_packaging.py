@@ -65,6 +65,7 @@ class OrroPackagingTests(unittest.TestCase):
             self.assertIn("ORRO Flow", help_result.stdout)
             self.assertIn("init", help_result.stdout)
             self.assertIn("next", help_result.stdout)
+            self.assertIn("auto", help_result.stdout)
             self.assertIn("engine-lock", help_result.stdout)
             self.assertNotIn("self-test", help_result.stdout)
 
@@ -79,6 +80,20 @@ class OrroPackagingTests(unittest.TestCase):
             missing_payload = json.loads(missing_next.stdout)
             self.assertEqual(missing_payload["decision"], "invalid-run-dir")
             self.assertFalse(missing_payload["boundary"]["executes_commands"])
+
+            missing_auto = subprocess.run(
+                [str(orro), "auto", "--dry-run", str(tmp_path / "missing-run"), "--json"],
+                cwd=tmp_path,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(missing_auto.returncode, 2)
+            auto_payload = json.loads(missing_auto.stdout)
+            self.assertEqual(auto_payload["kind"], "orro-auto-plan")
+            self.assertEqual(auto_payload["continuation_decision"]["decision"], "invalid-run-dir")
+            self.assertEqual(auto_payload["would_run"], [])
+            self.assertFalse(auto_payload["boundary"]["executes_commands"])
 
             root = tmp_path / "repo"
             root.mkdir()

@@ -59,6 +59,12 @@ assurance. It reports `needs-proofcheck`, `ready-for-handoff`, `complete`,
 `blocked`, `evidence-pending`, or `invalid-run-dir` from observed artifacts
 only.
 
+`orro auto --dry-run <run-dir> --home <home> --json` can consume that
+continuation state and emit an `orro-auto-plan` with the exact next command it
+would run. It is recommendation context only: it does not execute the command,
+call Depone, launch workers, verify evidence, approve merge, or raise
+assurance.
+
 Phase ownership:
 
 - `init`, `doctor`, and `engine-lock` are setup/readiness/distribution checks.
@@ -84,5 +90,5 @@ Depone verifies; witnessd executes; ORRO exposes the workflow.
 ```
 
 The compiler does not run workers, call live models, call Depone verification,
-mutate worktrees, approve merge, or turn ORRO into a third engine. Full
+mutate worktrees, approve merge, or turn ORRO into a third engine. Executing
 `orro auto` remains future work.

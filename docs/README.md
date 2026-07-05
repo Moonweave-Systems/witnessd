@@ -14,6 +14,7 @@ This file exists to prevent doc drift. It is a map, not a second spec.
 | Agent/developer orientation | [`../CLAUDE.md`](../CLAUDE.md) |
 | ORRO workflow compiler v0 | [`orro-workflow-compiler.md`](orro-workflow-compiler.md) |
 | ORRO continuation gate v0 | [`orro-continuation-gate.md`](orro-continuation-gate.md) |
+| ORRO auto dry-run v0 | [`orro-auto-dry-run.md`](orro-auto-dry-run.md) |
 
 When these conflict, `SPEC3.md` wins for witnessd runtime/product decisions.
 Depone `docs/spec.md` wins for verifier-contract decisions.
@@ -36,7 +37,8 @@ Use these names in new user-facing docs:
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro next` | non-executing continuation/status gate over persisted run artifacts |
-| `orro auto` | continuation mode behind evidence gates |
+| `orro auto --dry-run` | non-executing automation planner; recommendation context only |
+| `orro auto` | future executing continuation mode behind evidence gates |
 | `orro ultra` | future high-autonomy profile |
 | `python3 -m orro` | thin product-name entrypoint hosted in witnessd |
 | `orro engine-lock` | write/check distribution metadata for pinned witnessd and Depone commits |
@@ -91,6 +93,13 @@ approve merge, or raise assurance. `needs-proofcheck` means run proofcheck next;
 `ready-for-handoff` means a passing bound proofcheck verdict exists; `complete`
 means handoff exists after proofcheck pass; `blocked` means do not continue
 without human/verifier intervention. Role status is derived context, not proof.
+
+`orro auto --dry-run <run-dir> --home <home> --json` consumes that continuation
+state and emits an `orro-auto-plan` with the exact command it would run next. It
+does not run the command, call Depone, launch workers, write proofcheck verdicts
+or handoff packages, mutate worktrees, verify evidence, approve merge, or raise
+assurance. The auto-plan is recommendation context only, not proof. Executing
+Executing `orro auto` remains future work.
 
 ## Legacy docs
 
