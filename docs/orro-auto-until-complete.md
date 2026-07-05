@@ -7,6 +7,10 @@ It is not adaptive routing. Use `orro advise` before planning/execution to get a
 non-executing workstyle decision. Until-complete only loops over proofcheck and
 handoff after proofrun evidence already exists.
 
+Use `orro report` after dry-run, once, or until-complete when a reviewer needs a
+single human-facing summary of observed artifacts, next safe action, blocked
+state, and trust boundaries. Report does not execute or verify.
+
 ```bash
 orro auto --until-complete .witnessd/runs/<run-dir> --home .witnessd --max-steps 2 --json
 python3 -m orro auto --until-complete .witnessd/runs/<run-dir> --home .witnessd --max-steps 2 --json

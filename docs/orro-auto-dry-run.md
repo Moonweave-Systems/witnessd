@@ -7,6 +7,10 @@ Use `orro advise` before planning/execution when the user needs workstyle
 guidance. `advise` chooses a smallest safe workflow; dry-run only plans the next
 post-run continuation command from an existing run directory.
 
+Use `orro report` when a human needs the compressed state of the run, the next
+safe action, reviewer focus, and do-not-trust boundaries. Report is a summary,
+not proof or verifier truth.
+
 ```bash
 orro auto --dry-run .witnessd/runs/<run-dir> --home .witnessd --json
 python3 -m orro auto --dry-run .witnessd/runs/<run-dir> --home .witnessd --json

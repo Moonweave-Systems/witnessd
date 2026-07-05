@@ -33,6 +33,12 @@ call live models, launch workers, mutate worktrees, or approve merge.
 
 Depone verifies; witnessd executes; ORRO exposes the workflow.
 
+`orro report <run-dir> --home .witnessd --json` is the post-run counterpart to
+`orro advise`. Advice reduces waste before planning or execution; report reduces
+artifact fatigue after a run by summarizing observed state, next safe action,
+reviewer focus, and do-not-trust boundaries. Report is not proof, verifier
+truth, approval, or assurance.
+
 ## Built-In Task Classes
 
 - `trivial-change`: minimal effort; skip team execution unless evidence is

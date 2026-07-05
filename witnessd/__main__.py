@@ -1241,6 +1241,42 @@ def _cmd_orro_advise(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_orro_report(args: argparse.Namespace) -> int:
+    from witnessd.orro_report import (
+        OrroReportError,
+        build_report,
+        render_text_report,
+        write_report,
+    )
+
+    if not args.run_dir:
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_REPORT_INPUT_REQUIRED",
+            message="run directory is required",
+        )
+        return 2
+    run_dir = Path(args.run_dir).resolve(strict=False)
+    home = Path(args.home).resolve(strict=False) if args.home else None
+    workstyle = (
+        Path(args.workstyle_decision).resolve(strict=False)
+        if args.workstyle_decision
+        else None
+    )
+    try:
+        code, payload = build_report(run_dir, home=home, workstyle_decision=workstyle)
+        if args.out:
+            write_report(Path(args.out).resolve(strict=False), payload)
+    except OrroReportError as exc:
+        _emit_orro_error(args, code=exc.code, message=str(exc))
+        return 1
+    if args.json:
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        print(render_text_report(payload), end="")
+    return code
+
+
 def _cmd_orro_auto(args: argparse.Namespace) -> int:
     from witnessd.orro_auto import (
         OrroAutoError,
@@ -2446,6 +2482,14 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_advise.add_argument("--json", action="store_true")
     orro_advise.set_defaults(func=_cmd_orro_advise)
 
+    orro_report = sub.add_parser("orro-report", help=argparse.SUPPRESS)
+    orro_report.add_argument("run_dir", nargs="?")
+    orro_report.add_argument("--home", default=None)
+    orro_report.add_argument("--out", default=None)
+    orro_report.add_argument("--workstyle-decision", default=None)
+    orro_report.add_argument("--json", action="store_true")
+    orro_report.set_defaults(func=_cmd_orro_report)
+
     orro_auto = sub.add_parser("orro-auto", help=argparse.SUPPRESS)
     orro_auto.add_argument("run_dir", nargs="?")
     orro_auto.add_argument("--dry-run", action="store_true")
@@ -2820,6 +2864,8 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
         return ["orro-next", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "advise":
         return ["orro-advise", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "report":
+        return ["orro-report", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "auto":
         return ["orro-auto", *argv[2:]]
     return argv

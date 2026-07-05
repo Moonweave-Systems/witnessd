@@ -138,6 +138,13 @@ not proof, verifier truth, approval, or assurance. Future LLM-based routing must
 remain policy-gated and advisory unless a separate execution gate authorizes
 action.
 
+`orro report <run-dir> --home <home> --json` is the human-facing compression
+layer after a run exists. It summarizes observed artifacts, proofcheck and
+handoff state, continuation state, next safe action, reviewer focus, and
+do-not-trust boundaries. It reduces artifact fatigue and supports product
+reality checks, but it is not proof, verifier truth, approval, or assurance and
+does not replace proofcheck or human review.
+
 ## Engine Boundary Contract
 
 ### Depone Verifier API Surface
