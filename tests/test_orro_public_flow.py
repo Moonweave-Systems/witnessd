@@ -78,13 +78,43 @@ class OrroPublicFlowTests(unittest.TestCase):
             )
         return repo, home
 
-    def _proofrun(self, root: Path, *, orro_alias: bool = False) -> tuple[Path, Path, dict]:
+    def _flowplan_out(self, root: Path, goal: str, *, profile: str = "code-change") -> Path:
+        out = root / "workflow-plan.json"
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(
+                [
+                    "orro",
+                    "flowplan",
+                    goal,
+                    "--root",
+                    str(root),
+                    "--profile",
+                    profile,
+                    "--out",
+                    str(out),
+                ]
+            )
+        self.assertEqual(code, 0, stdout.getvalue())
+        self.assertTrue(out.is_file())
+        return out
+
+    def _proofrun(
+        self,
+        root: Path,
+        *,
+        orro_alias: bool = False,
+        workflow_plan: Path | None = None,
+    ) -> tuple[Path, Path, dict]:
         repo, home = self._init_home(root)
         stdout = io.StringIO()
         stderr = io.StringIO()
         command = ["orro", "proofrun"] if orro_alias else ["proofrun"]
+        args = [*command, "write two proof files", "--repo", str(repo), "--home", str(home)]
+        if workflow_plan is not None:
+            args.extend(["--workflow-plan", str(workflow_plan)])
         with redirect_stdout(stdout), redirect_stderr(stderr):
-            code = main([*command, "write two proof files", "--repo", str(repo), "--home", str(home)])
+            code = main(args)
         self.assertEqual(code, 0, stderr.getvalue())
         payload = json.loads(stdout.getvalue())
         return home, Path(payload["run_dir"]), payload
@@ -105,6 +135,103 @@ class OrroPublicFlowTests(unittest.TestCase):
 
             self.assertEqual(payload["decision"], "pass")
             self.assertTrue((run_dir / "team-ledger.json").is_file())
+
+    def test_proofrun_workflow_plan_binding_is_recorded_without_assurance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_path = self._flowplan_out(root, "write two proof files")
+
+            _home, run_dir, payload = self._proofrun(root, workflow_plan=plan_path)
+
+            self.assertIn("workflow_plan", payload)
+            binding_ref = payload["workflow_plan"]
+            self.assertEqual(binding_ref["path"], str(run_dir / "workflow-plan.json"))
+            self.assertEqual(binding_ref["binding_path"], str(run_dir / "workflow-plan-binding.json"))
+            self.assertRegex(binding_ref["sha256"], r"^[0-9a-f]{64}$")
+            self.assertTrue((run_dir / "workflow-plan.json").is_file())
+            self.assertTrue((run_dir / "workflow-plan-binding.json").is_file())
+            binding = json.loads((run_dir / "workflow-plan-binding.json").read_text(encoding="utf-8"))
+            self.assertEqual(binding["kind"], "orro-workflow-plan-binding")
+            self.assertEqual(binding["workflow_plan_sha256"], binding_ref["sha256"])
+            self.assertEqual(binding["profile"], "code-change")
+            self.assertFalse(binding["boundary"]["raises_assurance"])
+            self.assertFalse(binding["boundary"]["approves_merge"])
+            self.assertFalse(binding["boundary"]["verifies_evidence"])
+            self.assertFalse(binding["boundary"]["executes_commands"])
+
+    def test_proofrun_workflow_plan_missing_or_invalid_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            missing = root / "missing-workflow-plan.json"
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "write two proof files",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--workflow-plan",
+                        str(missing),
+                    ]
+                )
+            self.assertEqual(code, 2)
+            self.assertIn("ERR_ORRO_WORKFLOW_PLAN_LOAD_FAILED", stderr.getvalue())
+            self.assertFalse((home / "runs").exists())
+
+            invalid = root / "invalid-workflow-plan.json"
+            invalid.write_text(json.dumps({"kind": "not-orro-workflow-plan"}) + "\n", encoding="utf-8")
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "write two proof files",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--workflow-plan",
+                        str(invalid),
+                    ]
+                )
+            self.assertEqual(code, 2)
+            self.assertIn("ERR_ORRO_WORKFLOW_PLAN_INVALID", stderr.getvalue())
+
+    def test_proofrun_workflow_plan_goal_mismatch_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            plan_path = self._flowplan_out(root, "different goal")
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "write two proof files",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--workflow-plan",
+                        str(plan_path),
+                    ]
+                )
+
+            self.assertEqual(code, 2)
+            self.assertIn("ERR_ORRO_WORKFLOW_PLAN_GOAL_MISMATCH", stderr.getvalue())
+            self.assertFalse((home / "runs").exists())
 
     def test_orro_module_scout_matches_witnessd_orro_public_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -487,6 +614,25 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(payload["orro_binding"]["kind"], "orro-proofcheck-binding")
             self.assertTrue(out.is_file())
 
+    def test_proofcheck_preserves_workflow_plan_binding_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_path = self._flowplan_out(root, "write two proof files")
+            home, run_dir, _payload = self._proofrun(root, workflow_plan=plan_path)
+            out = run_dir / "proofcheck-verdict.json"
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(["proofcheck", str(run_dir), "--home", str(home), "--out", str(out)])
+
+            self.assertEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["decision"], "pass")
+            self.assertIn("workflow_plan", payload)
+            self.assertEqual(payload["workflow_plan"]["path"], str(run_dir / "workflow-plan.json"))
+            verdict_payload = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(verdict_payload["workflow_plan"], payload["workflow_plan"])
+            self.assertFalse(verdict_payload["workflow_plan"]["boundary"]["raises_assurance"])
+
     def test_proofcheck_without_out_does_not_write_verdict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home, run_dir, _payload = self._proofrun(Path(tmp))
@@ -637,6 +783,38 @@ class OrroPublicFlowTests(unittest.TestCase):
                 json.loads(rerun_stdout.getvalue())["artifact_hashes"],
                 payload["artifact_hashes"],
             )
+
+    def test_handoff_includes_workflow_plan_binding_when_present(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_path = self._flowplan_out(root, "write two proof files")
+            home, run_dir, _payload = self._proofrun(root, workflow_plan=plan_path)
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main(
+                        [
+                            "proofcheck",
+                            str(run_dir),
+                            "--home",
+                            str(home),
+                            "--out",
+                            str(run_dir / "proofcheck-verdict.json"),
+                        ]
+                    ),
+                    0,
+                )
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(["orro", "handoff", str(run_dir), "--out", str(run_dir / "orro-handoff.json")])
+
+            self.assertEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertIn("workflow_plan", payload)
+            self.assertEqual(payload["workflow_plan"]["path"], str(run_dir / "workflow-plan.json"))
+            self.assertFalse(payload["workflow_plan"]["boundary"]["raises_assurance"])
+            written = json.loads((run_dir / "orro-handoff.json").read_text(encoding="utf-8"))
+            self.assertEqual(written["workflow_plan"], payload["workflow_plan"])
 
     def test_orro_handoff_requires_explicit_passing_proofcheck_verdict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

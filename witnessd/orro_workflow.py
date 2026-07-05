@@ -8,13 +8,22 @@ mutate worktrees.
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
+import json
+from pathlib import Path
 from typing import Any
 
 
 ERR_ORRO_WORKFLOW_PROFILE_UNKNOWN = "ERR_ORRO_WORKFLOW_PROFILE_UNKNOWN"
+ERR_ORRO_WORKFLOW_PLAN_LOAD_FAILED = "ERR_ORRO_WORKFLOW_PLAN_LOAD_FAILED"
+ERR_ORRO_WORKFLOW_PLAN_INVALID = "ERR_ORRO_WORKFLOW_PLAN_INVALID"
+ERR_ORRO_WORKFLOW_PLAN_GOAL_MISMATCH = "ERR_ORRO_WORKFLOW_PLAN_GOAL_MISMATCH"
+ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED = "ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED"
 
 WORKFLOW_PLAN_KIND = "orro-workflow-plan"
 WORKFLOW_PLAN_SCHEMA_VERSION = "0.1"
+WORKFLOW_PLAN_BINDING_KIND = "orro-workflow-plan-binding"
+WORKFLOW_PLAN_BINDING_SCHEMA_VERSION = "0.1"
 
 FORBIDDEN_ASSURANCE_SOURCES = [
     "skill text",
@@ -43,9 +52,9 @@ PROFILE_NAMES = (
 
 
 class OrroWorkflowError(ValueError):
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, message: str | None = None) -> None:
         self.code = code
-        super().__init__(code)
+        super().__init__(message or code)
 
 
 def compile_workflow_plan(*, goal: str, profile: str) -> dict[str, Any]:
@@ -63,6 +72,108 @@ def compile_workflow_plan(*, goal: str, profile: str) -> dict[str, Any]:
         "required_gates": list(spec["required_gates"]),
         "forbidden_assurance_sources": list(FORBIDDEN_ASSURANCE_SOURCES),
         "boundary": dict(BOUNDARY),
+    }
+
+
+def load_workflow_plan(path: Path, *, expected_goal: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_LOAD_FAILED, str(exc)) from exc
+    if not isinstance(payload, dict):
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan must be a JSON object")
+    plan = payload.get("workflow_plan") if "workflow_plan" in payload else payload
+    if not isinstance(plan, dict):
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow_plan must be a JSON object")
+    validate_workflow_plan(plan)
+    if plan.get("goal") != expected_goal:
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_GOAL_MISMATCH, "workflow plan goal does not match proofrun goal")
+    return deepcopy(plan)
+
+
+def validate_workflow_plan(plan: dict[str, Any]) -> None:
+    if plan.get("kind") != WORKFLOW_PLAN_KIND:
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan kind is invalid")
+    if plan.get("schema_version") != WORKFLOW_PLAN_SCHEMA_VERSION:
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan schema_version is invalid")
+    if plan.get("profile") not in PROFILE_NAMES:
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan profile is invalid")
+    boundary = plan.get("boundary")
+    if not isinstance(boundary, dict) or boundary.get("orro_is_third_engine") is not False:
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan boundary is invalid")
+    if boundary.get("depone_verifies") is not True or boundary.get("witnessd_executes") is not True:
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan boundary is invalid")
+    roles = plan.get("roles")
+    if not isinstance(roles, list):
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan roles must be a list")
+    if plan.get("raises_assurance") is not None:
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan must not claim assurance")
+    for role in roles:
+        if not isinstance(role, dict) or role.get("raises_assurance") is not False:
+            raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan role must not claim assurance")
+
+
+def write_workflow_plan_binding(
+    *,
+    plan: dict[str, Any],
+    source_path: Path,
+    run_dir: Path,
+) -> dict[str, Any]:
+    plan_path = run_dir / "workflow-plan.json"
+    binding_path = run_dir / "workflow-plan-binding.json"
+    plan_sha256 = _canonical_hash(plan)
+    binding = {
+        "kind": WORKFLOW_PLAN_BINDING_KIND,
+        "schema_version": WORKFLOW_PLAN_BINDING_SCHEMA_VERSION,
+        "workflow_plan_path": "workflow-plan.json",
+        "workflow_plan_sha256": plan_sha256,
+        "source_path": str(source_path),
+        "goal": plan["goal"],
+        "profile": plan["profile"],
+        "boundary": _binding_boundary(),
+    }
+    try:
+        plan_path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        binding_path.write_text(json.dumps(binding, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError as exc:
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED, str(exc)) from exc
+    ref = workflow_plan_binding_ref(run_dir)
+    if ref is None:
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED, "workflow plan binding was not readable")
+    return ref
+
+
+def workflow_plan_binding_ref(run_dir: Path) -> dict[str, Any] | None:
+    binding_path = run_dir / "workflow-plan-binding.json"
+    if not binding_path.is_file():
+        return None
+    try:
+        binding = json.loads(binding_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(binding, dict):
+        return None
+    return {
+        "path": str(run_dir / "workflow-plan.json"),
+        "binding_path": str(binding_path),
+        "sha256": binding.get("workflow_plan_sha256"),
+        "profile": binding.get("profile"),
+        "goal": binding.get("goal"),
+        "boundary": binding.get("boundary", _binding_boundary()),
+    }
+
+
+def _canonical_hash(payload: dict[str, Any]) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _binding_boundary() -> dict[str, bool]:
+    return {
+        "approves_merge": False,
+        "raises_assurance": False,
+        "executes_commands": False,
+        "verifies_evidence": False,
     }
 
 
@@ -112,6 +223,7 @@ def _profile_spec(profile: str) -> dict[str, Any]:
             ],
             "required_gates": [
                 "review-only plan does not claim execution happened",
+                "review-only handoff is intent; formal ORRO handoff still requires proofcheck",
                 "handoff prose does not approve merge or raise assurance",
             ],
         },

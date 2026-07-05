@@ -113,6 +113,11 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     )
     from witnessd.eventlog import EventLog
     from witnessd.fanin import run_team
+    from witnessd.orro_workflow import (
+        OrroWorkflowError,
+        load_workflow_plan,
+        write_workflow_plan_binding,
+    )
     from witnessd.planner import dispatch, seal_plan
     from witnessd.signing import gen_operator_keypair
 
@@ -128,11 +133,33 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
         print(exc.code, file=sys.stderr)
         return 2
 
+    workflow_plan: dict[str, object] | None = None
+    workflow_plan_source: Path | None = None
+    if getattr(args, "workflow_plan", None):
+        workflow_plan_source = Path(args.workflow_plan).resolve(strict=False)
+        try:
+            workflow_plan = load_workflow_plan(workflow_plan_source, expected_goal=args.goal)
+        except OrroWorkflowError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 2
+
     if args.run_dir:
         out_dir = Path(args.run_dir).resolve(strict=False)
     else:
         out_dir = home / "runs" / f"run-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{time.monotonic_ns()}"
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    workflow_plan_ref: dict[str, object] | None = None
+    if workflow_plan is not None and workflow_plan_source is not None:
+        try:
+            workflow_plan_ref = write_workflow_plan_binding(
+                plan=workflow_plan,
+                source_path=workflow_plan_source,
+                run_dir=out_dir,
+            )
+        except OrroWorkflowError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 1
 
     packets = _default_w18_packets(args.goal)
     sealed = seal_plan(packets, goal=args.goal)
@@ -179,6 +206,8 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
         "team_ledger": str(out_dir / "team-ledger.json"),
         "team_ledger_verdict": str(verdict_path),
     }
+    if workflow_plan_ref is not None:
+        payload["workflow_plan"] = workflow_plan_ref
     print(json.dumps(payload, sort_keys=True))
     return 0 if verdict["decision"] == "pass" else 1
 
@@ -619,6 +648,8 @@ def _proofcheck_binding(
 
 
 def _cmd_proofcheck(args: argparse.Namespace) -> int:
+    from witnessd.orro_workflow import workflow_plan_binding_ref
+
     evidence_arg = args.evidence_dir_option or args.evidence_dir
     if not evidence_arg:
         _emit_orro_error(
@@ -648,6 +679,7 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
     binding_error: str | None = None
     if code == 0 and payload.get("decision") == "pass":
         binding = _proofcheck_binding(evidence_dir, out_path=out_path)
+    workflow_plan_ref = workflow_plan_binding_ref(evidence_dir)
     if code == 0 and payload.get("decision") == "pass" and out_path is not None:
         try:
             verdict_payload = json.loads(out_path.read_text(encoding="utf-8"))
@@ -656,6 +688,8 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
             binding_error = str(exc)
         if isinstance(verdict_payload, dict):
             verdict_payload["orro_binding"] = binding
+            if workflow_plan_ref is not None:
+                verdict_payload["workflow_plan"] = workflow_plan_ref
             try:
                 out_path.write_text(
                     json.dumps(verdict_payload, indent=2, sort_keys=True) + "\n",
@@ -683,6 +717,7 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         "decision": payload.get("decision", "blocked"),
         "evidence_dir": str(evidence_dir),
         **({"orro_binding": binding} if binding is not None and binding_error is None else {}),
+        **({"workflow_plan": workflow_plan_ref} if workflow_plan_ref is not None else {}),
         "error_count": payload.get("error_count", 1 if payload.get("error") else 0),
         **({"out": payload["out"]} if payload.get("out") else {}),
         **({"errors": payload["errors"]} if payload.get("errors") else {}),
@@ -701,6 +736,8 @@ def _hash_file(path: Path) -> str:
 
 
 def _cmd_handoff(args: argparse.Namespace) -> int:
+    from witnessd.orro_workflow import workflow_plan_binding_ref
+
     evidence_arg = args.evidence_dir_option or args.evidence_dir
     if not evidence_arg:
         _emit_orro_error(
@@ -768,6 +805,7 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         return 1
 
     artifact_hashes = _collect_orro_artifact_hashes(evidence_dir, out_path=out_path)
+    workflow_plan_ref = workflow_plan_binding_ref(evidence_dir)
     decision_refs = []
     for name in ("proofcheck-verdict.json", "team-ledger-verdict.json"):
         path = evidence_dir / name
@@ -790,6 +828,7 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         "evidence_dir": str(evidence_dir),
         "artifact_hashes": artifact_hashes,
         "decision_refs": decision_refs,
+        **({"workflow_plan": workflow_plan_ref} if workflow_plan_ref is not None else {}),
         "boundary": {
             "approves_merge": False,
             "raises_assurance": False,
@@ -2159,6 +2198,8 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
     run.add_argument("--repo", default=None)
     run.add_argument("--home", default=None)
     run.add_argument("--run-dir", default=None)
+    run.add_argument("--workflow-plan", default=None)
+    run.add_argument("--json", action="store_true")
     run.add_argument("--max-parallel", type=int, default=None)
     run.add_argument("--fail-fast", action="store_true")
     run.add_argument(
