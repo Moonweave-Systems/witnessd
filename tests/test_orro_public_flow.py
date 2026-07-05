@@ -110,12 +110,21 @@ class OrroPublicFlowTests(unittest.TestCase):
         stdout = io.StringIO()
         stderr = io.StringIO()
         command = ["orro", "proofrun"] if orro_alias else ["proofrun"]
-        args = [*command, "write two proof files", "--repo", str(repo), "--home", str(home)]
+        args = [
+            *command,
+            "write two proof files",
+            "--repo",
+            str(repo),
+            "--home",
+            str(home),
+            "--max-parallel",
+            "1",
+        ]
         if workflow_plan is not None:
             args.extend(["--workflow-plan", str(workflow_plan)])
         with redirect_stdout(stdout), redirect_stderr(stderr):
             code = main(args)
-        self.assertEqual(code, 0, stderr.getvalue())
+        self.assertEqual(code, 0, f"stdout={stdout.getvalue()}\nstderr={stderr.getvalue()}")
         payload = json.loads(stdout.getvalue())
         return home, Path(payload["run_dir"]), payload
 
