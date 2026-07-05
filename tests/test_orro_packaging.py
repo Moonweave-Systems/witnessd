@@ -110,6 +110,28 @@ class OrroPackagingTests(unittest.TestCase):
             self.assertEqual(once_payload["command"], [])
             self.assertFalse(once_payload["boundary"]["launches_workers"])
 
+            missing_auto_until_complete = subprocess.run(
+                [
+                    str(orro),
+                    "auto",
+                    "--until-complete",
+                    str(tmp_path / "missing-run"),
+                    "--max-steps",
+                    "2",
+                    "--json",
+                ],
+                cwd=tmp_path,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(missing_auto_until_complete.returncode, 2)
+            session_payload = json.loads(missing_auto_until_complete.stdout)
+            self.assertEqual(session_payload["kind"], "orro-auto-session")
+            self.assertEqual(session_payload["decision_initial"], "invalid-run-dir")
+            self.assertEqual(session_payload["steps"], [])
+            self.assertFalse(session_payload["boundary"]["launches_workers"])
+
             root = tmp_path / "repo"
             root.mkdir()
             flowplan = subprocess.run(

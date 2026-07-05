@@ -1,0 +1,46 @@
+# ORRO Auto Until-Complete v0
+
+`orro auto --until-complete` is bounded post-run automation over the existing
+`orro next` continuation gate.
+
+```bash
+orro auto --until-complete .witnessd/runs/<run-dir> --home .witnessd --max-steps 2 --json
+python3 -m orro auto --until-complete .witnessd/runs/<run-dir> --home .witnessd --max-steps 2 --json
+python3 -m witnessd orro auto --until-complete .witnessd/runs/<run-dir> --home .witnessd --max-steps 2 --json
+```
+
+It requires `--max-steps`. In v0, accepted values are `1` and `2`; unbounded
+loops are not supported.
+
+Allowed steps:
+
+- `needs-proofcheck`: run proofcheck once and write `proofcheck-verdict.json`.
+- `ready-for-handoff`: run handoff once and write `orro-handoff.json`.
+- `complete`: stop successfully without rewriting proofcheck or handoff.
+
+It re-checks continuation state before every step and derives commands from
+observed run-directory state, not from stale auto-plan or receipt files. It
+stops on `complete`, `blocked`, `evidence-pending`, `invalid-run-dir`, or
+`max-steps` reached.
+
+It never launches proofrun or workers. It does not call live models, call MCP,
+call live APIs, execute recipes, repair artifacts, retry failed lanes, resume
+lanes, approve merge, or raise assurance. It may mutate only the explicit
+proofcheck or handoff output files caused by allowed steps, plus an explicit
+`--out` auto-session path when requested.
+
+When it runs proofcheck, verification is delegated to Depone. ORRO does not
+verify evidence itself.
+
+The `orro-auto-session` is orchestration metadata. It records the initial
+decision, final decision, bounded steps, commands, exit codes, and files written.
+It is not proof of task success, not verifier truth, not merge approval, and not
+assurance.
+
+Boundary:
+
+```text
+Depone verifies; witnessd executes; ORRO exposes the workflow.
+```
+
+Broader autonomous `orro auto` and `orro ultra` remain future work.

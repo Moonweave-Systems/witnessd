@@ -48,6 +48,7 @@ python3 -m orro proofcheck .witnessd/runs/<run-dir> \
 python3 -m orro next .witnessd/runs/<run-dir> --home .witnessd --json
 python3 -m orro auto --dry-run .witnessd/runs/<run-dir> --home .witnessd --json
 python3 -m orro auto --once .witnessd/runs/<run-dir> --home .witnessd --json
+python3 -m orro auto --until-complete .witnessd/runs/<run-dir> --home .witnessd --max-steps 2 --json
 python3 -m orro handoff .witnessd/runs/<run-dir> \
   --out .witnessd/runs/<run-dir>/orro-handoff.json
 ```
@@ -78,8 +79,8 @@ deterministic `orro-workflow-plan` intent artifact for `code-change`,
 Workflow plans map goals to roles, phases, engine calls, gates, and forbidden
 assurance sources. They are not evidence. Roles do not create assurance by
 existing. `proofrun` is the first execution phase, `proofcheck` is the verifier
-phase, `handoff` is review packaging only, and multi-step autonomous
-`orro auto` remains future work.
+phase, `handoff` is review packaging only, and broader autonomous `orro auto`
+and `orro ultra` remain future work.
 
 `proofrun --workflow-plan <path>` gates execution against workflow-plan intent
 before any run directory is created. The plan must allow `proofrun` through a
@@ -112,15 +113,21 @@ It consumes `orro next` state and emits an `orro-auto-plan` with the exact next
 command it would run. It does not execute that command, call Depone, run
 proofcheck, write handoff, launch workers, mutate worktrees, approve merge,
 verify evidence, or raise assurance. The auto-plan is recommendation context,
-not proof. Multi-step autonomous `orro auto` remains deferred behind the dry-run
-and once contracts.
+not proof. Broader autonomous `orro auto` remains deferred behind the dry-run,
+once, and until-complete contracts.
 
 `orro auto --once <run-dir> --home <home> --json` is the first limited execution
 surface. It re-checks continuation state and executes at most one allowed step:
 proofcheck, handoff, or complete no-op. It never launches proofrun or workers,
 calls live models or MCP, repairs artifacts, retries or resumes lanes, approves
 merge, or raises assurance. The auto receipt is orchestration metadata, not
-proof or verifier truth. Multi-step autonomous `orro auto` remains deferred.
+proof or verifier truth.
+
+`orro auto --until-complete <run-dir> --home <home> --max-steps 2 --json` is the
+bounded post-run loop. It may run proofcheck and handoff, re-checking
+continuation state before every step, but never launches proofrun or workers.
+The auto session is orchestration metadata, not proof or verifier truth. Broader
+autonomous `orro auto` remains deferred.
 
 ## Engine Boundary Contract
 
@@ -150,6 +157,7 @@ Allowed ORRO calls into witnessd are runtime and wrapper calls:
 - `witnessd orro next`
 - `witnessd orro auto --dry-run`
 - `witnessd orro auto --once`
+- `witnessd orro auto --until-complete`
 - existing lower-level `witnessd run`, `witnessd verify`, `witnessd proofcheck`,
   and `witnessd team *` commands used as implementation surfaces
 

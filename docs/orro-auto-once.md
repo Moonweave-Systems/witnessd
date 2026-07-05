@@ -37,4 +37,14 @@ Boundary:
 Depone verifies; witnessd executes; ORRO exposes the workflow.
 ```
 
-Multi-step autonomous `orro auto` remains future work.
+Broader autonomous `orro auto` and `orro ultra` remain future work.
+
+The next bounded post-run mode is:
+
+```bash
+orro auto --until-complete .witnessd/runs/<run-dir> --home .witnessd --max-steps 2 --json
+```
+
+It loops over the same allowed post-run steps, proofcheck and handoff, with a
+required v0 `--max-steps` bound of 1 or 2. It never launches proofrun or
+workers. Its `orro-auto-session` is orchestration metadata, not proof.

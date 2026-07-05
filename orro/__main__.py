@@ -22,14 +22,15 @@ public commands:
   proofcheck   offline evidence verification delegated to Depone
   handoff      maintainer review package gated by proofcheck-verdict.json
   next         non-executing continuation gate over persisted run artifacts
-  auto         dry-run planner or one-step proofcheck/handoff executor
+  auto         dry-run, one-step, or bounded post-run automation
   doctor       ORRO readiness check; does not verify evidence
   engine-lock  write/check distribution metadata for pinned engine commits
 
 boundary:
   Depone verifies; witnessd executes; ORRO exposes the workflow.
   next reads status only; auto --dry-run recommends commands only; auto --once
-  executes at most one proofcheck or handoff step. None is proof or assurance.
+  executes at most one proofcheck or handoff step; auto --until-complete loops
+  over those post-run steps with --max-steps. None is proof or assurance.
 
 options:
   -h, --help   show this help message and exit

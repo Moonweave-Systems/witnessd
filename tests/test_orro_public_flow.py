@@ -188,6 +188,14 @@ class OrroPublicFlowTests(unittest.TestCase):
             code = main(["orro", "auto", "--once", str(run_dir), "--home", str(home), "--json", *extra])
         return code, json.loads(stdout.getvalue())
 
+    def _orro_auto_until_complete(self, run_dir: Path, home: Path, *extra: str) -> tuple[int, dict]:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(
+                ["orro", "auto", "--until-complete", str(run_dir), "--home", str(home), "--json", *extra]
+            )
+        return code, json.loads(stdout.getvalue())
+
     def test_proofrun_alias_reuses_run_surface_without_final_trust_claim(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _home, run_dir, payload = self._proofrun(Path(tmp))
@@ -736,6 +744,233 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(payload_2["kind"], "orro-auto-receipt")
             self.assertEqual(payload_2["executed_phase"], "proofcheck")
             self.assertTrue((run_dir_2 / "proofcheck-verdict.json").is_file())
+
+    def test_orro_auto_until_complete_after_proofrun_runs_proofcheck_then_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            existing_runs = set((home / "runs").iterdir())
+
+            code, session = self._orro_auto_until_complete(run_dir, home, "--max-steps", "2")
+
+            self.assertEqual(code, 0)
+            self.assertEqual(session["kind"], "orro-auto-session")
+            self.assertEqual(session["schema_version"], "0.1")
+            self.assertEqual(session["mode"], "until-complete")
+            self.assertEqual(session["max_steps"], 2)
+            self.assertEqual(session["steps_executed"], 2)
+            self.assertEqual(session["decision_initial"], "needs-proofcheck")
+            self.assertEqual(session["decision_final"], "complete")
+            self.assertTrue(session["complete"])
+            self.assertFalse(session["blocked"])
+            self.assertEqual([step["executed_phase"] for step in session["steps"]], ["proofcheck", "handoff"])
+            self.assertEqual(session["steps"][0]["decision_after"], "ready-for-handoff")
+            self.assertEqual(session["steps"][1]["decision_after"], "complete")
+            self.assertTrue((run_dir / "proofcheck-verdict.json").is_file())
+            self.assertTrue((run_dir / "orro-handoff.json").is_file())
+            self.assertEqual(set((home / "runs").iterdir()), existing_runs)
+            self.assertFalse(session["boundary"]["launches_workers"])
+            self.assertFalse(session["boundary"]["executes_proofrun"])
+            self.assertFalse(session["boundary"]["verifies_evidence_itself"])
+            self.assertFalse(session["boundary"]["raises_assurance"])
+
+    def test_orro_auto_until_complete_max_steps_one_stops_after_proofcheck(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+
+            code, session = self._orro_auto_until_complete(run_dir, home, "--max-steps", "1")
+
+            self.assertEqual(code, 1)
+            self.assertEqual(session["kind"], "orro-auto-session")
+            self.assertEqual(session["steps_executed"], 1)
+            self.assertEqual(session["decision_initial"], "needs-proofcheck")
+            self.assertEqual(session["decision_final"], "ready-for-handoff")
+            self.assertFalse(session["complete"])
+            self.assertTrue(session["blocked"])
+            self.assertEqual(session["error"]["code"], "ERR_ORRO_AUTO_MAX_STEPS_REACHED")
+            self.assertEqual([step["executed_phase"] for step in session["steps"]], ["proofcheck"])
+            self.assertTrue((run_dir / "proofcheck-verdict.json").is_file())
+            self.assertFalse((run_dir / "orro-handoff.json").exists())
+
+    def test_orro_auto_until_complete_after_proofcheck_runs_handoff_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            self._proofcheck_out(home, run_dir)
+
+            code, session = self._orro_auto_until_complete(run_dir, home, "--max-steps", "2")
+
+            self.assertEqual(code, 0)
+            self.assertEqual(session["decision_initial"], "ready-for-handoff")
+            self.assertEqual(session["decision_final"], "complete")
+            self.assertEqual(session["steps_executed"], 1)
+            self.assertEqual([step["executed_phase"] for step in session["steps"]], ["handoff"])
+            self.assertTrue((run_dir / "orro-handoff.json").is_file())
+
+    def test_orro_auto_until_complete_after_complete_noops_without_rewriting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            self._proofcheck_out(home, run_dir)
+            self._handoff_out(run_dir)
+            proofcheck_before = (run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8")
+            handoff_before = (run_dir / "orro-handoff.json").read_text(encoding="utf-8")
+
+            code, session = self._orro_auto_until_complete(run_dir, home, "--max-steps", "2")
+
+            self.assertEqual(code, 0)
+            self.assertEqual(session["decision_initial"], "complete")
+            self.assertEqual(session["decision_final"], "complete")
+            self.assertEqual(session["steps_executed"], 0)
+            self.assertTrue(session["complete"])
+            self.assertEqual(session["steps"], [])
+            self.assertEqual((run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8"), proofcheck_before)
+            self.assertEqual((run_dir / "orro-handoff.json").read_text(encoding="utf-8"), handoff_before)
+            self.assertFalse((run_dir / "orro-auto-session.json").exists())
+
+    def test_orro_auto_until_complete_blocks_without_proofrun_for_blocked_scout_and_invalid_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            missing = root / "missing-run"
+
+            missing_code, missing_session = self._orro_auto_until_complete(missing, home, "--max-steps", "2")
+            self.assertEqual(missing_code, 2)
+            self.assertEqual(missing_session["decision_initial"], "invalid-run-dir")
+            self.assertEqual(missing_session["steps"], [])
+
+            scout_stdout = io.StringIO()
+            with redirect_stdout(scout_stdout):
+                self.assertEqual(main(["orro", "scout", "inspect repo", "--repo", str(repo)]), 0)
+            scout_dir = Path(json.loads(scout_stdout.getvalue())["context_pack"]).parent
+
+            scout_code, scout_session = self._orro_auto_until_complete(scout_dir, home, "--max-steps", "2")
+            self.assertEqual(scout_code, 1)
+            self.assertFalse(scout_session["complete"])
+            self.assertTrue(scout_session["blocked"])
+            self.assertEqual(scout_session["steps"], [])
+            self.assertFalse((scout_dir / "proofcheck-verdict.json").exists())
+            self.assertFalse((scout_dir / "orro-handoff.json").exists())
+
+    def test_orro_auto_until_complete_blocked_verdict_does_not_run_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            self._proofcheck_out(home, run_dir)
+            verdict_path = run_dir / "proofcheck-verdict.json"
+            verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+            verdict["decision"] = "fail"
+            verdict_path.write_text(json.dumps(verdict), encoding="utf-8")
+
+            code, session = self._orro_auto_until_complete(run_dir, home, "--max-steps", "2")
+
+            self.assertEqual(code, 1)
+            self.assertEqual(session["decision_initial"], "blocked")
+            self.assertEqual(session["decision_final"], "blocked")
+            self.assertFalse(session["complete"])
+            self.assertTrue(session["blocked"])
+            self.assertEqual(session["steps"], [])
+            self.assertFalse((run_dir / "orro-handoff.json").exists())
+
+    def test_orro_auto_until_complete_mode_max_steps_and_out_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            out = run_dir / "orro-auto-session.json"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(["orro", "auto", "--until-complete", str(run_dir), "--home", str(home), "--json"])
+            self.assertEqual(code, 2)
+            self.assertEqual(json.loads(stdout.getvalue())["error"]["code"], "ERR_ORRO_AUTO_MAX_STEPS_REQUIRED")
+
+            for max_steps in ("0", "3"):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    code = main(
+                        [
+                            "orro",
+                            "auto",
+                            "--until-complete",
+                            str(run_dir),
+                            "--home",
+                            str(home),
+                            "--max-steps",
+                            max_steps,
+                            "--json",
+                        ]
+                    )
+                self.assertEqual(code, 2)
+                self.assertEqual(json.loads(stdout.getvalue())["error"]["code"], "ERR_ORRO_AUTO_MAX_STEPS_INVALID")
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "auto",
+                        "--dry-run",
+                        "--until-complete",
+                        str(run_dir),
+                        "--home",
+                        str(home),
+                        "--max-steps",
+                        "2",
+                        "--json",
+                    ]
+                )
+            self.assertEqual(code, 2)
+            self.assertEqual(json.loads(stdout.getvalue())["error"]["code"], "ERR_ORRO_AUTO_MODE_CONFLICT")
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "auto",
+                        "--once",
+                        "--until-complete",
+                        str(run_dir),
+                        "--home",
+                        str(home),
+                        "--max-steps",
+                        "2",
+                        "--json",
+                    ]
+                )
+            self.assertEqual(code, 2)
+            self.assertEqual(json.loads(stdout.getvalue())["error"]["code"], "ERR_ORRO_AUTO_MODE_CONFLICT")
+
+            code, session = self._orro_auto_until_complete(run_dir, home, "--max-steps", "2", "--out", str(out))
+            self.assertEqual(code, 0)
+            self.assertTrue(out.is_file())
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8")), session)
+
+    def test_orro_auto_until_complete_module_and_witnessd_orro_alias_match(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+
+            orro_auto = self._orro_module_run(
+                ["auto", "--until-complete", str(run_dir), "--home", str(home), "--max-steps", "2", "--json"]
+            )
+
+            self.assertEqual(orro_auto.returncode, 0, orro_auto.stderr)
+            payload = json.loads(orro_auto.stdout)
+            self.assertEqual(payload["kind"], "orro-auto-session")
+            self.assertEqual(payload["decision_final"], "complete")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir_2, _payload = self._proofrun(root)
+            witnessd_orro_auto = self._module_run(
+                ["orro", "auto", "--until-complete", str(run_dir_2), "--home", str(home), "--max-steps", "2", "--json"]
+            )
+            self.assertEqual(witnessd_orro_auto.returncode, 0, witnessd_orro_auto.stderr)
+            payload_2 = json.loads(witnessd_orro_auto.stdout)
+            self.assertEqual(payload_2["kind"], "orro-auto-session")
+            self.assertEqual(payload_2["decision_final"], "complete")
 
     def test_orro_next_module_and_witnessd_orro_alias_match(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

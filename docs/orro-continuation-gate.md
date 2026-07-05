@@ -62,3 +62,8 @@ evidence, or raise assurance.
 It re-checks state and executes at most one allowed step: proofcheck, handoff,
 or complete no-op. It never launches proofrun or workers, repairs artifacts,
 retries lanes, calls live models or MCP, approves merge, or raises assurance.
+
+`orro auto --until-complete` is the bounded post-run loop over the same
+continuation decision. It requires `--max-steps`; v0 accepts only 1 or 2. It
+re-checks state before every step and may run proofcheck then handoff, but never
+proofrun or workers. Its `orro-auto-session` is orchestration metadata only.

@@ -50,7 +50,7 @@ Safety profiles:
 - `verification-only`: execution not allowed.
 - `release-readiness`: execution not allowed by default.
 
-Multi-step autonomous `orro auto` remains future work.
+Broader autonomous `orro auto` and `orro ultra` remain future work.
 
 Continuation:
 
@@ -73,3 +73,7 @@ lanes, mutate worktrees, or raise assurance.
 step after re-checking continuation state, but v0 is limited to proofcheck,
 handoff, or complete no-op. It never launches proofrun or workers and never
 executes role-lane plans.
+
+`orro auto --until-complete <run-dir> --home .witnessd --max-steps 2 --json` may
+loop over those same post-run steps with a strict v0 bound. It never launches
+proofrun or workers and never executes role-lane plans.
