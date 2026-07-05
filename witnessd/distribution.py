@@ -19,9 +19,14 @@ ERR_WITNESSD_DEPONE_PROVISION_FAILED = "ERR_WITNESSD_DEPONE_PROVISION_FAILED"
 ERR_WITNESSD_DEPONE_VERIFY_FAILED = "ERR_WITNESSD_DEPONE_VERIFY_FAILED"
 ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISSING = "ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISSING"
 ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISMATCH = "ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISMATCH"
+ERR_ORRO_ENGINE_LOCK_LOAD_FAILED = "ERR_ORRO_ENGINE_LOCK_LOAD_FAILED"
+ERR_ORRO_ENGINE_LOCK_INVALID = "ERR_ORRO_ENGINE_LOCK_INVALID"
+ERR_ORRO_ENGINE_LOCK_MISMATCH = "ERR_ORRO_ENGINE_LOCK_MISMATCH"
 
 PROVISION_KIND = "witnessd-depone-provision"
 PROVISION_SCHEMA_VERSION = "0.1"
+ORRO_ENGINE_LOCK_KIND = "orro-engine-lock"
+ORRO_ENGINE_LOCK_SCHEMA_VERSION = "1.0"
 DEFAULT_DEPONE_REPOSITORY = "https://github.com/Moonweave-Systems/Depone.git"
 DEFAULT_DEPONE_REF = "main"
 
@@ -158,8 +163,8 @@ def build_orro_engine_lock(*, home: Path, witnessd_root: Path) -> dict[str, Any]
     depone = provision["depone"]
     depone_root = Path(str(depone["root"])).resolve(strict=False)
     payload: dict[str, Any] = {
-        "kind": "orro-engine-lock",
-        "schema_version": "1.0",
+        "kind": ORRO_ENGINE_LOCK_KIND,
+        "schema_version": ORRO_ENGINE_LOCK_SCHEMA_VERSION,
         "witnessd": {
             "repository": "Moonweave-Systems/witnessd",
             "commit": _git_commit(witnessd_root.resolve(strict=False)),
@@ -182,6 +187,82 @@ def build_orro_engine_lock(*, home: Path, witnessd_root: Path) -> dict[str, Any]
     if depone_ref:
         payload["depone"]["ref_name"] = depone_ref
     return payload
+
+
+def check_orro_engine_lock(
+    *, home: Path, witnessd_root: Path, lock_path: Path
+) -> dict[str, Any]:
+    expected = _load_orro_engine_lock(lock_path)
+    current = build_orro_engine_lock(home=home, witnessd_root=witnessd_root)
+    mismatches = []
+    for field in _engine_lock_comparison_fields():
+        expected_value = _get_nested(expected, field)
+        current_value = _get_nested(current, field)
+        if expected_value != current_value:
+            mismatches.append(
+                {
+                    "field": field,
+                    "expected": expected_value,
+                    "current": current_value,
+                }
+            )
+    locked = not mismatches
+    payload: dict[str, Any] = {
+        "command": "orro engine-lock check",
+        "kind": "orro-engine-lock-check",
+        "schema_version": "1.0",
+        "lock": str(lock_path),
+        "locked": locked,
+        "mismatches": mismatches,
+        "boundary": dict(current["boundary"]),
+    }
+    if not locked:
+        payload["error"] = {
+            "code": ERR_ORRO_ENGINE_LOCK_MISMATCH,
+            "message": "ORRO engine lock does not match the current environment",
+        }
+    return payload
+
+
+def _load_orro_engine_lock(lock_path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ProvisionError(ERR_ORRO_ENGINE_LOCK_LOAD_FAILED) from exc
+    if not isinstance(payload, dict):
+        raise ProvisionError(ERR_ORRO_ENGINE_LOCK_INVALID)
+    if payload.get("kind") != ORRO_ENGINE_LOCK_KIND:
+        raise ProvisionError(ERR_ORRO_ENGINE_LOCK_INVALID)
+    if payload.get("schema_version") != ORRO_ENGINE_LOCK_SCHEMA_VERSION:
+        raise ProvisionError(ERR_ORRO_ENGINE_LOCK_INVALID)
+    for section in ("witnessd", "depone", "boundary"):
+        if not isinstance(payload.get(section), dict):
+            raise ProvisionError(ERR_ORRO_ENGINE_LOCK_INVALID)
+    return payload
+
+
+def _engine_lock_comparison_fields() -> tuple[str, ...]:
+    return (
+        "kind",
+        "schema_version",
+        "witnessd.repository",
+        "witnessd.commit",
+        "depone.repository",
+        "depone.commit",
+        "boundary.approves_merge",
+        "boundary.raises_assurance",
+        "boundary.executes_commands",
+        "boundary.verifies_evidence",
+    )
+
+
+def _get_nested(payload: dict[str, Any], field: str) -> Any:
+    value: Any = payload
+    for part in field.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(part)
+    return value
 
 
 def _resolve_depone_root(config: InitConfig) -> tuple[Path, str, bool]:

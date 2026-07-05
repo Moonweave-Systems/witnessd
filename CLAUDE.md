@@ -53,9 +53,12 @@ engine.
 witnessd engine-internal commands.
 
 `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
-writes distribution metadata for the pinned witnessd and Depone commits. The
-engine lock is not proof, does not verify evidence, does not approve merge, and
-does not raise assurance.
+writes distribution metadata for the pinned witnessd and Depone commits.
+`python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json`
+checks the current local environment for drift against that metadata. A matching
+lock is readiness alignment only. A mismatch is readiness-blocked, not
+verifier-refuted. The engine lock is not proof, does not verify evidence, does
+not approve merge, and does not raise assurance.
 
 A standalone ORRO repo remains deferred until packaging, marketplace manifests,
 host-specific distribution, or version-lock distribution needs justify it.

@@ -97,10 +97,14 @@ An engine lock records the pinned engine commits for distribution tooling:
 
 ```bash
 python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
+python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 ```
 
-`orro-engine-lock.json` is distribution metadata only. It is not proof, evidence
-verification, merge approval, or an assurance increase.
+`orro-engine-lock.json` is distribution metadata only. `--out` writes the local
+witnessd/Depone pin metadata; `--check` compares the current local environment
+against that metadata to detect distribution drift. A matching lock means
+readiness alignment only. It is not proof, evidence verification, merge approval,
+or an assurance increase. A mismatch is readiness-blocked, not verifier-refuted.
 
 Create a separate `ORRO` repository only when distribution needs justify it:
 marketplace manifests, host-specific plugin packaging, version locking, examples,

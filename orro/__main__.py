@@ -21,7 +21,7 @@ public commands:
   proofcheck   offline evidence verification delegated to Depone
   handoff      maintainer review package gated by proofcheck-verdict.json
   doctor       ORRO readiness check; does not verify evidence
-  engine-lock  write distribution metadata for pinned engine commits
+  engine-lock  write/check distribution metadata for pinned engine commits
 
 boundary:
   Depone verifies; witnessd executes; ORRO exposes the workflow.

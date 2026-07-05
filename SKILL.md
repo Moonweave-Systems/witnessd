@@ -45,8 +45,12 @@ console script points at the same module entrypoint and must remain an alias
 layer, not a separate parser or engine.
 
 `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
-writes distribution metadata for the pinned witnessd and Depone commits. The lock
-is not proof, evidence verification, merge approval, or assurance.
+writes distribution metadata for the pinned witnessd and Depone commits.
+`python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json`
+checks the current local environment for drift against that metadata. A matching
+lock is readiness alignment only. A mismatch is readiness-blocked, not
+verifier-refuted. The lock is not proof, evidence verification, merge approval,
+or assurance.
 
 A future standalone `ORRO` repo may package marketplace manifests, host-specific
 plugin files, examples, product docs, and engine version locks. It must remain a
