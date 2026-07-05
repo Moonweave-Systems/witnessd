@@ -49,6 +49,8 @@ map and legacy policy.
 repo. It delegates to the existing `witnessd orro ...` surfaces and does not add
 execution or verifier logic. It is not a standalone ORRO repo and not a third
 engine.
+`python3 -m orro --help` is ORRO-facing and lists only public ORRO commands, not
+witnessd engine-internal commands.
 
 `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
 writes distribution metadata for the pinned witnessd and Depone commits. The
@@ -57,7 +59,8 @@ does not raise assurance.
 
 A standalone ORRO repo remains deferred until packaging, marketplace manifests,
 host-specific distribution, or version-lock distribution needs justify it.
-Console-script packaging for a bare `orro` executable is future packaging work.
+Console-script packaging for a bare `orro` executable is deferred because this
+checkout has no packaging metadata that can safely install and test it yet.
 
 ## Runtime dependency rule
 

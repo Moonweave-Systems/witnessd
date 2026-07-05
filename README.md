@@ -224,9 +224,14 @@ non-pass `proofcheck-verdict.json`, or one copied from another evidence snapshot
 blocks handoff and does not write `orro-handoff.json`.
 
 `python3 -m orro <subcommand>` is the product-name entrypoint hosted in this repo.
-It delegates to the same ORRO parser used by `python3 -m witnessd orro ...`.
-Console-script packaging for a bare `orro` executable is deferred until the
-packaging / marketplace manifest wave.
+Its help shows only the ORRO public commands: `scout`, `flowplan`, `proofrun`,
+`proofcheck`, `handoff`, `doctor`, and `engine-lock`. Subcommands delegate to the
+same ORRO parser used by `python3 -m witnessd orro ...`.
+
+This checkout does not yet define packaging metadata for installed console
+scripts, so a bare `orro` executable is explicitly deferred until the packaging /
+marketplace manifest wave. ORRO remains a wrapper/product surface hosted in
+witnessd for now.
 
 ## Session skill
 

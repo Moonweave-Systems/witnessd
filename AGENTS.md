@@ -26,6 +26,9 @@ This guidance is derived from that spec.
 `python3 -m orro ...` is the current product-name entrypoint. It is hosted in
 the witnessd repo and delegates to the existing `witnessd orro ...` surface. It
 is not a standalone ORRO repository and not a third engine.
+`python3 -m orro --help` is product-facing and lists only public ORRO commands:
+`scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `doctor`, and
+`engine-lock`.
 
 Use `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
 to write distribution metadata for the pinned witnessd and Depone commits. The
@@ -34,7 +37,8 @@ must not execute workers.
 
 The standalone ORRO repo remains deferred until packaging, marketplace, and
 version-lock distribution needs justify it. Console-script packaging for a bare
-`orro` executable belongs to that packaging wave.
+`orro` executable is deferred because this checkout has no packaging metadata
+that can safely install and test it yet.
 
 ## Required flow
 
