@@ -24,6 +24,7 @@ should not be used for new public surfaces.
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
+| `orro next` | non-executing continuation gate over persisted run artifacts |
 | `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
 | `orro auto` | later continuation loop behind evidence gates |
@@ -88,6 +89,14 @@ role-lane-plan.json` validates the role-lane plan against the workflow hash and
 executes allowed lanes through existing witnessd team machinery. Role-lane plans
 are not proof, approval, or assurance. `review-only`, `verification-only`, and
 default `release-readiness` role-lane plans cannot launch proofrun.
+
+`python3 -m orro next <run-dir> --home .witnessd --json` reads persisted
+artifacts and recommends the next safe action. It does not run proofcheck,
+launch workers, retry lanes, repair evidence, write handoff, verify evidence,
+approve merge, or raise assurance. `needs-proofcheck` means run proofcheck next;
+`ready-for-handoff` means a passing bound proofcheck verdict exists; `complete`
+means handoff exists after proofcheck pass. Role status is derived from observed
+artifacts only and is not proof.
 
 A future standalone `ORRO` repo may package marketplace manifests, host-specific
 plugin files, examples, product docs, and engine version locks. It must remain a

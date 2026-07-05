@@ -150,7 +150,7 @@ configuration; tests and local development should use `--depone-root`.
 
 `python3 -m orro --help` is product-facing and lists only the public ORRO Flow and
 support commands: `init`, `scout`, `flowplan`, `proofrun`, `proofcheck`,
-`handoff`, `doctor`, and `engine-lock`. It must not promote witnessd
+`handoff`, `next`, `doctor`, and `engine-lock`. It must not promote witnessd
 engine-internal commands.
 Subcommand behavior still delegates to the witnessd-hosted ORRO surface.
 
@@ -208,6 +208,17 @@ The resulting run may contain `role-lane-plan.json` and
 `role-lane-plan-binding.json`; proofcheck and handoff preserve those references
 for review context only. `review-only`, `verification-only`, and default
 `release-readiness` role-lane plans cannot launch proofrun.
+
+`orro next <run-dir> --home <home> --json` is the non-executing continuation
+gate before future `orro auto`. It reads persisted artifacts and reports the
+safest next allowed action. It must not run proofcheck automatically, execute
+recipes, launch workers, call live APIs or MCP, repair evidence, retry failed
+lanes, write handoff, approve merge, verify evidence, or raise assurance.
+`needs-proofcheck` means proofcheck is the next safe action.
+`ready-for-handoff` means a passing bound proofcheck verdict exists and handoff
+may be packaged. `complete` means handoff exists after proofcheck pass.
+`blocked` means do not continue without human or verifier intervention. Role
+status is derived from observed artifacts only and is not proof.
 
 Create a standalone `ORRO` repo only when distribution needs justify it:
 marketplace manifests, host-specific plugin bundles, examples, product docs,
@@ -567,7 +578,21 @@ Readiness-check mode for engines, verifier pin, adapter availability, MCP bridge
 availability, keys, policies, and required local commands. `doctor` may block a
 run before execution; it does not prove task completion.
 
-### 6.9 `orro auto`
+### 6.9 `orro next`
+
+Non-executing continuation/status gate.
+
+```text
+run directory -> artifact observation -> next allowed action
+```
+
+`orro next` reads workflow plan bindings, role-lane bindings, role dispatch,
+team ledger artifacts, proofcheck verdicts, and handoff packages. It does not
+call Depone proofcheck; it reports `needs-proofcheck` when verifier truth is
+missing. It does not execute, repair, retry, or continue. This gate is the
+precondition for future `orro auto`.
+
+### 6.10 `orro auto`
 
 Long-running automation mode.
 
@@ -579,7 +604,7 @@ Rules: no continuation after pause, blocked, or refuted without explicit operato
 approval; no budget auto-increase; no unverified plan activation; no merge/deploy
 approval from witnessd alone.
 
-### 6.10 `orro ultra`
+### 6.11 `orro ultra`
 
 Future high-autonomy profile. It is not a different trust model. It is ORRO with
 larger budgets, longer loops, and stricter pause/budget/proofcheck gates.

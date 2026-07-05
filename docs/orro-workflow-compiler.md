@@ -51,6 +51,14 @@ directory. Execution still happens through existing witnessd team machinery.
 Proofcheck and handoff may preserve role-lane binding references for review
 context only.
 
+After proofrun, `orro next <run-dir> --home <home> --json` can inspect those
+persisted references and recommend the next safe action. It is a non-executing
+continuation gate: it does not run proofcheck, execute workers, retry lanes,
+repair evidence, write handoff, approve merge, verify evidence, or raise
+assurance. It reports `needs-proofcheck`, `ready-for-handoff`, `complete`,
+`blocked`, `evidence-pending`, or `invalid-run-dir` from observed artifacts
+only.
+
 Phase ownership:
 
 - `init`, `doctor`, and `engine-lock` are setup/readiness/distribution checks.

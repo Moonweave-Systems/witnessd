@@ -7,7 +7,7 @@ import sys
 from witnessd.__main__ import main as witnessd_main
 
 
-ORRO_HELP = """usage: orro [-h] {init,scout,flowplan,proofrun,proofcheck,handoff,doctor,engine-lock} ...
+ORRO_HELP = """usage: orro [-h] {init,scout,flowplan,proofrun,proofcheck,handoff,next,doctor,engine-lock} ...
 
 ORRO - Observed Run & Review Orchestrator
 
@@ -21,12 +21,13 @@ public commands:
   proofrun     evidence-backed execution through witnessd
   proofcheck   offline evidence verification delegated to Depone
   handoff      maintainer review package gated by proofcheck-verdict.json
+  next         non-executing continuation gate over persisted run artifacts
   doctor       ORRO readiness check; does not verify evidence
   engine-lock  write/check distribution metadata for pinned engine commits
 
 boundary:
   Depone verifies; witnessd executes; ORRO exposes the workflow.
-  engine-lock is metadata, not proof, approval, or assurance.
+  next reads status only; engine-lock is metadata. Neither is proof or assurance.
 
 options:
   -h, --help   show this help message and exit

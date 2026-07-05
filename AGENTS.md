@@ -17,6 +17,7 @@ This guidance is derived from that spec.
 - `proofrun`: precise evidence-backed execution alias
 - `proofcheck`: offline evidence verification alias
 - `orro handoff`: maintainer review package bound to an explicit passing `proofcheck-verdict.json`
+- `orro next`: non-executing continuation gate over persisted run artifacts
 - `orro skillpack`: knowledge-as-code and progressive-disclosure support
 - `orro doctor`: engine/verifier/adapter/key/MCP/policy readiness check
 - `orro auto`: later continuation loop behind evidence gates
@@ -28,8 +29,8 @@ This guidance is derived from that spec.
 the witnessd repo and delegates to the existing `witnessd orro ...` surface. It
 is not a standalone ORRO repository and not a third engine.
 `python3 -m orro --help` is product-facing and lists only public ORRO commands:
-`init`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `doctor`, and
-`engine-lock`.
+`init`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `next`,
+`doctor`, and `engine-lock`.
 
 Use `python3 -m orro init --home .witnessd --depone-root ../Depone` as the
 public setup path. It delegates to existing witnessd initialization/provisioning
@@ -71,6 +72,14 @@ role-lane-plan.json` validates the workflow hash binding and executes allowed
 lanes through existing witnessd team machinery. Role-lane plans are not proof,
 approval, or assurance. `review-only`, `verification-only`, and default
 `release-readiness` role-lane plans cannot launch proofrun.
+
+`python3 -m orro next <run-dir> --home .witnessd --json` reads persisted run
+artifacts and recommends the next safe action. It is non-executing: it does not
+run proofcheck, launch workers, retry lanes, repair evidence, write handoff,
+verify evidence, approve merge, or raise assurance. `needs-proofcheck` means run
+proofcheck next; `ready-for-handoff` means a passing bound proofcheck verdict
+exists; `complete` means handoff exists after proofcheck pass. Role status is
+derived context only, not proof.
 
 The standalone ORRO repo remains deferred until packaging, marketplace, and
 version-lock distribution needs justify it. The packaged bare `orro` executable

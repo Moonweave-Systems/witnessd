@@ -13,6 +13,7 @@ This file exists to prevent doc drift. It is a map, not a second spec.
 | Codex session guidance | [`../AGENTS.md`](../AGENTS.md) |
 | Agent/developer orientation | [`../CLAUDE.md`](../CLAUDE.md) |
 | ORRO workflow compiler v0 | [`orro-workflow-compiler.md`](orro-workflow-compiler.md) |
+| ORRO continuation gate v0 | [`orro-continuation-gate.md`](orro-continuation-gate.md) |
 
 When these conflict, `SPEC3.md` wins for witnessd runtime/product decisions.
 Depone `docs/spec.md` wins for verifier-contract decisions.
@@ -34,6 +35,7 @@ Use these names in new user-facing docs:
 | `proofrun` | evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
+| `orro next` | non-executing continuation/status gate over persisted run artifacts |
 | `orro auto` | continuation mode behind evidence gates |
 | `orro ultra` | future high-autonomy profile |
 | `python3 -m orro` | thin product-name entrypoint hosted in witnessd |
@@ -81,6 +83,14 @@ and verification-only plans cannot launch proofrun.
 
 See [`orro-role-lane-plan.md`](orro-role-lane-plan.md) for the artifact
 contract.
+
+`orro next <run-dir> --home <home> --json` reads persisted run artifacts and
+recommends the next safe action. It is non-executing: it does not run proofcheck,
+launch workers, repair evidence, retry lanes, write handoff, verify evidence,
+approve merge, or raise assurance. `needs-proofcheck` means run proofcheck next;
+`ready-for-handoff` means a passing bound proofcheck verdict exists; `complete`
+means handoff exists after proofcheck pass; `blocked` means do not continue
+without human/verifier intervention. Role status is derived context, not proof.
 
 ## Legacy docs
 

@@ -45,6 +45,7 @@ python3 -m orro proofrun "goal" --repo . --home .witnessd --workflow-plan workfl
 python3 -m orro proofcheck .witnessd/runs/<run-dir> \
   --home .witnessd \
   --out .witnessd/runs/<run-dir>/proofcheck-verdict.json
+python3 -m orro next .witnessd/runs/<run-dir> --home .witnessd --json
 python3 -m orro handoff .witnessd/runs/<run-dir> \
   --out .witnessd/runs/<run-dir>/orro-handoff.json
 ```
@@ -60,8 +61,9 @@ ORRO Flow work, verify evidence, approve merge, or raise assurance. Use a local
 preserve the existing witnessd initialization behavior.
 
 `python3 -m orro --help` is product-facing and lists only public ORRO commands:
-`init`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `doctor`, and
-`engine-lock`. It must not promote witnessd engine-internal commands.
+`init`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `next`,
+`doctor`, and `engine-lock`. It must not promote witnessd engine-internal
+commands.
 
 The console script named `orro` points at the same wrapper surface through
 `orro.__main__:main`. It must remain an alias layer and is covered by an install
@@ -95,6 +97,14 @@ lanes through existing witnessd team machinery. This closes the bridge from
 rolepack intent to team lanes without creating ORRO as a third engine. The
 role-lane plan and role dispatch remain review context, not proof or assurance.
 
+`orro next <run-dir> --home <home> --json` is the pre-auto continuation gate. It
+reads run-directory artifacts and reports whether the safest next action is
+proofcheck, handoff, complete, blocked, evidence-pending, or invalid-run-dir. It
+does not execute, run proofcheck, call live models, repair evidence, retry
+lanes, approve merge, verify evidence, or raise assurance. Role status is
+derived only from observed artifacts. Future `orro auto` must consume this kind
+of decision before attempting any continuation.
+
 ## Engine Boundary Contract
 
 ### Depone Verifier API Surface
@@ -120,6 +130,7 @@ Allowed ORRO calls into witnessd are runtime and wrapper calls:
 - `witnessd orro proofrun`
 - `witnessd orro proofcheck`
 - `witnessd orro handoff`
+- `witnessd orro next`
 - existing lower-level `witnessd run`, `witnessd verify`, `witnessd proofcheck`,
   and `witnessd team *` commands used as implementation surfaces
 
