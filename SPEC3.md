@@ -22,6 +22,7 @@ contract remains authoritative in the Depone repo at `docs/spec.md`.
 | ORRO | flagship product/tool | Observed Run & Review Orchestrator. A goal becomes an evidence-backed workflow. |
 | `orro` | primary command/skill | User-facing command and host skill surface. |
 | ORRO Flow | workflow loop | `scout -> flowplan -> proofrun -> proofcheck -> handoff`. |
+| `orro init` | setup surface | Create witnessd readiness/provision metadata for ORRO; not proof or assurance. |
 | `orro scout` | read-only exploration | Build repo profile, context pack, and discovery notes before planning. |
 | `flowplan` | plan-only alias | Build or validate a workflow plan without running workers. |
 | `proofrun` | precise run alias | Execute with observer-signed evidence. Kept for technical invocation accuracy. |
@@ -125,6 +126,10 @@ dependency.
 The current public entrypoints are:
 
 ```bash
+python3 -m orro init --home .witnessd --depone-root ../Depone
+python3 -m orro doctor --home .witnessd --json
+python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
+python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 python3 -m orro scout "inspect repo" --repo .
 python3 -m orro flowplan "plan goal" --root .
 python3 -m orro proofrun "run goal" --repo . --home .witnessd
@@ -133,14 +138,19 @@ python3 -m orro proofcheck .witnessd/runs/<run-dir> \
   --out .witnessd/runs/<run-dir>/proofcheck-verdict.json
 python3 -m orro handoff .witnessd/runs/<run-dir> \
   --out .witnessd/runs/<run-dir>/orro-handoff.json
-python3 -m orro doctor --json
-python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
-python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 ```
 
-`python3 -m orro --help` is product-facing and lists only the public ORRO Flow
-commands: `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `doctor`,
-and `engine-lock`. It must not promote witnessd engine-internal commands.
+`orro init` is a public setup alias over existing witnessd
+initialization/provisioning. It creates readiness/provision metadata such as
+`.witnessd/provision.json`; it does not run ORRO Flow work, verify evidence,
+approve merge, or raise assurance. If no local Depone root is supplied, existing
+witnessd initialization behavior may provision according to its current
+configuration; tests and local development should use `--depone-root`.
+
+`python3 -m orro --help` is product-facing and lists only the public ORRO Flow and
+support commands: `init`, `scout`, `flowplan`, `proofrun`, `proofcheck`,
+`handoff`, `doctor`, and `engine-lock`. It must not promote witnessd
+engine-internal commands.
 Subcommand behavior still delegates to the witnessd-hosted ORRO surface.
 
 The bare `orro` console script is package metadata for the same module
@@ -151,8 +161,8 @@ orro = orro.__main__:main
 ```
 
 It must remain an alias layer over the witnessd-hosted ORRO surface, and install
-smoke tests must cover help, flowplan, engine-lock write/check, and fail-closed
-engine-lock behavior.
+smoke tests must cover help, init, flowplan, engine-lock write/check, and
+fail-closed engine-lock behavior.
 
 The engine lock is distribution metadata only. It records pinned engine commits
 and can check the current local environment for drift against those commits. A
@@ -162,6 +172,10 @@ approve merge, raise assurance, or execute workers. The `engine-lock` command ma
 read the local witnessd git HEAD and the validated Depone pin in
 `.witnessd/provision.json`, but it must not fetch network, update Depone, or
 duplicate verifier/runtime logic.
+
+`orro doctor` checks readiness, not evidence truth. It may report setup or
+engine-lock mismatch as readiness-blocked, but that is not Depone verifier
+refutation.
 
 Create a standalone `ORRO` repo only when distribution needs justify it:
 marketplace manifests, host-specific plugin bundles, examples, product docs,

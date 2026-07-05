@@ -34,6 +34,10 @@ Depone verifies; witnessd executes; ORRO exposes the workflow.
 The current entrypoint strategy is `python3 -m orro`, hosted inside witnessd:
 
 ```bash
+python3 -m orro init --home .witnessd --depone-root ../Depone
+python3 -m orro doctor --home .witnessd --json
+python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
+python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 python3 -m orro scout "inspect repo" --repo .
 python3 -m orro flowplan "goal" --root .
 python3 -m orro proofrun "goal" --repo . --home .witnessd
@@ -42,17 +46,20 @@ python3 -m orro proofcheck .witnessd/runs/<run-dir> \
   --out .witnessd/runs/<run-dir>/proofcheck-verdict.json
 python3 -m orro handoff .witnessd/runs/<run-dir> \
   --out .witnessd/runs/<run-dir>/orro-handoff.json
-python3 -m orro doctor --json
-python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
-python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 ```
 
 The module entrypoint delegates to the same wrapper surface as
 `python3 -m witnessd orro ...`. It is not a standalone ORRO repo and not a third
 engine. It must not replace or break existing `witnessd` commands.
 
+`orro init` delegates to existing witnessd initialization/provisioning and
+creates readiness metadata such as `.witnessd/provision.json`. It does not run
+ORRO Flow work, verify evidence, approve merge, or raise assurance. Use a local
+`--depone-root` for development and tests. If no local Depone root is supplied,
+preserve the existing witnessd initialization behavior.
+
 `python3 -m orro --help` is product-facing and lists only public ORRO commands:
-`scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `doctor`, and
+`init`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `doctor`, and
 `engine-lock`. It must not promote witnessd engine-internal commands.
 
 The console script named `orro` points at the same wrapper surface through
@@ -79,6 +86,7 @@ raise assurance from ORRO narration.
 Allowed ORRO calls into witnessd are runtime and wrapper calls:
 
 - `witnessd init`
+- `witnessd orro init`
 - `witnessd orro scout`
 - `witnessd orro flowplan`
 - `witnessd orro proofrun`
@@ -176,6 +184,9 @@ distribution/readiness alignment only. A mismatch is readiness-blocked, not
 verifier-refuted. It does not fetch network, update Depone, execute workers,
 verify evidence, approve merge, or raise assurance. `orro lock` is a
 compatibility alias for the same command; `engine-lock` is the public name.
+
+`orro doctor` checks readiness, not evidence truth. It may report setup or
+engine-lock drift as readiness-blocked; that is not Depone verifier refutation.
 
 ## E2E Smoke Contract
 

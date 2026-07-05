@@ -7,7 +7,7 @@ import sys
 from witnessd.__main__ import main as witnessd_main
 
 
-ORRO_HELP = """usage: orro [-h] {scout,flowplan,proofrun,proofcheck,handoff,doctor,engine-lock} ...
+ORRO_HELP = """usage: orro [-h] {init,scout,flowplan,proofrun,proofcheck,handoff,doctor,engine-lock} ...
 
 ORRO - Observed Run & Review Orchestrator
 
@@ -15,6 +15,7 @@ ORRO Flow:
   scout -> flowplan -> proofrun -> proofcheck -> handoff
 
 public commands:
+  init         setup readiness/provision metadata; does not verify evidence
   scout        read-only repository exploration and context packaging
   flowplan     plan-only workflow design; does not run workers
   proofrun     evidence-backed execution through witnessd

@@ -18,6 +18,7 @@ should not be used for new public surfaces.
 | Mode | Meaning |
 | --- | --- |
 | `orro` | goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
+| `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro scout` | read-only repo exploration and context-pack creation |
 | `flowplan` | plan-only workflow design |
 | `proofrun` | precise evidence-backed execution alias |
@@ -44,6 +45,12 @@ engine-internal commands stay behind the witnessd CLI. The packaged `orro`
 console script points at the same module entrypoint and must remain an alias
 layer, not a separate parser or engine.
 
+`python3 -m orro init --home .witnessd --depone-root ../Depone` is the public
+setup path. It delegates to existing witnessd initialization/provisioning and
+creates readiness metadata such as `.witnessd/provision.json`. It does not run
+ORRO Flow work, verify evidence, approve merge, or raise assurance. Use a local
+`--depone-root` for development and tests.
+
 `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
 writes distribution metadata for the pinned witnessd and Depone commits.
 `python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json`
@@ -51,6 +58,8 @@ checks the current local environment for drift against that metadata. A matching
 lock is readiness alignment only. A mismatch is readiness-blocked, not
 verifier-refuted. The lock is not proof, evidence verification, merge approval,
 or assurance.
+
+`orro doctor` checks readiness, not evidence truth.
 
 A future standalone `ORRO` repo may package marketplace manifests, host-specific
 plugin files, examples, product docs, and engine version locks. It must remain a
@@ -119,7 +128,8 @@ output as verifier truth.
 3. Initialize once per repo or session:
 
    ```bash
-   python3 -m witnessd init --home .witnessd --depone-root ../depone
+   python3 -m orro init --home .witnessd --depone-root ../Depone
+   python3 -m orro doctor --home .witnessd --json
    ```
 
 4. Run the goal:

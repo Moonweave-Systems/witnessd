@@ -152,6 +152,7 @@ class OrroPublicFlowTests(unittest.TestCase):
 
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
         for command in (
+            "init",
             "scout",
             "flowplan",
             "proofrun",
@@ -178,6 +179,7 @@ class OrroPublicFlowTests(unittest.TestCase):
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
         self.assertEqual(help_result.stderr, "")
         self.assertIn("ORRO Flow", help_result.stdout)
+        self.assertIn("init", help_result.stdout)
         self.assertIn("engine-lock", help_result.stdout)
         self.assertNotIn("self-test", help_result.stdout)
 
@@ -188,6 +190,70 @@ class OrroPublicFlowTests(unittest.TestCase):
         self.assertIn("self-test", witnessd_help.stdout)
         self.assertIn("team-ledger", witnessd_help.stdout)
         self.assertIn("engine-lock", witnessd_help.stdout)
+
+    def test_orro_module_init_delegates_to_witnessd_setup_without_flow_work(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / ".witnessd"
+
+            init = self._orro_module_run(
+                ["init", "--home", str(home), "--depone-root", str(_depone_root())]
+            )
+
+            self.assertEqual(init.returncode, 0, init.stderr)
+            payload = json.loads(init.stdout)
+            self.assertEqual(payload["home"], str(home))
+            self.assertTrue((home / "provision.json").is_file())
+            self.assertTrue((home / "config.json").is_file())
+            self.assertFalse((home / "runs").exists())
+            self.assertNotIn("decision", payload)
+            self.assertNotIn("assurance", payload)
+
+    def test_witnessd_orro_init_alias_delegates_to_witnessd_setup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / ".witnessd"
+
+            init = self._module_run(
+                ["orro", "init", "--home", str(home), "--depone-root", str(_depone_root())]
+            )
+
+            self.assertEqual(init.returncode, 0, init.stderr)
+            payload = json.loads(init.stdout)
+            self.assertEqual(payload["home"], str(home))
+            provision = json.loads((home / "provision.json").read_text(encoding="utf-8"))
+            self.assertEqual(provision["kind"], "witnessd-depone-provision")
+
+    def test_orro_public_setup_smoke_reaches_engine_lock_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / ".witnessd"
+            lock_path = root / "orro-engine-lock.json"
+
+            init = self._orro_module_run(
+                ["init", "--home", str(home), "--depone-root", str(_depone_root())]
+            )
+            self.assertEqual(init.returncode, 0, init.stderr)
+            self.assertTrue((home / "provision.json").is_file())
+
+            doctor = self._orro_module_run(["doctor", "--home", str(home), "--json"])
+            self.assertIn(doctor.returncode, {0, 1}, doctor.stderr)
+            doctor_payload = json.loads(doctor.stdout)
+            self.assertEqual(doctor_payload["command"], "orro doctor")
+            self.assertFalse(doctor_payload["boundary"]["verifier_refuted"])
+            self.assertFalse(doctor_payload["boundary"]["raises_assurance"])
+
+            write_lock = self._orro_module_run(
+                ["engine-lock", "--home", str(home), "--out", str(lock_path)]
+            )
+            self.assertEqual(write_lock.returncode, 0, write_lock.stderr)
+
+            check_lock = self._orro_module_run(
+                ["engine-lock", "--home", str(home), "--check", str(lock_path), "--json"]
+            )
+            self.assertEqual(check_lock.returncode, 0, check_lock.stderr)
+            self.assertTrue(json.loads(check_lock.stdout)["locked"])
+            self.assertFalse((home / "runs").exists())
 
     def test_orro_engine_lock_writes_distribution_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

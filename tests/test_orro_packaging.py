@@ -63,6 +63,7 @@ class OrroPackagingTests(unittest.TestCase):
             )
             self.assertEqual(help_result.returncode, 0, help_result.stderr)
             self.assertIn("ORRO Flow", help_result.stdout)
+            self.assertIn("init", help_result.stdout)
             self.assertIn("engine-lock", help_result.stdout)
             self.assertNotIn("self-test", help_result.stdout)
 
@@ -94,9 +95,7 @@ class OrroPackagingTests(unittest.TestCase):
             home = tmp_path / "home"
             init = subprocess.run(
                 [
-                    str(python),
-                    "-m",
-                    "witnessd",
+                    str(orro),
                     "init",
                     "--home",
                     str(home),
@@ -109,6 +108,17 @@ class OrroPackagingTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(init.returncode, 0, init.stderr)
+            self.assertTrue((home / "provision.json").is_file())
+
+            doctor = subprocess.run(
+                [str(orro), "doctor", "--home", str(home), "--json"],
+                cwd=tmp_path,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertIn(doctor.returncode, {0, 1}, doctor.stderr)
+            self.assertEqual(json.loads(doctor.stdout)["command"], "orro doctor")
 
             lock_path = tmp_path / "orro-engine-lock.json"
             write_lock = subprocess.run(

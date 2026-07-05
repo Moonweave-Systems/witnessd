@@ -11,6 +11,7 @@ This guidance is derived from that spec.
 ## Public modes
 
 - `orro`: goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff
+- `orro init`: setup readiness/provision metadata; not proof or assurance
 - `orro scout`: read-only repo profile, context pack, and discovery notes
 - `flowplan`: plan-only workflow design
 - `proofrun`: precise evidence-backed execution alias
@@ -27,8 +28,14 @@ This guidance is derived from that spec.
 the witnessd repo and delegates to the existing `witnessd orro ...` surface. It
 is not a standalone ORRO repository and not a third engine.
 `python3 -m orro --help` is product-facing and lists only public ORRO commands:
-`scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `doctor`, and
+`init`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `doctor`, and
 `engine-lock`.
+
+Use `python3 -m orro init --home .witnessd --depone-root ../Depone` as the
+public setup path. It delegates to existing witnessd initialization/provisioning
+and creates readiness metadata such as `.witnessd/provision.json`. It does not
+run ORRO Flow work, verify evidence, approve merge, or raise assurance. Use a
+local `--depone-root` for development and tests.
 
 Use `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
 to write distribution metadata for the pinned witnessd and Depone commits. Use
@@ -37,6 +44,7 @@ to check the current local environment for drift against that metadata. A
 matching lock is readiness alignment only. A mismatch is readiness-blocked, not
 verifier-refuted. The lock is not proof, evidence verification, merge approval,
 or assurance, and it must not execute workers.
+`orro doctor` checks readiness, not evidence truth.
 
 The standalone ORRO repo remains deferred until packaging, marketplace, and
 version-lock distribution needs justify it. The packaged bare `orro` executable
@@ -54,10 +62,11 @@ witnessd-hosted ORRO surface.
 3. Record discovery notes after every two meaningful read/search actions.
 4. Design explicit lanes, regions, dependencies, budgets, and verification
    recipes, or consume a provided Depone design artifact when one exists.
-5. Run witnessd from the repository being worked on:
+5. Set up ORRO, then run witnessd from the repository being worked on:
 
    ```bash
-   python3 -m witnessd init --home .witnessd --depone-root ../depone
+   python3 -m orro init --home .witnessd --depone-root ../Depone
+   python3 -m orro doctor --home .witnessd --json
    python3 -m witnessd run "<goal>" --repo <repo> --home .witnessd
    python3 -m witnessd verify <run-dir> --home .witnessd
    ```

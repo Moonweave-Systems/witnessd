@@ -2220,6 +2220,8 @@ def _normalize_superflow_argv(argv: list[str]) -> list[str]:
 def _normalize_orro_argv(argv: list[str]) -> list[str]:
     if not argv or argv[0] != "orro":
         return argv
+    if len(argv) >= 2 and argv[1] == "init":
+        return ["init", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "scout":
         return ["scout", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "flowplan":
