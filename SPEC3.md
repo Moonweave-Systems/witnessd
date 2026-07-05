@@ -24,7 +24,7 @@ contract remains authoritative in the Depone repo at `docs/spec.md`.
 | ORRO Flow | workflow loop | `scout -> flowplan -> proofrun -> proofcheck -> handoff`. |
 | `orro init` | setup surface | Create witnessd readiness/provision metadata for ORRO; not proof or assurance. |
 | `orro scout` | read-only exploration | Build repo profile, context pack, and discovery notes before planning. |
-| `flowplan` | plan-only alias | Build or validate a workflow plan without running workers. |
+| `flowplan` | plan-only alias | Build or validate a workflow plan, including rolepack/workflow profiles, without running workers. |
 | `proofrun` | precise run alias | Execute with observer-signed evidence. Kept for technical invocation accuracy. |
 | `proofcheck` | verifier alias | Re-check existing evidence bytes offline. |
 | `orro handoff` | maintainer handoff | Bind code changes to an explicit passing proofcheck verdict for human review; not merge approval. |
@@ -132,6 +132,7 @@ python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.js
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 python3 -m orro scout "inspect repo" --repo .
 python3 -m orro flowplan "plan goal" --root .
+python3 -m orro flowplan "fix bug in parser" --root . --profile code-change --out workflow-plan.json
 python3 -m orro proofrun "run goal" --repo . --home .witnessd
 python3 -m orro proofcheck .witnessd/runs/<run-dir> \
   --home .witnessd \
@@ -176,6 +177,14 @@ duplicate verifier/runtime logic.
 `orro doctor` checks readiness, not evidence truth. It may report setup or
 engine-lock mismatch as readiness-blocked, but that is not Depone verifier
 refutation.
+
+`orro flowplan --profile <profile>` is the deterministic ORRO rolepack/workflow
+compiler v0. Built-in profiles are `code-change`, `review-only`,
+`verification-only`, `docs-change`, and `release-readiness`. The compiler emits
+an `orro-workflow-plan` intent artifact that maps a goal to roles, phases,
+engine calls, required gates, and forbidden assurance sources. It does not run
+workers, call live models, call Depone verification, mutate worktrees, approve
+merge, raise assurance, or turn ORRO into a third engine.
 
 Create a standalone `ORRO` repo only when distribution needs justify it:
 marketplace manifests, host-specific plugin bundles, examples, product docs,
@@ -450,6 +459,14 @@ Outputs include sealed plan, lane packet list, region and overlap analysis,
 budget and stop rules, evidence-contract preview, verification-recipe preview,
 and skillpack-lock preview. It never reports A1/A2 because no execution evidence
 exists.
+
+The workflow compiler profile output is also plan-only. An `orro-workflow-plan`
+records which roles are needed, which engine owns each phase, which phases may
+execute, which phases may verify, and which artifacts must exist before handoff.
+Roles do not create assurance by existing. `proofrun` is the first execution
+phase and belongs to witnessd. `proofcheck` is the verifier phase and delegates
+to Depone. `handoff` is review packaging only. `doctor` and `engine-lock` are
+readiness/distribution checks only. Full `orro auto` remains future work.
 
 ### 6.3 `proofrun`
 

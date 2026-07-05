@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+import io
+import json
+import tempfile
+import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
+
+from witnessd.__main__ import main
+
+
+class OrroWorkflowTests(unittest.TestCase):
+    def _flowplan(self, args: list[str]) -> tuple[int, dict]:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(["orro", "flowplan", *args])
+        return code, json.loads(stdout.getvalue())
+
+    def test_code_change_profile_emits_orro_workflow_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            code, payload = self._flowplan(
+                ["fix bug in parser", "--root", str(root), "--profile", "code-change"]
+            )
+
+            self.assertEqual(code, 0)
+            plan = payload["workflow_plan"]
+            self.assertEqual(plan["kind"], "orro-workflow-plan")
+            self.assertEqual(plan["schema_version"], "0.1")
+            self.assertEqual(plan["goal"], "fix bug in parser")
+            self.assertEqual(plan["profile"], "code-change")
+            self.assertEqual(
+                plan["flow"],
+                ["scout", "flowplan", "proofrun", "proofcheck", "handoff"],
+            )
+            self.assertTrue(plan["boundary"]["depone_verifies"])
+            self.assertTrue(plan["boundary"]["witnessd_executes"])
+            self.assertTrue(plan["boundary"]["orro_exposes_workflow"])
+            self.assertFalse(plan["boundary"]["orro_is_third_engine"])
+            self.assertIn("engine-lock", plan["forbidden_assurance_sources"])
+            self.assertIn("doctor readiness", plan["forbidden_assurance_sources"])
+            self.assertFalse((root / ".witnessd" / "runs").exists())
+            self.assertFalse((root / "team-ledger.json").exists())
+
+    def test_review_only_profile_does_not_claim_execution_happened(self) -> None:
+        code, payload = self._flowplan(
+            ["review this PR", "--root", ".", "--profile", "review-only"]
+        )
+
+        self.assertEqual(code, 0)
+        plan = payload["workflow_plan"]
+        self.assertEqual(plan["profile"], "review-only")
+        self.assertFalse(any(role["may_execute"] for role in plan["roles"]))
+        self.assertNotIn("proofrun emits evidence", plan["required_gates"])
+        self.assertIn("model confidence", plan["forbidden_assurance_sources"])
+
+    def test_verification_only_profile_delegates_verification_without_execution(self) -> None:
+        code, payload = self._flowplan(
+            ["verify this evidence", "--root", ".", "--profile", "verification-only"]
+        )
+
+        self.assertEqual(code, 0)
+        plan = payload["workflow_plan"]
+        self.assertEqual(plan["profile"], "verification-only")
+        proofcheck = next(call for call in plan["engine_calls"] if call["phase"] == "proofcheck")
+        self.assertEqual(proofcheck["engine"], "Depone")
+        self.assertFalse(proofcheck["executes"])
+        self.assertTrue(proofcheck["verifies"])
+        self.assertFalse(any(call["executes"] for call in plan["engine_calls"]))
+
+    def test_docs_change_requires_evidence_gates_before_handoff_when_executing(self) -> None:
+        code, payload = self._flowplan(
+            ["update docs", "--root", ".", "--profile", "docs-change"]
+        )
+
+        self.assertEqual(code, 0)
+        gates = payload["workflow_plan"]["required_gates"]
+        self.assertIn("proofrun emits evidence", gates)
+        self.assertIn("proofcheck writes proofcheck-verdict.json", gates)
+        self.assertIn("handoff requires passing bound proofcheck verdict", gates)
+
+    def test_release_readiness_profile_lists_readiness_as_non_assurance(self) -> None:
+        code, payload = self._flowplan(
+            ["prepare release", "--root", ".", "--profile", "release-readiness"]
+        )
+
+        self.assertEqual(code, 0)
+        plan = payload["workflow_plan"]
+        phases = [call["phase"] for call in plan["engine_calls"]]
+        self.assertIn("init", phases)
+        self.assertIn("doctor", phases)
+        self.assertIn("engine-lock", phases)
+        self.assertIn("doctor readiness", plan["forbidden_assurance_sources"])
+        self.assertIn("engine-lock", plan["forbidden_assurance_sources"])
+        for role in plan["roles"]:
+            self.assertFalse(role["raises_assurance"])
+
+    def test_flowplan_out_writes_same_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "workflow-plan.json"
+            code, payload = self._flowplan(
+                [
+                    "fix parser",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--out",
+                    str(out),
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8")), payload)
+
+    def test_invalid_profile_fails_closed(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(
+                [
+                    "orro",
+                    "flowplan",
+                    "unknown work",
+                    "--profile",
+                    "live-agent",
+                    "--root",
+                    ".",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(code, 2)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["error"]["code"], "ERR_ORRO_WORKFLOW_PROFILE_UNKNOWN")
+
+    def test_flowplan_remains_plan_only_and_rejects_draft_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            code, payload = self._flowplan(
+                ["plan without execution", "--root", str(root), "--profile", "code-change"]
+            )
+
+            self.assertEqual(code, 0)
+            self.assertIn("sealed_plan", payload)
+            self.assertFalse((root / ".witnessd" / "runs").exists())
+            self.assertFalse((root / "team-ledger.json").exists())
+            self.assertFalse((root / "proofcheck-verdict.json").exists())
+
+        with self.assertRaises(SystemExit):
+            main(["orro", "flowplan", "bad", "--draft-adapter", "codex"])
+
+
+if __name__ == "__main__":
+    unittest.main()

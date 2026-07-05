@@ -12,6 +12,7 @@ This file exists to prevent doc drift. It is a map, not a second spec.
 | Host session skill | [`../SKILL.md`](../SKILL.md) |
 | Codex session guidance | [`../AGENTS.md`](../AGENTS.md) |
 | Agent/developer orientation | [`../CLAUDE.md`](../CLAUDE.md) |
+| ORRO workflow compiler v0 | [`orro-workflow-compiler.md`](orro-workflow-compiler.md) |
 
 When these conflict, `SPEC3.md` wins for witnessd runtime/product decisions.
 Depone `docs/spec.md` wins for verifier-contract decisions.
@@ -29,7 +30,7 @@ Use these names in new user-facing docs:
 | `orro` | primary command/skill surface |
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro scout` | read-only repo exploration and context packaging |
-| `flowplan` | plan-only workflow design |
+| `flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
 | `proofrun` | evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
@@ -56,6 +57,13 @@ standalone ORRO repo remains deferred until packaging, marketplace, or
 version-lock distribution needs justify it. The bare `orro` console script
 points at `orro.__main__:main` and remains an alias layer over the same product
 surface.
+
+`orro flowplan --profile <profile>` emits an `orro-workflow-plan` intent
+artifact for deterministic profiles such as `code-change`, `review-only`,
+`verification-only`, `docs-change`, and `release-readiness`. Workflow plans are
+not evidence, roles do not create assurance by existing, `proofrun` is the first
+execution phase, `proofcheck` is the verifier phase, and `handoff` is review
+packaging only.
 
 ## Legacy docs
 

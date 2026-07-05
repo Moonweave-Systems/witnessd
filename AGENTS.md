@@ -13,7 +13,7 @@ This guidance is derived from that spec.
 - `orro`: goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff
 - `orro init`: setup readiness/provision metadata; not proof or assurance
 - `orro scout`: read-only repo profile, context pack, and discovery notes
-- `flowplan`: plan-only workflow design
+- `flowplan`: plan-only workflow design and rolepack/workflow compiler surface
 - `proofrun`: precise evidence-backed execution alias
 - `proofcheck`: offline evidence verification alias
 - `orro handoff`: maintainer review package bound to an explicit passing `proofcheck-verdict.json`
@@ -46,6 +46,14 @@ verifier-refuted. The lock is not proof, evidence verification, merge approval,
 or assurance, and it must not execute workers.
 `orro doctor` checks readiness, not evidence truth.
 
+Use `python3 -m orro flowplan "<goal>" --root <repo> --profile code-change` to
+compile a deterministic `orro-workflow-plan` for supported profiles:
+`code-change`, `review-only`, `verification-only`, `docs-change`, and
+`release-readiness`. The workflow plan is intent, not evidence. Roles do not
+create assurance by existing. `proofrun` is the first execution phase,
+`proofcheck` is the verifier phase, `handoff` is review packaging only, and full
+`orro auto` remains future work.
+
 The standalone ORRO repo remains deferred until packaging, marketplace, and
 version-lock distribution needs justify it. The packaged bare `orro` executable
 points at `orro.__main__:main` and must remain an alias layer over the
@@ -62,6 +70,8 @@ witnessd-hosted ORRO surface.
 3. Record discovery notes after every two meaningful read/search actions.
 4. Design explicit lanes, regions, dependencies, budgets, and verification
    recipes, or consume a provided Depone design artifact when one exists.
+   `flowplan --profile` may define roles, phases, engine calls, gates, and
+   forbidden assurance sources, but it must remain plan-only.
 5. Set up ORRO, then run witnessd from the repository being worked on:
 
    ```bash

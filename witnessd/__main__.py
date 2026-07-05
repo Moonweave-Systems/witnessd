@@ -346,6 +346,7 @@ def _cmd_pilot_archive_evidence(args: argparse.Namespace) -> int:
 
 def _cmd_plan(args: argparse.Namespace) -> int:
     from witnessd.adapter_run import LaneBlocked, run_adapter_lane
+    from witnessd.orro_workflow import OrroWorkflowError, compile_workflow_plan
     from witnessd.planner import (
         PlannerError,
         parse_draft_packets,
@@ -356,6 +357,18 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     draft_events: list[dict] = []
     packets: list[dict] | None = None
     root = os.path.abspath(args.root)
+    workflow_plan = None
+
+    if getattr(args, "profile", None):
+        try:
+            workflow_plan = compile_workflow_plan(goal=args.goal, profile=args.profile)
+        except OrroWorkflowError as exc:
+            _emit_orro_error(
+                args,
+                code=exc.code,
+                message="unknown ORRO workflow profile",
+            )
+            return 2
 
     if args.draft_adapter:
         draft_root = f"{root.rstrip(os.sep)}-witnessd-plan-draft"
@@ -412,9 +425,26 @@ def _cmd_plan(args: argparse.Namespace) -> int:
         packets = plan_heuristic(args.goal, seed=args.seed, root=root)
 
     sealed = seal_plan(packets, goal=args.goal)
+    payload: dict[str, object] = {"sealed_plan": sealed, "draft_events": draft_events}
+    if workflow_plan is not None:
+        payload["workflow_plan"] = workflow_plan
+    if getattr(args, "out", None):
+        out_path = Path(args.out).resolve(strict=False)
+        try:
+            out_path.write_text(
+                json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            _emit_orro_error(
+                args,
+                code="ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED",
+                message=str(exc),
+            )
+            return 1
     print(
         json.dumps(
-            {"sealed_plan": sealed, "draft_events": draft_events},
+            payload,
             sort_keys=True,
             separators=(",", ":"),
         )
@@ -2166,6 +2196,9 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
     flowplan.add_argument("goal")
     flowplan.add_argument("--root", default=".")
     flowplan.add_argument("--seed", default="w11")
+    flowplan.add_argument("--profile", default=None)
+    flowplan.add_argument("--out", default=None)
+    flowplan.add_argument("--json", action="store_true")
     flowplan.set_defaults(
         draft_adapter=None,
         draft_out=None,

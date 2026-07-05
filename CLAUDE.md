@@ -33,7 +33,7 @@ map and legacy policy.
 | `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro scout` | read-only repo profile, context pack, and discovery notes |
-| `flowplan` | plan-only workflow design |
+| `flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
@@ -67,6 +67,14 @@ lock is readiness alignment only. A mismatch is readiness-blocked, not
 verifier-refuted. The engine lock is not proof, does not verify evidence, does
 not approve merge, and does not raise assurance.
 `orro doctor` checks readiness, not evidence truth.
+
+`python3 -m orro flowplan "<goal>" --root <repo> --profile code-change` compiles
+a deterministic `orro-workflow-plan` intent artifact. Supported profiles are
+`code-change`, `review-only`, `verification-only`, `docs-change`, and
+`release-readiness`. Workflow plans are not evidence. Roles do not create
+assurance by existing. `proofrun` is the first execution phase, `proofcheck` is
+the verifier phase, `handoff` is review packaging only, and full `orro auto`
+remains future work.
 
 A standalone ORRO repo remains deferred until packaging, marketplace manifests,
 host-specific distribution, or version-lock distribution needs justify it.
