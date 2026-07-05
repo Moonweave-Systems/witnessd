@@ -228,10 +228,10 @@ Its help shows only the ORRO public commands: `scout`, `flowplan`, `proofrun`,
 `proofcheck`, `handoff`, `doctor`, and `engine-lock`. Subcommands delegate to the
 same ORRO parser used by `python3 -m witnessd orro ...`.
 
-This checkout does not yet define packaging metadata for installed console
-scripts, so a bare `orro` executable is explicitly deferred until the packaging /
-marketplace manifest wave. ORRO remains a wrapper/product surface hosted in
-witnessd for now.
+This checkout defines minimal packaging metadata for an installed `orro` console
+script that points to the same module entrypoint. ORRO remains a wrapper/product
+surface hosted in witnessd for now; marketplace manifests and a standalone ORRO
+repository remain deferred.
 
 ## Session skill
 

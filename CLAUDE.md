@@ -59,8 +59,9 @@ does not raise assurance.
 
 A standalone ORRO repo remains deferred until packaging, marketplace manifests,
 host-specific distribution, or version-lock distribution needs justify it.
-Console-script packaging for a bare `orro` executable is deferred because this
-checkout has no packaging metadata that can safely install and test it yet.
+Console-script packaging for a bare `orro` executable points at
+`orro.__main__:main` and must remain an alias layer over the witnessd-hosted ORRO
+surface.
 
 ## Runtime dependency rule
 

@@ -54,10 +54,10 @@ engine. It must not replace or break existing `witnessd` commands.
 `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `doctor`, and
 `engine-lock`. It must not promote witnessd engine-internal commands.
 
-A future console script named `orro` may point at the same wrapper surface, but
-it is deferred because this checkout has no packaging metadata for installed
-entrypoints. It must remain an alias layer and must be covered by an install
-smoke test when packaging exists.
+The console script named `orro` points at the same wrapper surface through
+`orro.__main__:main`. It must remain an alias layer and is covered by an install
+smoke test. Marketplace manifests and a standalone ORRO repository remain
+deferred.
 
 ## Engine Boundary Contract
 
