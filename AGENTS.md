@@ -36,9 +36,9 @@ lock is not proof, evidence verification, merge approval, or assurance, and it
 must not execute workers.
 
 The standalone ORRO repo remains deferred until packaging, marketplace, and
-version-lock distribution needs justify it. Console-script packaging for a bare
-`orro` executable is deferred because this checkout has no packaging metadata
-that can safely install and test it yet.
+version-lock distribution needs justify it. The packaged bare `orro` executable
+points at `orro.__main__:main` and must remain an alias layer over the
+witnessd-hosted ORRO surface.
 
 ## Required flow
 

@@ -40,9 +40,9 @@ The current product-name CLI is `python3 -m orro ...`, a thin module entrypoint
 hosted in witnessd that delegates to the existing `witnessd orro ...` command
 surface. It is not a standalone ORRO repo and not a third engine.
 Its help surface is ORRO-facing and lists only public ORRO commands; witnessd
-engine-internal commands stay behind the witnessd CLI. A bare `orro` console
-script is deferred until packaging metadata exists and install smoke tests can
-cover it.
+engine-internal commands stay behind the witnessd CLI. The packaged `orro`
+console script points at the same module entrypoint and must remain an alias
+layer, not a separate parser or engine.
 
 `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
 writes distribution metadata for the pinned witnessd and Depone commits. The lock

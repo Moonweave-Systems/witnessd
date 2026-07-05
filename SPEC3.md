@@ -142,8 +142,15 @@ commands: `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `doctor`,
 and `engine-lock`. It must not promote witnessd engine-internal commands.
 Subcommand behavior still delegates to the witnessd-hosted ORRO surface.
 
-The bare `orro` console script is deferred until packaging metadata exists and
-entrypoint installation can be tested without inventing a packaging structure.
+The bare `orro` console script is package metadata for the same module
+entrypoint:
+
+```text
+orro = orro.__main__:main
+```
+
+It must remain an alias layer over the witnessd-hosted ORRO surface, and install
+smoke tests must cover help, flowplan, and fail-closed engine-lock behavior.
 
 The engine lock is distribution metadata only. It records pinned engine commits
 and does not verify evidence, approve merge, raise assurance, or execute workers.
@@ -659,7 +666,8 @@ Roadmap:
 - W17: journaled replay-resume.
 - W18: distribution, session UX, ORRO command/skill bootstrap, scout artifacts,
   skillpack discovery, verification-recipe receipts, `orro doctor`, the thin
-  `python3 -m orro` module entrypoint, and ORRO engine-lock v0.
+  `python3 -m orro` module entrypoint, ORRO engine-lock v0, and the `orro`
+  console script alias.
 - W18.5: MCP and enterprise tool receipts.
 - W17.5: design-to-execute bridge.
 - W19: first live multi-agent parallel proof.
