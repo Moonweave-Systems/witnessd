@@ -18,9 +18,10 @@ This guidance is derived from that spec.
 - `proofcheck`: offline evidence verification alias
 - `orro handoff`: maintainer review package bound to an explicit passing `proofcheck-verdict.json`
 - `orro next`: non-executing continuation gate over persisted run artifacts
+- `orro auto --dry-run`: non-executing automation planner; recommendation context only
 - `orro skillpack`: knowledge-as-code and progressive-disclosure support
 - `orro doctor`: engine/verifier/adapter/key/MCP/policy readiness check
-- `orro auto`: later continuation loop behind evidence gates
+- `orro auto`: future executing continuation loop behind evidence gates
 - `orro ultra`: future high-autonomy profile with stricter gates
 
 ## Entrypoint and distribution metadata
@@ -30,7 +31,7 @@ the witnessd repo and delegates to the existing `witnessd orro ...` surface. It
 is not a standalone ORRO repository and not a third engine.
 `python3 -m orro --help` is product-facing and lists only public ORRO commands:
 `init`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `next`,
-`doctor`, and `engine-lock`.
+`auto`, `doctor`, and `engine-lock`.
 
 Use `python3 -m orro init --home .witnessd --depone-root ../Depone` as the
 public setup path. It delegates to existing witnessd initialization/provisioning
@@ -53,7 +54,7 @@ compile a deterministic `orro-workflow-plan` for supported profiles:
 `release-readiness`. The workflow plan is intent, not evidence. Roles do not
 create assurance by existing. `proofrun` is the first execution phase,
 `proofcheck` is the verifier phase, `handoff` is review packaging only, and full
-`orro auto` remains future work.
+Executing `orro auto` remains future work.
 
 `python3 -m orro proofrun "<goal>" --repo <repo> --home .witnessd --workflow-plan workflow-plan.json`
 first applies a phase gate: the plan must allow `proofrun` through a witnessd
@@ -80,6 +81,14 @@ verify evidence, approve merge, or raise assurance. `needs-proofcheck` means run
 proofcheck next; `ready-for-handoff` means a passing bound proofcheck verdict
 exists; `complete` means handoff exists after proofcheck pass. Role status is
 derived context only, not proof.
+
+`python3 -m orro auto --dry-run <run-dir> --home .witnessd --json` consumes the
+continuation decision and emits an `orro-auto-plan` with the exact command it
+would run next. It is non-executing: it does not call Depone, run proofcheck,
+write handoff, launch workers, mutate worktrees, verify evidence, approve merge,
+or raise assurance. The auto-plan is recommendation context, not proof. Calling
+`orro auto` without `--dry-run` must fail closed until executing automation is
+explicitly implemented.
 
 The standalone ORRO repo remains deferred until packaging, marketplace, and
 version-lock distribution needs justify it. The packaged bare `orro` executable

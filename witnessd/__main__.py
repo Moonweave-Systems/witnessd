@@ -1212,6 +1212,36 @@ def _cmd_orro_next(args: argparse.Namespace) -> int:
     return code
 
 
+def _cmd_orro_auto(args: argparse.Namespace) -> int:
+    from witnessd.orro_auto import OrroAutoError, build_auto_plan, write_auto_plan
+
+    if not args.dry_run:
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_AUTO_DRY_RUN_REQUIRED",
+            message="orro auto currently supports --dry-run only",
+        )
+        return 2
+    if not args.run_dir:
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_AUTO_INPUT_REQUIRED",
+            message="run directory is required",
+        )
+        return 2
+    run_dir = Path(args.run_dir).resolve(strict=False)
+    home = Path(args.home).resolve(strict=False) if args.home else None
+    code, payload = build_auto_plan(run_dir, home=home)
+    if args.out:
+        try:
+            write_auto_plan(Path(args.out).resolve(strict=False), payload)
+        except OrroAutoError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 1
+    print(json.dumps(payload, sort_keys=True))
+    return code
+
+
 def _cmd_doctor(args: argparse.Namespace) -> int:
     if args.external_worktree:
         from witnessd.state import detect_state_contention
@@ -2161,6 +2191,14 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_next.add_argument("--json", action="store_true")
     orro_next.set_defaults(func=_cmd_orro_next)
 
+    orro_auto = sub.add_parser("orro-auto", help=argparse.SUPPRESS)
+    orro_auto.add_argument("run_dir", nargs="?")
+    orro_auto.add_argument("--dry-run", action="store_true")
+    orro_auto.add_argument("--home", default=None)
+    orro_auto.add_argument("--out", default=None)
+    orro_auto.add_argument("--json", action="store_true")
+    orro_auto.set_defaults(func=_cmd_orro_auto)
+
     isolation = sub.add_parser("isolation", help="isolation contract checks")
     isolation.add_argument("--self-test", action="store_true")
     isolation.set_defaults(func=_cmd_isolation)
@@ -2522,6 +2560,8 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
         return ["engine-lock", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "next":
         return ["orro-next", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "auto":
+        return ["orro-auto", *argv[2:]]
     return argv
 
 

@@ -51,3 +51,9 @@ Depone verifies; witnessd executes; ORRO exposes the workflow.
 `orro next` is not a verifier. If verifier truth is missing, it reports
 `needs-proofcheck` instead of re-deriving a verdict. A matching continuation
 decision is not proof, approval, or assurance.
+
+The next automation layer is `orro auto --dry-run`, which consumes this decision
+and emits an `orro-auto-plan`. Dry-run may recommend a future proofcheck or
+handoff command, but it does not run proofcheck, call Depone, write handoff,
+launch workers, repair evidence, mutate worktrees, approve merge, verify
+evidence, or raise assurance.

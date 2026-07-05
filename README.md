@@ -26,8 +26,10 @@ python3 -m orro flowplan "write two independent files" --root . --profile code-c
 run_json="$(python3 -m orro proofrun "write two independent files" --repo . --home .witnessd --workflow-plan .witnessd/workflow-plan.json --role-lane-plan .witnessd/role-lane-plan.json)"
 run_dir="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["run_dir"])' "$run_json")"
 python3 -m orro next "$run_dir" --home .witnessd --json
+python3 -m orro auto --dry-run "$run_dir" --home .witnessd --json
 python3 -m orro proofcheck "$run_dir" --home .witnessd --out "$run_dir/proofcheck-verdict.json"
 python3 -m orro next "$run_dir" --home .witnessd --json
+python3 -m orro auto --dry-run "$run_dir" --home .witnessd --json
 python3 -m orro handoff "$run_dir" --out "$run_dir/orro-handoff.json"
 python3 -m orro next "$run_dir" --home .witnessd --json
 ```
@@ -79,9 +81,10 @@ authority. For the repo documentation map, see [`docs/README.md`](docs/README.md
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro next` | non-executing continuation gate over persisted run artifacts |
+| `orro auto --dry-run` | non-executing automation planner that recommends the next command |
 | `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
-| `orro auto` | later resume/continuation loop behind evidence gates |
+| `orro auto` | future executing resume/continuation loop behind evidence gates |
 | `orro ultra` | future high-autonomy profile with stricter gates |
 
 `witnessd` is the engine name, not the main session skill name. `Moonweave` is the
@@ -164,6 +167,14 @@ include `needs-proofcheck`, `ready-for-handoff`, `complete`, `blocked`,
 `evidence-pending`, and `invalid-run-dir`. Role status is derived from observed
 artifacts only and is not proof.
 
+`orro auto --dry-run <run-dir> --home .witnessd --json` consumes `orro next`
+state and emits an `orro-auto-plan` with the exact command it would run next,
+such as proofcheck or handoff. It does not run that command, call Depone, launch
+workers, write proofcheck verdicts, write handoff packages, mutate worktrees,
+approve merge, verify evidence, or raise assurance. The auto-plan is
+recommendation context only, not proof. Executing `orro auto` remains future
+work and must stay gated by continuation decisions.
+
 Create a separate `ORRO` repository only when distribution needs justify it:
 marketplace manifests, host-specific plugin packaging, version locking, examples,
 product docs, and end-to-end integration tests. That future repo is a wrapper and
@@ -205,7 +216,7 @@ not proof of execution.
 `orro-workflow-plan` that maps the goal to roles, phases, engine calls, required
 gates, and forbidden assurance sources. It does not run workers, call live
 models, call Depone verification, mutate worktrees, approve merge, or raise
-assurance. Full `orro auto` remains future work.
+assurance. Executing `orro auto` remains future work.
 
 The optional workflow-plan binding connects that intent artifact to later
 proofrun evidence by hash. Phase gates prevent using a plan for a phase it does
@@ -303,7 +314,7 @@ blocks handoff and does not write `orro-handoff.json`.
 
 `python3 -m orro <subcommand>` is the product-name entrypoint hosted in this repo.
 Its help shows only the ORRO public commands: `init`, `scout`, `flowplan`,
-`proofrun`, `proofcheck`, `handoff`, `doctor`, and `engine-lock`. Subcommands
+`proofrun`, `proofcheck`, `handoff`, `next`, `auto`, `doctor`, and `engine-lock`. Subcommands
 delegate to the same ORRO parser used by `python3 -m witnessd orro ...`.
 
 This checkout defines minimal packaging metadata for an installed `orro` console

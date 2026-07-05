@@ -176,6 +176,12 @@ class OrroPublicFlowTests(unittest.TestCase):
             code = main(["orro", "next", str(run_dir), "--home", str(home), "--json", *extra])
         return code, json.loads(stdout.getvalue())
 
+    def _orro_auto_dry_run(self, run_dir: Path, home: Path, *extra: str) -> tuple[int, dict]:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(["orro", "auto", "--dry-run", str(run_dir), "--home", str(home), "--json", *extra])
+        return code, json.loads(stdout.getvalue())
+
     def test_proofrun_alias_reuses_run_surface_without_final_trust_claim(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _home, run_dir, payload = self._proofrun(Path(tmp))
@@ -421,6 +427,143 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertTrue(out.is_file())
             self.assertEqual(json.loads(out.read_text(encoding="utf-8")), payload)
 
+    def test_orro_auto_dry_run_after_proofrun_plans_proofcheck_without_running_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            next_code, next_payload = self._orro_next(run_dir, home)
+            self.assertEqual(next_code, 0)
+            self.assertEqual(next_payload["decision"], "needs-proofcheck")
+
+            code, payload = self._orro_auto_dry_run(run_dir, home)
+
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["kind"], "orro-auto-plan")
+            self.assertEqual(payload["schema_version"], "0.1")
+            self.assertEqual(payload["mode"], "dry-run")
+            self.assertEqual(payload["continuation_decision"]["decision"], "needs-proofcheck")
+            self.assertFalse(payload["blocked"])
+            self.assertEqual(len(payload["would_run"]), 1)
+            step = payload["would_run"][0]
+            self.assertEqual(step["phase"], "proofcheck")
+            self.assertEqual(step["command"], [
+                "orro",
+                "proofcheck",
+                str(run_dir),
+                "--home",
+                str(home),
+                "--out",
+                str(run_dir / "proofcheck-verdict.json"),
+            ])
+            self.assertEqual(step["engine"], "Depone")
+            self.assertFalse(step["executes_workers"])
+            self.assertTrue(step["verifies_evidence"])
+            self.assertFalse(payload["boundary"]["executes_commands"])
+            self.assertFalse(payload["boundary"]["verifies_evidence"])
+            self.assertFalse((run_dir / "proofcheck-verdict.json").exists())
+
+    def test_orro_auto_dry_run_after_proofcheck_plans_handoff_without_writing_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            self._proofcheck_out(home, run_dir)
+            next_code, next_payload = self._orro_next(run_dir, home)
+            self.assertEqual(next_code, 0)
+            self.assertEqual(next_payload["decision"], "ready-for-handoff")
+
+            code, payload = self._orro_auto_dry_run(run_dir, home)
+
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["continuation_decision"]["decision"], "ready-for-handoff")
+            self.assertEqual(payload["would_run"], [
+                {
+                    "phase": "handoff",
+                    "command": [
+                        "orro",
+                        "handoff",
+                        str(run_dir),
+                        "--out",
+                        str(run_dir / "orro-handoff.json"),
+                    ],
+                    "engine": "ORRO/witnessd",
+                    "executes_workers": False,
+                    "verifies_evidence": False,
+                    "requires_human": False,
+                }
+            ])
+            self.assertFalse((run_dir / "orro-handoff.json").exists())
+
+    def test_orro_auto_dry_run_after_handoff_is_complete_noop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            self._proofcheck_out(home, run_dir)
+            self._handoff_out(run_dir)
+
+            code, payload = self._orro_auto_dry_run(run_dir, home)
+
+            self.assertEqual(code, 0)
+            self.assertIn(payload["decision"], {"complete", "noop"})
+            self.assertEqual(payload["would_run"], [])
+            self.assertFalse(payload["blocked"])
+
+    def test_orro_auto_dry_run_blocks_without_suggesting_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            self._proofcheck_out(home, run_dir)
+            verdict_path = run_dir / "proofcheck-verdict.json"
+            verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+            verdict["decision"] = "fail"
+            verdict_path.write_text(json.dumps(verdict), encoding="utf-8")
+
+            code, payload = self._orro_auto_dry_run(run_dir, home)
+
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["decision"], "blocked")
+            self.assertTrue(payload["blocked"])
+            self.assertEqual(payload["would_run"], [])
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_AUTO_BLOCKED")
+
+    def test_orro_auto_dry_run_invalid_and_scout_only_dirs_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            missing = root / "missing-run"
+
+            code, payload = self._orro_auto_dry_run(missing, home)
+            self.assertEqual(code, 2)
+            self.assertEqual(payload["continuation_decision"]["decision"], "invalid-run-dir")
+            self.assertEqual(payload["would_run"], [])
+
+            scout_stdout = io.StringIO()
+            with redirect_stdout(scout_stdout):
+                self.assertEqual(main(["orro", "scout", "inspect repo", "--repo", str(repo)]), 0)
+            scout_dir = Path(json.loads(scout_stdout.getvalue())["context_pack"]).parent
+
+            code, payload = self._orro_auto_dry_run(scout_dir, home)
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["would_run"], [])
+            commands = [step.get("phase") for step in payload["would_run"]]
+            self.assertNotIn("handoff", commands)
+
+    def test_orro_auto_requires_dry_run_and_out_writes_same_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            out = run_dir / "orro-auto-plan.json"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(["orro", "auto", str(run_dir), "--home", str(home), "--json"])
+            self.assertEqual(code, 2)
+            self.assertEqual(json.loads(stdout.getvalue())["error"]["code"], "ERR_ORRO_AUTO_DRY_RUN_REQUIRED")
+
+            code, payload = self._orro_auto_dry_run(run_dir, home, "--out", str(out))
+            self.assertEqual(code, 0)
+            self.assertTrue(out.is_file())
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8")), payload)
+
     def test_orro_next_module_and_witnessd_orro_alias_match(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -435,6 +578,26 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(witnessd_orro_next.returncode, 0, witnessd_orro_next.stderr)
             self.assertEqual(json.loads(orro_next.stdout), json.loads(witnessd_orro_next.stdout))
             self.assertEqual(json.loads(orro_next.stdout)["decision"], "needs-proofcheck")
+
+    def test_orro_auto_module_and_witnessd_orro_alias_match(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+
+            orro_auto = self._orro_module_run(
+                ["auto", "--dry-run", str(run_dir), "--home", str(home), "--json"]
+            )
+            witnessd_orro_auto = self._module_run(
+                ["orro", "auto", "--dry-run", str(run_dir), "--home", str(home), "--json"]
+            )
+
+            self.assertEqual(orro_auto.returncode, 0, orro_auto.stderr)
+            self.assertEqual(witnessd_orro_auto.returncode, 0, witnessd_orro_auto.stderr)
+            self.assertEqual(json.loads(orro_auto.stdout), json.loads(witnessd_orro_auto.stdout))
+            payload = json.loads(orro_auto.stdout)
+            self.assertEqual(payload["kind"], "orro-auto-plan")
+            self.assertEqual(payload["continuation_decision"]["decision"], "needs-proofcheck")
+            self.assertFalse((run_dir / "proofcheck-verdict.json").exists())
 
     def test_proofrun_role_lane_plan_forbidden_profiles_fail_before_run_dir(self) -> None:
         for profile in ("review-only", "verification-only"):
@@ -685,6 +848,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             "proofcheck",
             "handoff",
             "next",
+            "auto",
             "doctor",
             "engine-lock",
         ):
