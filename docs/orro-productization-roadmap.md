@@ -44,6 +44,7 @@ python3 -m orro handoff .witnessd/runs/<run-dir> \
   --out .witnessd/runs/<run-dir>/orro-handoff.json
 python3 -m orro doctor --json
 python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
+python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 ```
 
 The module entrypoint delegates to the same wrapper surface as
@@ -160,13 +161,20 @@ The current v0 command is:
 
 ```bash
 python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
+python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 python3 -m witnessd orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
+python3 -m witnessd orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 ```
 
-`engine-lock` validates the Depone pin recorded in `.witnessd/provision.json` and
-reads the local witnessd git commit. If the home is missing or the pin cannot be
-validated, it fails closed. It does not fetch network, update Depone, execute
-workers, verify evidence, approve merge, or raise assurance. `orro lock` is a
+`engine-lock --out` validates the Depone pin recorded in
+`.witnessd/provision.json` and reads the local witnessd git commit before writing
+metadata. `engine-lock --check` reads an existing lock and compares it with the
+current local witnessd commit, validated Depone pin, repositories, schema, and
+boundary flags. If the home is missing, the pin cannot be validated, the lock is
+missing or malformed, or the fields mismatch, it fails closed. A matching lock is
+distribution/readiness alignment only. A mismatch is readiness-blocked, not
+verifier-refuted. It does not fetch network, update Depone, execute workers,
+verify evidence, approve merge, or raise assurance. `orro lock` is a
 compatibility alias for the same command; `engine-lock` is the public name.
 
 ## E2E Smoke Contract

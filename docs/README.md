@@ -35,7 +35,7 @@ Use these names in new user-facing docs:
 | `orro auto` | continuation mode behind evidence gates |
 | `orro ultra` | future high-autonomy profile |
 | `python3 -m orro` | thin product-name entrypoint hosted in witnessd |
-| `orro engine-lock` | distribution metadata for pinned witnessd and Depone commits |
+| `orro engine-lock` | write/check distribution metadata for pinned witnessd and Depone commits |
 | Superflow | historical/compatibility name, superseded by ORRO |
 
 Use `witnessd` only when discussing the engine or CLI. Use `Moonweave` only when
@@ -44,11 +44,14 @@ discussing the publisher/account namespace.
 The current ORRO entrypoint is not a standalone ORRO repository and not a third
 engine. Its help text is product-facing and lists only public ORRO commands. It
 delegates subcommands to the witnessd-hosted ORRO command surface. The engine
-lock is distribution metadata only, not evidence verification, merge approval, or
-an assurance increase. A standalone ORRO repo remains deferred until packaging,
-marketplace, or version-lock distribution needs justify it. The bare `orro`
-console script points at `orro.__main__:main` and remains an alias layer over the
-same product surface.
+lock is distribution metadata only. `--out` writes the pinned commit metadata;
+`--check` detects local environment drift against it. A matching lock is
+readiness alignment only, not evidence verification, merge approval, or an
+assurance increase. A mismatch is readiness-blocked, not verifier-refuted. A
+standalone ORRO repo remains deferred until packaging, marketplace, or
+version-lock distribution needs justify it. The bare `orro` console script
+points at `orro.__main__:main` and remains an alias layer over the same product
+surface.
 
 ## Legacy docs
 

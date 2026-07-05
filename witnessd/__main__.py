@@ -535,6 +535,27 @@ def _emit_orro_error(args: argparse.Namespace, *, code: str, message: str) -> No
     print(code, file=sys.stderr)
 
 
+def _emit_orro_engine_lock_check_error(
+    args: argparse.Namespace, *, code: str, message: str
+) -> None:
+    payload = {
+        "command": "orro engine-lock check",
+        "locked": False,
+        "mismatches": [],
+        "boundary": {
+            "approves_merge": False,
+            "raises_assurance": False,
+            "executes_commands": False,
+            "verifies_evidence": False,
+        },
+        "error": {"code": code, "message": message},
+    }
+    if getattr(args, "json", False):
+        print(json.dumps(payload, sort_keys=True))
+        return
+    print(code, file=sys.stderr)
+
+
 def _collect_orro_artifact_hashes(
     evidence_dir: Path, *, out_path: Path | None = None
 ) -> list[dict[str, str]]:
@@ -779,6 +800,44 @@ def _cmd_orro_doctor(args: argparse.Namespace) -> int:
                     "path": str(home / "provision.json"),
                 }
             )
+    if args.engine_lock:
+        if home is None:
+            checks.append(
+                {
+                    "name": "engine_lock",
+                    "status": "blocked",
+                    "locked": False,
+                    "code": "ERR_ORRO_ENGINE_LOCK_HOME_REQUIRED",
+                }
+            )
+        else:
+            from witnessd.distribution import ProvisionError, check_orro_engine_lock
+
+            try:
+                engine_lock = check_orro_engine_lock(
+                    home=home,
+                    witnessd_root=Path(__file__).resolve().parents[1],
+                    lock_path=Path(args.engine_lock).resolve(strict=False),
+                )
+            except ProvisionError as exc:
+                checks.append(
+                    {
+                        "name": "engine_lock",
+                        "status": "blocked",
+                        "locked": False,
+                        "code": exc.code,
+                    }
+                )
+            else:
+                checks.append(
+                    {
+                        "name": "engine_lock",
+                        "status": "pass" if engine_lock["locked"] else "blocked",
+                        "locked": engine_lock["locked"],
+                        "code": engine_lock.get("error", {}).get("code"),
+                        "mismatches": engine_lock["mismatches"],
+                    }
+                )
     completed = subprocess.run(
         [sys.executable, "-m", "depone", "doctor", "--self-test"],
         text=True,
@@ -820,14 +879,46 @@ def _cmd_orro_doctor(args: argparse.Namespace) -> int:
 
 def _cmd_orro_engine_lock(args: argparse.Namespace) -> int:
     if not args.home:
-        _emit_orro_error(
-            args,
-            code="ERR_ORRO_ENGINE_LOCK_HOME_REQUIRED",
-            message="--home is required to read the pinned Depone provision",
-        )
+        if args.check:
+            _emit_orro_engine_lock_check_error(
+                args,
+                code="ERR_ORRO_ENGINE_LOCK_HOME_REQUIRED",
+                message="--home is required to check the pinned Depone provision",
+            )
+        else:
+            _emit_orro_error(
+                args,
+                code="ERR_ORRO_ENGINE_LOCK_HOME_REQUIRED",
+                message="--home is required to read the pinned Depone provision",
+            )
         return 2
-    from witnessd.distribution import ProvisionError, build_orro_engine_lock
+    from witnessd.distribution import (
+        ERR_ORRO_ENGINE_LOCK_MISMATCH,
+        ProvisionError,
+        build_orro_engine_lock,
+        check_orro_engine_lock,
+    )
 
+    if args.check:
+        try:
+            check_payload = check_orro_engine_lock(
+                home=Path(args.home).resolve(strict=False),
+                witnessd_root=Path(__file__).resolve().parents[1],
+                lock_path=Path(args.check).resolve(strict=False),
+            )
+        except ProvisionError as exc:
+            _emit_orro_engine_lock_check_error(
+                args,
+                code=exc.code,
+                message="ORRO engine lock cannot be checked against the current provision",
+            )
+            return 2
+        print(json.dumps(check_payload, sort_keys=True))
+        if check_payload["locked"]:
+            return 0
+        if check_payload.get("error", {}).get("code") == ERR_ORRO_ENGINE_LOCK_MISMATCH:
+            return 1
+        return 2
     try:
         payload = build_orro_engine_lock(
             home=Path(args.home).resolve(strict=False),
@@ -1787,14 +1878,16 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["codex", "claude", "opencode"],
     )
     orro_doctor.add_argument("--json", action="store_true")
+    orro_doctor.add_argument("--engine-lock", default=None)
     orro_doctor.set_defaults(func=_cmd_orro_doctor)
 
     engine_lock = sub.add_parser(
         "engine-lock",
-        help="write ORRO distribution metadata for pinned engine commits",
+        help="write/check ORRO distribution metadata for pinned engine commits",
     )
     engine_lock.add_argument("--home", default=None)
     engine_lock.add_argument("--out", default=None)
+    engine_lock.add_argument("--check", default=None)
     engine_lock.add_argument("--json", action="store_true")
     engine_lock.set_defaults(func=_cmd_orro_engine_lock)
 

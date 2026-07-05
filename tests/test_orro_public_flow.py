@@ -227,6 +227,127 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(payload["kind"], "orro-engine-lock")
             self.assertTrue(out.is_file())
 
+    def test_orro_engine_lock_check_accepts_matching_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _repo, home = self._init_home(root)
+            out = root / "orro-engine-lock.json"
+            write_lock = self._orro_module_run(
+                ["engine-lock", "--home", str(home), "--out", str(out)]
+            )
+            self.assertEqual(write_lock.returncode, 0, write_lock.stderr)
+
+            check = self._orro_module_run(
+                ["engine-lock", "--home", str(home), "--check", str(out), "--json"]
+            )
+
+            self.assertEqual(check.returncode, 0, check.stderr)
+            payload = json.loads(check.stdout)
+            self.assertEqual(payload["command"], "orro engine-lock check")
+            self.assertTrue(payload["locked"])
+            self.assertEqual(payload["mismatches"], [])
+            self.assertFalse(payload["boundary"]["approves_merge"])
+            self.assertFalse(payload["boundary"]["raises_assurance"])
+            self.assertFalse(payload["boundary"]["executes_commands"])
+            self.assertFalse(payload["boundary"]["verifies_evidence"])
+            self.assertFalse((home / "runs").exists())
+
+    def test_witnessd_orro_engine_lock_alias_checks_matching_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _repo, home = self._init_home(root)
+            out = root / "lock.json"
+            write_lock = self._orro_module_run(
+                ["engine-lock", "--home", str(home), "--out", str(out)]
+            )
+            self.assertEqual(write_lock.returncode, 0, write_lock.stderr)
+
+            check = self._module_run(
+                ["orro", "engine-lock", "--home", str(home), "--check", str(out), "--json"]
+            )
+
+            self.assertEqual(check.returncode, 0, check.stderr)
+            self.assertTrue(json.loads(check.stdout)["locked"])
+
+    def test_orro_engine_lock_check_reports_mismatches_without_assurance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _repo, home = self._init_home(root)
+            out = root / "lock.json"
+            bad_lock = root / "bad-lock.json"
+            write_lock = self._orro_module_run(
+                ["engine-lock", "--home", str(home), "--out", str(out)]
+            )
+            self.assertEqual(write_lock.returncode, 0, write_lock.stderr)
+            payload = json.loads(out.read_text(encoding="utf-8"))
+            payload["witnessd"]["commit"] = "0" * 40
+            bad_lock.write_text(json.dumps(payload), encoding="utf-8")
+
+            check = self._orro_module_run(
+                ["engine-lock", "--home", str(home), "--check", str(bad_lock), "--json"]
+            )
+
+            self.assertEqual(check.returncode, 1)
+            result = json.loads(check.stdout)
+            self.assertFalse(result["locked"])
+            self.assertEqual(result["error"]["code"], "ERR_ORRO_ENGINE_LOCK_MISMATCH")
+            mismatch_fields = {entry["field"] for entry in result["mismatches"]}
+            self.assertIn("witnessd.commit", mismatch_fields)
+            commit_mismatch = next(
+                entry for entry in result["mismatches"] if entry["field"] == "witnessd.commit"
+            )
+            self.assertEqual(commit_mismatch["expected"], "0" * 40)
+            self.assertRegex(commit_mismatch["current"], r"^[0-9a-f]{40}$")
+            self.assertFalse(result["boundary"]["raises_assurance"])
+            self.assertFalse(result["boundary"]["verifies_evidence"])
+
+    def test_orro_engine_lock_check_fails_closed_for_invalid_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _repo, home = self._init_home(root)
+            cases = {
+                "wrong-kind": json.dumps({"kind": "not-orro-engine-lock"}),
+                "wrong-schema": json.dumps(
+                    {"kind": "orro-engine-lock", "schema_version": "9.9"}
+                ),
+                "malformed": "{not json",
+                "non-object": "[]",
+            }
+            for name, contents in cases.items():
+                with self.subTest(name=name):
+                    invalid = root / f"{name}-lock.json"
+                    invalid.write_text(contents, encoding="utf-8")
+
+                    check = self._orro_module_run(
+                        ["engine-lock", "--home", str(home), "--check", str(invalid), "--json"]
+                    )
+
+                    self.assertEqual(check.returncode, 2)
+                    payload = json.loads(check.stdout)
+                    self.assertFalse(payload["locked"])
+                    self.assertIn(
+                        payload["error"]["code"],
+                        {
+                            "ERR_ORRO_ENGINE_LOCK_INVALID",
+                            "ERR_ORRO_ENGINE_LOCK_LOAD_FAILED",
+                        },
+                    )
+
+    def test_orro_engine_lock_check_fails_closed_for_missing_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _repo, home = self._init_home(root)
+            missing = root / "missing-lock.json"
+
+            check = self._orro_module_run(
+                ["engine-lock", "--home", str(home), "--check", str(missing), "--json"]
+            )
+
+            self.assertEqual(check.returncode, 2)
+            payload = json.loads(check.stdout)
+            self.assertFalse(payload["locked"])
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_ENGINE_LOCK_LOAD_FAILED")
+
     def test_orro_engine_lock_blocks_on_uninitialized_home(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -709,6 +830,79 @@ class OrroPublicFlowTests(unittest.TestCase):
                 checks["depone_pin"]["code"],
                 "ERR_WITNESSD_DEPONE_ROOT_INVALID",
             )
+            self.assertFalse(payload["boundary"]["verifier_refuted"])
+
+    def test_orro_doctor_reports_matching_engine_lock_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _repo, home = self._init_home(root)
+            out = root / "lock.json"
+            write_lock = self._orro_module_run(
+                ["engine-lock", "--home", str(home), "--out", str(out)]
+            )
+            self.assertEqual(write_lock.returncode, 0, write_lock.stderr)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "doctor",
+                        "--home",
+                        str(home),
+                        "--engine-lock",
+                        str(out),
+                        "--adapter",
+                        "codex",
+                        "--json",
+                    ]
+                )
+
+            self.assertIn(code, {0, 1})
+            payload = json.loads(stdout.getvalue())
+            checks = {check["name"]: check for check in payload["checks"]}
+            self.assertEqual(checks["engine_lock"]["status"], "pass")
+            self.assertTrue(checks["engine_lock"]["locked"])
+            self.assertFalse(payload["boundary"]["verifier_refuted"])
+
+    def test_orro_doctor_blocks_mismatched_engine_lock_as_readiness_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _repo, home = self._init_home(root)
+            out = root / "lock.json"
+            write_lock = self._orro_module_run(
+                ["engine-lock", "--home", str(home), "--out", str(out)]
+            )
+            self.assertEqual(write_lock.returncode, 0, write_lock.stderr)
+            payload = json.loads(out.read_text(encoding="utf-8"))
+            payload["depone"]["commit"] = "f" * 40
+            out.write_text(json.dumps(payload), encoding="utf-8")
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "doctor",
+                        "--home",
+                        str(home),
+                        "--engine-lock",
+                        str(out),
+                        "--adapter",
+                        "codex",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 1)
+            payload = json.loads(stdout.getvalue())
+            checks = {check["name"]: check for check in payload["checks"]}
+            self.assertEqual(checks["engine_lock"]["status"], "blocked")
+            self.assertEqual(
+                checks["engine_lock"]["code"],
+                "ERR_ORRO_ENGINE_LOCK_MISMATCH",
+            )
+            self.assertFalse(checks["engine_lock"]["locked"])
             self.assertFalse(payload["boundary"]["verifier_refuted"])
 
     def test_full_orro_flow_module_surface_reaches_handoff(self) -> None:

@@ -12,6 +12,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _depone_root() -> Path:
+    env_root = os.environ.get("WITNESSD_DEPONE_ROOT")
+    if env_root:
+        return Path(env_root)
+    return ROOT.parent / "depone"
+
+
 class OrroPackagingTests(unittest.TestCase):
     def test_editable_install_exposes_orro_console_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -82,6 +89,81 @@ class OrroPackagingTests(unittest.TestCase):
             self.assertEqual(
                 json.loads(lock.stdout)["error"]["code"],
                 "ERR_ORRO_ENGINE_LOCK_HOME_REQUIRED",
+            )
+
+            home = tmp_path / "home"
+            init = subprocess.run(
+                [
+                    str(python),
+                    "-m",
+                    "witnessd",
+                    "init",
+                    "--home",
+                    str(home),
+                    "--depone-root",
+                    str(_depone_root()),
+                ],
+                cwd=tmp_path,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(init.returncode, 0, init.stderr)
+
+            lock_path = tmp_path / "orro-engine-lock.json"
+            write_lock = subprocess.run(
+                [str(orro), "engine-lock", "--home", str(home), "--out", str(lock_path)],
+                cwd=tmp_path,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(write_lock.returncode, 0, write_lock.stderr)
+            self.assertTrue(lock_path.is_file())
+
+            check_lock = subprocess.run(
+                [
+                    str(orro),
+                    "engine-lock",
+                    "--home",
+                    str(home),
+                    "--check",
+                    str(lock_path),
+                    "--json",
+                ],
+                cwd=tmp_path,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(check_lock.returncode, 0, check_lock.stderr)
+            self.assertTrue(json.loads(check_lock.stdout)["locked"])
+
+            mismatched = tmp_path / "mismatched-lock.json"
+            payload = json.loads(lock_path.read_text(encoding="utf-8"))
+            payload["witnessd"]["commit"] = "0" * 40
+            mismatched.write_text(json.dumps(payload), encoding="utf-8")
+            mismatch = subprocess.run(
+                [
+                    str(orro),
+                    "engine-lock",
+                    "--home",
+                    str(home),
+                    "--check",
+                    str(mismatched),
+                    "--json",
+                ],
+                cwd=tmp_path,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(mismatch.returncode, 1)
+            mismatch_payload = json.loads(mismatch.stdout)
+            self.assertFalse(mismatch_payload["locked"])
+            self.assertEqual(
+                mismatch_payload["error"]["code"],
+                "ERR_ORRO_ENGINE_LOCK_MISMATCH",
             )
 
 

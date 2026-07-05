@@ -135,6 +135,7 @@ python3 -m orro handoff .witnessd/runs/<run-dir> \
   --out .witnessd/runs/<run-dir>/orro-handoff.json
 python3 -m orro doctor --json
 python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
+python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 ```
 
 `python3 -m orro --help` is product-facing and lists only the public ORRO Flow
@@ -150,13 +151,17 @@ orro = orro.__main__:main
 ```
 
 It must remain an alias layer over the witnessd-hosted ORRO surface, and install
-smoke tests must cover help, flowplan, and fail-closed engine-lock behavior.
+smoke tests must cover help, flowplan, engine-lock write/check, and fail-closed
+engine-lock behavior.
 
 The engine lock is distribution metadata only. It records pinned engine commits
-and does not verify evidence, approve merge, raise assurance, or execute workers.
-The `engine-lock` command may read the local witnessd git HEAD and the validated
-Depone pin in `.witnessd/provision.json`, but it must not fetch network, update
-Depone, or duplicate verifier/runtime logic.
+and can check the current local environment for drift against those commits. A
+matching lock means distribution/readiness alignment only. A mismatch is
+readiness-blocked, not verifier-refuted. Engine-lock does not verify evidence,
+approve merge, raise assurance, or execute workers. The `engine-lock` command may
+read the local witnessd git HEAD and the validated Depone pin in
+`.witnessd/provision.json`, but it must not fetch network, update Depone, or
+duplicate verifier/runtime logic.
 
 Create a standalone `ORRO` repo only when distribution needs justify it:
 marketplace manifests, host-specific plugin bundles, examples, product docs,
@@ -666,8 +671,8 @@ Roadmap:
 - W17: journaled replay-resume.
 - W18: distribution, session UX, ORRO command/skill bootstrap, scout artifacts,
   skillpack discovery, verification-recipe receipts, `orro doctor`, the thin
-  `python3 -m orro` module entrypoint, ORRO engine-lock v0, and the `orro`
-  console script alias.
+  `python3 -m orro` module entrypoint, ORRO engine-lock write/check v0, and the
+  `orro` console script alias.
 - W18.5: MCP and enterprise tool receipts.
 - W17.5: design-to-execute bridge.
 - W19: first live multi-agent parallel proof.

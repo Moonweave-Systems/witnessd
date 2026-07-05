@@ -31,9 +31,12 @@ is not a standalone ORRO repository and not a third engine.
 `engine-lock`.
 
 Use `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
-to write distribution metadata for the pinned witnessd and Depone commits. The
-lock is not proof, evidence verification, merge approval, or assurance, and it
-must not execute workers.
+to write distribution metadata for the pinned witnessd and Depone commits. Use
+`python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json`
+to check the current local environment for drift against that metadata. A
+matching lock is readiness alignment only. A mismatch is readiness-blocked, not
+verifier-refuted. The lock is not proof, evidence verification, merge approval,
+or assurance, and it must not execute workers.
 
 The standalone ORRO repo remains deferred until packaging, marketplace, and
 version-lock distribution needs justify it. The packaged bare `orro` executable
