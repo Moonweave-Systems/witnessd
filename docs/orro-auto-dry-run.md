@@ -1,7 +1,7 @@
 # ORRO Auto Dry-Run v0
 
-`orro auto --dry-run` is the non-executing automation planner before any
-executing `orro auto` mode.
+`orro auto --dry-run` is the non-executing automation planner for the ORRO
+continuation path.
 
 ```bash
 orro auto --dry-run .witnessd/runs/<run-dir> --home .witnessd --json
@@ -23,6 +23,17 @@ mutate worktrees, approve merge, verify evidence, or raise assurance. A
 recommended proofcheck command would verify evidence if a user runs it later;
 the dry-run itself does not verify evidence.
 
+The paired limited execution mode is:
+
+```bash
+orro auto --once .witnessd/runs/<run-dir> --home .witnessd --json
+```
+
+`--once` re-checks continuation state and executes at most one allowed step:
+proofcheck, handoff, or complete no-op. It does not launch proofrun or workers,
+repair artifacts, retry or resume lanes, call live models or MCP, approve merge,
+or raise assurance.
+
 Decision mapping:
 
 - `needs-proofcheck`: recommend proofcheck.
@@ -40,5 +51,4 @@ Depone verifies; witnessd executes; ORRO exposes the workflow.
 
 The auto-plan is recommendation context only. It is not proof, not evidence
 verification, not merge approval, and not assurance. Calling `orro auto` without
-`--dry-run` must fail closed until executing automation is implemented as a
-separate gated mode.
+`--dry-run` or `--once` must fail closed.

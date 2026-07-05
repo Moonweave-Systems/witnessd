@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -24,6 +25,7 @@ import shutil
 import shlex
 import sys
 import time
+from contextlib import redirect_stdout
 from pathlib import Path
 
 from witnessd.observer import ObserverSeparationError, assert_separated
@@ -1213,13 +1215,26 @@ def _cmd_orro_next(args: argparse.Namespace) -> int:
 
 
 def _cmd_orro_auto(args: argparse.Namespace) -> int:
-    from witnessd.orro_auto import OrroAutoError, build_auto_plan, write_auto_plan
+    from witnessd.orro_auto import (
+        OrroAutoError,
+        build_auto_plan,
+        build_auto_receipt,
+        write_auto_plan,
+        write_auto_receipt,
+    )
 
-    if not args.dry_run:
+    if args.dry_run and args.once:
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_AUTO_MODE_CONFLICT",
+            message="choose exactly one of --dry-run or --once",
+        )
+        return 2
+    if not args.dry_run and not args.once:
         _emit_orro_error(
             args,
             code="ERR_ORRO_AUTO_DRY_RUN_REQUIRED",
-            message="orro auto currently supports --dry-run only",
+            message="orro auto requires --dry-run or --once",
         )
         return 2
     if not args.run_dir:
@@ -1232,14 +1247,99 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve(strict=False)
     home = Path(args.home).resolve(strict=False) if args.home else None
     code, payload = build_auto_plan(run_dir, home=home)
-    if args.out:
+    if args.dry_run and args.out:
         try:
             write_auto_plan(Path(args.out).resolve(strict=False), payload)
         except OrroAutoError as exc:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 1
-    print(json.dumps(payload, sort_keys=True))
-    return code
+    if args.dry_run:
+        print(json.dumps(payload, sort_keys=True))
+        return code
+
+    decision_before = str(payload.get("decision", "blocked"))
+    would_run = payload.get("would_run", [])
+    if not would_run:
+        receipt = build_auto_receipt(
+            run_dir,
+            decision_before=decision_before,
+            executed=False,
+            executed_phase=None,
+            command=[],
+            exit_code=0 if decision_before == "complete" else code,
+            decision_after=decision_before,
+            wrote=[],
+            reasons=list(payload.get("reasons", [])),
+            error=payload.get("error") if isinstance(payload.get("error"), dict) else None,
+        )
+        if args.out:
+            try:
+                write_auto_receipt(Path(args.out).resolve(strict=False), receipt)
+            except OrroAutoError as exc:
+                _emit_orro_error(args, code=exc.code, message=str(exc))
+                return 1
+        print(json.dumps(receipt, sort_keys=True))
+        if decision_before == "complete":
+            return 0
+        return code
+
+    step = would_run[0]
+    command = list(step.get("command", [])) if isinstance(step, dict) else []
+    phase = str(step.get("phase", "")) if isinstance(step, dict) else ""
+    if phase not in {"proofcheck", "handoff"} or not command:
+        receipt = build_auto_receipt(
+            run_dir,
+            decision_before=decision_before,
+            executed=False,
+            executed_phase=None,
+            command=[],
+            exit_code=1,
+            decision_after=decision_before,
+            wrote=[],
+            reasons=["unsupported auto continuation decision"],
+            error={
+                "code": "ERR_ORRO_AUTO_UNSUPPORTED_DECISION",
+                "message": "orro auto --once only supports proofcheck and handoff",
+            },
+        )
+        print(json.dumps(receipt, sort_keys=True))
+        return 1
+
+    child_stdout = io.StringIO()
+    with redirect_stdout(child_stdout):
+        child_code = main(command)
+    _after_code, after_payload = build_auto_plan(run_dir, home=home)
+    decision_after = str(after_payload.get("decision", "blocked"))
+    wrote = []
+    if phase == "proofcheck" and (run_dir / "proofcheck-verdict.json").is_file():
+        wrote.append("proofcheck-verdict.json")
+    if phase == "handoff" and (run_dir / "orro-handoff.json").is_file():
+        wrote.append("orro-handoff.json")
+    error = None
+    if child_code != 0:
+        error = {
+            "code": "ERR_ORRO_AUTO_BLOCKED",
+            "message": child_stdout.getvalue(),
+        }
+    receipt = build_auto_receipt(
+        run_dir,
+        decision_before=decision_before,
+        executed=True,
+        executed_phase=phase,
+        command=command,
+        exit_code=child_code,
+        decision_after=decision_after,
+        wrote=wrote,
+        error=error,
+    )
+    if args.out:
+        try:
+            write_auto_receipt(Path(args.out).resolve(strict=False), receipt)
+        except OrroAutoError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 1
+    print(json.dumps(receipt, sort_keys=True))
+    return child_code
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
@@ -2194,6 +2294,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_auto = sub.add_parser("orro-auto", help=argparse.SUPPRESS)
     orro_auto.add_argument("run_dir", nargs="?")
     orro_auto.add_argument("--dry-run", action="store_true")
+    orro_auto.add_argument("--once", action="store_true")
     orro_auto.add_argument("--home", default=None)
     orro_auto.add_argument("--out", default=None)
     orro_auto.add_argument("--json", action="store_true")

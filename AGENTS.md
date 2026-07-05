@@ -19,9 +19,10 @@ This guidance is derived from that spec.
 - `orro handoff`: maintainer review package bound to an explicit passing `proofcheck-verdict.json`
 - `orro next`: non-executing continuation gate over persisted run artifacts
 - `orro auto --dry-run`: non-executing automation planner; recommendation context only
+- `orro auto --once`: one-step proofcheck/handoff executor; orchestration metadata only
 - `orro skillpack`: knowledge-as-code and progressive-disclosure support
 - `orro doctor`: engine/verifier/adapter/key/MCP/policy readiness check
-- `orro auto`: future executing continuation loop behind evidence gates
+- `orro auto`: future multi-step continuation loop behind evidence gates
 - `orro ultra`: future high-autonomy profile with stricter gates
 
 ## Entrypoint and distribution metadata
@@ -54,7 +55,7 @@ compile a deterministic `orro-workflow-plan` for supported profiles:
 `release-readiness`. The workflow plan is intent, not evidence. Roles do not
 create assurance by existing. `proofrun` is the first execution phase,
 `proofcheck` is the verifier phase, `handoff` is review packaging only, and full
-Executing `orro auto` remains future work.
+Multi-step autonomous `orro auto` remains future work.
 
 `python3 -m orro proofrun "<goal>" --repo <repo> --home .witnessd --workflow-plan workflow-plan.json`
 first applies a phase gate: the plan must allow `proofrun` through a witnessd
@@ -87,8 +88,14 @@ continuation decision and emits an `orro-auto-plan` with the exact command it
 would run next. It is non-executing: it does not call Depone, run proofcheck,
 write handoff, launch workers, mutate worktrees, verify evidence, approve merge,
 or raise assurance. The auto-plan is recommendation context, not proof. Calling
-`orro auto` without `--dry-run` must fail closed until executing automation is
-explicitly implemented.
+`orro auto` without `--dry-run` or `--once` must fail closed.
+
+`python3 -m orro auto --once <run-dir> --home .witnessd --json` re-checks the
+continuation decision and executes at most one allowed step: proofcheck,
+handoff, or complete no-op. It must not launch proofrun or workers, call live
+models or MCP, repair artifacts, retry or resume lanes, approve merge, or raise
+assurance. Its `orro-auto-receipt` is orchestration metadata, not proof or
+verifier truth.
 
 The standalone ORRO repo remains deferred until packaging, marketplace, and
 version-lock distribution needs justify it. The packaged bare `orro` executable

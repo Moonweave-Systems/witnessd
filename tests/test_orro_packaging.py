@@ -95,6 +95,21 @@ class OrroPackagingTests(unittest.TestCase):
             self.assertEqual(auto_payload["would_run"], [])
             self.assertFalse(auto_payload["boundary"]["executes_commands"])
 
+            missing_auto_once = subprocess.run(
+                [str(orro), "auto", "--once", str(tmp_path / "missing-run"), "--json"],
+                cwd=tmp_path,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(missing_auto_once.returncode, 2)
+            once_payload = json.loads(missing_auto_once.stdout)
+            self.assertEqual(once_payload["kind"], "orro-auto-receipt")
+            self.assertEqual(once_payload["decision_before"], "invalid-run-dir")
+            self.assertFalse(once_payload["executed"])
+            self.assertEqual(once_payload["command"], [])
+            self.assertFalse(once_payload["boundary"]["launches_workers"])
+
             root = tmp_path / "repo"
             root.mkdir()
             flowplan = subprocess.run(

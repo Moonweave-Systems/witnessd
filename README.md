@@ -27,10 +27,10 @@ run_json="$(python3 -m orro proofrun "write two independent files" --repo . --ho
 run_dir="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["run_dir"])' "$run_json")"
 python3 -m orro next "$run_dir" --home .witnessd --json
 python3 -m orro auto --dry-run "$run_dir" --home .witnessd --json
-python3 -m orro proofcheck "$run_dir" --home .witnessd --out "$run_dir/proofcheck-verdict.json"
+python3 -m orro auto --once "$run_dir" --home .witnessd --json
 python3 -m orro next "$run_dir" --home .witnessd --json
 python3 -m orro auto --dry-run "$run_dir" --home .witnessd --json
-python3 -m orro handoff "$run_dir" --out "$run_dir/orro-handoff.json"
+python3 -m orro auto --once "$run_dir" --home .witnessd --json
 python3 -m orro next "$run_dir" --home .witnessd --json
 ```
 
@@ -82,9 +82,10 @@ authority. For the repo documentation map, see [`docs/README.md`](docs/README.md
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro next` | non-executing continuation gate over persisted run artifacts |
 | `orro auto --dry-run` | non-executing automation planner that recommends the next command |
+| `orro auto --once` | one-step executor for proofcheck or handoff only |
 | `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
-| `orro auto` | future executing resume/continuation loop behind evidence gates |
+| `orro auto` | future multi-step resume/continuation loop behind evidence gates |
 | `orro ultra` | future high-autonomy profile with stricter gates |
 
 `witnessd` is the engine name, not the main session skill name. `Moonweave` is the
@@ -172,8 +173,16 @@ state and emits an `orro-auto-plan` with the exact command it would run next,
 such as proofcheck or handoff. It does not run that command, call Depone, launch
 workers, write proofcheck verdicts, write handoff packages, mutate worktrees,
 approve merge, verify evidence, or raise assurance. The auto-plan is
-recommendation context only, not proof. Executing `orro auto` remains future
-work and must stay gated by continuation decisions.
+recommendation context only, not proof. Multi-step autonomous `orro auto`
+remains future work and must stay gated by continuation decisions.
+
+`orro auto --once <run-dir> --home .witnessd --json` re-checks continuation
+state and executes at most one safe next step. In v0, the only allowed steps are
+proofcheck for `needs-proofcheck`, handoff for `ready-for-handoff`, and no-op for
+`complete`. It never launches proofrun or workers, calls live models or MCP,
+repairs artifacts, retries lanes, resumes lanes, approves merge, or raises
+assurance. When it runs proofcheck, verification is delegated to Depone. The
+`orro-auto-receipt` is orchestration metadata only, not proof or verifier truth.
 
 Create a separate `ORRO` repository only when distribution needs justify it:
 marketplace manifests, host-specific plugin packaging, version locking, examples,
@@ -216,7 +225,7 @@ not proof of execution.
 `orro-workflow-plan` that maps the goal to roles, phases, engine calls, required
 gates, and forbidden assurance sources. It does not run workers, call live
 models, call Depone verification, mutate worktrees, approve merge, or raise
-assurance. Executing `orro auto` remains future work.
+assurance. Multi-step autonomous `orro auto` remains future work.
 
 The optional workflow-plan binding connects that intent artifact to later
 proofrun evidence by hash. Phase gates prevent using a plan for a phase it does

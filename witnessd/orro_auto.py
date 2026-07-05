@@ -11,6 +11,8 @@ from witnessd.orro_next import decide_next
 
 AUTO_PLAN_KIND = "orro-auto-plan"
 AUTO_PLAN_SCHEMA_VERSION = "0.1"
+AUTO_RECEIPT_KIND = "orro-auto-receipt"
+AUTO_RECEIPT_SCHEMA_VERSION = "0.1"
 
 ERR_ORRO_AUTO_BLOCKED = "ERR_ORRO_AUTO_BLOCKED"
 ERR_ORRO_AUTO_WRITE_FAILED = "ERR_ORRO_AUTO_WRITE_FAILED"
@@ -102,6 +104,56 @@ def write_auto_plan(path: Path, payload: dict[str, Any]) -> None:
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     except OSError as exc:
         raise OrroAutoError(ERR_ORRO_AUTO_WRITE_FAILED, str(exc)) from exc
+
+
+def build_auto_receipt(
+    run_dir: Path,
+    *,
+    decision_before: str,
+    executed: bool,
+    executed_phase: str | None,
+    command: list[str],
+    exit_code: int,
+    decision_after: str,
+    wrote: list[str],
+    reasons: list[str] | None = None,
+    error: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "kind": AUTO_RECEIPT_KIND,
+        "schema_version": AUTO_RECEIPT_SCHEMA_VERSION,
+        "mode": "once",
+        "run_dir": str(run_dir.resolve(strict=False)),
+        "decision_before": decision_before,
+        "executed": executed,
+        "executed_phase": executed_phase,
+        "command": command,
+        "exit_code": exit_code,
+        "decision_after": decision_after,
+        "wrote": wrote,
+        "reasons": reasons or [],
+        "boundary": {
+            "auto_once": True,
+            "executes_at_most_one_step": True,
+            "launches_workers": False,
+            "executes_proofrun": False,
+            "mutates_worktree": False,
+            "verifies_evidence_itself": False,
+            "delegates_verification_to_depone": executed_phase == "proofcheck",
+            "approves_merge": False,
+            "raises_assurance": False,
+            "depone_verifies": True,
+            "witnessd_executes": True,
+            "orro_exposes_workflow": True,
+        },
+    }
+    if error is not None:
+        payload["error"] = error
+    return payload
+
+
+def write_auto_receipt(path: Path, payload: dict[str, Any]) -> None:
+    write_auto_plan(path, payload)
 
 
 def _base_plan(
