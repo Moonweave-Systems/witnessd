@@ -9,6 +9,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
+import witnessd.__main__ as witnessd_cli
 from witnessd.__main__ import main
 from witnessd.distribution import (
     ERR_WITNESSD_DEPONE_PIN_MISMATCH,
@@ -125,27 +126,46 @@ class DistributionInitTests(unittest.TestCase):
             self.assertTrue((home / "provision.json").is_file())
 
     def test_cli_init_auto_detects_sibling_depone_checkout(self) -> None:
-        witnessd_root = Path(__file__).resolve().parents[1]
-        depone_root = witnessd_root.parent / "depone"
-        if os.environ.get("WITNESSD_DEPONE_ROOT"):
-            self.skipTest("sibling auto-detection requires a sibling Depone checkout")
+        # Build a synthetic sibling layout so auto-detection is covered on
+        # any machine (CI has no real sibling depone checkout).
         with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp) / "home"
+            base = Path(tmp)
+            witnessd_root = base / "witnessd"
+            depone_root = base / "depone"
+            witnessd_root.mkdir()
+            depone_root.mkdir()
+            self._seed_git_repo(
+                witnessd_root,
+                {"witnessd/__init__.py": "", "witnessd/__main__.py": ""},
+            )
+            self._seed_git_repo(depone_root, {"depone/__init__.py": ""})
+            home = base / "home"
             out = io.StringIO()
             err = io.StringIO()
 
-            with patch.dict(os.environ, {"WITNESSD_DEPONE_ROOT": ""}):
+            with patch.dict(os.environ, {"WITNESSD_DEPONE_ROOT": ""}), patch.object(
+                witnessd_cli,
+                "__file__",
+                str(witnessd_root / "witnessd" / "__main__.py"),
+            ):
                 os.environ.pop("WITNESSD_DEPONE_ROOT", None)
                 with redirect_stdout(out), redirect_stderr(err):
                     code = main(["init", "--home", str(home)])
 
             self.assertEqual(code, 0, err.getvalue())
-            provision = json.loads((home / "provision.json").read_text(encoding="utf-8"))
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload["provision"], str(home / "provision.json"))
+
+            provision = json.loads(
+                (home / "provision.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(provision["depone"]["root"], str(depone_root.resolve()))
             self.assertEqual(provision["depone"]["source"], "sibling-checkout")
             self.assertFalse(provision["depone"]["network_used"])
 
-    def test_init_allow_network_provisions_depone_when_no_local_checkout_exists(self) -> None:
+    def test_init_allow_network_provisions_depone_when_no_local_checkout_exists(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             fake_witnessd = root / "isolated" / "witnessd"
@@ -174,7 +194,9 @@ class DistributionInitTests(unittest.TestCase):
                     )
                 )
 
-            provision = json.loads(Path(result["provision"]).read_text(encoding="utf-8"))
+            provision = json.loads(
+                Path(result["provision"]).read_text(encoding="utf-8")
+            )
             depone_root = Path(provision["depone"]["root"])
             self.assertEqual(depone_root, home.resolve() / "depone-pinned")
             self.assertTrue((depone_root / "depone").is_dir())
