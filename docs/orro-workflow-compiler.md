@@ -69,6 +69,12 @@ would run. It is recommendation context only: it does not execute the command,
 call Depone, launch workers, verify evidence, approve merge, or raise
 assurance.
 
+`orro report <run-dir> --home <home> --json` can summarize the resulting
+workflow plan binding, role-lane binding, role dispatch, evidence, proofcheck,
+handoff, continuation, auto metadata, and reviewer focus. It is human-facing
+summary context only and must not be treated as proof, verifier truth, approval,
+or assurance.
+
 `orro auto --once <run-dir> --home <home> --json` re-checks continuation state
 and executes at most one allowed step. In v0, that means proofcheck, handoff, or
 complete no-op only. It does not launch proofrun or workers, execute role-lane

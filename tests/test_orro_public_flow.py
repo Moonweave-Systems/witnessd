@@ -1256,6 +1256,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             "proofcheck",
             "handoff",
             "next",
+            "report",
             "auto",
             "doctor",
             "engine-lock",
@@ -1279,6 +1280,7 @@ class OrroPublicFlowTests(unittest.TestCase):
         self.assertEqual(help_result.stderr, "")
         self.assertIn("ORRO Flow", help_result.stdout)
         self.assertIn("init", help_result.stdout)
+        self.assertIn("report", help_result.stdout)
         self.assertIn("engine-lock", help_result.stdout)
         self.assertNotIn("self-test", help_result.stdout)
 

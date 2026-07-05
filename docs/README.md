@@ -14,6 +14,7 @@ This file exists to prevent doc drift. It is a map, not a second spec.
 | Agent/developer orientation | [`../CLAUDE.md`](../CLAUDE.md) |
 | ORRO workstyle doctrine v0 | [`orro-workstyle-doctrine.md`](orro-workstyle-doctrine.md) |
 | ORRO product reality check | [`orro-product-reality-check.md`](orro-product-reality-check.md) |
+| ORRO report v0 | [`orro-report.md`](orro-report.md) |
 | ORRO workflow compiler v0 | [`orro-workflow-compiler.md`](orro-workflow-compiler.md) |
 | ORRO continuation gate v0 | [`orro-continuation-gate.md`](orro-continuation-gate.md) |
 | ORRO auto dry-run v0 | [`orro-auto-dry-run.md`](orro-auto-dry-run.md) |
@@ -42,6 +43,7 @@ Use these names in new user-facing docs:
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro next` | non-executing continuation/status gate over persisted run artifacts |
+| `orro report` | human-facing summary of observed ORRO artifacts and next safe action |
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
 | `orro auto --until-complete` | bounded post-run loop over proofcheck and handoff only |
@@ -107,6 +109,13 @@ approve merge, or raise assurance. `needs-proofcheck` means run proofcheck next;
 `ready-for-handoff` means a passing bound proofcheck verdict exists; `complete`
 means handoff exists after proofcheck pass; `blocked` means do not continue
 without human/verifier intervention. Role status is derived context, not proof.
+
+`orro report <run-dir> --home <home> --json` is the human-facing compression
+layer for a run directory. It summarizes observed artifacts, proofcheck state,
+handoff state, next safe action, reviewer focus, and do-not-trust boundaries.
+It reduces artifact fatigue for non-developers and reviewers, but it does not
+execute, verify evidence, approve merge, raise assurance, replace proofcheck, or
+replace human review.
 
 `orro auto --dry-run <run-dir> --home <home> --json` consumes that continuation
 state and emits an `orro-auto-plan` with the exact command it would run next. It

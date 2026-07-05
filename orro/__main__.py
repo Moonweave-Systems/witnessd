@@ -7,7 +7,7 @@ import sys
 from witnessd.__main__ import main as witnessd_main
 
 
-ORRO_HELP = """usage: orro [-h] {init,advise,scout,flowplan,proofrun,proofcheck,handoff,next,auto,doctor,engine-lock} ...
+ORRO_HELP = """usage: orro [-h] {init,advise,scout,flowplan,proofrun,proofcheck,handoff,next,report,auto,doctor,engine-lock} ...
 
 ORRO - Observed Run & Review Orchestrator
 
@@ -23,16 +23,17 @@ public commands:
   proofcheck   offline evidence verification delegated to Depone
   handoff      maintainer review package gated by proofcheck-verdict.json
   next         non-executing continuation gate over persisted run artifacts
+  report       human-facing summary of observed ORRO artifacts and next action
   auto         dry-run, one-step, or bounded post-run automation
   doctor       ORRO readiness check; does not verify evidence
   engine-lock  write/check distribution metadata for pinned engine commits
 
 boundary:
   Depone verifies; witnessd executes; ORRO exposes the workflow.
-  advise and next read status/intent only; auto --dry-run recommends commands
-  only; auto --once executes at most one proofcheck or handoff step; auto
-  --until-complete loops over those post-run steps with --max-steps. None is
-  proof or assurance.
+  advise, next, and report read status/intent only; auto --dry-run recommends
+  commands only; auto --once executes at most one proofcheck or handoff step;
+  auto --until-complete loops over those post-run steps with --max-steps. None
+  is proof or assurance.
 
 options:
   -h, --help   show this help message and exit

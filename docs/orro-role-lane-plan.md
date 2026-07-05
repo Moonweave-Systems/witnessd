@@ -69,6 +69,11 @@ trivial, review-only, or verification-only work. That recommendation is
 developer-judgment context only; it does not execute and does not replace
 proofrun/proofcheck/handoff gates.
 
+`orro report <run-dir> --home .witnessd --json` may include role-lane binding
+and role dispatch references so reviewers can see how rolepack intent connected
+to witnessd lanes. The report is summary context only; role-lane plans, role
+dispatch, and report prose are not proof or assurance.
+
 `orro auto --dry-run <run-dir> --home .witnessd --json` may consume the
 continuation decision and emit an `orro-auto-plan` recommendation. It does not
 execute role-lane plans, run proofcheck, call Depone, write handoff, retry

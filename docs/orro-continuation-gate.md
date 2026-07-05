@@ -56,6 +56,11 @@ Depone verifies; witnessd executes; ORRO exposes the workflow.
 `needs-proofcheck` instead of re-deriving a verdict. A matching continuation
 decision is not proof, approval, or assurance.
 
+`orro report <run-dir> --home .witnessd --json` uses the same continuation state
+as one input, then compresses the observed artifacts into a human-facing summary.
+It does not execute the next action, run proofcheck, write handoff, verify
+evidence, approve merge, or raise assurance.
+
 The next automation layer is `orro auto --dry-run`, which consumes this decision
 and emits an `orro-auto-plan`. Dry-run may recommend a future proofcheck or
 handoff command, but it does not run proofcheck, call Depone, write handoff,

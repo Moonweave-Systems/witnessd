@@ -19,6 +19,7 @@ This guidance is derived from that spec.
 - `proofcheck`: offline evidence verification alias
 - `orro handoff`: maintainer review package bound to an explicit passing `proofcheck-verdict.json`
 - `orro next`: non-executing continuation gate over persisted run artifacts
+- `orro report`: human-facing summary of observed artifacts and next safe action
 - `orro auto --dry-run`: non-executing automation planner; recommendation context only
 - `orro auto --once`: one-step proofcheck/handoff executor; orchestration metadata only
 - `orro auto --until-complete`: bounded post-run proofcheck/handoff loop; orchestration metadata only
@@ -34,7 +35,7 @@ the witnessd repo and delegates to the existing `witnessd orro ...` surface. It
 is not a standalone ORRO repository and not a third engine.
 `python3 -m orro --help` is product-facing and lists only public ORRO commands:
 `init`, `advise`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`,
-`next`, `auto`, `doctor`, and `engine-lock`.
+`next`, `report`, `auto`, `doctor`, and `engine-lock`.
 
 Use `python3 -m orro init --home .witnessd --depone-root ../Depone` as the
 public setup path. It delegates to existing witnessd initialization/provisioning
@@ -91,6 +92,12 @@ verify evidence, approve merge, or raise assurance. `needs-proofcheck` means run
 proofcheck next; `ready-for-handoff` means a passing bound proofcheck verdict
 exists; `complete` means handoff exists after proofcheck pass. Role status is
 derived context only, not proof.
+
+`python3 -m orro report <run-dir> --home .witnessd --json` compresses observed
+run artifacts into state, next safe action, proofcheck/handoff status, reviewer
+focus, and do-not-trust boundaries. It is a human-facing summary, not proof,
+verifier truth, approval, or assurance. It does not execute, run proofcheck,
+write handoff, verify evidence, or replace human review.
 
 `python3 -m orro auto --dry-run <run-dir> --home .witnessd --json` consumes the
 continuation decision and emits an `orro-auto-plan` with the exact command it

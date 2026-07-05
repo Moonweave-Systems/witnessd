@@ -13,6 +13,11 @@ artifacts.
 - Did artifact count confuse the user?
 - Was the final output easier to trust?
 
+`orro report` is the main artifact for this check. It should show whether ORRO
+reduced user steps, made the next action clear, lowered reviewer burden, avoided
+unnecessary work, explained blocked states, and reduced artifact fatigue without
+turning the report itself into proof or assurance.
+
 The reality check is documentation guidance only. It is not proof, verifier
 truth, merge approval, or assurance.
 

@@ -7,6 +7,10 @@ It is not the workstyle router. Use `orro advise` before planning/execution to
 decide whether proofrun, review-only, verification-only, or human review is the
 right path.
 
+It is also not the human report. Use `orro report` after a run to summarize
+observed artifacts, proofcheck/handoff state, next safe action, and reviewer
+focus without executing anything.
+
 ```bash
 orro auto --once .witnessd/runs/<run-dir> --home .witnessd --json
 python3 -m orro auto --once .witnessd/runs/<run-dir> --home .witnessd --json

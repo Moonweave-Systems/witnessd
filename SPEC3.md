@@ -29,6 +29,7 @@ contract remains authoritative in the Depone repo at `docs/spec.md`.
 | `proofrun` | precise run alias | Execute with observer-signed evidence. Kept for technical invocation accuracy. |
 | `proofcheck` | verifier alias | Re-check existing evidence bytes offline. |
 | `orro handoff` | maintainer handoff | Bind code changes to an explicit passing proofcheck verdict for human review; not merge approval. |
+| `orro report` | human-facing summary | Compress observed ORRO artifacts into state, next action, reviewer focus, and trust boundaries. |
 | `orro skillpack` | knowledge-as-code support | Manage SKILL/CLAUDE/rule/MCP bundles with progressive disclosure. |
 | `orro doctor` | readiness check | Check engines, verifier pin, adapters, MCP availability, keys, and policy gates. |
 | `orro auto` | automation mode | Dry-run, once, and bounded until-complete now; future broader continuation behind evidence gates. |
@@ -142,6 +143,7 @@ python3 -m orro proofcheck .witnessd/runs/<run-dir> \
 python3 -m orro auto --dry-run .witnessd/runs/<run-dir> --home .witnessd --json
 python3 -m orro auto --once .witnessd/runs/<run-dir> --home .witnessd --json
 python3 -m orro auto --until-complete .witnessd/runs/<run-dir> --home .witnessd --max-steps 2 --json
+python3 -m orro report .witnessd/runs/<run-dir> --home .witnessd --json
 python3 -m orro handoff .witnessd/runs/<run-dir> \
   --out .witnessd/runs/<run-dir>/orro-handoff.json
 ```
@@ -155,8 +157,8 @@ configuration; tests and local development should use `--depone-root`.
 
 `python3 -m orro --help` is product-facing and lists only the public ORRO Flow and
 support commands: `init`, `advise`, `scout`, `flowplan`, `proofrun`, `proofcheck`,
-`handoff`, `next`, `auto`, `doctor`, and `engine-lock`. It must not promote witnessd
-engine-internal commands.
+`handoff`, `next`, `report`, `auto`, `doctor`, and `engine-lock`. It must not
+promote witnessd engine-internal commands.
 Subcommand behavior still delegates to the witnessd-hosted ORRO surface.
 
 The bare `orro` console script is package metadata for the same module
@@ -235,6 +237,17 @@ lanes, write handoff, approve merge, verify evidence, or raise assurance.
 may be packaged. `complete` means handoff exists after proofcheck pass.
 `blocked` means do not continue without human or verifier intervention. Role
 status is derived from observed artifacts only and is not proof.
+
+`orro report <run-dir> --home <home> --json` is the human-facing compression
+layer over ORRO artifacts. It reads persisted workflow plan bindings, role-lane
+bindings, role dispatch, team ledger evidence, proofcheck verdicts, handoff
+packages, continuation decisions, auto metadata, and optional workstyle
+decisions when supplied. It returns an `orro-report` summary with state, next
+safe action, evidence/verifier/handoff status, reviewer focus, and explicit
+do-not-trust items. The report is observed context only: not proof, not verifier
+truth, not merge approval, and not assurance. It must not execute workers, call
+live models, call MCP, run proofcheck, write handoff, mutate worktrees except an
+explicit `--out`, duplicate Depone verification logic, or replace human review.
 
 `orro auto --dry-run <run-dir> --home <home> --json` consumes the continuation
 decision and emits an `orro-auto-plan` containing the exact command ORRO would

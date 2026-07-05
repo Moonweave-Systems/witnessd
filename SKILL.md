@@ -26,6 +26,7 @@ should not be used for new public surfaces.
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro next` | non-executing continuation gate over persisted run artifacts |
+| `orro report` | human-facing summary of observed artifacts and next safe action |
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
 | `orro auto --until-complete` | bounded post-run proofcheck/handoff loop; orchestration metadata only |
@@ -109,6 +110,12 @@ approve merge, or raise assurance. `needs-proofcheck` means run proofcheck next;
 `ready-for-handoff` means a passing bound proofcheck verdict exists; `complete`
 means handoff exists after proofcheck pass. Role status is derived from observed
 artifacts only and is not proof.
+
+`python3 -m orro report <run-dir> --home .witnessd --json` is the human-facing
+compression layer. It summarizes observed artifacts, proofcheck and handoff
+state, next safe action, reviewer focus, and do-not-trust boundaries. It does
+not execute, run proofcheck, write handoff, verify evidence, approve merge,
+raise assurance, replace proofcheck, or replace human review.
 
 `python3 -m orro auto --dry-run <run-dir> --home .witnessd --json` consumes
 `orro next` state and emits an `orro-auto-plan` with the exact command it would

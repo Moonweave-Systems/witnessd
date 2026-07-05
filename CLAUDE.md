@@ -39,6 +39,7 @@ map and legacy policy.
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro next` | non-executing continuation gate over persisted run artifacts |
+| `orro report` | human-facing summary of observed artifacts and next safe action |
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
 | `orro auto --until-complete` | bounded post-run proofcheck/handoff loop; orchestration metadata only |
@@ -113,6 +114,12 @@ approve merge, or raise assurance. `needs-proofcheck` means run proofcheck next;
 `ready-for-handoff` means a passing bound proofcheck verdict exists; `complete`
 means handoff exists after proofcheck pass. Role status is observed context, not
 proof.
+
+`python3 -m orro report <run-dir> --home .witnessd --json` is the human-facing
+compression layer over observed artifacts. It reports state, next safe action,
+proofcheck/handoff status, reviewer focus, and do-not-trust boundaries. It does
+not execute, verify evidence, approve merge, raise assurance, replace
+proofcheck, or replace human review.
 
 `python3 -m orro auto --dry-run <run-dir> --home .witnessd --json` consumes
 the continuation decision and emits an `orro-auto-plan` with the exact command

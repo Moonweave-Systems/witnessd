@@ -29,6 +29,7 @@ run_dir="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["run_dir"]
 python3 -m orro next "$run_dir" --home .witnessd --json
 python3 -m orro auto --dry-run "$run_dir" --home .witnessd --json
 python3 -m orro auto --until-complete "$run_dir" --home .witnessd --max-steps 2 --json
+python3 -m orro report "$run_dir" --home .witnessd --json
 python3 -m orro next "$run_dir" --home .witnessd --json
 ```
 
@@ -80,6 +81,7 @@ authority. For the repo documentation map, see [`docs/README.md`](docs/README.md
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro next` | non-executing continuation gate over persisted run artifacts |
+| `orro report` | human-facing summary of observed ORRO artifacts and next safe action |
 | `orro auto --dry-run` | non-executing automation planner that recommends the next command |
 | `orro auto --once` | one-step executor for proofcheck or handoff only |
 | `orro auto --until-complete` | bounded post-run loop over proofcheck and handoff only |
@@ -176,6 +178,14 @@ repair evidence, approve merge, verify evidence, or raise assurance. Decisions
 include `needs-proofcheck`, `ready-for-handoff`, `complete`, `blocked`,
 `evidence-pending`, and `invalid-run-dir`. Role status is derived from observed
 artifacts only and is not proof.
+
+`orro report <run-dir> --home .witnessd --json` is the human-facing compression
+layer over a run directory. It summarizes observed workflow, role-lane,
+execution, proofcheck, handoff, continuation, auto, and optional workstyle
+artifacts; then it states the next safe action and reviewer focus. It helps
+non-developers and reviewers understand what happened and reduces artifact
+fatigue. It does not execute, verify evidence, run proofcheck, package handoff,
+approve merge, raise assurance, replace proofcheck, or replace human review.
 
 `orro auto --dry-run <run-dir> --home .witnessd --json` consumes `orro next`
 state and emits an `orro-auto-plan` with the exact command it would run next,
@@ -340,8 +350,8 @@ blocks handoff and does not write `orro-handoff.json`.
 
 `python3 -m orro <subcommand>` is the product-name entrypoint hosted in this repo.
 Its help shows only the ORRO public commands: `init`, `scout`, `flowplan`,
-`advise`, `proofrun`, `proofcheck`, `handoff`, `next`, `auto`, `doctor`, and
-`engine-lock`. Subcommands delegate to the same ORRO parser used by
+`advise`, `proofrun`, `proofcheck`, `handoff`, `next`, `report`, `auto`,
+`doctor`, and `engine-lock`. Subcommands delegate to the same ORRO parser used by
 `python3 -m witnessd orro ...`.
 
 This checkout defines minimal packaging metadata for an installed `orro` console

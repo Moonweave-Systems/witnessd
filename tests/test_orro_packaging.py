@@ -66,6 +66,7 @@ class OrroPackagingTests(unittest.TestCase):
             self.assertIn("init", help_result.stdout)
             self.assertIn("advise", help_result.stdout)
             self.assertIn("next", help_result.stdout)
+            self.assertIn("report", help_result.stdout)
             self.assertIn("auto", help_result.stdout)
             self.assertIn("engine-lock", help_result.stdout)
             self.assertNotIn("self-test", help_result.stdout)
