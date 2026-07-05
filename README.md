@@ -70,7 +70,7 @@ authority. For the repo documentation map, see [`docs/README.md`](docs/README.md
 | ORRO Flow | `scout -> flowplan -> proofrun -> proofcheck -> handoff` |
 | `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
 | `orro scout` | read-only repo exploration, repo profile, context pack, and discovery notes |
-| `flowplan` | plan-only workflow design |
+| `flowplan` | plan-only workflow design and ORRO workflow compiler surface |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
@@ -119,6 +119,13 @@ against that metadata to detect distribution drift. A matching lock means
 readiness alignment only. It is not proof, evidence verification, merge approval,
 or an assurance increase. A mismatch is readiness-blocked, not verifier-refuted.
 
+`orro flowplan --profile <profile>` compiles a deterministic rolepack/workflow
+plan for `code-change`, `review-only`, `verification-only`, `docs-change`, or
+`release-readiness`. The plan is an `orro-workflow-plan` intent artifact, not
+evidence. Roles do not create assurance by existing. `proofrun` is the first
+execution phase, `proofcheck` is the verifier phase, and `handoff` is review
+packaging only.
+
 Create a separate `ORRO` repository only when distribution needs justify it:
 marketplace manifests, host-specific plugin packaging, version locking, examples,
 product docs, and end-to-end integration tests. That future repo is a wrapper and
@@ -155,6 +162,12 @@ Runnable lanes may include:
 Scout does not write `verification-receipt.json`; it has not run the recipe.
 Depone proofcheck treats a scout-only artifact directory as planning evidence,
 not proof of execution.
+
+`flowplan` remains strictly plan-only. With a profile, it may write an
+`orro-workflow-plan` that maps the goal to roles, phases, engine calls, required
+gates, and forbidden assurance sources. It does not run workers, call live
+models, call Depone verification, mutate worktrees, approve merge, or raise
+assurance. Full `orro auto` remains future work.
 
 Depone decides what these bytes support. Skill text, MCP output, IDE terminals,
 tmux panes, and session transcripts are not verdicts by themselves.

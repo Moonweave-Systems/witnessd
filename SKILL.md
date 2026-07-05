@@ -20,7 +20,7 @@ should not be used for new public surfaces.
 | `orro` | goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro scout` | read-only repo exploration and context-pack creation |
-| `flowplan` | plan-only workflow design |
+| `flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
@@ -60,6 +60,15 @@ verifier-refuted. The lock is not proof, evidence verification, merge approval,
 or assurance.
 
 `orro doctor` checks readiness, not evidence truth.
+
+`python3 -m orro flowplan "<goal>" --root <repo> --profile code-change --out workflow-plan.json`
+emits a deterministic `orro-workflow-plan` intent artifact. Supported profiles
+are `code-change`, `review-only`, `verification-only`, `docs-change`, and
+`release-readiness`. The plan maps roles, phases, engine calls, gates, and
+forbidden assurance sources. It is not evidence. Roles do not create assurance by
+existing. `proofrun` is the first execution phase, `proofcheck` is the verifier
+phase, `handoff` is review packaging only, and full `orro auto` remains future
+work.
 
 A future standalone `ORRO` repo may package marketplace manifests, host-specific
 plugin files, examples, product docs, and engine version locks. It must remain a
@@ -124,6 +133,13 @@ output as verifier truth.
 2. Choose explicit lanes for the goal. If a Depone design artifact is already
    available, use its lane/region shape. If not, use explicit witnessd lanes or
    the default shell-lane quickstart path.
+
+   ```bash
+   python3 -m orro flowplan "<goal>" --root <repo> --profile code-change
+   ```
+
+   Treat profile output as intent only. It does not run workers, call live
+   models, call Depone verification, approve merge, or raise assurance.
 
 3. Initialize once per repo or session:
 

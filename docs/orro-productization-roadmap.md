@@ -40,6 +40,7 @@ python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.js
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 python3 -m orro scout "inspect repo" --repo .
 python3 -m orro flowplan "goal" --root .
+python3 -m orro flowplan "goal" --root . --profile code-change --out workflow-plan.json
 python3 -m orro proofrun "goal" --repo . --home .witnessd
 python3 -m orro proofcheck .witnessd/runs/<run-dir> \
   --home .witnessd \
@@ -66,6 +67,15 @@ The console script named `orro` points at the same wrapper surface through
 `orro.__main__:main`. It must remain an alias layer and is covered by an install
 smoke test. Marketplace manifests and a standalone ORRO repository remain
 deferred.
+
+The current workflow compiler is `orro flowplan --profile <profile>`. It emits a
+deterministic `orro-workflow-plan` intent artifact for `code-change`,
+`review-only`, `verification-only`, `docs-change`, and `release-readiness`.
+Workflow plans map goals to roles, phases, engine calls, gates, and forbidden
+assurance sources. They are not evidence. Roles do not create assurance by
+existing. `proofrun` is the first execution phase, `proofcheck` is the verifier
+phase, `handoff` is review packaging only, and full `orro auto` remains future
+work.
 
 ## Engine Boundary Contract
 
