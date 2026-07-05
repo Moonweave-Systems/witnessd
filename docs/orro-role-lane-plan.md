@@ -51,3 +51,15 @@ Safety profiles:
 - `release-readiness`: execution not allowed by default.
 
 Full `orro auto` remains future work.
+
+Continuation:
+
+```bash
+orro next .witnessd/runs/<run-dir> --home .witnessd --json
+```
+
+`orro next` reads role-lane bindings, role dispatch, team ledger artifacts,
+proofcheck verdicts, and handoff packages to recommend the next safe action. It
+does not execute the role-lane plan, run proofcheck, retry lanes, repair
+evidence, or raise assurance. Role status is derived from observed artifacts
+only and is not proof.

@@ -22,11 +22,14 @@ python3 -m orro doctor --home .witnessd --json
 python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 python3 -m orro scout "map the repo before planning" --repo . --home .witnessd
-python3 -m orro flowplan "write two independent files" --root . --profile code-change --out .witnessd/workflow-plan.json
-run_json="$(python3 -m orro proofrun "write two independent files" --repo . --home .witnessd --workflow-plan .witnessd/workflow-plan.json)"
+python3 -m orro flowplan "write two independent files" --root . --profile code-change --out .witnessd/workflow-plan.json --role-lanes-out .witnessd/role-lane-plan.json
+run_json="$(python3 -m orro proofrun "write two independent files" --repo . --home .witnessd --workflow-plan .witnessd/workflow-plan.json --role-lane-plan .witnessd/role-lane-plan.json)"
 run_dir="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["run_dir"])' "$run_json")"
+python3 -m orro next "$run_dir" --home .witnessd --json
 python3 -m orro proofcheck "$run_dir" --home .witnessd --out "$run_dir/proofcheck-verdict.json"
+python3 -m orro next "$run_dir" --home .witnessd --json
 python3 -m orro handoff "$run_dir" --out "$run_dir/orro-handoff.json"
+python3 -m orro next "$run_dir" --home .witnessd --json
 ```
 
 The `proofrun` command prints JSON. Use its `run_dir` field for the proofcheck
@@ -75,6 +78,7 @@ authority. For the repo documentation map, see [`docs/README.md`](docs/README.md
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
+| `orro next` | non-executing continuation gate over persisted run artifacts |
 | `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
 | `orro auto` | later resume/continuation loop behind evidence gates |
@@ -149,6 +153,16 @@ Role-lane plans are executable intent, not proof. `review-only`,
 `verification-only`, and `release-readiness` role-lane plans do not launch
 proofrun. Formal `orro handoff` still requires a passing bound
 `proofcheck-verdict.json`.
+
+`orro next <run-dir> --home .witnessd --json` is the non-executing continuation
+gate before future `orro auto`. It reads persisted artifacts such as workflow
+bindings, role-lane bindings, role dispatch, `team-ledger.json`,
+`proofcheck-verdict.json`, and `orro-handoff.json`; then it reports the safest
+next allowed action. It does not run proofcheck, execute workers, retry lanes,
+repair evidence, approve merge, verify evidence, or raise assurance. Decisions
+include `needs-proofcheck`, `ready-for-handoff`, `complete`, `blocked`,
+`evidence-pending`, and `invalid-run-dir`. Role status is derived from observed
+artifacts only and is not proof.
 
 Create a separate `ORRO` repository only when distribution needs justify it:
 marketplace manifests, host-specific plugin packaging, version locking, examples,

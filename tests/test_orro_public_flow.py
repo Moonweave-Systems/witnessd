@@ -152,6 +152,30 @@ class OrroPublicFlowTests(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         return home, Path(payload["run_dir"]), payload
 
+    def _proofcheck_out(self, home: Path, run_dir: Path) -> dict:
+        out = run_dir / "proofcheck-verdict.json"
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(["proofcheck", str(run_dir), "--home", str(home), "--out", str(out)])
+        self.assertEqual(code, 0, stdout.getvalue())
+        self.assertTrue(out.is_file())
+        return json.loads(stdout.getvalue())
+
+    def _handoff_out(self, run_dir: Path) -> dict:
+        out = run_dir / "orro-handoff.json"
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(["orro", "handoff", str(run_dir), "--out", str(out)])
+        self.assertEqual(code, 0, stdout.getvalue())
+        self.assertTrue(out.is_file())
+        return json.loads(stdout.getvalue())
+
+    def _orro_next(self, run_dir: Path, home: Path, *extra: str) -> tuple[int, dict]:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(["orro", "next", str(run_dir), "--home", str(home), "--json", *extra])
+        return code, json.loads(stdout.getvalue())
+
     def test_proofrun_alias_reuses_run_surface_without_final_trust_claim(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _home, run_dir, payload = self._proofrun(Path(tmp))
@@ -262,6 +286,155 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertFalse(dispatch["boundary"]["role_dispatch_is_proof"])
             self.assertFalse(dispatch["boundary"]["raises_assurance"])
             self.assertFalse(dispatch["boundary"]["approves_merge"])
+
+    def test_orro_next_after_proofrun_needs_proofcheck_without_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_path = self._flowplan_out(root, "write two proof files")
+            role_lane_path = self._role_lane_plan_out(root, "write two proof files")
+            home, run_dir, _payload = self._proofrun(
+                root,
+                workflow_plan=plan_path,
+                role_lane_plan=role_lane_path,
+            )
+            before = sorted(path.relative_to(run_dir) for path in run_dir.rglob("*"))
+
+            code, payload = self._orro_next(run_dir, home)
+
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["kind"], "orro-continuation-decision")
+            self.assertEqual(payload["decision"], "needs-proofcheck")
+            self.assertFalse(payload["blocked"])
+            self.assertIn("orro proofcheck", payload["next_allowed"][0])
+            self.assertTrue(payload["observed_artifacts"]["team_ledger"])
+            self.assertFalse(payload["observed_artifacts"]["proofcheck_verdict"])
+            runner = next(role for role in payload["role_status"] if role["phase"] == "proofrun")
+            verifier = next(role for role in payload["role_status"] if role["phase"] == "proofcheck")
+            self.assertEqual(runner["status"], "executed")
+            self.assertEqual(verifier["status"], "pending")
+            self.assertFalse(payload["boundary"]["executes_commands"])
+            self.assertFalse(payload["boundary"]["verifies_evidence"])
+            self.assertFalse(payload["boundary"]["raises_assurance"])
+            after = sorted(path.relative_to(run_dir) for path in run_dir.rglob("*"))
+            self.assertEqual(after, before)
+
+    def test_orro_next_after_passing_proofcheck_is_ready_for_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            self._proofcheck_out(home, run_dir)
+
+            code, payload = self._orro_next(run_dir, home)
+
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["decision"], "ready-for-handoff")
+            self.assertFalse(payload["blocked"])
+            self.assertIn("orro handoff", payload["next_allowed"][0])
+            verifier = next(role for role in payload["role_status"] if role["phase"] == "proofcheck")
+            handoff = next(role for role in payload["role_status"] if role["phase"] == "handoff")
+            self.assertEqual(verifier["status"], "verified")
+            self.assertEqual(handoff["status"], "pending")
+
+    def test_orro_next_after_handoff_is_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            self._proofcheck_out(home, run_dir)
+            self._handoff_out(run_dir)
+
+            code, payload = self._orro_next(run_dir, home)
+
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["decision"], "complete")
+            self.assertEqual(payload["next_allowed"], [])
+            handoff = next(role for role in payload["role_status"] if role["phase"] == "handoff")
+            self.assertEqual(handoff["status"], "packaged")
+
+    def test_orro_next_blocks_non_pass_unbound_and_stale_proofcheck_verdicts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            self._proofcheck_out(home, run_dir)
+            verdict_path = run_dir / "proofcheck-verdict.json"
+            verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+
+            cases = {
+                "non-pass": {**verdict, "decision": "fail"},
+                "unbound": {key: value for key, value in verdict.items() if key != "orro_binding"},
+            }
+            for name, payload in cases.items():
+                with self.subTest(name=name):
+                    verdict_path.write_text(json.dumps(payload), encoding="utf-8")
+                    code, decision = self._orro_next(run_dir, home)
+                    self.assertEqual(code, 1)
+                    self.assertEqual(decision["decision"], "blocked")
+                    self.assertTrue(decision["blocked"])
+                    self.assertIn(decision["error"]["code"], {
+                        "ERR_ORRO_NEXT_PROOFCHECK_NOT_PASS",
+                        "ERR_ORRO_NEXT_PROOFCHECK_UNBOUND",
+                    })
+
+            other_root = root / "other"
+            other_root.mkdir()
+            other_home, other_run_dir, _other_payload = self._proofrun(other_root)
+            self._proofcheck_out(other_home, other_run_dir)
+            verdict_path.write_text(
+                (other_run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            code, decision = self._orro_next(run_dir, home)
+            self.assertEqual(code, 1)
+            self.assertEqual(decision["decision"], "blocked")
+            self.assertEqual(decision["error"]["code"], "ERR_ORRO_NEXT_PROOFCHECK_BINDING_MISMATCH")
+
+    def test_orro_next_invalid_and_scout_only_dirs_do_not_continue(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            missing = root / "missing-run"
+
+            code, payload = self._orro_next(missing, home)
+            self.assertEqual(code, 2)
+            self.assertEqual(payload["decision"], "invalid-run-dir")
+            self.assertTrue(payload["blocked"])
+
+            scout_stdout = io.StringIO()
+            with redirect_stdout(scout_stdout):
+                self.assertEqual(main(["orro", "scout", "inspect repo", "--repo", str(repo)]), 0)
+            scout_payload = json.loads(scout_stdout.getvalue())
+            scout_dir = Path(scout_payload["context_pack"]).parent
+
+            code, payload = self._orro_next(scout_dir, home)
+            self.assertEqual(code, 1)
+            self.assertIn(payload["decision"], {"blocked", "evidence-pending"})
+            self.assertNotIn(payload["decision"], {"ready-for-handoff", "complete"})
+
+    def test_orro_next_out_writes_same_decision_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            out = run_dir / "orro-continuation-decision.json"
+
+            code, payload = self._orro_next(run_dir, home, "--out", str(out))
+
+            self.assertEqual(code, 0)
+            self.assertTrue(out.is_file())
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8")), payload)
+
+    def test_orro_next_module_and_witnessd_orro_alias_match(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+
+            orro_next = self._orro_module_run(["next", str(run_dir), "--home", str(home), "--json"])
+            witnessd_orro_next = self._module_run(
+                ["orro", "next", str(run_dir), "--home", str(home), "--json"]
+            )
+
+            self.assertEqual(orro_next.returncode, 0, orro_next.stderr)
+            self.assertEqual(witnessd_orro_next.returncode, 0, witnessd_orro_next.stderr)
+            self.assertEqual(json.loads(orro_next.stdout), json.loads(witnessd_orro_next.stdout))
+            self.assertEqual(json.loads(orro_next.stdout)["decision"], "needs-proofcheck")
 
     def test_proofrun_role_lane_plan_forbidden_profiles_fail_before_run_dir(self) -> None:
         for profile in ("review-only", "verification-only"):
@@ -511,6 +684,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             "proofrun",
             "proofcheck",
             "handoff",
+            "next",
             "doctor",
             "engine-lock",
         ):

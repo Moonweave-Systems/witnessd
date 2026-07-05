@@ -1189,6 +1189,29 @@ def _cmd_orro_engine_lock(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_orro_next(args: argparse.Namespace) -> int:
+    from witnessd.orro_next import OrroNextError, decide_next, write_decision
+
+    if not args.run_dir:
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_NEXT_INPUT_REQUIRED",
+            message="run directory is required",
+        )
+        return 2
+    run_dir = Path(args.run_dir).resolve(strict=False)
+    home = Path(args.home).resolve(strict=False) if args.home else None
+    code, payload = decide_next(run_dir, home=home)
+    if args.out:
+        try:
+            write_decision(Path(args.out).resolve(strict=False), payload)
+        except OrroNextError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 1
+    print(json.dumps(payload, sort_keys=True))
+    return code
+
+
 def _cmd_doctor(args: argparse.Namespace) -> int:
     if args.external_worktree:
         from witnessd.state import detect_state_contention
@@ -2131,6 +2154,13 @@ def _build_parser() -> argparse.ArgumentParser:
     engine_lock.add_argument("--json", action="store_true")
     engine_lock.set_defaults(func=_cmd_orro_engine_lock)
 
+    orro_next = sub.add_parser("orro-next", help=argparse.SUPPRESS)
+    orro_next.add_argument("run_dir", nargs="?")
+    orro_next.add_argument("--home", default=None)
+    orro_next.add_argument("--out", default=None)
+    orro_next.add_argument("--json", action="store_true")
+    orro_next.set_defaults(func=_cmd_orro_next)
+
     isolation = sub.add_parser("isolation", help="isolation contract checks")
     isolation.add_argument("--self-test", action="store_true")
     isolation.set_defaults(func=_cmd_isolation)
@@ -2490,6 +2520,8 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
         return ["engine-lock", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "lock":
         return ["engine-lock", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "next":
+        return ["orro-next", *argv[2:]]
     return argv
 
 

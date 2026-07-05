@@ -64,8 +64,21 @@ class OrroPackagingTests(unittest.TestCase):
             self.assertEqual(help_result.returncode, 0, help_result.stderr)
             self.assertIn("ORRO Flow", help_result.stdout)
             self.assertIn("init", help_result.stdout)
+            self.assertIn("next", help_result.stdout)
             self.assertIn("engine-lock", help_result.stdout)
             self.assertNotIn("self-test", help_result.stdout)
+
+            missing_next = subprocess.run(
+                [str(orro), "next", str(tmp_path / "missing-run"), "--json"],
+                cwd=tmp_path,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(missing_next.returncode, 2)
+            missing_payload = json.loads(missing_next.stdout)
+            self.assertEqual(missing_payload["decision"], "invalid-run-dir")
+            self.assertFalse(missing_payload["boundary"]["executes_commands"])
 
             root = tmp_path / "repo"
             root.mkdir()
