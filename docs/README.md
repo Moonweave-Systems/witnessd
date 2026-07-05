@@ -27,6 +27,7 @@ Use these names in new user-facing docs:
 | Observed Run & Review Orchestrator | ORRO full name |
 | ORRO Flow | scout -> flowplan -> proofrun -> proofcheck -> handoff |
 | `orro` | primary command/skill surface |
+| `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro scout` | read-only repo exploration and context packaging |
 | `flowplan` | plan-only workflow design |
 | `proofrun` | evidence-backed execution alias |
@@ -43,10 +44,13 @@ discussing the publisher/account namespace.
 
 The current ORRO entrypoint is not a standalone ORRO repository and not a third
 engine. Its help text is product-facing and lists only public ORRO commands. It
-delegates subcommands to the witnessd-hosted ORRO command surface. The engine
-lock is distribution metadata only. `--out` writes the pinned commit metadata;
-`--check` detects local environment drift against it. A matching lock is
-readiness alignment only, not evidence verification, merge approval, or an
+delegates subcommands to the witnessd-hosted ORRO command surface. Public setup
+starts with `orro init`, which delegates to witnessd initialization/provisioning
+and creates readiness metadata such as `.witnessd/provision.json`; it is not
+proof or assurance. `orro doctor` checks readiness, not evidence truth. The
+engine lock is distribution metadata only. `--out` writes the pinned commit
+metadata; `--check` detects local environment drift against it. A matching lock
+is readiness alignment only, not evidence verification, merge approval, or an
 assurance increase. A mismatch is readiness-blocked, not verifier-refuted. A
 standalone ORRO repo remains deferred until packaging, marketplace, or
 version-lock distribution needs justify it. The bare `orro` console script

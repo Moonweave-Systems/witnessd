@@ -17,15 +17,20 @@ as compatibility aliases during migration.
 
 ```bash
 cd witnessd
-python3 -m witnessd init --home .witnessd --depone-root ../depone
-python3 -m witnessd scout "map the repo before planning" --repo . --home .witnessd
-python3 -m witnessd run "write two independent files" --repo . --home .witnessd
-python3 -m witnessd verify .witnessd/runs/<run-dir> --home .witnessd
+python3 -m orro init --home .witnessd --depone-root ../depone
+python3 -m orro doctor --home .witnessd --json
+python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
+python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
+python3 -m orro scout "map the repo before planning" --repo . --home .witnessd
+run_json="$(python3 -m orro proofrun "write two independent files" --repo . --home .witnessd)"
+run_dir="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["run_dir"])' "$run_json")"
+python3 -m orro proofcheck "$run_dir" --home .witnessd --out "$run_dir/proofcheck-verdict.json"
+python3 -m orro handoff "$run_dir" --out "$run_dir/orro-handoff.json"
 ```
 
-The `run` command prints JSON. Use its `run_dir` field for the verify step.
-For the public ORRO handoff path, run `proofcheck` with an explicit
-`proofcheck-verdict.json` output before packaging the handoff:
+The `proofrun` command prints JSON. Use its `run_dir` field for the proofcheck
+and handoff steps. `proofcheck` must write an explicit `proofcheck-verdict.json`
+before packaging the handoff:
 
 ```bash
 python3 -m orro proofcheck .witnessd/runs/<run-dir> \
@@ -93,13 +98,21 @@ execution. `python3 -m orro ...` delegates to the existing `witnessd orro ...`
 surface; it is not a standalone ORRO repository and not a third engine. Depone
 remains a pinned verifier dependency.
 
-An engine lock records the pinned engine commits for distribution tooling:
+Public ORRO setup starts with `orro init`, which delegates to existing witnessd
+initialization/provisioning and creates readiness metadata such as
+`.witnessd/provision.json`. It does not run ORRO Flow work, verify evidence,
+approve merge, or raise assurance. For local development, provide an explicit
+Depone checkout:
 
 ```bash
+python3 -m orro init --home .witnessd --depone-root ../Depone
+python3 -m orro doctor --home .witnessd --json
 python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 ```
 
+`orro doctor` checks readiness, not evidence truth. An engine lock records the
+pinned engine commits for distribution tooling.
 `orro-engine-lock.json` is distribution metadata only. `--out` writes the local
 witnessd/Depone pin metadata; `--check` compares the current local environment
 against that metadata to detect distribution drift. A matching lock means
@@ -162,7 +175,8 @@ From a checkout with Depone next to witnessd:
 
 ```bash
 cd witnessd
-python3 -m witnessd init --home .witnessd --depone-root ../depone
+python3 -m orro init --home .witnessd --depone-root ../depone
+python3 -m orro doctor --home .witnessd --json
 python3 -m witnessd run "write two independent files" --repo . --home .witnessd
 python3 -m witnessd verify .witnessd/runs/<run-dir> --home .witnessd
 ```
@@ -180,7 +194,7 @@ pinned verifier into `.witnessd/depone-pinned` and record that setup-time networ
 use:
 
 ```bash
-python3 -m witnessd init --home .witnessd --allow-network
+python3 -m orro init --home .witnessd --allow-network
 ```
 
 For the same path as CI:
@@ -197,7 +211,7 @@ quickstart_check: pass
 
 ## What the commands do
 
-`witnessd init` creates:
+`orro init` delegates to witnessd initialization/provisioning and creates:
 
 - `.witnessd/config.json`
 - `.witnessd/provision.json`
@@ -228,9 +242,9 @@ non-pass `proofcheck-verdict.json`, or one copied from another evidence snapshot
 blocks handoff and does not write `orro-handoff.json`.
 
 `python3 -m orro <subcommand>` is the product-name entrypoint hosted in this repo.
-Its help shows only the ORRO public commands: `scout`, `flowplan`, `proofrun`,
-`proofcheck`, `handoff`, `doctor`, and `engine-lock`. Subcommands delegate to the
-same ORRO parser used by `python3 -m witnessd orro ...`.
+Its help shows only the ORRO public commands: `init`, `scout`, `flowplan`,
+`proofrun`, `proofcheck`, `handoff`, `doctor`, and `engine-lock`. Subcommands
+delegate to the same ORRO parser used by `python3 -m witnessd orro ...`.
 
 This checkout defines minimal packaging metadata for an installed `orro` console
 script that points to the same module entrypoint. ORRO remains a wrapper/product

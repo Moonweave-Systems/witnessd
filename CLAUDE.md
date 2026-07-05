@@ -31,6 +31,7 @@ map and legacy policy.
 | ORRO | Observed Run & Review Orchestrator; flagship product/tool |
 | ORRO Flow | scout -> flowplan -> proofrun -> proofcheck -> handoff |
 | `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
+| `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro scout` | read-only repo profile, context pack, and discovery notes |
 | `flowplan` | plan-only workflow design |
 | `proofrun` | precise evidence-backed execution alias |
@@ -52,6 +53,12 @@ engine.
 `python3 -m orro --help` is ORRO-facing and lists only public ORRO commands, not
 witnessd engine-internal commands.
 
+`python3 -m orro init --home .witnessd --depone-root ../Depone` is the public
+setup path. It delegates to existing witnessd initialization/provisioning and
+creates readiness metadata such as `.witnessd/provision.json`. It does not run
+ORRO Flow work, verify evidence, approve merge, or raise assurance. Use a local
+`--depone-root` for development and tests.
+
 `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
 writes distribution metadata for the pinned witnessd and Depone commits.
 `python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json`
@@ -59,6 +66,7 @@ checks the current local environment for drift against that metadata. A matching
 lock is readiness alignment only. A mismatch is readiness-blocked, not
 verifier-refuted. The engine lock is not proof, does not verify evidence, does
 not approve merge, and does not raise assurance.
+`orro doctor` checks readiness, not evidence truth.
 
 A standalone ORRO repo remains deferred until packaging, marketplace manifests,
 host-specific distribution, or version-lock distribution needs justify it.
