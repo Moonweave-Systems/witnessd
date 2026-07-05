@@ -99,12 +99,34 @@ class OrroPublicFlowTests(unittest.TestCase):
         self.assertTrue(out.is_file())
         return out
 
+    def _role_lane_plan_out(self, root: Path, goal: str, *, profile: str = "code-change") -> Path:
+        out = root / "role-lane-plan.json"
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(
+                [
+                    "orro",
+                    "flowplan",
+                    goal,
+                    "--root",
+                    str(root),
+                    "--profile",
+                    profile,
+                    "--role-lanes-out",
+                    str(out),
+                ]
+            )
+        self.assertEqual(code, 0, stdout.getvalue())
+        self.assertTrue(out.is_file())
+        return out
+
     def _proofrun(
         self,
         root: Path,
         *,
         orro_alias: bool = False,
         workflow_plan: Path | None = None,
+        role_lane_plan: Path | None = None,
     ) -> tuple[Path, Path, dict]:
         repo, home = self._init_home(root)
         stdout = io.StringIO()
@@ -122,6 +144,8 @@ class OrroPublicFlowTests(unittest.TestCase):
         ]
         if workflow_plan is not None:
             args.extend(["--workflow-plan", str(workflow_plan)])
+        if role_lane_plan is not None:
+            args.extend(["--role-lane-plan", str(role_lane_plan)])
         with redirect_stdout(stdout), redirect_stderr(stderr):
             code = main(args)
         self.assertEqual(code, 0, f"stdout={stdout.getvalue()}\nstderr={stderr.getvalue()}")
@@ -194,6 +218,142 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(verifier["status"], "pending-proofcheck")
             self.assertFalse(verifier["may_execute"])
             self.assertTrue(verifier["may_verify"])
+
+    def test_proofrun_role_lane_plan_executes_declared_lanes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_path = self._flowplan_out(root, "write two proof files", profile="code-change")
+            role_lane_path = self._role_lane_plan_out(root, "write two proof files", profile="code-change")
+
+            _home, run_dir, payload = self._proofrun(
+                root,
+                workflow_plan=plan_path,
+                role_lane_plan=role_lane_path,
+            )
+
+            for name in (
+                "workflow-plan.json",
+                "workflow-plan-binding.json",
+                "role-lane-plan.json",
+                "role-lane-plan-binding.json",
+                "workflow-role-dispatch.json",
+                "team-ledger.json",
+            ):
+                self.assertTrue((run_dir / name).is_file(), name)
+            self.assertIn("role_lane_plan", payload)
+            role_lane_ref = payload["role_lane_plan"]
+            self.assertEqual(role_lane_ref["path"], str(run_dir / "role-lane-plan.json"))
+            self.assertEqual(role_lane_ref["binding_path"], str(run_dir / "role-lane-plan-binding.json"))
+            self.assertRegex(role_lane_ref["sha256"], r"^[0-9a-f]{64}$")
+            self.assertFalse(role_lane_ref["boundary"]["role_lane_plan_is_proof"])
+            self.assertFalse(role_lane_ref["boundary"]["raises_assurance"])
+            self.assertFalse(role_lane_ref["boundary"]["approves_merge"])
+
+            role_lane_plan = json.loads((run_dir / "role-lane-plan.json").read_text(encoding="utf-8"))
+            lane_ids = sorted(lane["lane_id"] for lane in role_lane_plan["lanes"])
+            ledger = json.loads((run_dir / "team-ledger.json").read_text(encoding="utf-8"))
+            self.assertEqual(sorted(lane["lane_id"] for lane in ledger["lanes"]), lane_ids)
+            dispatch = json.loads((run_dir / "workflow-role-dispatch.json").read_text(encoding="utf-8"))
+            self.assertEqual(dispatch["role_lane_plan_hash"], role_lane_ref["sha256"])
+            runner = next(role for role in dispatch["roles"] if role["phase"] == "proofrun")
+            self.assertEqual(sorted(runner["lane_ids"]), lane_ids)
+            self.assertIn("role-lane-plan.json", runner["evidence_refs"])
+            self.assertIn("team-ledger.json", runner["evidence_refs"])
+            self.assertFalse(dispatch["boundary"]["role_dispatch_is_proof"])
+            self.assertFalse(dispatch["boundary"]["raises_assurance"])
+            self.assertFalse(dispatch["boundary"]["approves_merge"])
+
+    def test_proofrun_role_lane_plan_forbidden_profiles_fail_before_run_dir(self) -> None:
+        for profile in ("review-only", "verification-only"):
+            with self.subTest(profile=profile), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo, home = self._init_home(root)
+                plan_path = self._flowplan_out(root, "write two proof files", profile=profile)
+                role_lane_path = self._role_lane_plan_out(root, "write two proof files", profile=profile)
+
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    code = main(
+                        [
+                            "orro",
+                            "proofrun",
+                            "write two proof files",
+                            "--repo",
+                            str(repo),
+                            "--home",
+                            str(home),
+                            "--workflow-plan",
+                            str(plan_path),
+                            "--role-lane-plan",
+                            str(role_lane_path),
+                            "--json",
+                        ]
+                    )
+
+                self.assertEqual(code, 2)
+                payload = json.loads(stdout.getvalue())
+                self.assertEqual(
+                    payload["error"]["code"],
+                    "ERR_ORRO_ROLE_LANE_PLAN_EXECUTION_FORBIDDEN",
+                )
+                self.assertFalse((home / "runs").exists())
+
+    def test_proofrun_role_lane_plan_mismatch_or_malformed_fails_before_run_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            plan_path = self._flowplan_out(root, "write two proof files", profile="code-change")
+            mismatched = self._role_lane_plan_out(root, "different goal", profile="code-change")
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "write two proof files",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--workflow-plan",
+                        str(plan_path),
+                        "--role-lane-plan",
+                        str(mismatched),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_ROLE_LANE_PLAN_HASH_MISMATCH")
+            self.assertFalse((home / "runs").exists())
+
+            malformed = root / "malformed-role-lane-plan.json"
+            malformed.write_text(json.dumps({"kind": "not-a-role-lane-plan"}), encoding="utf-8")
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "write two proof files",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--workflow-plan",
+                        str(plan_path),
+                        "--role-lane-plan",
+                        str(malformed),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_ROLE_LANE_PLAN_INVALID")
+            self.assertFalse((home / "runs").exists())
 
     def test_proofrun_workflow_plan_missing_or_invalid_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -684,7 +844,12 @@ class OrroPublicFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             plan_path = self._flowplan_out(root, "write two proof files")
-            home, run_dir, _payload = self._proofrun(root, workflow_plan=plan_path)
+            role_lane_path = self._role_lane_plan_out(root, "write two proof files")
+            home, run_dir, _payload = self._proofrun(
+                root,
+                workflow_plan=plan_path,
+                role_lane_plan=role_lane_path,
+            )
             out = run_dir / "proofcheck-verdict.json"
             stdout = io.StringIO()
             with redirect_stdout(stdout):
@@ -694,10 +859,14 @@ class OrroPublicFlowTests(unittest.TestCase):
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["decision"], "pass")
             self.assertIn("workflow_plan", payload)
+            self.assertIn("role_lane_plan", payload)
             self.assertEqual(payload["workflow_plan"]["path"], str(run_dir / "workflow-plan.json"))
+            self.assertEqual(payload["role_lane_plan"]["path"], str(run_dir / "role-lane-plan.json"))
             verdict_payload = json.loads(out.read_text(encoding="utf-8"))
             self.assertEqual(verdict_payload["workflow_plan"], payload["workflow_plan"])
+            self.assertEqual(verdict_payload["role_lane_plan"], payload["role_lane_plan"])
             self.assertFalse(verdict_payload["workflow_plan"]["boundary"]["raises_assurance"])
+            self.assertFalse(verdict_payload["role_lane_plan"]["boundary"]["raises_assurance"])
 
     def test_proofcheck_preserves_role_dispatch_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -876,7 +1045,12 @@ class OrroPublicFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             plan_path = self._flowplan_out(root, "write two proof files")
-            home, run_dir, _payload = self._proofrun(root, workflow_plan=plan_path)
+            role_lane_path = self._role_lane_plan_out(root, "write two proof files")
+            home, run_dir, _payload = self._proofrun(
+                root,
+                workflow_plan=plan_path,
+                role_lane_plan=role_lane_path,
+            )
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(
                     main(
@@ -899,10 +1073,14 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(code, 0)
             payload = json.loads(stdout.getvalue())
             self.assertIn("workflow_plan", payload)
+            self.assertIn("role_lane_plan", payload)
             self.assertEqual(payload["workflow_plan"]["path"], str(run_dir / "workflow-plan.json"))
+            self.assertEqual(payload["role_lane_plan"]["path"], str(run_dir / "role-lane-plan.json"))
             self.assertFalse(payload["workflow_plan"]["boundary"]["raises_assurance"])
+            self.assertFalse(payload["role_lane_plan"]["boundary"]["raises_assurance"])
             written = json.loads((run_dir / "orro-handoff.json").read_text(encoding="utf-8"))
             self.assertEqual(written["workflow_plan"], payload["workflow_plan"])
+            self.assertEqual(written["role_lane_plan"], payload["role_lane_plan"])
 
     def test_handoff_includes_role_dispatch_reference_when_present(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

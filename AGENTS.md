@@ -64,6 +64,14 @@ not approval, and not assurance. Depone proofcheck still decides what evidence
 supports. `review-only` does not authorize proofrun; formal `orro handoff` still
 requires a passing bound proofcheck verdict.
 
+`python3 -m orro flowplan "<goal>" --root <repo> --profile code-change --role-lanes-out role-lane-plan.json`
+writes executable role-lane intent. `python3 -m orro proofrun "<goal>" --repo
+<repo> --home .witnessd --workflow-plan workflow-plan.json --role-lane-plan
+role-lane-plan.json` validates the workflow hash binding and executes allowed
+lanes through existing witnessd team machinery. Role-lane plans are not proof,
+approval, or assurance. `review-only`, `verification-only`, and default
+`release-readiness` role-lane plans cannot launch proofrun.
+
 The standalone ORRO repo remains deferred until packaging, marketplace, and
 version-lock distribution needs justify it. The packaged bare `orro` executable
 points at `orro.__main__:main` and must remain an alias layer over the

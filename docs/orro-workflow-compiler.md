@@ -15,7 +15,8 @@ Example:
 
 ```bash
 python3 -m orro flowplan "fix bug in parser" --root . --profile code-change --out workflow-plan.json
-python3 -m orro proofrun "fix bug in parser" --repo . --home .witnessd --workflow-plan workflow-plan.json
+python3 -m orro flowplan "fix bug in parser" --root . --profile code-change --role-lanes-out role-lane-plan.json
+python3 -m orro proofrun "fix bug in parser" --repo . --home .witnessd --workflow-plan workflow-plan.json --role-lane-plan role-lane-plan.json
 ```
 
 The workflow plan is intent, not evidence. Roles do not create assurance by
@@ -40,6 +41,16 @@ begins with proofrun evidence, and Depone proofcheck still decides what that
 evidence supports. Proofcheck and handoff may include the binding and role
 dispatch references for review context only.
 
+When `flowplan` receives `--role-lanes-out`, it also writes an
+`orro-role-lane-plan` artifact. That artifact maps executable workflow roles to
+witnessd team lanes and records the workflow plan hash. It is executable intent,
+not proof. When `proofrun` receives both `--workflow-plan` and
+`--role-lane-plan`, it validates the role-lane plan hash, the workflow phase
+gate, `execution_allowed`, and the executable lane list before creating a run
+directory. Execution still happens through existing witnessd team machinery.
+Proofcheck and handoff may preserve role-lane binding references for review
+context only.
+
 Phase ownership:
 
 - `init`, `doctor`, and `engine-lock` are setup/readiness/distribution checks.
@@ -53,6 +64,10 @@ Phase ownership:
 not imply that the formal `orro handoff` command can run without proofcheck. A
 formal `orro handoff` artifact still requires a passing bound
 `proofcheck-verdict.json`.
+
+`verification-only` points at proofcheck/handoff intent over existing evidence;
+it does not launch proofrun. Default `release-readiness` role-lane plans are
+readiness intent and also do not launch proofrun.
 
 Boundary:
 

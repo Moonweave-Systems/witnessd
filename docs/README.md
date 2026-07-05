@@ -73,6 +73,15 @@ engine call that executes and does not verify. If allowed, proofrun records
 context only. They are not proof, verification, approval, or assurance, and
 formal `orro handoff` still requires a passing bound proofcheck verdict.
 
+`flowplan --role-lanes-out <path>` also writes an `orro-role-lane-plan` that
+maps executable roles to witnessd team lanes. `proofrun --role-lane-plan <path>`
+validates the hash binding and execution gate, then reuses existing witnessd
+team execution. Role-lane plans are executable intent, not proof; review-only
+and verification-only plans cannot launch proofrun.
+
+See [`orro-role-lane-plan.md`](orro-role-lane-plan.md) for the artifact
+contract.
+
 ## Legacy docs
 
 The following categories are historical or wave-specific unless `SPEC3.md`

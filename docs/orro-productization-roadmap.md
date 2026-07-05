@@ -88,6 +88,13 @@ approval, or assurance. A `review-only` profile remains review intent and does
 not authorize proofrun; actual `orro handoff` still requires a passing
 proofcheck verdict bound to the current evidence snapshot.
 
+`flowplan --role-lanes-out <path>` now bridges rolepacks to witnessd team lane
+intent by writing `orro-role-lane-plan`. `proofrun --role-lane-plan <path>`
+validates the role-lane plan against the workflow-plan hash and executes allowed
+lanes through existing witnessd team machinery. This closes the bridge from
+rolepack intent to team lanes without creating ORRO as a third engine. The
+role-lane plan and role dispatch remain review context, not proof or assurance.
+
 ## Engine Boundary Contract
 
 ### Depone Verifier API Surface
