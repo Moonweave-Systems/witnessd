@@ -15,6 +15,7 @@ This file exists to prevent doc drift. It is a map, not a second spec.
 | ORRO workflow compiler v0 | [`orro-workflow-compiler.md`](orro-workflow-compiler.md) |
 | ORRO continuation gate v0 | [`orro-continuation-gate.md`](orro-continuation-gate.md) |
 | ORRO auto dry-run v0 | [`orro-auto-dry-run.md`](orro-auto-dry-run.md) |
+| ORRO auto once v0 | [`orro-auto-once.md`](orro-auto-once.md) |
 
 When these conflict, `SPEC3.md` wins for witnessd runtime/product decisions.
 Depone `docs/spec.md` wins for verifier-contract decisions.
@@ -38,7 +39,8 @@ Use these names in new user-facing docs:
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro next` | non-executing continuation/status gate over persisted run artifacts |
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
-| `orro auto` | future executing continuation mode behind evidence gates |
+| `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
+| `orro auto` | future multi-step continuation mode behind evidence gates |
 | `orro ultra` | future high-autonomy profile |
 | `python3 -m orro` | thin product-name entrypoint hosted in witnessd |
 | `orro engine-lock` | write/check distribution metadata for pinned witnessd and Depone commits |
@@ -98,8 +100,14 @@ without human/verifier intervention. Role status is derived context, not proof.
 state and emits an `orro-auto-plan` with the exact command it would run next. It
 does not run the command, call Depone, launch workers, write proofcheck verdicts
 or handoff packages, mutate worktrees, verify evidence, approve merge, or raise
-assurance. The auto-plan is recommendation context only, not proof. Executing
-Executing `orro auto` remains future work.
+assurance. The auto-plan is recommendation context only, not proof. Multi-step
+autonomous `orro auto` remains future work.
+
+`orro auto --once <run-dir> --home <home> --json` re-checks continuation state
+and executes at most one allowed step: proofcheck, handoff, or complete no-op.
+It never launches proofrun or workers, calls live models or MCP, repairs
+artifacts, retries or resumes lanes, approves merge, or raises assurance. The
+auto receipt is orchestration metadata only, not proof or verifier truth.
 
 ## Legacy docs
 

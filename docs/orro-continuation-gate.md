@@ -57,3 +57,8 @@ and emits an `orro-auto-plan`. Dry-run may recommend a future proofcheck or
 handoff command, but it does not run proofcheck, call Depone, write handoff,
 launch workers, repair evidence, mutate worktrees, approve merge, verify
 evidence, or raise assurance.
+
+`orro auto --once` is the limited executor over the same continuation decision.
+It re-checks state and executes at most one allowed step: proofcheck, handoff,
+or complete no-op. It never launches proofrun or workers, repairs artifacts,
+retries lanes, calls live models or MCP, approves merge, or raises assurance.

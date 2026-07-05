@@ -182,6 +182,12 @@ class OrroPublicFlowTests(unittest.TestCase):
             code = main(["orro", "auto", "--dry-run", str(run_dir), "--home", str(home), "--json", *extra])
         return code, json.loads(stdout.getvalue())
 
+    def _orro_auto_once(self, run_dir: Path, home: Path, *extra: str) -> tuple[int, dict]:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(["orro", "auto", "--once", str(run_dir), "--home", str(home), "--json", *extra])
+        return code, json.loads(stdout.getvalue())
+
     def test_proofrun_alias_reuses_run_surface_without_final_trust_claim(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _home, run_dir, payload = self._proofrun(Path(tmp))
@@ -563,6 +569,173 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertTrue(out.is_file())
             self.assertEqual(json.loads(out.read_text(encoding="utf-8")), payload)
+
+    def test_orro_auto_once_after_proofrun_runs_only_proofcheck(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            existing_runs = set((home / "runs").iterdir())
+
+            code, receipt = self._orro_auto_once(run_dir, home)
+
+            self.assertEqual(code, 0)
+            self.assertEqual(receipt["kind"], "orro-auto-receipt")
+            self.assertEqual(receipt["schema_version"], "0.1")
+            self.assertEqual(receipt["mode"], "once")
+            self.assertTrue(receipt["executed"])
+            self.assertEqual(receipt["decision_before"], "needs-proofcheck")
+            self.assertEqual(receipt["executed_phase"], "proofcheck")
+            self.assertEqual(receipt["command"], [
+                "orro",
+                "proofcheck",
+                str(run_dir),
+                "--home",
+                str(home),
+                "--out",
+                str(run_dir / "proofcheck-verdict.json"),
+            ])
+            self.assertEqual(receipt["exit_code"], 0)
+            self.assertEqual(receipt["decision_after"], "ready-for-handoff")
+            self.assertIn("proofcheck-verdict.json", receipt["wrote"])
+            self.assertTrue((run_dir / "proofcheck-verdict.json").is_file())
+            self.assertFalse((run_dir / "orro-handoff.json").exists())
+            self.assertEqual(set((home / "runs").iterdir()), existing_runs)
+            self.assertFalse(receipt["boundary"]["launches_workers"])
+            self.assertFalse(receipt["boundary"]["executes_proofrun"])
+            self.assertFalse(receipt["boundary"]["verifies_evidence_itself"])
+            self.assertTrue(receipt["boundary"]["delegates_verification_to_depone"])
+            self.assertFalse(receipt["boundary"]["raises_assurance"])
+
+    def test_orro_auto_once_after_proofcheck_runs_only_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            self._proofcheck_out(home, run_dir)
+
+            code, receipt = self._orro_auto_once(run_dir, home)
+
+            self.assertEqual(code, 0)
+            self.assertTrue(receipt["executed"])
+            self.assertEqual(receipt["decision_before"], "ready-for-handoff")
+            self.assertEqual(receipt["executed_phase"], "handoff")
+            self.assertEqual(receipt["command"], [
+                "orro",
+                "handoff",
+                str(run_dir),
+                "--out",
+                str(run_dir / "orro-handoff.json"),
+            ])
+            self.assertEqual(receipt["exit_code"], 0)
+            self.assertEqual(receipt["decision_after"], "complete")
+            self.assertIn("orro-handoff.json", receipt["wrote"])
+            self.assertTrue((run_dir / "orro-handoff.json").is_file())
+            self.assertFalse(receipt["boundary"]["approves_merge"])
+            self.assertFalse(receipt["boundary"]["raises_assurance"])
+
+    def test_orro_auto_once_after_complete_noops_without_writing_default_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            self._proofcheck_out(home, run_dir)
+            handoff = run_dir / "orro-handoff.json"
+            self._handoff_out(run_dir)
+            before = handoff.read_text(encoding="utf-8")
+
+            code, receipt = self._orro_auto_once(run_dir, home)
+
+            self.assertEqual(code, 0)
+            self.assertFalse(receipt["executed"])
+            self.assertEqual(receipt["decision_before"], "complete")
+            self.assertEqual(receipt["decision_after"], "complete")
+            self.assertEqual(receipt["executed_phase"], None)
+            self.assertEqual(receipt["wrote"], [])
+            self.assertEqual(handoff.read_text(encoding="utf-8"), before)
+            self.assertFalse((run_dir / "orro-auto-receipt.json").exists())
+
+    def test_orro_auto_once_blocks_without_executing_for_blocked_scout_and_invalid_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            missing = root / "missing-run"
+
+            missing_code, missing_receipt = self._orro_auto_once(missing, home)
+            self.assertEqual(missing_code, 2)
+            self.assertFalse(missing_receipt["executed"])
+            self.assertEqual(missing_receipt["decision_before"], "invalid-run-dir")
+            self.assertEqual(missing_receipt["command"], [])
+
+            scout_stdout = io.StringIO()
+            with redirect_stdout(scout_stdout):
+                self.assertEqual(main(["orro", "scout", "inspect repo", "--repo", str(repo)]), 0)
+            scout_dir = Path(json.loads(scout_stdout.getvalue())["context_pack"]).parent
+
+            scout_code, scout_receipt = self._orro_auto_once(scout_dir, home)
+            self.assertEqual(scout_code, 1)
+            self.assertFalse(scout_receipt["executed"])
+            self.assertEqual(scout_receipt["command"], [])
+            self.assertFalse((scout_dir / "proofcheck-verdict.json").exists())
+            self.assertFalse((scout_dir / "orro-handoff.json").exists())
+
+    def test_orro_auto_once_mode_errors_and_out_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            out = run_dir / "orro-auto-receipt.json"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(["orro", "auto", str(run_dir), "--home", str(home), "--json"])
+            self.assertEqual(code, 2)
+            self.assertEqual(json.loads(stdout.getvalue())["error"]["code"], "ERR_ORRO_AUTO_DRY_RUN_REQUIRED")
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "auto",
+                        "--dry-run",
+                        "--once",
+                        str(run_dir),
+                        "--home",
+                        str(home),
+                        "--json",
+                    ]
+                )
+            self.assertEqual(code, 2)
+            self.assertEqual(json.loads(stdout.getvalue())["error"]["code"], "ERR_ORRO_AUTO_MODE_CONFLICT")
+
+            code, receipt = self._orro_auto_once(run_dir, home, "--out", str(out))
+            self.assertEqual(code, 0)
+            self.assertTrue(out.is_file())
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8")), receipt)
+
+    def test_orro_auto_once_module_and_witnessd_orro_alias_match(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+
+            orro_auto = self._orro_module_run(
+                ["auto", "--once", str(run_dir), "--home", str(home), "--json"]
+            )
+
+            self.assertEqual(orro_auto.returncode, 0, orro_auto.stderr)
+            payload = json.loads(orro_auto.stdout)
+            self.assertEqual(payload["kind"], "orro-auto-receipt")
+            self.assertEqual(payload["executed_phase"], "proofcheck")
+            self.assertTrue((run_dir / "proofcheck-verdict.json").is_file())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir_2, _payload = self._proofrun(root)
+            witnessd_orro_auto = self._module_run(
+                ["orro", "auto", "--once", str(run_dir_2), "--home", str(home), "--json"]
+            )
+            self.assertEqual(witnessd_orro_auto.returncode, 0, witnessd_orro_auto.stderr)
+            payload_2 = json.loads(witnessd_orro_auto.stdout)
+            self.assertEqual(payload_2["kind"], "orro-auto-receipt")
+            self.assertEqual(payload_2["executed_phase"], "proofcheck")
+            self.assertTrue((run_dir_2 / "proofcheck-verdict.json").is_file())
 
     def test_orro_next_module_and_witnessd_orro_alias_match(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -65,6 +65,12 @@ would run. It is recommendation context only: it does not execute the command,
 call Depone, launch workers, verify evidence, approve merge, or raise
 assurance.
 
+`orro auto --once <run-dir> --home <home> --json` re-checks continuation state
+and executes at most one allowed step. In v0, that means proofcheck, handoff, or
+complete no-op only. It does not launch proofrun or workers, execute role-lane
+plans, retry or resume lanes, call live models or MCP, approve merge, or raise
+assurance.
+
 Phase ownership:
 
 - `init`, `doctor`, and `engine-lock` are setup/readiness/distribution checks.
@@ -90,5 +96,5 @@ Depone verifies; witnessd executes; ORRO exposes the workflow.
 ```
 
 The compiler does not run workers, call live models, call Depone verification,
-mutate worktrees, approve merge, or turn ORRO into a third engine. Executing
-`orro auto` remains future work.
+mutate worktrees, approve merge, or turn ORRO into a third engine. Multi-step
+autonomous `orro auto` remains future work.

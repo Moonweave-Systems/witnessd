@@ -30,7 +30,7 @@ contract remains authoritative in the Depone repo at `docs/spec.md`.
 | `orro handoff` | maintainer handoff | Bind code changes to an explicit passing proofcheck verdict for human review; not merge approval. |
 | `orro skillpack` | knowledge-as-code support | Manage SKILL/CLAUDE/rule/MCP bundles with progressive disclosure. |
 | `orro doctor` | readiness check | Check engines, verifier pin, adapters, MCP availability, keys, and policy gates. |
-| `orro auto` | automation mode | Dry-run planner now; future executing continuation behind evidence gates. |
+| `orro auto` | automation mode | Dry-run planner and once mode now; future multi-step continuation behind evidence gates. |
 | `orro ultra` | future high-autonomy profile | Same gates as ORRO, but with larger budgets and longer loops. |
 | Superflow | historical/compatibility name | Former surface name. Do not use for new public docs except migration notes. |
 | witnessd | engine | Runtime, adapters, sessions, worktrees, team orchestration, evidence emission. |
@@ -138,6 +138,7 @@ python3 -m orro proofcheck .witnessd/runs/<run-dir> \
   --home .witnessd \
   --out .witnessd/runs/<run-dir>/proofcheck-verdict.json
 python3 -m orro auto --dry-run .witnessd/runs/<run-dir> --home .witnessd --json
+python3 -m orro auto --once .witnessd/runs/<run-dir> --home .witnessd --json
 python3 -m orro handoff .witnessd/runs/<run-dir> \
   --out .witnessd/runs/<run-dir>/orro-handoff.json
 ```
@@ -227,8 +228,15 @@ run next. It may recommend a future proofcheck or handoff command, but dry-run
 itself must not call Depone, run proofcheck, execute workers, write a handoff,
 repair evidence, retry lanes, mutate worktrees, approve merge, verify evidence,
 or raise assurance. The auto-plan is recommendation context only, not proof.
-`orro auto` without `--dry-run` must fail closed until executing automation is
-implemented as a separate gated mode.
+`orro auto` without `--dry-run` or `--once` must fail closed.
+
+`orro auto --once <run-dir> --home <home> --json` is the limited one-step
+executor. It re-checks continuation state before acting and may execute only
+proofcheck for `needs-proofcheck`, handoff for `ready-for-handoff`, or no-op for
+`complete`. It never launches proofrun or workers, calls live models or MCP,
+repairs artifacts, retries or resumes lanes, approves merge, or raises
+assurance. Its `orro-auto-receipt` is orchestration metadata only, not proof,
+verifier truth, approval, or assurance.
 
 Create a standalone `ORRO` repo only when distribution needs justify it:
 marketplace manifests, host-specific plugin bundles, examples, product docs,
@@ -510,7 +518,7 @@ execute, which phases may verify, and which artifacts must exist before handoff.
 Roles do not create assurance by existing. `proofrun` is the first execution
 phase and belongs to witnessd. `proofcheck` is the verifier phase and delegates
 to Depone. `handoff` is review packaging only. `doctor` and `engine-lock` are
-readiness/distribution checks only. Executing `orro auto` remains future work.
+readiness/distribution checks only. Multi-step autonomous `orro auto` remains future work.
 
 `review-only` remains review intent. If a formal ORRO handoff artifact is
 needed, the actual `orro handoff` command still requires a passing
@@ -612,7 +620,8 @@ current evidence -> next gate -> auto-plan recommendation
 
 `orro auto --dry-run` is non-executing. It consumes `orro next`, writes or
 prints `orro-auto-plan`, and recommends the next command without running it.
-Executing automation remains future work.
+`orro auto --once` may execute exactly one allowed proofcheck or handoff step.
+Multi-step autonomous execution remains future work.
 
 Rules: no continuation after pause, blocked, or refuted without explicit operator
 approval; no budget auto-increase; no unverified plan activation; no merge/deploy
