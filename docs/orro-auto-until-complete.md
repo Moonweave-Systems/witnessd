@@ -3,6 +3,10 @@
 `orro auto --until-complete` is bounded post-run automation over the existing
 `orro next` continuation gate.
 
+It is not adaptive routing. Use `orro advise` before planning/execution to get a
+non-executing workstyle decision. Until-complete only loops over proofcheck and
+handoff after proofrun evidence already exists.
+
 ```bash
 orro auto --until-complete .witnessd/runs/<run-dir> --home .witnessd --max-steps 2 --json
 python3 -m orro auto --until-complete .witnessd/runs/<run-dir> --home .witnessd --max-steps 2 --json

@@ -38,6 +38,7 @@ python3 -m orro init --home .witnessd --depone-root ../Depone
 python3 -m orro doctor --home .witnessd --json
 python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
+python3 -m orro advise "goal" --repo . --home .witnessd --json
 python3 -m orro scout "inspect repo" --repo .
 python3 -m orro flowplan "goal" --root .
 python3 -m orro flowplan "goal" --root . --profile code-change --out workflow-plan.json
@@ -128,6 +129,14 @@ bounded post-run loop. It may run proofcheck and handoff, re-checking
 continuation state before every step, but never launches proofrun or workers.
 The auto session is orchestration metadata, not proof or verifier truth. Broader
 autonomous `orro auto` remains deferred.
+
+`orro advise "<goal>" --repo <repo> --home <home> --json` is the workstyle
+router and developer-judgment layer. It recommends the smallest safe workflow
+before planning or execution, classifies goals deterministically, and explains
+which actions to skip. Its `orro-workstyle-decision` is non-executing advice,
+not proof, verifier truth, approval, or assurance. Future LLM-based routing must
+remain policy-gated and advisory unless a separate execution gate authorizes
+action.
 
 ## Engine Boundary Contract
 

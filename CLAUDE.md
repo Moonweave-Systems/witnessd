@@ -32,6 +32,7 @@ map and legacy policy.
 | ORRO Flow | scout -> flowplan -> proofrun -> proofcheck -> handoff |
 | `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
+| `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo profile, context pack, and discovery notes |
 | `flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
 | `proofrun` | precise evidence-backed execution alias |
@@ -71,6 +72,13 @@ lock is readiness alignment only. A mismatch is readiness-blocked, not
 verifier-refuted. The engine lock is not proof, does not verify evidence, does
 not approve merge, and does not raise assurance.
 `orro doctor` checks readiness, not evidence truth.
+
+`python3 -m orro advise "<goal>" --repo <repo> --home .witnessd --json` is the
+developer-judgment/workstyle layer. It recommends the smallest safe workflow and
+returns an `orro-workstyle-decision`. It is non-executing advice only: not
+proof, verifier truth, approval, or assurance. It helps non-developers avoid
+wasteful or risky AI workflows but does not replace proofrun, proofcheck,
+handoff, or human review for risky changes.
 
 `python3 -m orro flowplan "<goal>" --root <repo> --profile code-change` compiles
 a deterministic `orro-workflow-plan` intent artifact. Supported profiles are

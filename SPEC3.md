@@ -23,6 +23,7 @@ contract remains authoritative in the Depone repo at `docs/spec.md`.
 | `orro` | primary command/skill | User-facing command and host skill surface. |
 | ORRO Flow | workflow loop | `scout -> flowplan -> proofrun -> proofcheck -> handoff`. |
 | `orro init` | setup surface | Create witnessd readiness/provision metadata for ORRO; not proof or assurance. |
+| `orro advise` | workstyle router | Non-executing developer-judgment layer that recommends the smallest safe workflow. |
 | `orro scout` | read-only exploration | Build repo profile, context pack, and discovery notes before planning. |
 | `flowplan` | plan-only alias | Build or validate a workflow plan, including rolepack/workflow profiles, without running workers. |
 | `proofrun` | precise run alias | Execute with observer-signed evidence. Kept for technical invocation accuracy. |
@@ -130,6 +131,7 @@ python3 -m orro init --home .witnessd --depone-root ../Depone
 python3 -m orro doctor --home .witnessd --json
 python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
+python3 -m orro advise "fix parser bug" --repo . --home .witnessd --json
 python3 -m orro scout "inspect repo" --repo .
 python3 -m orro flowplan "plan goal" --root .
 python3 -m orro flowplan "fix bug in parser" --root . --profile code-change --out workflow-plan.json
@@ -152,7 +154,7 @@ witnessd initialization behavior may provision according to its current
 configuration; tests and local development should use `--depone-root`.
 
 `python3 -m orro --help` is product-facing and lists only the public ORRO Flow and
-support commands: `init`, `scout`, `flowplan`, `proofrun`, `proofcheck`,
+support commands: `init`, `advise`, `scout`, `flowplan`, `proofrun`, `proofcheck`,
 `handoff`, `next`, `auto`, `doctor`, and `engine-lock`. It must not promote witnessd
 engine-internal commands.
 Subcommand behavior still delegates to the witnessd-hosted ORRO surface.
@@ -180,6 +182,17 @@ duplicate verifier/runtime logic.
 `orro doctor` checks readiness, not evidence truth. It may report setup or
 engine-lock mismatch as readiness-blocked, but that is not Depone verifier
 refutation.
+
+`orro advise "<goal>" --repo <repo> --home <home> --json` is the deterministic
+workstyle router v0. It classifies a goal into a transparent task class such as
+`trivial-change`, `docs-change`, `code-change`, `review-only`,
+`verification-only`, `release-readiness`, `risky-change`, or `unknown`; then it
+returns an `orro-workstyle-decision` with the recommended profile, effort, path,
+skip list, gates, reasons, and rule matches. It recommends the smallest safe
+workflow and helps non-developers avoid wasteful or risky AI workflows. It is
+non-executing advice only: not proof, verifier truth, approval, or assurance.
+It must not call live models, call Depone proofcheck, mutate worktrees, or
+replace proofrun/proofcheck/handoff/human review.
 
 `orro flowplan --profile <profile>` is the deterministic ORRO rolepack/workflow
 compiler v0. Built-in profiles are `code-change`, `review-only`,

@@ -1214,6 +1214,33 @@ def _cmd_orro_next(args: argparse.Namespace) -> int:
     return code
 
 
+def _cmd_orro_advise(args: argparse.Namespace) -> int:
+    from witnessd.orro_workstyle import (
+        OrroWorkstyleError,
+        advise_workstyle,
+        write_workstyle_decision,
+    )
+
+    if not args.goal or not str(args.goal).strip():
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_ADVISE_INPUT_REQUIRED",
+            message="goal is required",
+        )
+        return 2
+    repo = Path(args.repo).resolve(strict=False)
+    home = Path(args.home).resolve(strict=False) if args.home else None
+    payload = advise_workstyle(str(args.goal), repo=repo, home=home)
+    if args.out:
+        try:
+            write_workstyle_decision(Path(args.out).resolve(strict=False), payload)
+        except OrroWorkstyleError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 1
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
 def _cmd_orro_auto(args: argparse.Namespace) -> int:
     from witnessd.orro_auto import (
         OrroAutoError,
@@ -2411,6 +2438,14 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_next.add_argument("--json", action="store_true")
     orro_next.set_defaults(func=_cmd_orro_next)
 
+    orro_advise = sub.add_parser("orro-advise", help=argparse.SUPPRESS)
+    orro_advise.add_argument("goal", nargs="?")
+    orro_advise.add_argument("--repo", default=".")
+    orro_advise.add_argument("--home", default=None)
+    orro_advise.add_argument("--out", default=None)
+    orro_advise.add_argument("--json", action="store_true")
+    orro_advise.set_defaults(func=_cmd_orro_advise)
+
     orro_auto = sub.add_parser("orro-auto", help=argparse.SUPPRESS)
     orro_auto.add_argument("run_dir", nargs="?")
     orro_auto.add_argument("--dry-run", action="store_true")
@@ -2783,6 +2818,8 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
         return ["engine-lock", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "next":
         return ["orro-next", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "advise":
+        return ["orro-advise", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "auto":
         return ["orro-auto", *argv[2:]]
     return argv
