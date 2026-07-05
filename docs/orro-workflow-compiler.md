@@ -23,13 +23,22 @@ existing. Model confidence, skill text, session transcript, MCP output alone,
 doctor readiness, engine-lock metadata, and handoff prose are forbidden assurance
 sources.
 
-When `proofrun` receives `--workflow-plan`, it records the normalized plan and a
-`workflow-plan-binding.json` hash reference in the run directory. The binding
-states which workflow the run intended to follow. It is not proof that execution
-followed the plan, not evidence verification, not approval, and not assurance.
-Actual execution proof still begins with proofrun evidence, and Depone
-proofcheck still decides what that evidence supports. Handoff may include the
-binding for review context only.
+When `proofrun` receives `--workflow-plan`, it first applies a phase gate. The
+plan must include `proofrun` in `flow` and must include a witnessd `proofrun`
+engine call with `executes: true` and `verifies: false`. If the gate fails,
+proofrun fails closed before it creates a run directory. Phase gates constrain
+which ORRO phase may run; they do not verify evidence.
+
+When the gate passes, proofrun records the normalized plan, a
+`workflow-plan-binding.json` hash reference, and `workflow-role-dispatch.json` in
+the run directory. The binding states which workflow the run intended to follow.
+The role dispatch artifact maps workflow roles to actual or pending engine
+phases and may reference `team-ledger.json` and lane ids when those exist. These
+artifacts are not proof that execution followed the plan, not evidence
+verification, not approval, and not assurance. Actual execution proof still
+begins with proofrun evidence, and Depone proofcheck still decides what that
+evidence supports. Proofcheck and handoff may include the binding and role
+dispatch references for review context only.
 
 Phase ownership:
 
@@ -40,8 +49,10 @@ Phase ownership:
 - `handoff` is review packaging only; it does not approve merge or raise
   assurance.
 
-`review-only` handoff is intent only. A formal `orro handoff` artifact still
-requires a passing bound `proofcheck-verdict.json`.
+`review-only` is review intent only. It does not authorize proofrun, and it does
+not imply that the formal `orro handoff` command can run without proofcheck. A
+formal `orro handoff` artifact still requires a passing bound
+`proofcheck-verdict.json`.
 
 Boundary:
 

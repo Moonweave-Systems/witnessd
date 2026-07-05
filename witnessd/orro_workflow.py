@@ -18,12 +18,15 @@ ERR_ORRO_WORKFLOW_PROFILE_UNKNOWN = "ERR_ORRO_WORKFLOW_PROFILE_UNKNOWN"
 ERR_ORRO_WORKFLOW_PLAN_LOAD_FAILED = "ERR_ORRO_WORKFLOW_PLAN_LOAD_FAILED"
 ERR_ORRO_WORKFLOW_PLAN_INVALID = "ERR_ORRO_WORKFLOW_PLAN_INVALID"
 ERR_ORRO_WORKFLOW_PLAN_GOAL_MISMATCH = "ERR_ORRO_WORKFLOW_PLAN_GOAL_MISMATCH"
+ERR_ORRO_WORKFLOW_PLAN_PHASE_FORBIDDEN = "ERR_ORRO_WORKFLOW_PLAN_PHASE_FORBIDDEN"
 ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED = "ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED"
 
 WORKFLOW_PLAN_KIND = "orro-workflow-plan"
 WORKFLOW_PLAN_SCHEMA_VERSION = "0.1"
 WORKFLOW_PLAN_BINDING_KIND = "orro-workflow-plan-binding"
 WORKFLOW_PLAN_BINDING_SCHEMA_VERSION = "0.1"
+ROLE_DISPATCH_KIND = "orro-role-dispatch"
+ROLE_DISPATCH_SCHEMA_VERSION = "0.1"
 
 FORBIDDEN_ASSURANCE_SOURCES = [
     "skill text",
@@ -75,7 +78,7 @@ def compile_workflow_plan(*, goal: str, profile: str) -> dict[str, Any]:
     }
 
 
-def load_workflow_plan(path: Path, *, expected_goal: str) -> dict[str, Any]:
+def load_workflow_plan(path: Path, *, expected_goal: str | None = None) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -86,7 +89,7 @@ def load_workflow_plan(path: Path, *, expected_goal: str) -> dict[str, Any]:
     if not isinstance(plan, dict):
         raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow_plan must be a JSON object")
     validate_workflow_plan(plan)
-    if plan.get("goal") != expected_goal:
+    if expected_goal is not None and plan.get("goal") != expected_goal:
         raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_GOAL_MISMATCH, "workflow plan goal does not match proofrun goal")
     return deepcopy(plan)
 
@@ -98,19 +101,64 @@ def validate_workflow_plan(plan: dict[str, Any]) -> None:
         raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan schema_version is invalid")
     if plan.get("profile") not in PROFILE_NAMES:
         raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan profile is invalid")
-    boundary = plan.get("boundary")
-    if not isinstance(boundary, dict) or boundary.get("orro_is_third_engine") is not False:
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan boundary is invalid")
-    if boundary.get("depone_verifies") is not True or boundary.get("witnessd_executes") is not True:
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan boundary is invalid")
+    flow = plan.get("flow")
+    if not isinstance(flow, list) or not all(isinstance(phase, str) for phase in flow):
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan flow must be a string list")
     roles = plan.get("roles")
     if not isinstance(roles, list):
         raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan roles must be a list")
+    engine_calls = plan.get("engine_calls")
+    if not isinstance(engine_calls, list):
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan engine_calls must be a list")
+    boundary = plan.get("boundary")
+    if not isinstance(boundary, dict) or boundary.get("orro_is_third_engine") is not False:
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan boundary is invalid")
+    if (
+        boundary.get("depone_verifies") is not True
+        or boundary.get("witnessd_executes") is not True
+        or boundary.get("orro_exposes_workflow") is not True
+    ):
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan boundary is invalid")
     if plan.get("raises_assurance") is not None:
         raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan must not claim assurance")
     for role in roles:
         if not isinstance(role, dict) or role.get("raises_assurance") is not False:
             raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan role must not claim assurance")
+    for call in engine_calls:
+        if not isinstance(call, dict):
+            raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan engine_call must be a JSON object")
+        if call.get("executes") is True and call.get("verifies") is True:
+            raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan engine_call cannot execute and verify")
+
+
+def workflow_plan_hash(plan: dict[str, Any]) -> str:
+    validate_workflow_plan(plan)
+    return _canonical_hash(plan)
+
+
+def assert_workflow_phase_allowed(plan: dict[str, Any], phase: str) -> None:
+    validate_workflow_plan(plan)
+    flow = plan["flow"]
+    if phase not in flow:
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_PHASE_FORBIDDEN,
+            f"workflow plan does not allow phase: {phase}",
+        )
+    if phase == "proofrun":
+        engine_calls = plan["engine_calls"]
+        allowed = any(
+            isinstance(call, dict)
+            and call.get("phase") == "proofrun"
+            and call.get("engine") == "witnessd"
+            and call.get("executes") is True
+            and call.get("verifies") is False
+            for call in engine_calls
+        )
+        if not allowed:
+            raise OrroWorkflowError(
+                ERR_ORRO_WORKFLOW_PLAN_PHASE_FORBIDDEN,
+                "workflow plan does not allow witnessd proofrun execution",
+            )
 
 
 def write_workflow_plan_binding(
@@ -121,7 +169,7 @@ def write_workflow_plan_binding(
 ) -> dict[str, Any]:
     plan_path = run_dir / "workflow-plan.json"
     binding_path = run_dir / "workflow-plan-binding.json"
-    plan_sha256 = _canonical_hash(plan)
+    plan_sha256 = workflow_plan_hash(plan)
     binding = {
         "kind": WORKFLOW_PLAN_BINDING_KIND,
         "schema_version": WORKFLOW_PLAN_BINDING_SCHEMA_VERSION,
@@ -141,6 +189,84 @@ def write_workflow_plan_binding(
     if ref is None:
         raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED, "workflow plan binding was not readable")
     return ref
+
+
+def write_workflow_role_dispatch(
+    *,
+    plan: dict[str, Any],
+    run_dir: Path,
+) -> dict[str, Any]:
+    dispatch_path = run_dir / "workflow-role-dispatch.json"
+    dispatch = build_workflow_role_dispatch(plan=plan, run_dir=run_dir)
+    try:
+        dispatch_path.write_text(
+            json.dumps(dispatch, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED, str(exc)) from exc
+    ref = workflow_role_dispatch_ref(run_dir)
+    if ref is None:
+        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED, "workflow role dispatch was not readable")
+    return ref
+
+
+def build_workflow_role_dispatch(*, plan: dict[str, Any], run_dir: Path) -> dict[str, Any]:
+    validate_workflow_plan(plan)
+    lane_ids = _team_ledger_lane_ids(run_dir / "team-ledger.json")
+    has_team_ledger = (run_dir / "team-ledger.json").is_file()
+    roles = []
+    for role in plan["roles"]:
+        role_phase = str(role.get("phase", ""))
+        role_record = {
+            "role_id": role.get("role_id"),
+            "phase": role_phase,
+            "engine": role.get("engine"),
+            "may_execute": role.get("may_execute") is True,
+            "may_verify": role.get("may_verify") is True,
+            "raises_assurance": False,
+            "status": _role_status(role_phase, has_team_ledger),
+            "evidence_refs": ["team-ledger.json"] if role_phase == "proofrun" and has_team_ledger else [],
+        }
+        if role_phase == "proofrun" and lane_ids:
+            role_record["lane_ids"] = lane_ids
+        roles.append(role_record)
+    return {
+        "kind": ROLE_DISPATCH_KIND,
+        "schema_version": ROLE_DISPATCH_SCHEMA_VERSION,
+        "workflow_plan_hash": workflow_plan_hash(plan),
+        "workflow_profile": plan["profile"],
+        "goal": plan["goal"],
+        "run_dir": str(run_dir),
+        "roles": roles,
+        "boundary": {
+            "depone_verifies": True,
+            "witnessd_executes": True,
+            "orro_exposes_workflow": True,
+            "role_dispatch_is_proof": False,
+            "raises_assurance": False,
+            "approves_merge": False,
+        },
+    }
+
+
+def workflow_role_dispatch_ref(run_dir: Path) -> dict[str, Any] | None:
+    dispatch_path = run_dir / "workflow-role-dispatch.json"
+    if not dispatch_path.is_file():
+        return None
+    try:
+        dispatch = json.loads(dispatch_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(dispatch, dict):
+        return None
+    return {
+        "path": str(dispatch_path),
+        "sha256": _hash_file(dispatch_path),
+        "profile": dispatch.get("workflow_profile"),
+        "goal": dispatch.get("goal"),
+        "boundary": dispatch.get("boundary", _role_dispatch_boundary()),
+    }
 
 
 def workflow_plan_binding_ref(run_dir: Path) -> dict[str, Any] | None:
@@ -163,6 +289,41 @@ def workflow_plan_binding_ref(run_dir: Path) -> dict[str, Any] | None:
     }
 
 
+def _role_status(phase: str, has_team_ledger: bool) -> str:
+    if phase == "proofrun":
+        return "executed" if has_team_ledger else "pending-proofrun"
+    if phase == "proofcheck":
+        return "pending-proofcheck"
+    if phase == "handoff":
+        return "pending-handoff"
+    return "planned"
+
+
+def _team_ledger_lane_ids(ledger_path: Path) -> list[str]:
+    if not ledger_path.is_file():
+        return []
+    try:
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    lanes = ledger.get("lanes") if isinstance(ledger, dict) else None
+    if not isinstance(lanes, list):
+        return []
+    lane_ids = []
+    for lane in lanes:
+        if isinstance(lane, dict) and isinstance(lane.get("lane_id"), str):
+            lane_ids.append(lane["lane_id"])
+    return sorted(lane_ids)
+
+
+def _hash_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _canonical_hash(payload: dict[str, Any]) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -174,6 +335,17 @@ def _binding_boundary() -> dict[str, bool]:
         "raises_assurance": False,
         "executes_commands": False,
         "verifies_evidence": False,
+    }
+
+
+def _role_dispatch_boundary() -> dict[str, bool]:
+    return {
+        "depone_verifies": True,
+        "witnessd_executes": True,
+        "orro_exposes_workflow": True,
+        "role_dispatch_is_proof": False,
+        "raises_assurance": False,
+        "approves_merge": False,
     }
 
 
@@ -213,13 +385,11 @@ def _profile_spec(profile: str) -> dict[str, Any]:
             "roles": [
                 _role("scout", "collect review context without execution", "ORRO/witnessd", "scout"),
                 _role("reviewer", "inspect existing changes and evidence references", "ORRO", "flowplan"),
-                _role("handoff", "package review notes without approval", "ORRO/witnessd", "handoff"),
             ],
-            "flow": ["scout", "flowplan", "handoff"],
+            "flow": ["scout", "flowplan"],
             "engine_calls": [
                 _call("scout", "orro scout", "witnessd"),
                 _call("flowplan", "orro flowplan", "ORRO"),
-                _call("handoff", "orro handoff", "ORRO"),
             ],
             "required_gates": [
                 "review-only plan does not claim execution happened",

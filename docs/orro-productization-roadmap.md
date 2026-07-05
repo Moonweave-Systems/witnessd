@@ -77,12 +77,16 @@ existing. `proofrun` is the first execution phase, `proofcheck` is the verifier
 phase, `handoff` is review packaging only, and full `orro auto` remains future
 work.
 
-`proofrun --workflow-plan <path>` records workflow-plan intent context in the
-run directory as `workflow-plan.json` plus `workflow-plan-binding.json`. The
-binding lets proofcheck and handoff preserve the intended workflow hash for
-review. It is not proof, evidence verification, approval, or assurance. A
-`review-only` profile remains review intent; actual `orro handoff` still
-requires a passing proofcheck verdict bound to the current evidence snapshot.
+`proofrun --workflow-plan <path>` gates execution against workflow-plan intent
+before any run directory is created. The plan must allow `proofrun` through a
+witnessd engine call that executes and does not verify. If allowed, proofrun
+records `workflow-plan.json`, `workflow-plan-binding.json`, and
+`workflow-role-dispatch.json`. The binding lets proofcheck and handoff preserve
+the intended workflow hash for review, and role dispatch maps roles to actual or
+pending engine phases. These artifacts are not proof, evidence verification,
+approval, or assurance. A `review-only` profile remains review intent and does
+not authorize proofrun; actual `orro handoff` still requires a passing
+proofcheck verdict bound to the current evidence snapshot.
 
 ## Engine Boundary Contract
 
