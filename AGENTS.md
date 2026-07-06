@@ -61,6 +61,11 @@ risky AI workflows. It is non-executing advice only: not proof, verifier truth,
 approval, or assurance, and it does not replace proofrun, proofcheck, handoff,
 or human review for risky changes.
 
+Use `python scripts/check_orro_product_reality.py` to validate local dogfood
+scenarios for smallest safe workflow, waste avoidance, gate integrity, artifact
+fatigue reduction, and clear next action. It is not proof, verification,
+telemetry, a benchmark claim, approval, or assurance.
+
 Use `python3 -m orro flowplan "<goal>" --root <repo> --profile code-change` to
 compile a deterministic `orro-workflow-plan` for supported profiles:
 `code-change`, `review-only`, `verification-only`, `docs-change`, and

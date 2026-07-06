@@ -77,6 +77,11 @@ assurance. It helps non-developers avoid wasteful or risky AI workflows, but it
 does not replace proofrun, proofcheck, handoff, or human review for risky
 changes.
 
+`python scripts/check_orro_product_reality.py` validates local dogfood scenarios
+for ORRO usefulness: smallest safe workflow, waste avoidance, gate integrity,
+artifact fatigue reduction, and clear next action. It is not proof,
+verification, telemetry, a benchmark claim, approval, or assurance.
+
 `python3 -m orro flowplan "<goal>" --root <repo> --profile code-change --out workflow-plan.json`
 emits a deterministic `orro-workflow-plan` intent artifact. Supported profiles
 are `code-change`, `review-only`, `verification-only`, `docs-change`, and

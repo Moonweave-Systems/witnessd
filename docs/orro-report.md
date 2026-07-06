@@ -48,4 +48,9 @@ Report output should make the next action obvious and reduce artifact fatigue:
 - do not trust workflow plans, role-lane plans, role names, transcripts, model
   confidence, engine locks, or handoff prose as proof
 
+The local product reality checker uses report as the main artifact-fatigue
+countermeasure. It validates scenario expectations for clear next action,
+blocked-state explainability, and no overclaiming; it is not telemetry, proof,
+verification, a benchmark claim, approval, or assurance.
+
 Depone verifies; witnessd executes; ORRO exposes the workflow.
