@@ -12,6 +12,8 @@ Source of truth: `SPEC3.md` is the current witnessd x Depone final-form spec.
 This skill text is derived from that spec. Moonweave is the publisher/account;
 ORRO is the product/tool name. `Superflow` is historical/compatibility naming and
 should not be used for new public surfaces.
+The cross-engine artifact boundary is summarized in
+`docs/orro-engine-contract-v0.md`.
 
 ## Public modes
 

@@ -7,6 +7,8 @@ This file exists to prevent doc drift. It is a map, not a second spec.
 | Role | Document |
 | --- | --- |
 | Product/runtime source of truth | [`../SPEC3.md`](../SPEC3.md) |
+| ORRO engine contract v0 | [`orro-engine-contract-v0.md`](orro-engine-contract-v0.md) |
+| ORRO conformance notes | [`orro-conformance/README.md`](orro-conformance/README.md) |
 | Depone verifier-contract authority | Depone `docs/spec.md` |
 | Human quickstart | [`../README.md`](../README.md) |
 | Host session skill | [`../SKILL.md`](../SKILL.md) |

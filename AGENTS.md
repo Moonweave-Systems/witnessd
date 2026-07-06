@@ -7,6 +7,8 @@ historical compatibility naming.
 
 Source of truth: `SPEC3.md` is the current witnessd x Depone final-form spec.
 This guidance is derived from that spec.
+The cross-engine artifact boundary is summarized in
+`docs/orro-engine-contract-v0.md`.
 
 ## Public modes
 

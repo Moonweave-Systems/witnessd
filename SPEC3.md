@@ -11,6 +11,8 @@ This file is the only top-level witnessd product/runtime authority. `SPEC.md`,
 `AGENTS.md`, fixture notes, and release notes are derived, wave-specific, or
 historical. If they conflict with this file, this file wins. Depone's verifier
 contract remains authoritative in the Depone repo at `docs/spec.md`.
+The cross-engine ORRO boundary is summarized in
+[`docs/orro-engine-contract-v0.md`](docs/orro-engine-contract-v0.md).
 
 ---
 
