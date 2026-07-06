@@ -177,6 +177,32 @@ class OrroReportTests(unittest.TestCase):
             self.assertFalse(payload["boundary"]["approves_merge"])
             self.assertFalse(payload["boundary"]["raises_assurance"])
 
+    def test_report_blocks_stale_handoff_instead_of_claiming_complete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first_root = root / "first"
+            first_root.mkdir()
+            first_home, first_run_dir = self._proofrun(first_root)
+            self._proofcheck(first_home, first_run_dir)
+            self._handoff(first_run_dir)
+
+            second_root = root / "second"
+            second_root.mkdir()
+            second_home, second_run_dir = self._proofrun(second_root)
+            self._proofcheck(second_home, second_run_dir)
+            (second_run_dir / "orro-handoff.json").write_text(
+                (first_run_dir / "orro-handoff.json").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+
+            code, payload = self._report(second_run_dir, second_home)
+
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["summary"]["state"], "blocked")
+            self.assertFalse(payload["summary"]["complete"])
+            self.assertFalse(payload["handoff"]["ready_for_handoff"])
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_NEXT_HANDOFF_BINDING_MISMATCH")
+
     def test_report_blocks_non_pass_scout_only_and_malformed_verdicts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -107,8 +107,9 @@ recommends the next safe action. It is non-executing: it does not run proofcheck
 launch workers, repair evidence, retry lanes, write handoff, verify evidence,
 approve merge, or raise assurance. `needs-proofcheck` means run proofcheck next;
 `ready-for-handoff` means a passing bound proofcheck verdict exists; `complete`
-means handoff exists after proofcheck pass; `blocked` means do not continue
-without human/verifier intervention. Role status is derived context, not proof.
+means handoff exists after proofcheck pass and is bound to the current run and
+current proofcheck verdict; `blocked` means do not continue without
+human/verifier intervention. Role status is derived context, not proof.
 
 `orro report <run-dir> --home <home> --json` is the human-facing compression
 layer for a run directory. It summarizes observed artifacts, proofcheck state,
@@ -126,9 +127,11 @@ autonomous `orro auto` remains future work.
 
 `orro auto --once <run-dir> --home <home> --json` re-checks continuation state
 and executes at most one allowed step: proofcheck, handoff, or complete no-op.
-It never launches proofrun or workers, calls live models or MCP, repairs
-artifacts, retries or resumes lanes, approves merge, or raises assurance. The
-auto receipt is orchestration metadata only, not proof or verifier truth.
+Complete no-op still requires the handoff artifact to match the current run and
+current proofcheck verdict. It never launches proofrun or workers, calls live
+models or MCP, repairs artifacts, retries or resumes lanes, approves merge, or
+raises assurance. The auto receipt is orchestration metadata only, not proof or
+verifier truth.
 
 `orro auto --until-complete <run-dir> --home <home> --max-steps 2 --json` is a
 bounded post-run loop over the same safe steps. It requires `--max-steps`; v0

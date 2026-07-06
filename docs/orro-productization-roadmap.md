@@ -107,7 +107,10 @@ proofcheck, handoff, complete, blocked, evidence-pending, or invalid-run-dir. It
 does not execute, run proofcheck, call live models, repair evidence, retry
 lanes, approve merge, verify evidence, or raise assurance. Role status is
 derived only from observed artifacts. Future `orro auto` must consume this kind
-of decision before attempting any continuation.
+of decision before attempting any continuation. A `complete` decision requires
+`orro-handoff.json` to match the current run directory and current
+`proofcheck-verdict.json`; stale or copied handoff artifacts block instead of
+silently completing.
 
 `orro auto --dry-run <run-dir> --home <home> --json` is the first auto surface.
 It consumes `orro next` state and emits an `orro-auto-plan` with the exact next
@@ -128,7 +131,8 @@ proof or verifier truth.
 bounded post-run loop. It may run proofcheck and handoff, re-checking
 continuation state before every step, but never launches proofrun or workers.
 The auto session is orchestration metadata, not proof or verifier truth. Broader
-autonomous `orro auto` remains deferred.
+autonomous `orro auto` remains deferred. It must not treat stale, malformed, or
+copied handoff artifacts as complete.
 
 `orro advise "<goal>" --repo <repo> --home <home> --json` is the workstyle
 router and developer-judgment layer. It recommends the smallest safe workflow

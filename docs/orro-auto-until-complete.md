@@ -24,12 +24,17 @@ Allowed steps:
 
 - `needs-proofcheck`: run proofcheck once and write `proofcheck-verdict.json`.
 - `ready-for-handoff`: run handoff once and write `orro-handoff.json`.
-- `complete`: stop successfully without rewriting proofcheck or handoff.
+- `complete`: stop successfully without rewriting proofcheck or handoff, only
+  after the existing handoff artifact matches the current run and current
+  `proofcheck-verdict.json`.
 
 It re-checks continuation state before every step and derives commands from
 observed run-directory state, not from stale auto-plan or receipt files. It
 stops on `complete`, `blocked`, `evidence-pending`, `invalid-run-dir`, or
 `max-steps` reached.
+
+Copied, stale, malformed, or unbound `orro-handoff.json` artifacts block the
+loop instead of being treated as complete.
 
 It never launches proofrun or workers. It does not call live models, call MCP,
 call live APIs, execute recipes, repair artifacts, retry failed lanes, resume
