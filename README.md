@@ -66,6 +66,8 @@ historical. If they conflict with `SPEC3.md`, `SPEC3.md` wins.
 
 For the Depone verifier contract itself, Depone's `docs/spec.md` is the
 authority. For the repo documentation map, see [`docs/README.md`](docs/README.md).
+The cross-engine ORRO boundary is summarized in
+[`docs/orro-engine-contract-v0.md`](docs/orro-engine-contract-v0.md).
 
 ## User-facing names
 

@@ -23,6 +23,8 @@ historical. If they conflict with `SPEC3.md`, `SPEC3.md` wins.
 For the Depone verifier contract itself, Depone's `docs/spec.md` is the
 authority. See [`docs/README.md`](docs/README.md) for the witnessd documentation
 map and legacy policy.
+The cross-engine artifact boundary is summarized in
+[`docs/orro-engine-contract-v0.md`](docs/orro-engine-contract-v0.md).
 
 ## Public names
 
