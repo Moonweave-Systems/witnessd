@@ -62,6 +62,11 @@ Decision mapping:
 - `evidence-pending`: no commands; do not guess execution.
 - `invalid-run-dir`: fail closed.
 
+Malformed, stale, copied, or unbound critical artifacts are blocked by
+`orro next`, so dry-run emits no command for those states. Dry-run must not turn
+a malformed team ledger, corrupted binding, stale proofcheck verdict, or copied
+handoff package into an executable recommendation.
+
 Boundary:
 
 ```text

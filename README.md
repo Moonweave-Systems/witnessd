@@ -181,6 +181,11 @@ artifacts only and is not proof. `complete` requires `orro-handoff.json` to be
 bound to the current run directory and current `proofcheck-verdict.json`; stale
 or copied handoff artifacts block continuation.
 
+Runtime hardening fails closed on malformed, stale, copied, or unbound critical
+artifacts. Corrupted workflow bindings, role-lane bindings, role dispatch, team
+ledgers, team-ledger verdicts, proofcheck verdicts, or handoff packages block
+`next`, `report`, and `auto` instead of being treated as proof or success.
+
 `orro report <run-dir> --home .witnessd --json` is the human-facing compression
 layer over a run directory. It summarizes observed workflow, role-lane,
 execution, proofcheck, handoff, continuation, auto, and optional workstyle

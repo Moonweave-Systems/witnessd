@@ -14,6 +14,12 @@ execute workers, run proofcheck automatically, call live models, call MCP, repai
 evidence, retry failed lanes, write handoff, approve merge, verify evidence, or
 raise assurance.
 
+Continuation fails closed when critical runtime artifacts are malformed or
+non-object JSON. That includes workflow plans, workflow-plan bindings,
+role-lane plans, role-lane bindings, workflow role dispatch, team ledgers, and
+team-ledger verdicts. These are readability and shape checks only; `orro next`
+does not duplicate Depone verification or decide verifier truth.
+
 `orro advise` is the earlier workstyle router. It helps choose the smallest safe
 workflow before planning or execution. `orro next` starts after a run directory
 exists and derives status from persisted artifacts only.

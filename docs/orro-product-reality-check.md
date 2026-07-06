@@ -18,6 +18,10 @@ reduced user steps, made the next action clear, lowered reviewer burden, avoided
 unnecessary work, explained blocked states, and reduced artifact fatigue without
 turning the report itself into proof or assurance.
 
+Runtime hardening should be visible in this check: malformed, stale, copied, or
+unbound artifacts should produce blocked explanations instead of optimistic
+status. A blocked report is a product success when continuing would overclaim.
+
 The reality check is documentation guidance only. It is not proof, verifier
 truth, merge approval, or assurance.
 

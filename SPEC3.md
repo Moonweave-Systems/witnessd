@@ -235,7 +235,12 @@ lanes, write handoff, approve merge, verify evidence, or raise assurance.
 `needs-proofcheck` means proofcheck is the next safe action.
 `ready-for-handoff` means a passing bound proofcheck verdict exists and handoff
 may be packaged. `complete` means handoff exists after proofcheck pass and is
-bound to the current run directory and current proofcheck verdict. Stale,
+bound to the current run directory and current proofcheck verdict. Malformed
+workflow plans, workflow-plan bindings, role-lane plans, role-lane bindings,
+workflow role dispatch, team ledgers, team-ledger verdicts, proofcheck verdicts,
+or handoff packages block continuation. witnessd may check artifact readability,
+shape, and binding freshness, but must not duplicate Depone verifier logic or
+turn those checks into proof. Stale,
 copied, malformed, or unbound handoff artifacts block continuation. `blocked`
 means do not continue without human or verifier intervention. Role status is
 derived from observed artifacts only and is not proof.
