@@ -1,0 +1,159 @@
+{
+  "kind": "orro-product-reality-check-manifest",
+  "schema_version": "0.1",
+  "boundary": {
+    "executes_commands": false,
+    "verifies_evidence": false,
+    "approves_merge": false,
+    "raises_assurance": false,
+    "depone_verifies": true,
+    "witnessd_executes": true,
+    "orro_exposes_workflow": true
+  },
+  "scenarios": [
+    {
+      "name": "trivial-doc-fix",
+      "goal": "fix trivial typo",
+      "expected_task_class": "trivial-change",
+      "expected_profile": "docs-change",
+      "expected_effort": "minimal",
+      "should_recommend_proofrun": false,
+      "should_recommend_proofcheck": false,
+      "should_recommend_handoff_without_proofcheck": false,
+      "human_review_required": false,
+      "success_criteria": [
+        "advise keeps effort minimal",
+        "advise skips unnecessary role-lane team execution",
+        "advise does not recommend proofrun unless evidence is explicitly required"
+      ]
+    },
+    {
+      "name": "docs-change",
+      "goal": "update README guide",
+      "expected_task_class": "docs-change",
+      "expected_profile": "docs-change",
+      "expected_effort": "bounded",
+      "should_recommend_proofrun": true,
+      "should_recommend_proofcheck": true,
+      "should_recommend_handoff_without_proofcheck": false,
+      "human_review_required": false,
+      "success_criteria": [
+        "advise routes documentation work to docs-change",
+        "formal handoff still requires proofcheck",
+        "workflow intent is not proof"
+      ]
+    },
+    {
+      "name": "code-change",
+      "goal": "fix parser bug",
+      "expected_task_class": "code-change",
+      "expected_profile": "code-change",
+      "expected_effort": "bounded",
+      "should_recommend_proofrun": true,
+      "should_recommend_proofcheck": true,
+      "should_recommend_handoff_without_proofcheck": false,
+      "human_review_required": true,
+      "success_criteria": [
+        "advise recommends scout before execution",
+        "advise requires proofrun evidence before proofcheck",
+        "advise requires passing bound proofcheck before handoff"
+      ]
+    },
+    {
+      "name": "review-only",
+      "goal": "review this PR and summarize risks",
+      "expected_task_class": "review-only",
+      "expected_profile": "review-only",
+      "expected_effort": "bounded",
+      "should_recommend_proofrun": false,
+      "should_recommend_proofcheck": false,
+      "should_recommend_handoff_without_proofcheck": false,
+      "human_review_required": false,
+      "success_criteria": [
+        "advise does not recommend proofrun",
+        "report must not claim execution happened from review intent",
+        "formal ORRO handoff still requires proofcheck if used"
+      ]
+    },
+    {
+      "name": "verification-only",
+      "goal": "verify existing evidence verdict",
+      "expected_task_class": "verification-only",
+      "expected_profile": "verification-only",
+      "expected_effort": "bounded",
+      "should_recommend_proofrun": false,
+      "should_recommend_proofcheck": true,
+      "should_recommend_handoff_without_proofcheck": false,
+      "human_review_required": false,
+      "success_criteria": [
+        "advise recommends proofcheck over proofrun",
+        "Depone remains the verifier",
+        "verification-only does not launch execution"
+      ]
+    },
+    {
+      "name": "release-readiness",
+      "goal": "prepare release changelog package",
+      "expected_task_class": "release-readiness",
+      "expected_profile": "release-readiness",
+      "expected_effort": "bounded",
+      "should_recommend_proofrun": false,
+      "should_recommend_proofcheck": false,
+      "should_recommend_handoff_without_proofcheck": false,
+      "human_review_required": true,
+      "success_criteria": [
+        "advise recommends readiness and distribution checks",
+        "engine-lock remains metadata, not proof",
+        "release readiness does not imply assurance"
+      ]
+    },
+    {
+      "name": "risky-change",
+      "goal": "rotate secret auth token",
+      "expected_task_class": "risky-change",
+      "expected_profile": "code-change",
+      "expected_effort": "guarded",
+      "should_recommend_proofrun": true,
+      "should_recommend_proofcheck": true,
+      "should_recommend_handoff_without_proofcheck": false,
+      "human_review_required": true,
+      "success_criteria": [
+        "advise requires human review",
+        "advise does not recommend auto proofrun",
+        "risky changes keep proofcheck and handoff gates"
+      ]
+    },
+    {
+      "name": "scout-only-blocked",
+      "goal": "verify scout-only artifacts are not enough for proofcheck",
+      "expected_task_class": "verification-only",
+      "expected_profile": "verification-only",
+      "expected_effort": "bounded",
+      "should_recommend_proofrun": false,
+      "should_recommend_proofcheck": true,
+      "should_recommend_handoff_without_proofcheck": false,
+      "human_review_required": false,
+      "success_criteria": [
+        "scout-only artifacts must not pass proofcheck",
+        "next/report must not say ready-for-handoff",
+        "ORRO stops instead of guessing when execution evidence is missing"
+      ]
+    },
+    {
+      "name": "stale-verdict-blocked",
+      "goal": "verify copied stale proofcheck verdict cannot allow handoff",
+      "expected_task_class": "verification-only",
+      "expected_profile": "verification-only",
+      "expected_effort": "bounded",
+      "should_recommend_proofrun": false,
+      "should_recommend_proofcheck": true,
+      "should_recommend_handoff_without_proofcheck": false,
+      "human_review_required": false,
+      "success_criteria": [
+        "copied proofcheck verdict is not an input trust root",
+        "stale verdict must block handoff",
+        "report must not claim complete from stale verifier output"
+      ]
+    }
+  ]
+}

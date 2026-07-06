@@ -17,6 +17,8 @@ This file exists to prevent doc drift. It is a map, not a second spec.
 | Agent/developer orientation | [`../CLAUDE.md`](../CLAUDE.md) |
 | ORRO workstyle doctrine v0 | [`orro-workstyle-doctrine.md`](orro-workstyle-doctrine.md) |
 | ORRO product reality check | [`orro-product-reality-check.md`](orro-product-reality-check.md) |
+| ORRO product reality scenarios | [`orro-reality-check/manifest.json`](orro-reality-check/manifest.json) |
+| ORRO product reality checker | `../scripts/check_orro_product_reality.py` |
 | ORRO report v0 | [`orro-report.md`](orro-report.md) |
 | ORRO runtime hardening | [`orro-runtime-hardening.md`](orro-runtime-hardening.md) |
 | ORRO workflow compiler v0 | [`orro-workflow-compiler.md`](orro-workflow-compiler.md) |
@@ -81,6 +83,11 @@ and returns an `orro-workstyle-decision`. It is non-executing advice: not proof,
 not verifier truth, not approval, and not assurance. It helps non-developers
 avoid wasteful or risky AI workflows, but it does not replace proofrun,
 proofcheck, handoff, or human review for risky changes.
+
+`python scripts/check_orro_product_reality.py` validates local dogfood scenarios
+that keep ORRO focused on the smallest safe workflow, waste avoidance, gate
+integrity, artifact fatigue reduction, and clear next actions. It is not proof,
+verification, telemetry, a benchmark claim, approval, or assurance.
 
 `orro flowplan --profile <profile>` emits an `orro-workflow-plan` intent
 artifact for deterministic profiles such as `code-change`, `review-only`,

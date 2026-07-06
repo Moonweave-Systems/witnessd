@@ -141,6 +141,11 @@ workflows, but it does not replace proofrun, proofcheck, handoff, or human
 review for risky changes. Its `orro-workstyle-decision` is advice only: not
 proof, verifier truth, merge approval, or assurance.
 
+`python scripts/check_orro_product_reality.py` validates local dogfood scenarios
+for ORRO usefulness: smallest safe workflow, waste avoidance, proofcheck/handoff
+gate integrity, artifact fatigue reduction, and clear next action. It is not
+proof, verification, telemetry, a benchmark claim, approval, or assurance.
+
 `orro flowplan --profile <profile>` compiles a deterministic rolepack/workflow
 plan for `code-change`, `review-only`, `verification-only`, `docs-change`, or
 `release-readiness`. The plan is an `orro-workflow-plan` intent artifact, not

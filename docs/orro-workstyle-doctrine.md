@@ -39,6 +39,12 @@ artifact fatigue after a run by summarizing observed state, next safe action,
 reviewer focus, and do-not-trust boundaries. Report is not proof, verifier
 truth, approval, or assurance.
 
+`python scripts/check_orro_product_reality.py` keeps this doctrine tied to local
+dogfood scenarios. It checks that ORRO recommends the smallest safe workflow,
+skips wasteful work, preserves proofcheck/handoff gates, and stops instead of
+guessing. The checker is not proof, verification, telemetry, a benchmark claim,
+approval, or assurance.
+
 ## Built-In Task Classes
 
 - `trivial-change`: minimal effort; skip team execution unless evidence is

@@ -198,6 +198,12 @@ non-executing advice only: not proof, verifier truth, approval, or assurance.
 It must not call live models, call Depone proofcheck, mutate worktrees, or
 replace proofrun/proofcheck/handoff/human review.
 
+`scripts/check_orro_product_reality.py` validates local dogfood scenarios that
+ask whether ORRO avoids waste, recommends the smallest safe workflow, preserves
+proofcheck/handoff gates, reduces artifact fatigue through report, and stops
+instead of guessing. It is not proof, verification, telemetry, a benchmark
+claim, approval, or assurance.
+
 `orro flowplan --profile <profile>` is the deterministic ORRO rolepack/workflow
 compiler v0. Built-in profiles are `code-change`, `review-only`,
 `verification-only`, `docs-change`, and `release-readiness`. The compiler emits
