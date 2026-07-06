@@ -234,9 +234,11 @@ recipes, launch workers, call live APIs or MCP, repair evidence, retry failed
 lanes, write handoff, approve merge, verify evidence, or raise assurance.
 `needs-proofcheck` means proofcheck is the next safe action.
 `ready-for-handoff` means a passing bound proofcheck verdict exists and handoff
-may be packaged. `complete` means handoff exists after proofcheck pass.
-`blocked` means do not continue without human or verifier intervention. Role
-status is derived from observed artifacts only and is not proof.
+may be packaged. `complete` means handoff exists after proofcheck pass and is
+bound to the current run directory and current proofcheck verdict. Stale,
+copied, malformed, or unbound handoff artifacts block continuation. `blocked`
+means do not continue without human or verifier intervention. Role status is
+derived from observed artifacts only and is not proof.
 
 `orro report <run-dir> --home <home> --json` is the human-facing compression
 layer over ORRO artifacts. It reads persisted workflow plan bindings, role-lane
@@ -657,8 +659,8 @@ current evidence -> next gate -> auto-plan recommendation
 prints `orro-auto-plan`, and recommends the next command without running it.
 `orro auto --once` may execute exactly one allowed proofcheck or handoff step.
 `orro auto --until-complete` may execute a bounded post-run loop over those same
-steps with `--max-steps` 1 or 2. Broader autonomous execution remains future
-work.
+steps with `--max-steps` 1 or 2, but no auto mode treats a copied or stale
+handoff artifact as complete. Broader autonomous execution remains future work.
 
 Rules: no continuation after pause, blocked, or refuted without explicit operator
 approval; no budget auto-increase; no unverified plan activation; no merge/deploy

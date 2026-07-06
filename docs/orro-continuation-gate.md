@@ -23,7 +23,8 @@ Decision meanings:
 - `needs-proofcheck`: run proofcheck next.
 - `ready-for-handoff`: a passing bound `proofcheck-verdict.json` exists and
   handoff may be packaged.
-- `complete`: handoff exists after proofcheck pass.
+- `complete`: a handoff artifact exists after proofcheck pass and is bound to
+  the current run directory and current `proofcheck-verdict.json`.
 - `blocked`: do not continue without human or verifier intervention.
 - `evidence-pending`: required run evidence is not present yet.
 - `invalid-run-dir`: the supplied run directory is missing or unusable.
@@ -44,7 +45,9 @@ Role status is derived from observed artifacts only. Runner roles may be
 `executed` only when run evidence exists. The verifier role may be `verified`
 only when an existing proofcheck verdict has `decision: "pass"` and is bound to
 the current evidence snapshot. The handoff role may be `packaged` only when
-`orro-handoff.json` exists.
+`orro-handoff.json` exists. `complete` still requires the handoff artifact to
+match the current run and proofcheck verdict; copied, stale, malformed, or
+unbound handoff artifacts block continuation.
 
 Boundary:
 

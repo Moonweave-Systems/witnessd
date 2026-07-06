@@ -30,9 +30,10 @@ package handoff, call live models, call MCP, mutate worktrees except explicit
 proofcheck remains the verifier.
 
 `ready-for-handoff` means a passing bound proofcheck verdict exists and handoff
-can be packaged. `complete` means handoff exists after proofcheck pass. A report
-must not report ready or complete for scout-only directories, stale verdicts, or
-unbound proofcheck verdicts.
+can be packaged. `complete` means handoff exists after proofcheck pass and is
+bound to the current run directory and current proofcheck verdict. A report must
+not report ready or complete for scout-only directories, stale verdicts, unbound
+proofcheck verdicts, or stale/copied handoff artifacts.
 
 ## Human Review
 

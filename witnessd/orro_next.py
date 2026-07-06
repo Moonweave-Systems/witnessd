@@ -21,6 +21,9 @@ ERR_ORRO_NEXT_ARTIFACT_LOAD_FAILED = "ERR_ORRO_NEXT_ARTIFACT_LOAD_FAILED"
 ERR_ORRO_NEXT_PROOFCHECK_NOT_PASS = "ERR_ORRO_NEXT_PROOFCHECK_NOT_PASS"
 ERR_ORRO_NEXT_PROOFCHECK_UNBOUND = "ERR_ORRO_NEXT_PROOFCHECK_UNBOUND"
 ERR_ORRO_NEXT_PROOFCHECK_BINDING_MISMATCH = "ERR_ORRO_NEXT_PROOFCHECK_BINDING_MISMATCH"
+ERR_ORRO_NEXT_HANDOFF_LOAD_FAILED = "ERR_ORRO_NEXT_HANDOFF_LOAD_FAILED"
+ERR_ORRO_NEXT_HANDOFF_UNBOUND = "ERR_ORRO_NEXT_HANDOFF_UNBOUND"
+ERR_ORRO_NEXT_HANDOFF_BINDING_MISMATCH = "ERR_ORRO_NEXT_HANDOFF_BINDING_MISMATCH"
 
 _ARTIFACT_FILES = {
     "workflow_plan": "workflow-plan.json",
@@ -73,6 +76,21 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
             "message": proofcheck_error,
         }
         return 1, payload
+    handoff_payload, handoff_error = _load_optional_json(run_dir / "orro-handoff.json")
+    if handoff_error is not None:
+        payload = _base_decision(
+            run_dir,
+            decision="blocked",
+            blocked=True,
+            reasons=[handoff_error],
+            home=home,
+            proofcheck_payload=proofcheck_payload,
+        )
+        payload["error"] = {
+            "code": ERR_ORRO_NEXT_HANDOFF_LOAD_FAILED,
+            "message": handoff_error,
+        }
+        return 1, payload
 
     proofcheck_state = _proofcheck_state(run_dir, proofcheck_payload)
     handoff_exists = observed["handoff"]
@@ -91,6 +109,18 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
         return 1, payload
 
     if proofcheck_state["decision"] == "pass" and handoff_exists:
+        handoff_state = _handoff_state(run_dir, handoff_payload)
+        if handoff_state["error"] is not None:
+            payload = _base_decision(
+                run_dir,
+                decision="blocked",
+                blocked=True,
+                reasons=[str(handoff_state["reason"])],
+                home=home,
+                proofcheck_payload=proofcheck_payload,
+            )
+            payload["error"] = handoff_state["error"]
+            return 1, payload
         payload = _base_decision(
             run_dir,
             decision="complete",
@@ -301,6 +331,58 @@ def _proofcheck_state(
             "reason": "proofcheck-verdict.json binding does not match this run directory",
         }
     return {"decision": decision, "error": None, "reason": None}
+
+
+def _handoff_state(
+    run_dir: Path,
+    handoff_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if handoff_payload is None:
+        return {
+            "error": {
+                "code": ERR_ORRO_NEXT_HANDOFF_LOAD_FAILED,
+                "message": "orro-handoff.json could not be loaded",
+            },
+            "reason": "orro-handoff.json could not be loaded",
+        }
+    if handoff_payload.get("kind") != "orro-handoff":
+        return {
+            "error": {
+                "code": ERR_ORRO_NEXT_HANDOFF_UNBOUND,
+                "message": "orro-handoff.json must have kind orro-handoff",
+            },
+            "reason": "orro-handoff.json is not an ORRO handoff artifact",
+        }
+    if handoff_payload.get("evidence_dir") != str(run_dir):
+        return {
+            "error": {
+                "code": ERR_ORRO_NEXT_HANDOFF_BINDING_MISMATCH,
+                "message": "orro-handoff.json does not match this run directory",
+            },
+            "reason": "orro-handoff.json evidence_dir does not match this run directory",
+        }
+    expected_proofcheck_hash = _hash_file(run_dir / "proofcheck-verdict.json")
+    for ref in handoff_payload.get("decision_refs", []):
+        if not isinstance(ref, dict):
+            continue
+        if ref.get("path") != "proofcheck-verdict.json":
+            continue
+        if ref.get("sha256") == expected_proofcheck_hash and ref.get("decision") == "pass":
+            return {"error": None, "reason": None}
+        return {
+            "error": {
+                "code": ERR_ORRO_NEXT_HANDOFF_BINDING_MISMATCH,
+                "message": "orro-handoff.json proofcheck reference is stale",
+            },
+            "reason": "orro-handoff.json proofcheck reference does not match current verdict",
+        }
+    return {
+        "error": {
+            "code": ERR_ORRO_NEXT_HANDOFF_UNBOUND,
+            "message": "orro-handoff.json must reference proofcheck-verdict.json",
+        },
+        "reason": "orro-handoff.json is not bound to proofcheck-verdict.json",
+    }
 
 
 def _proofcheck_binding(run_dir: Path) -> dict[str, Any]:

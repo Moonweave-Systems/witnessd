@@ -177,7 +177,9 @@ next allowed action. It does not run proofcheck, execute workers, retry lanes,
 repair evidence, approve merge, verify evidence, or raise assurance. Decisions
 include `needs-proofcheck`, `ready-for-handoff`, `complete`, `blocked`,
 `evidence-pending`, and `invalid-run-dir`. Role status is derived from observed
-artifacts only and is not proof.
+artifacts only and is not proof. `complete` requires `orro-handoff.json` to be
+bound to the current run directory and current `proofcheck-verdict.json`; stale
+or copied handoff artifacts block continuation.
 
 `orro report <run-dir> --home .witnessd --json` is the human-facing compression
 layer over a run directory. It summarizes observed workflow, role-lane,
@@ -198,10 +200,11 @@ future work and must stay gated by continuation decisions.
 `orro auto --once <run-dir> --home .witnessd --json` re-checks continuation
 state and executes at most one safe next step. In v0, the only allowed steps are
 proofcheck for `needs-proofcheck`, handoff for `ready-for-handoff`, and no-op for
-`complete`. It never launches proofrun or workers, calls live models or MCP,
-repairs artifacts, retries lanes, resumes lanes, approves merge, or raises
-assurance. When it runs proofcheck, verification is delegated to Depone. The
-`orro-auto-receipt` is orchestration metadata only, not proof or verifier truth.
+`complete` after the handoff binding is checked. It never launches proofrun or
+workers, calls live models or MCP, repairs artifacts, retries lanes, resumes
+lanes, approves merge, or raises assurance. When it runs proofcheck,
+verification is delegated to Depone. The `orro-auto-receipt` is orchestration
+metadata only, not proof or verifier truth.
 
 `orro auto --until-complete <run-dir> --home .witnessd --max-steps 2 --json` is
 bounded post-run automation. It re-checks continuation state before every step

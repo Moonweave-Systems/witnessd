@@ -23,7 +23,8 @@ step:
 - `needs-proofcheck`: run proofcheck once and write
   `proofcheck-verdict.json`.
 - `ready-for-handoff`: run handoff once and write `orro-handoff.json`.
-- `complete`: no-op successfully.
+- `complete`: no-op successfully only after the handoff artifact matches the
+  current run and current `proofcheck-verdict.json`.
 
 It does not launch proofrun, launch workers, call live models, call MCP, call
 live APIs, execute recipes, repair artifacts, retry failed lanes, resume lanes,

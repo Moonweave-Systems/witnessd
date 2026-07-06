@@ -370,6 +370,34 @@ class OrroPublicFlowTests(unittest.TestCase):
             handoff = next(role for role in payload["role_status"] if role["phase"] == "handoff")
             self.assertEqual(handoff["status"], "packaged")
 
+    def test_orro_next_blocks_stale_handoff_before_complete_or_auto_noop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first_root = root / "first"
+            first_root.mkdir()
+            first_home, first_run_dir, _payload = self._proofrun(first_root)
+            self._proofcheck_out(first_home, first_run_dir)
+            self._handoff_out(first_run_dir)
+
+            second_root = root / "second"
+            second_root.mkdir()
+            second_home, second_run_dir, _payload = self._proofrun(second_root)
+            self._proofcheck_out(second_home, second_run_dir)
+            (second_run_dir / "orro-handoff.json").write_text(
+                (first_run_dir / "orro-handoff.json").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+
+            code, payload = self._orro_next(second_run_dir, second_home)
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["decision"], "blocked")
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_NEXT_HANDOFF_BINDING_MISMATCH")
+
+            auto_code, auto_payload = self._orro_auto_dry_run(second_run_dir, second_home)
+            self.assertEqual(auto_code, 1)
+            self.assertEqual(auto_payload["would_run"], [])
+            self.assertTrue(auto_payload["blocked"])
+
     def test_orro_next_blocks_non_pass_unbound_and_stale_proofcheck_verdicts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
