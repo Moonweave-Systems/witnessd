@@ -145,6 +145,18 @@ class OrroEngineContractTests(unittest.TestCase):
         ]:
             self.assertIn(artifact, contract)
 
+    def test_contract_checker_passes(self) -> None:
+        result = subprocess.run(
+            ["python3", "scripts/check_orro_engine_contract.py"],
+            cwd=self.ROOT,
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("check_orro_engine_contract: pass", result.stdout)
+
     def test_proofrun_outputs_contract_artifacts_and_proofcheck_delegates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home, run_dir, payload = self._proofrun(Path(tmp), with_contract_artifacts=True)
