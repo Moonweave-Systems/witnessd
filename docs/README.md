@@ -10,6 +10,7 @@ This file exists to prevent doc drift. It is a map, not a second spec.
 | ORRO engine contract v0 | [`orro-engine-contract-v0.md`](orro-engine-contract-v0.md) |
 | ORRO conformance notes | [`orro-conformance/README.md`](orro-conformance/README.md) |
 | ORRO engine contract drift checker | `../scripts/check_orro_engine_contract.py` |
+| ORRO product/distribution repository | <https://github.com/Moonweave-Systems/ORRO> |
 | Depone verifier-contract authority | Depone `docs/spec.md` |
 | Human quickstart | [`../README.md`](../README.md) |
 | Host session skill | [`../SKILL.md`](../SKILL.md) |
@@ -62,18 +63,22 @@ Use these names in new user-facing docs:
 Use `witnessd` only when discussing the engine or CLI. Use `Moonweave` only when
 discussing the publisher/account namespace.
 
-The current ORRO entrypoint is not a standalone ORRO repository and not a third
-engine. Its help text is product-facing and lists only public ORRO commands. It
-delegates subcommands to the witnessd-hosted ORRO command surface. Public setup
+The standalone ORRO repository now exists at
+<https://github.com/Moonweave-Systems/ORRO> as the product/distribution/wrapper
+repo. It owns onboarding, examples, distribution drafts, product doctrine, and
+e2e smoke contracts; it must not duplicate witnessd runtime behavior or Depone
+verifier logic. The current executable ORRO entrypoint remains witnessd-hosted
+and is not a third engine. Its help text is product-facing and lists only public
+ORRO commands. It delegates subcommands to the witnessd-hosted ORRO command
+surface. Public setup
 starts with `orro init`, which delegates to witnessd initialization/provisioning
 and creates readiness metadata such as `.witnessd/provision.json`; it is not
 proof or assurance. `orro doctor` checks readiness, not evidence truth. The
 engine lock is distribution metadata only. `--out` writes the pinned commit
 metadata; `--check` detects local environment drift against it. A matching lock
 is readiness alignment only, not evidence verification, merge approval, or an
-assurance increase. A mismatch is readiness-blocked, not verifier-refuted. A
-standalone ORRO repo remains deferred until packaging, marketplace, or
-version-lock distribution needs justify it. The bare `orro` console script
+assurance increase. A mismatch is readiness-blocked, not verifier-refuted. The
+bare `orro` console script
 points at `orro.__main__:main` and remains an alias layer over the same product
 surface.
 

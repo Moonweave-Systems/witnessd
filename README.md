@@ -68,6 +68,10 @@ For the Depone verifier contract itself, Depone's `docs/spec.md` is the
 authority. For the repo documentation map, see [`docs/README.md`](docs/README.md).
 The cross-engine ORRO boundary is summarized in
 [`docs/orro-engine-contract-v0.md`](docs/orro-engine-contract-v0.md).
+The standalone ORRO product/distribution repository now lives at
+<https://github.com/Moonweave-Systems/ORRO>. It owns product onboarding,
+examples, distribution drafts, and e2e smoke-contract docs; it does not contain
+witnessd runtime code or Depone verifier logic.
 
 ## User-facing names
 
@@ -102,14 +106,17 @@ Development currently stays in two engine repositories:
 ```text
 Depone   = verifier engine and evidence contract
 witnessd = execution engine, evidence emitter, and near-term ORRO surface
+ORRO     = product/distribution/wrapper repository
 ```
 
 The user-facing install should still be one thing: ORRO. Do not ask normal users
 to install separate Depone and witnessd skills. In the near term, this repo hosts
 the thin ORRO entrypoint because ORRO starts execution and witnessd owns
 execution. `python3 -m orro ...` delegates to the existing `witnessd orro ...`
-surface; it is not a standalone ORRO repository and not a third engine. Depone
-remains a pinned verifier dependency.
+surface. The standalone `Moonweave-Systems/ORRO` repo now exists as the
+product/distribution/wrapper repo, but engine code remains in Depone and
+witnessd. It must not duplicate witnessd runtime behavior, Depone proofcheck
+logic, or become a third engine. Depone remains a pinned verifier dependency.
 
 Public ORRO setup starts with `orro init`, which delegates to existing witnessd
 initialization/provisioning and creates readiness metadata such as
@@ -226,11 +233,11 @@ merge, or raises assurance. It stops on blocked, evidence-pending,
 invalid-run-dir, max-steps, or complete. The `orro-auto-session` is orchestration
 metadata only, not proof or verifier truth.
 
-Create a separate `ORRO` repository only when distribution needs justify it:
-marketplace manifests, host-specific plugin packaging, version locking, examples,
-product docs, and end-to-end integration tests. That future repo is a wrapper and
-distribution repo, not a third engine; it must not duplicate witnessd runtime
-logic or Depone verifier logic.
+The separate `Moonweave-Systems/ORRO` repository now exists for distribution
+needs: marketplace manifests, host-specific plugin packaging, version locking,
+examples, product docs, and end-to-end integration tests. That repo is a wrapper
+and distribution repo, not a third engine; it must not duplicate witnessd
+runtime logic or Depone verifier logic.
 
 The concrete migration trigger, allowed standalone skeleton, version lock
 format, engine boundary contract, and e2e smoke contract are recorded in
@@ -371,8 +378,9 @@ Its help shows only the ORRO public commands: `init`, `scout`, `flowplan`,
 
 This checkout defines minimal packaging metadata for an installed `orro` console
 script that points to the same module entrypoint. ORRO remains a wrapper/product
-surface hosted in witnessd for now; marketplace manifests and a standalone ORRO
-repository remain deferred.
+surface hosted in witnessd for now; marketplace release and published package
+work remain deferred. Product/distribution docs now live in
+`Moonweave-Systems/ORRO`.
 
 ## Session skill
 

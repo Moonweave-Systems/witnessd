@@ -15,6 +15,12 @@ Depone verifies; witnessd executes; ORRO exposes the workflow.
 | witnessd | Execute `proofrun` and team lanes, emit evidence artifacts, delegate `proofcheck` to Depone. | Issue final trust or duplicate Depone verifier logic. |
 | ORRO | Expose the workflow and package wrapper context. | Become a third engine or make wrapper artifacts proof. |
 
+The standalone ORRO product/distribution repository lives at
+<https://github.com/Moonweave-Systems/ORRO>. It owns product onboarding,
+examples, distribution drafts, doctrine, and e2e smoke-contract docs. It does
+not redefine witnessd runtime execution truth, does not redefine Depone
+verifier truth, and must not duplicate witnessd runtime code.
+
 ## Runtime Artifact Classes
 
 | Artifact | Class | witnessd obligation |

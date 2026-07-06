@@ -2,8 +2,8 @@
 
 ## Recommendation
 
-Do not create `Moonweave-Systems/ORRO` yet. Keep the near-term ORRO wrapper in
-witnessd.
+`Moonweave-Systems/ORRO` now exists as the product/distribution/wrapper
+repository. Keep the executable ORRO wrapper in witnessd for the near term.
 
 witnessd already hosts the thin user-facing ORRO surface:
 
@@ -11,9 +11,10 @@ witnessd already hosts the thin user-facing ORRO surface:
 scout -> flowplan -> proofrun -> proofcheck -> handoff
 ```
 
-That surface calls existing engine paths. It does not justify a third repository
-until the remaining work is mostly packaging and distribution rather than
-runtime UX.
+That surface calls existing engine paths. The standalone ORRO repository is now
+justified for product onboarding, examples, distribution drafts, product
+doctrine, and e2e smoke-contract docs. It is not a runtime repository and not a
+verifier repository.
 
 The invariant remains:
 
@@ -27,6 +28,7 @@ Depone verifies; witnessd executes; ORRO exposes the workflow.
 - Depone is the non-executing verifier and proofcheck contract source of truth.
 - witnessd is the executing runtime, evidence emitter, and near-term ORRO
   wrapper host.
+- `Moonweave-Systems/ORRO` is the product/distribution/wrapper repository.
 - Depone is consumed as a pinned verifier dependency.
 - ORRO handoff requires an explicit passing `proofcheck-verdict.json` produced
   for the current evidence snapshot.
@@ -55,8 +57,9 @@ python3 -m orro handoff .witnessd/runs/<run-dir> \
 ```
 
 The module entrypoint delegates to the same wrapper surface as
-`python3 -m witnessd orro ...`. It is not a standalone ORRO repo and not a third
-engine. It must not replace or break existing `witnessd` commands.
+`python3 -m witnessd orro ...`. The standalone ORRO repo now exists, but it
+does not host engine code and is not a third engine. It must not replace or
+break existing `witnessd` commands.
 
 `orro init` delegates to existing witnessd initialization/provisioning and
 creates readiness metadata such as `.witnessd/provision.json`. It does not run
@@ -71,8 +74,7 @@ commands.
 
 The console script named `orro` points at the same wrapper surface through
 `orro.__main__:main`. It must remain an alias layer and is covered by an install
-smoke test. Marketplace manifests and a standalone ORRO repository remain
-deferred.
+smoke test. Marketplace release and published package work remain deferred.
 
 The current workflow compiler is `orro flowplan --profile <profile>`. It emits a
 deterministic `orro-workflow-plan` intent artifact for `code-change`,
@@ -187,8 +189,10 @@ its own transcript.
 ### ORRO Wrapper Responsibilities
 
 ORRO owns product workflow shape, user-facing terminology, examples, install
-guidance, version locks, and e2e smoke tests. It translates user intent into the
-engine calls above and reports only what the engines emitted or verified.
+guidance, version locks, and e2e smoke tests. The `Moonweave-Systems/ORRO`
+repository owns the product/distribution/wrapper docs for those surfaces. It
+does not redefine witnessd runtime truth or Depone verifier truth; it reports
+only what the engines emitted or verified.
 
 ### Forbidden Dependencies
 
@@ -294,21 +298,14 @@ Required assertions:
   binding for the current evidence snapshot;
 - handoff does not approve merge or raise assurance.
 
-## Standalone ORRO Repo Trigger
+## Standalone ORRO Repository
 
-Create `Moonweave-Systems/ORRO` only when at least one of these is true:
+`Moonweave-Systems/ORRO` now exists as the product/distribution/wrapper
+repository. It was created because product docs, examples, packaging drafts,
+engine-lock examples, and e2e smoke-contract docs now need a product repo that
+is not an engine repo.
 
-- marketplace/plugin manifests need a repo that is not an engine repo;
-- packaging needs a product-level release artifact that locks both engine SHAs
-  by commit;
-- host install orchestration needs to install both engines from pinned release
-  artifacts rather than a witnessd checkout;
-- marketplace or host-specific plugin manifests need a product repo that is not
-  an engine repo;
-- the wrapper needs CI that installs both engines from pinned releases without
-  importing either as implementation code.
-
-Allowed standalone contents:
+Allowed contents:
 
 - product README;
 - architecture docs;
@@ -318,7 +315,7 @@ Allowed standalone contents:
 - end-to-end integration test plan;
 - packaging or marketplace manifest drafts.
 
-Forbidden standalone contents:
+Forbidden contents:
 
 - Depone verifier implementation;
 - witnessd runtime implementation;
@@ -327,9 +324,9 @@ Forbidden standalone contents:
 - a new execution engine;
 - a new verifier engine.
 
-## Future Standalone Skeleton
+## Current Standalone Skeleton
 
-If the trigger is met, create only this skeleton first:
+The first standalone skeleton should remain docs and manifest drafts only:
 
 ```text
 ORRO/
@@ -344,5 +341,6 @@ ORRO/
     marketplace-manifest.draft.json
 ```
 
-The first PR should contain docs and manifest drafts only. Engine code stays in
-Depone and witnessd.
+Engine code stays in Depone and witnessd. Future ORRO repo work should proceed
+in this order: repo checker/CI, cross-repo links, pinned-engine e2e runner, thin
+wrapper package, then published install.
