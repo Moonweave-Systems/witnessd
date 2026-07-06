@@ -36,6 +36,11 @@ stops on `complete`, `blocked`, `evidence-pending`, `invalid-run-dir`, or
 Copied, stale, malformed, or unbound `orro-handoff.json` artifacts block the
 loop instead of being treated as complete.
 
+Malformed workflow bindings, role-lane bindings, role dispatch, team ledgers,
+team-ledger verdicts, or proofcheck verdicts also block the loop. The loop must
+not infer proofrun success from artifact names alone and must not continue from
+stale auto-plan, receipt, or session files.
+
 It never launches proofrun or workers. It does not call live models, call MCP,
 call live APIs, execute recipes, repair artifacts, retry failed lanes, resume
 lanes, approve merge, or raise assurance. It may mutate only the explicit

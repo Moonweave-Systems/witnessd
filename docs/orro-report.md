@@ -33,7 +33,10 @@ proofcheck remains the verifier.
 can be packaged. `complete` means handoff exists after proofcheck pass and is
 bound to the current run directory and current proofcheck verdict. A report must
 not report ready or complete for scout-only directories, stale verdicts, unbound
-proofcheck verdicts, or stale/copied handoff artifacts.
+proofcheck verdicts, malformed critical runtime artifacts, or stale/copied
+handoff artifacts. Malformed workflow bindings, role-lane bindings, role
+dispatch, team ledgers, and team-ledger verdicts are reported as blocked rather
+than inferred success.
 
 ## Human Review
 

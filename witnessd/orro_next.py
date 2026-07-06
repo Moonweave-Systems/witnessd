@@ -25,6 +25,16 @@ ERR_ORRO_NEXT_HANDOFF_LOAD_FAILED = "ERR_ORRO_NEXT_HANDOFF_LOAD_FAILED"
 ERR_ORRO_NEXT_HANDOFF_UNBOUND = "ERR_ORRO_NEXT_HANDOFF_UNBOUND"
 ERR_ORRO_NEXT_HANDOFF_BINDING_MISMATCH = "ERR_ORRO_NEXT_HANDOFF_BINDING_MISMATCH"
 
+_CRITICAL_JSON_ARTIFACTS = (
+    "workflow-plan.json",
+    "workflow-plan-binding.json",
+    "role-lane-plan.json",
+    "role-lane-plan-binding.json",
+    "workflow-role-dispatch.json",
+    "team-ledger.json",
+    "team-ledger-verdict.json",
+)
+
 _ARTIFACT_FILES = {
     "workflow_plan": "workflow-plan.json",
     "workflow_plan_binding": "workflow-plan-binding.json",
@@ -62,6 +72,21 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
         return 2, payload
 
     observed = _observed_artifacts(run_dir)
+    critical_error = _critical_artifact_error(run_dir)
+    if critical_error is not None:
+        payload = _base_decision(
+            run_dir,
+            decision="blocked",
+            blocked=True,
+            reasons=[critical_error],
+            home=home,
+        )
+        payload["error"] = {
+            "code": ERR_ORRO_NEXT_ARTIFACT_LOAD_FAILED,
+            "message": critical_error,
+        }
+        return 1, payload
+
     proofcheck_payload, proofcheck_error = _load_optional_json(run_dir / "proofcheck-verdict.json")
     if proofcheck_error is not None:
         payload = _base_decision(
@@ -424,6 +449,14 @@ def _load_optional_json(path: Path) -> tuple[dict[str, Any] | None, str | None]:
     if not isinstance(payload, dict):
         return None, f"{path.name} must be a JSON object"
     return payload, None
+
+
+def _critical_artifact_error(run_dir: Path) -> str | None:
+    for filename in _CRITICAL_JSON_ARTIFACTS:
+        _payload, error = _load_optional_json(run_dir / filename)
+        if error is not None:
+            return error
+    return None
 
 
 def _looks_like_partial_orro_dir(observed: dict[str, bool]) -> bool:

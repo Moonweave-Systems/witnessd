@@ -113,7 +113,9 @@ launch workers, retry lanes, repair evidence, write handoff, verify evidence,
 approve merge, or raise assurance. `needs-proofcheck` means run proofcheck next;
 `ready-for-handoff` means a passing bound proofcheck verdict exists; `complete`
 means handoff exists after proofcheck pass. Role status is observed context, not
-proof.
+proof. Malformed workflow bindings, role-lane bindings, role dispatch, team
+ledgers, and team-ledger verdicts block continuation instead of counting as
+execution evidence.
 
 `python3 -m orro report <run-dir> --home .witnessd --json` is the human-facing
 compression layer over observed artifacts. It reports state, next safe action,
@@ -141,6 +143,10 @@ is bounded post-run automation over proofcheck and handoff only. It requires
 `--max-steps`, re-checks continuation state before every step, and never
 launches proofrun or workers. The auto session is orchestration metadata, not
 proof, verifier truth, approval, or assurance.
+
+All auto modes inherit the continuation fail-closed rules: malformed, stale,
+copied, or unbound critical artifacts must block rather than trigger proofcheck,
+handoff, or complete status.
 
 A standalone ORRO repo remains deferred until packaging, marketplace manifests,
 host-specific distribution, or version-lock distribution needs justify it.

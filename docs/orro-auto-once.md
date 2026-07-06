@@ -32,6 +32,10 @@ approve merge, or raise assurance. It may mutate only the explicit proofcheck or
 handoff output file caused by the allowed single step, plus an explicit `--out`
 receipt path when requested.
 
+Malformed critical runtime artifacts, stale or copied proofcheck verdicts, and
+stale or copied handoff packages block `--once` before it executes a step.
+`--once` must not repair those states or continue from an old auto-plan.
+
 When `--once` runs proofcheck, verification is delegated to Depone. ORRO does
 not verify evidence itself.
 

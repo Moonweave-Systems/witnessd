@@ -15,6 +15,7 @@ This file exists to prevent doc drift. It is a map, not a second spec.
 | ORRO workstyle doctrine v0 | [`orro-workstyle-doctrine.md`](orro-workstyle-doctrine.md) |
 | ORRO product reality check | [`orro-product-reality-check.md`](orro-product-reality-check.md) |
 | ORRO report v0 | [`orro-report.md`](orro-report.md) |
+| ORRO runtime hardening | [`orro-runtime-hardening.md`](orro-runtime-hardening.md) |
 | ORRO workflow compiler v0 | [`orro-workflow-compiler.md`](orro-workflow-compiler.md) |
 | ORRO continuation gate v0 | [`orro-continuation-gate.md`](orro-continuation-gate.md) |
 | ORRO auto dry-run v0 | [`orro-auto-dry-run.md`](orro-auto-dry-run.md) |
@@ -109,7 +110,9 @@ approve merge, or raise assurance. `needs-proofcheck` means run proofcheck next;
 `ready-for-handoff` means a passing bound proofcheck verdict exists; `complete`
 means handoff exists after proofcheck pass and is bound to the current run and
 current proofcheck verdict; `blocked` means do not continue without
-human/verifier intervention. Role status is derived context, not proof.
+human/verifier intervention. Malformed workflow bindings, role-lane bindings,
+role dispatch, team ledgers, and team-ledger verdicts block continuation instead
+of being treated as proofrun evidence. Role status is derived context, not proof.
 
 `orro report <run-dir> --home <home> --json` is the human-facing compression
 layer for a run directory. It summarizes observed artifacts, proofcheck state,
