@@ -69,3 +69,16 @@ Depone verifies; witnessd executes; ORRO exposes the workflow.
 `Superflow`/`superflow` remains historical compatibility only for fixture paths,
 schema aliases, legacy metadata, and compatibility commands. New primary public
 naming is ORRO/`orro`.
+
+## Drift Check
+
+Maintainers should run the no-dependency checker when changing this runtime-side
+contract or conformance notes:
+
+```bash
+python scripts/check_orro_engine_contract.py
+```
+
+The checker verifies that witnessd keeps the required artifact names, gates,
+trust rules, Depone authority language, and conformance fixture references in
+sync.
