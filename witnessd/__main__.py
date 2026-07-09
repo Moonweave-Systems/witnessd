@@ -2586,7 +2586,7 @@ def _build_parser() -> argparse.ArgumentParser:
     team_plan_run.add_argument("--fail-fast", action="store_true")
     team_plan_run.set_defaults(func=_cmd_team_plan_run)
 
-    team_ledger = sub.add_parser("team-ledger", help="verify a team ledger")
+    team_ledger = sub.add_parser("team-ledger", help="show team-ledger status pending Depone verification")
     team_ledger.add_argument("--ledger", required=True)
     team_ledger.add_argument("--json", action="store_true")
     team_ledger.set_defaults(func=_cmd_team_ledger)
