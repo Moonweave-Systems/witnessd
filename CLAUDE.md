@@ -7,7 +7,9 @@ verifier (**Depone**, a separate repo: github.com/Moonweave-Systems/Depone)
 re-derives A0/A1/A2 assurance from. The one-line thesis: *done is defined by
 observer-signed bytes, not by a self-reported "VERIFIED" string.*
 
-- **Source of truth:** `SPEC.md` (full design). Wave plans: `docs/plans/`.
+- **Source of truth:** `SPEC.md` (full design), `SPEC3.md` (endgame), and
+  `docs/orro-productization-roadmap.md` for ORRO wrapper/distribution strategy.
+  Wave plans: `docs/plans/`.
   Waves W1→W5 are implemented in committed fixtures: evidence substrate,
   supervised liveness/durable sessions, team fan-in, adapter routing/cost
   controls, and autonomy safety. Depone re-derives the wave claims from
@@ -15,6 +17,10 @@ observer-signed bytes, not by a self-reported "VERIFIED" string.*
 - **Runtime deps:** Python **stdlib + the `openssl` CLI only**. Never add a
   third-party package. `depone` is a **dev/test-only** dependency (to run
   conformance), never a runtime import of the shipped runtime.
+- **Product surface:** ORRO is exposed through `python3 -m witnessd orro ...`
+  in this phase. A standalone ORRO repo is deferred until distribution
+  packaging, version locks, examples, or marketplace manifests need it. It must
+  not contain engine logic.
 
 ## The Depone contract (do not drift)
 
@@ -54,5 +60,7 @@ PYTHONPATH=/home/ubuntu/moonweave/depone uv run python3 scripts/revalidate_wN.py
   through the single `render_status()` enum (see `witnessd/status.py`) — this is
   the whole point of the product; do not weaken it for UX.
 - **worker cannot seal/validate its own success**; the observer + emitter do.
+- **ORRO is not a third engine.** Depone verifies; witnessd executes; ORRO
+  exposes the workflow.
 - Each wave's Acceptance Bar = a committed fixture + `revalidate_wN.py` that
   Depone re-derives. Land a wave only when that is green.

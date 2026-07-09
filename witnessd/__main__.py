@@ -21,6 +21,7 @@ import json
 import os
 import shutil
 import shlex
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -412,6 +413,63 @@ def _cmd_plan(args: argparse.Namespace) -> int:
             separators=(",", ":"),
         )
     )
+    return 0
+
+
+def _cmd_orro_scout(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve(strict=False)
+    files: list[str] = []
+    if repo.is_dir():
+        try:
+            completed = subprocess.run(
+                ["git", "-C", str(repo), "ls-files"],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            if completed.returncode == 0:
+                files = [
+                    line
+                    for line in completed.stdout.splitlines()
+                    if line and not line.startswith(".witnessd/")
+                ][: args.limit]
+        except OSError:
+            files = []
+    payload = {
+        "command": "orro scout",
+        "repo": str(repo),
+        "file_count_sampled": len(files),
+        "files": files,
+        "executes_workers": False,
+        "verdict": "evidence-pending",
+    }
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
+def _cmd_orro_handoff(args: argparse.Namespace) -> int:
+    verdict_path = Path(args.proofcheck_verdict).resolve(strict=False)
+    if not verdict_path.is_file():
+        print("ERR_ORRO_HANDOFF_PROOFCHECK_VERDICT_REQUIRED", file=sys.stderr)
+        return 2
+    try:
+        verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        print("ERR_ORRO_HANDOFF_PROOFCHECK_VERDICT_MALFORMED", file=sys.stderr)
+        return 2
+    decision = verdict.get("decision")
+    if decision != "pass":
+        print("ERR_ORRO_HANDOFF_PROOFCHECK_NOT_PASSING", file=sys.stderr)
+        return 1
+    payload = {
+        "command": "orro handoff",
+        "proofcheck_verdict": str(verdict_path),
+        "decision": decision,
+        "handoff_status": "ready-for-human-review",
+        "approves_merge": False,
+        "raises_assurance": False,
+    }
+    print(json.dumps(payload, sort_keys=True))
     return 0
 
 
@@ -1273,6 +1331,56 @@ def _cmd_self_test(args: argparse.Namespace) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="witnessd")
     sub = parser.add_subparsers(dest="cmd", required=True)
+
+    orro = sub.add_parser("orro", help="ORRO Flow wrapper surface")
+    orro_sub = orro.add_subparsers(dest="orro_cmd", required=True)
+
+    orro_scout = orro_sub.add_parser("scout", help="inspect repo context without execution")
+    orro_scout.add_argument("--repo", default=".")
+    orro_scout.add_argument("--limit", type=int, default=50)
+    orro_scout.set_defaults(func=_cmd_orro_scout)
+
+    orro_flowplan = orro_sub.add_parser("flowplan", help="emit a sealed ORRO flow plan")
+    orro_flowplan.add_argument("goal")
+    orro_flowplan.add_argument("--root", default=".")
+    orro_flowplan.add_argument("--seed", default="w11")
+    orro_flowplan.add_argument("--draft-adapter", choices=["codex", "claude", "opencode"])
+    orro_flowplan.add_argument("--draft-out", default=None)
+    orro_flowplan.add_argument(
+        "--tier", default="agentic", choices=["quick", "agentic", "frontier"]
+    )
+    orro_flowplan.add_argument("--codex-binary", default="codex")
+    orro_flowplan.add_argument("--claude-binary", default="claude")
+    orro_flowplan.add_argument("--opencode-binary", default="opencode")
+    orro_flowplan.add_argument("--max-tokens", type=int, default=10**9)
+    orro_flowplan.add_argument("--max-usd", type=float, default=10**9)
+    orro_flowplan.add_argument("--max-depth", type=int, default=3)
+    orro_flowplan.add_argument("--predicted-tokens", type=int, default=0)
+    orro_flowplan.add_argument("--predicted-usd", type=float, default=0.0)
+    orro_flowplan.set_defaults(func=_cmd_plan)
+
+    orro_proofrun = orro_sub.add_parser("proofrun", help="execute a goal and emit evidence")
+    orro_proofrun.add_argument("goal")
+    orro_proofrun.add_argument("--repo", default=None)
+    orro_proofrun.add_argument("--home", default=None)
+    orro_proofrun.add_argument("--run-dir", default=None)
+    orro_proofrun.add_argument("--max-parallel", type=int, default=None)
+    orro_proofrun.add_argument("--fail-fast", action="store_true")
+    orro_proofrun.set_defaults(func=_cmd_run_goal)
+
+    orro_proofcheck = orro_sub.add_parser(
+        "proofcheck", help="delegate verification to the pinned Depone verifier"
+    )
+    orro_proofcheck.add_argument("run_dir", nargs="?")
+    orro_proofcheck.add_argument("--home", default=None)
+    orro_proofcheck.add_argument("--runlog", default=None)
+    orro_proofcheck.set_defaults(func=_cmd_verify)
+
+    orro_handoff = orro_sub.add_parser(
+        "handoff", help="prepare handoff only from a passing proofcheck verdict"
+    )
+    orro_handoff.add_argument("--proofcheck-verdict", required=True)
+    orro_handoff.set_defaults(func=_cmd_orro_handoff)
 
     init = sub.add_parser("init", help="initialize witnessd config and pinned Depone")
     init.add_argument("--home", default=None)

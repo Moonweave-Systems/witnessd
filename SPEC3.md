@@ -118,6 +118,16 @@ A2 evidence whose signatures a stranger can verify offline.
   the contract changes — witnessd CI clones Depone main) → CI green → next
   wave begins **without asking**. Operator-only acts, permanently: pushes,
   gate/status changes, operator reviews, paid codex runs.
+- **D8 — ORRO wrapper repository strategy.** ORRO is the product surface, not a
+  third engine. The near-term wrapper lives in witnessd as
+  `python3 -m witnessd orro ...` because ORRO starts execution and witnessd owns
+  execution. A future standalone `Moonweave-Systems/ORRO` repo is justified only
+  for distribution artifacts: product README, architecture docs, wrapper CLI
+  plan, examples, engine version locks, e2e integration tests, and
+  packaging/marketplace manifests. It must not contain Depone verifier logic,
+  witnessd runtime logic, duplicate proofcheck/proofrun behavior, or another
+  engine. The migration trigger and allowed skeleton are recorded in
+  `docs/orro-productization-roadmap.md`.
 
 ## 3. The remaining build — every wave to the end
 

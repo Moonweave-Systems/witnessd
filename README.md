@@ -1,9 +1,15 @@
 # witnessd
 
-`witnessd` is the executing half of Moonweave. It runs local lanes, records what
-happened, signs the evidence, and leaves bytes that Depone can re-derive
-offline. The runner installs witnessd; the auditor can install only Depone and
-check the emitted run directory.
+`witnessd` hosts the near-term ORRO wrapper surface and remains the executing
+engine underneath it. ORRO is the user-facing workflow:
+
+```text
+scout -> flowplan -> proofrun -> proofcheck -> handoff
+```
+
+The boundary stays fixed: Depone verifies; witnessd executes; ORRO exposes the
+workflow. This repo does not merge the two engines and does not create a third
+engine.
 
 ## 10-minute quickstart
 
@@ -19,16 +25,21 @@ From a checkout with Depone next to witnessd:
 ```bash
 cd witnessd
 python3 -m witnessd init --home .witnessd --depone-root ../depone
-python3 -m witnessd run "write two independent files" --repo . --home .witnessd
-python3 -m witnessd verify .witnessd/runs/<run-dir> --home .witnessd
+python3 -m witnessd orro scout --repo .
+python3 -m witnessd orro flowplan "write two independent files" --root .
+python3 -m witnessd orro proofrun "write two independent files" --repo . --home .witnessd
+python3 -m witnessd orro proofcheck .witnessd/runs/<run-dir> --home .witnessd
+python3 -m witnessd orro handoff --proofcheck-verdict .witnessd/runs/<run-dir>/team-ledger-verdict.json
 ```
 
-The `run` command prints JSON. Use its `run_dir` field for the verify step:
+The `proofrun` command prints JSON. Use its `run_dir` field for the proofcheck
+and handoff steps:
 
 ```bash
-run_json="$(python3 -m witnessd run "write two independent files" --repo . --home .witnessd)"
+run_json="$(python3 -m witnessd orro proofrun "write two independent files" --repo . --home .witnessd)"
 run_dir="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["run_dir"])' "$run_json")"
-python3 -m witnessd verify "$run_dir" --home .witnessd
+python3 -m witnessd orro proofcheck "$run_dir" --home .witnessd
+python3 -m witnessd orro handoff --proofcheck-verdict "$run_dir/team-ledger-verdict.json"
 ```
 
 On a runner machine without a local Depone checkout, setup can provision the
@@ -76,6 +87,16 @@ default. It creates a run directory containing:
 `witnessd verify <run-dir>` validates the pinned Depone record, invokes Depone
 through `python3 -m depone team-ledger`, and rewrites
 `team-ledger-verdict.json` from the run bytes.
+
+The `witnessd orro ...` commands are thin product aliases over those engine
+paths:
+
+- `orro scout` samples repository context without running workers.
+- `orro flowplan` emits a sealed plan and does not execute it.
+- `orro proofrun` executes through witnessd and emits evidence.
+- `orro proofcheck` delegates to the pinned Depone verifier.
+- `orro handoff` requires an explicit passing verdict JSON and does not approve
+  merge or raise assurance.
 
 ## Session Skill
 
@@ -150,5 +171,19 @@ scripts/quickstart_check.sh
 Design source of truth:
 
 - `SPEC3.md`
+- `docs/orro-productization-roadmap.md`
 - `docs/plans/GOALMODE.md`
 - `docs/plans/2026-07-04-w18-distribution-dx.md`
+
+## ORRO Repository Strategy
+
+The standalone `Moonweave-Systems/ORRO` repo is deferred. It is justified only
+when product-level packaging, marketplace manifests, version locks, examples,
+and e2e integration tests need a repo that is not an engine repo. Until then,
+the ORRO wrapper stays in witnessd because ORRO starts execution and witnessd
+owns execution.
+
+Any future standalone ORRO repo is distribution-only: product README,
+architecture docs, wrapper CLI plan, examples, engine version lock, integration
+test plan, and packaging drafts. It must not contain Depone verifier logic,
+witnessd runtime logic, duplicate proofcheck/proofrun behavior, or a new engine.

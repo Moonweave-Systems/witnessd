@@ -3,7 +3,7 @@ name: proofrun
 description: Run a goal as observer-signed parallel team execution whose completion is re-derived from evidence bytes, not self-declared. Use when the user asks for a proofrun, a verified/proven run, provable team execution, 증명 실행, or to run something "with witnessd". Powered by witnessd × Depone.
 ---
 
-# proofrun — provable session runs (powered by witnessd × Depone)
+# proofrun — ORRO proofrun sessions (powered by witnessd × Depone)
 
 Use this skill when an operator asks for a proofrun, a verified or proven run,
 provable team execution, 증명 실행, or asks to use witnessd for a goal — any
@@ -12,8 +12,8 @@ agent's own claim.
 
 ## Contract
 
-The session agent does not certify its own work. It designs or receives lanes,
-runs witnessd, and reports only evidence that Depone re-derived from bytes.
+The session agent does not certify its own work. It runs the ORRO flow exposed
+by witnessd and reports only evidence that Depone re-derived from bytes.
 
 Required output evidence:
 
@@ -34,19 +34,25 @@ Required output evidence:
    python3 -m witnessd init --home .witnessd --depone-root ../depone
    ```
 
-3. Run the goal:
+3. Run the goal through the ORRO wrapper:
 
    ```bash
-   python3 -m witnessd run "<goal>" --repo <repo> --home .witnessd
+   python3 -m witnessd orro proofrun "<goal>" --repo <repo> --home .witnessd
    ```
 
 4. Re-check the emitted bytes:
 
    ```bash
-   python3 -m witnessd verify <run-dir> --home .witnessd
+   python3 -m witnessd orro proofcheck <run-dir> --home .witnessd
    ```
 
-5. Report the verdict fields from `team-ledger-verdict.json`. If the verdict is
+5. Prepare handoff only from the passing verdict:
+
+   ```bash
+   python3 -m witnessd orro handoff --proofcheck-verdict <run-dir>/team-ledger-verdict.json
+   ```
+
+6. Report the verdict fields from `team-ledger-verdict.json`. If the verdict is
    missing, blocked, unreadable, or not re-derived, report evidence pending or
    blocked with the exact error. Do not upgrade the result from the session
    transcript.
@@ -58,3 +64,5 @@ Required output evidence:
 - Depone verifies; witnessd executes. Do not import Depone into witnessd runtime
   code.
 - No public claim is stronger than the persisted verdict bytes.
+- ORRO is a wrapper surface, not a third engine. The standalone ORRO repo is
+  deferred until distribution packaging needs it.
