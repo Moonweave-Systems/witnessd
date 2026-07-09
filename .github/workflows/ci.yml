@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   unit:
     name: unit (Python ${{ matrix.python-version }})
@@ -15,13 +18,13 @@ jobs:
         python-version: ['3.10', '3.12']
     steps:
       - name: Checkout witnessd
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Clone Depone verifier
         run: git clone --depth=1 https://github.com/Moonweave-Systems/Depone.git "$RUNNER_TEMP/depone"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -36,13 +39,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout witnessd
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Clone Depone verifier
         run: git clone --depth=1 https://github.com/Moonweave-Systems/Depone.git "$RUNNER_TEMP/depone"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
 
@@ -60,13 +63,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout witnessd
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Clone Depone verifier
         run: git clone --depth=1 https://github.com/Moonweave-Systems/Depone.git "$RUNNER_TEMP/depone"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
 
@@ -80,10 +83,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout witnessd
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
 
@@ -111,7 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout witnessd
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Reject forbidden status strings outside status gate
         shell: bash
@@ -127,12 +130,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout witnessd
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
 
