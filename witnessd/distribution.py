@@ -331,7 +331,7 @@ def _build_provision(
         "schema_version": PROVISION_SCHEMA_VERSION,
         "witnessd": {
             "root": str(witnessd_root),
-            "commit": _git_commit(witnessd_root),
+            "commit": _git_commit_optional(witnessd_root),
         },
         "depone": {
             "root": str(depone_root),
@@ -356,6 +356,25 @@ def _git_commit(root: Path) -> str:
     )
     if completed.returncode != 0:
         raise ProvisionError(ERR_WITNESSD_DEPONE_ROOT_INVALID)
+    return completed.stdout.strip()
+
+
+def _git_commit_optional(root: Path) -> str:
+    """Like _git_commit but tolerant of a non-git root.
+
+    An installed witnessd package (e.g. under site-packages from `pip install`)
+    is not a git checkout, so `git rev-parse HEAD` there fails. The witnessd
+    provenance commit is informational metadata, so degrade to "unknown" rather
+    than aborting `orro init` — the depone root stays strict via _git_commit.
+    """
+    completed = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return "unknown"
     return completed.stdout.strip()
 
 

@@ -77,6 +77,34 @@ class DistributionInitTests(unittest.TestCase):
             self.assertRegex(provision["witnessd"]["commit"], r"^[0-9a-f]{40}$")
             self.assertRegex(provision["depone"]["commit"], r"^[0-9a-f]{40}$")
 
+    def test_init_records_unknown_witnessd_commit_when_root_is_not_a_git_checkout(
+        self,
+    ) -> None:
+        # An installed witnessd (pip into site-packages) is not a git checkout,
+        # so `git rev-parse HEAD` fails there. init must still succeed and record
+        # the witnessd commit as "unknown" rather than aborting, while the depone
+        # commit stays strict.
+        depone_root = self._depone_root()
+        with tempfile.TemporaryDirectory() as tmp:
+            non_git_root = Path(tmp) / "site-packages"
+            non_git_root.mkdir()
+            home = Path(tmp) / "home"
+
+            init_witnessd_home(
+                InitConfig(
+                    home=home,
+                    witnessd_root=non_git_root,
+                    depone_root=depone_root,
+                    network_allowed=False,
+                )
+            )
+
+            provision = json.loads(
+                (home / "provision.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(provision["witnessd"]["commit"], "unknown")
+            self.assertRegex(provision["depone"]["commit"], r"^[0-9a-f]{40}$")
+
     def test_validate_depone_pin_rejects_forged_hash(self) -> None:
         witnessd_root = Path(__file__).resolve().parents[1]
         depone_root = self._depone_root()
