@@ -121,3 +121,23 @@ jobs:
             echo 'Forbidden standalone success string outside witnessd/status.py' >&2
             exit 1
           fi
+
+  version-tag-coherence:
+    name: version-tag coherence
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout witnessd
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Self-test compare logic
+        run: python3 scripts/check_version_matches_tag.py --self-test
+
+      - name: Check setup.py version matches latest tag
+        run: python3 scripts/check_version_matches_tag.py
