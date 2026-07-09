@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard against setup.py's version and the latest git tag silently diverging."""
+"""Guard against setup.py's version falling behind the latest git tag."""
 from __future__ import annotations
 
 import re
@@ -34,16 +34,27 @@ def latest_tag() -> str | None:
     return tag or None
 
 
-def compare(setup_version: str, tag: str) -> bool:
-    """Return True when setup_version matches tag (leading 'v' stripped)."""
-    return setup_version == tag.lstrip("v")
+def _version_tuple(value: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r"\d+", value))
+
+
+def not_behind(setup_version: str, tag: str) -> bool:
+    """Return True when setup.py version is not behind the tag.
+
+    The guard catches a release tag that outran the package version (the original
+    bug: tag v2.2.0 while setup.py stayed 0.0.0). A version equal to or ahead of
+    the latest tag is normal (e.g. bumped while preparing the next release), so
+    only a strictly-behind version fails.
+    """
+    return _version_tuple(setup_version) >= _version_tuple(tag.lstrip("v"))
 
 
 def self_test() -> None:
-    assert compare("2.2.0", "v2.2.0") is True
-    assert compare("2.2.0", "2.2.0") is True
-    assert compare("0.0.0", "v2.2.0") is False
-    print("self-test: matching case passes, mismatching case detected -- OK")
+    assert not_behind("2.2.0", "v2.2.0") is True
+    assert not_behind("2.2.1", "v2.2.0") is True  # ahead while preparing next release
+    assert not_behind("0.0.0", "v2.2.0") is False  # the original bug: behind the tag
+    assert not_behind("2.1.0", "v2.2.0") is False
+    print("self-test: equal/ahead pass, behind detected -- OK")
 
 
 def main() -> int:
@@ -65,15 +76,15 @@ def main() -> int:
         print("note: no reachable git tag (git unavailable or shallow checkout), skipping version-tag check")
         return 0
 
-    if not compare(setup_version, tag):
+    if not not_behind(setup_version, tag):
         print(
-            f"ERROR: setup.py version ({setup_version!r}) does not match latest tag "
-            f"({tag!r}, stripped {tag.lstrip('v')!r})",
+            f"ERROR: setup.py version ({setup_version!r}) is behind the latest tag "
+            f"({tag!r}); bump setup.py to at least {tag.lstrip('v')!r}",
             file=sys.stderr,
         )
         return 1
 
-    print(f"version-tag coherence OK: setup.py={setup_version!r} matches tag={tag!r}")
+    print(f"version-tag coherence OK: setup.py={setup_version!r} not behind tag={tag!r}")
     return 0
 
 
