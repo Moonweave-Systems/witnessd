@@ -8,10 +8,39 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
+from witnessd.events import AgentEventEnvelope
 from witnessd.receipt import build_runner_receipt
+
+RunIntent = dict[str, Any]
+
+
+@dataclass(frozen=True)
+class RawRun:
+    invocation: list[str]
+    exit_code: int
+    raw_events: bytes
+    stdout: str
+    stderr: str
+    effective_policy: dict[str, Any] = field(default_factory=dict)
+
+
+class AgentAdapter(Protocol):
+    provider: str
+
+    def compile_invocation(self, intent: RunIntent) -> list[str]:
+        ...
+
+    def run(self, intent: RunIntent, sandbox: str) -> RawRun:
+        ...
+
+    def normalize(self, raw: RawRun) -> list[AgentEventEnvelope]:
+        ...
+
+    def effective_policy(self, raw: RawRun) -> dict[str, Any]:
+        ...
 
 VALID_RUNNERS = frozenset({"codex-cli", "manual"})
 RUNNER_KIND_BY_ADAPTER = {
@@ -50,6 +79,8 @@ class AdapterResult:
     touched_files: list[str]
     test_output: dict[str, Any]
     normalized_events: list[dict[str, Any]] = field(default_factory=list)
+    raw_events_path: str | None = None
+    normalized_events_path: str | None = None
 
     def __post_init__(self) -> None:
         if not self.invocation:

@@ -3,8 +3,10 @@ import unittest
 from depone.agent_fabric.paired_run import VALID_RUNNERS, validate_runner_receipt
 
 from witnessd.adapters.base import (
+    AgentAdapter,
     RUNNER_KIND_BY_ADAPTER,
     AdapterResult,
+    RawRun,
     RunnerKindError,
     assert_runner_kind_valid,
 )
@@ -20,6 +22,34 @@ class TestAdapterBase(unittest.TestCase):
 
     def test_all_mapped_kinds_in_depone_valid_runners(self):
         self.assertTrue(set(RUNNER_KIND_BY_ADAPTER.values()) <= VALID_RUNNERS)
+
+    def test_agent_adapter_protocol_surface(self):
+        class MinimalAdapter:
+            provider = "example"
+
+            def compile_invocation(self, intent):
+                return ["example", str(intent["run_id"])]
+
+            def run(self, intent, sandbox):
+                return RawRun(
+                    invocation=self.compile_invocation(intent),
+                    exit_code=0,
+                    raw_events=b'{"type":"message"}\n',
+                    stdout="",
+                    stderr="",
+                    effective_policy={"approval_policy": "never"},
+                )
+
+            def normalize(self, raw):
+                return []
+
+            def effective_policy(self, raw):
+                return dict(raw.effective_policy)
+
+        adapter: AgentAdapter = MinimalAdapter()
+        raw = adapter.run({"run_id": "r1"}, "/tmp")
+        self.assertEqual(adapter.compile_invocation({"run_id": "r1"}), ["example", "r1"])
+        self.assertEqual(adapter.effective_policy(raw), {"approval_policy": "never"})
 
     def test_unknown_kind_rejected_failclosed(self):
         with self.assertRaises(RunnerKindError):

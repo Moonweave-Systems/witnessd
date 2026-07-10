@@ -120,6 +120,7 @@ def emit_lane_evidence(
     run_intent: dict[str, Any] | None = None,
     capture_profile: str = "full",
     redaction_manifest: dict[str, Any] | None = None,
+    provider_artifacts: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Assemble and emit a lane's full evidence set through the runlog SoT.
 
@@ -194,9 +195,8 @@ def emit_lane_evidence(
         )
     )
 
-    def _emit_artifact(name: str, content: str) -> str:
+    def _emit_artifact_bytes(name: str, data: bytes) -> str:
         path = os.path.join(evidence_dir, name)
-        data = content.encode("utf-8")
         with open(path, "wb") as handle:
             handle.write(data)
         events.append(
@@ -211,6 +211,9 @@ def emit_lane_evidence(
             )
         )
         return path
+
+    def _emit_artifact(name: str, content: str) -> str:
+        return _emit_artifact_bytes(name, content.encode("utf-8"))
 
     def _record_existing_artifact(name: str, path: str) -> str:
         with open(path, "rb") as handle:
@@ -266,6 +269,12 @@ def emit_lane_evidence(
     }
     if redaction_manifest_path is not None:
         artifacts[REDACTION_MANIFEST_SUBJECT_NAME] = redaction_manifest_path
+    if provider_artifacts:
+        for subject_name, source_path in sorted(provider_artifacts.items()):
+            source = os.path.abspath(source_path)
+            artifact_name = f"{subject_name}.jsonl"
+            with open(source, "rb") as handle:
+                artifacts[subject_name] = _emit_artifact_bytes(artifact_name, handle.read())
     otel_spans = None
     if runner_kind is not None:
         otel_spans = build_otel_spans(manifest, runner_receipt=receipt)
@@ -338,6 +347,7 @@ def emit_supervised_lane(
     run_intent: dict[str, Any] | None = None,
     capture_profile: str = "full",
     redaction_manifest: dict[str, Any] | None = None,
+    provider_artifacts: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Emit supervised-lane evidence with per-spawn isolation facts.
 
@@ -382,6 +392,7 @@ def emit_supervised_lane(
         run_intent=run_intent,
         capture_profile=capture_profile,
         redaction_manifest=redaction_manifest,
+        provider_artifacts=provider_artifacts,
     )
 
 

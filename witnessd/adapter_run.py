@@ -173,6 +173,7 @@ def run_adapter_lane(
     allowed_touched_files: list[str] | None = None,
     approval_policy: str = "on-request",
     capture_profile: str = CAPTURE_PROFILE_FULL,
+    run_intent: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     capture_profile = validate_capture_profile(capture_profile)
     worktree = str(Path(sandbox or root).resolve(strict=False))
@@ -251,27 +252,28 @@ def run_adapter_lane(
         redacted_allowed_for_manifest = list(
             redact_value(allowed_for_manifest, redaction_context)
         )
-        run_intent = build_run_intent(
-            run_id=task_id,
-            baseline=git_baseline(worktree),
-            allowed_paths=redacted_allowed_for_manifest,
-            approval_policy=approval_policy,
-            sandbox_mode="workspace-write" if adapter == "codex" else "unknown",
-            provider=adapter,
-            instruction_hashes={
-                "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-            },
-            budgets={
-                "max_tokens": int(budget["max_tokens"]),
-                "max_usd": float(budget["max_usd"]),
-                "max_depth": int(budget["max_depth"]),
-                "predicted_tokens": int(predicted_tokens),
-                "predicted_usd": float(predicted_usd),
-                "depth": int(depth),
-                "timeout_seconds": int(timeout_seconds),
-            },
-            capture_profile=capture_profile,
-        )
+        if run_intent is None:
+            run_intent = build_run_intent(
+                run_id=task_id,
+                baseline=git_baseline(worktree),
+                allowed_paths=redacted_allowed_for_manifest,
+                approval_policy=approval_policy,
+                sandbox_mode="workspace-write" if adapter == "codex" else "unknown",
+                provider=adapter,
+                instruction_hashes={
+                    "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+                },
+                budgets={
+                    "max_tokens": int(budget["max_tokens"]),
+                    "max_usd": float(budget["max_usd"]),
+                    "max_depth": int(budget["max_depth"]),
+                    "predicted_tokens": int(predicted_tokens),
+                    "predicted_usd": float(predicted_usd),
+                    "depth": int(depth),
+                    "timeout_seconds": int(timeout_seconds),
+                },
+                capture_profile=capture_profile,
+            )
         run_intent_path = lane_evidence_dir / RUN_INTENT_ARTIFACT_NAME
         write_signed_run_intent(
             str(run_intent_path),
@@ -297,6 +299,13 @@ def run_adapter_lane(
             approval_policy=approval_policy,
         )
         diff_patch = _git_diff_patch(worktree, adapter_result.touched_files)
+        provider_artifacts = {}
+        raw_events_path = getattr(adapter_result, "raw_events_path", None)
+        normalized_events_path = getattr(adapter_result, "normalized_events_path", None)
+        if raw_events_path is not None:
+            provider_artifacts["events.raw"] = raw_events_path
+        if normalized_events_path is not None:
+            provider_artifacts["events.normalized"] = normalized_events_path
         lane_result = {
             "command_receipts": adapter_result.command_receipts,
             "touched_files": adapter_result.touched_files,
@@ -328,6 +337,7 @@ def run_adapter_lane(
             redaction_manifest=(
                 redaction_context["manifest"] if redaction_context is not None else None
             ),
+            provider_artifacts=provider_artifacts,
         )
 
         return {
@@ -337,6 +347,7 @@ def run_adapter_lane(
             "bundle_path": str(lane_evidence_dir / "bundle.json"),
             "evidence_dir": str(lane_evidence_dir),
             "public_key_path": emitted["public_key_path"],
+            "normalized_events": getattr(adapter_result, "normalized_events", []),
             "route": route_decision,
             "status_axis": {
                 "assurance": render_status(pending=1, verdict=None),

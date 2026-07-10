@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from witnessd.adapters.base import AdapterResult
+from witnessd.adapters.base import AdapterResult, RawRun, RunIntent
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
 from witnessd.events import encode_agent_event_jsonl, normalize_codex_jsonl_events
 
@@ -24,6 +24,60 @@ class CodexAdapterError(RuntimeError):
         super().__init__(f"{code}: {message}")
         self.code = code
         self.message = message
+
+
+class CodexCLIAdapter:
+    provider = "codex-cli"
+
+    def __init__(
+        self,
+        *,
+        codex_binary: str = "codex",
+        sandbox_mode: str = "workspace-write",
+        approval_policy: str = "on-request",
+    ) -> None:
+        self.codex_binary = codex_binary
+        self.sandbox_mode = sandbox_mode
+        self.approval_policy = approval_policy
+
+    def compile_invocation(self, intent: RunIntent) -> list[str]:
+        sandbox_mode = str(intent.get("sandbox", {}).get("mode", self.sandbox_mode))
+        approval_policy = str(
+            intent.get("approval", {}).get("policy", self.approval_policy)
+        )
+        return [
+            _resolve_codex(self.codex_binary),
+            "--sandbox",
+            sandbox_mode,
+            "--approval-policy",
+            _codex_approval_policy_arg(approval_policy),
+            "exec",
+            "--json",
+            "--skip-git-repo-check",
+            "--cd",
+            ".",
+            "-",
+        ]
+
+    def run(self, intent: RunIntent, sandbox: str) -> RawRun:
+        _ = sandbox
+        return RawRun(
+            invocation=self.compile_invocation(intent),
+            exit_code=0,
+            raw_events=b"",
+            stdout="",
+            stderr="",
+            effective_policy=self.effective_policy(
+                RawRun([], 0, b"", "", "", {})
+            ),
+        )
+
+    def normalize(self, raw: RawRun):
+        return normalize_codex_jsonl_events(raw.raw_events)
+
+    def effective_policy(self, raw: RawRun) -> dict[str, Any]:
+        value = _effective_approval_policy(raw.raw_events)
+        return {"approval_policy": value} if value is not None else {}
 
 
 def _resolve_codex(codex_binary: str) -> str:
@@ -241,6 +295,8 @@ def run_codex_lane(
         touched_files=touched_files,
         test_output=test_output,
         normalized_events=normalized_events,
+        raw_events_path=transcript,
+        normalized_events_path=normalized_transcript,
     )
 
 

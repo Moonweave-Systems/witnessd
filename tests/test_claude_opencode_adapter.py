@@ -21,6 +21,20 @@ def _fake_cli(directory: str, name: str) -> str:
     return str(path)
 
 
+def _fake_claude_jsonl(directory: str) -> str:
+    path = pathlib.Path(directory) / "claude"
+    path.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"type\":\"session.started\",\"session_id\":\"S1\"}'\n"
+        "printf '%s\\n' '{\"type\":\"assistant.message\",\"message_id\":\"M1\",\"text\":\"done\"}'\n"
+        "printf '%s\\n' '{\"type\":\"tool.completed\",\"tool_name\":\"Bash\",\"tool_use_id\":\"T1\"}'\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
 class TestClaudeOpenCodeAdapter(unittest.TestCase):
     def _check(self, res, cli_name: str, worktree: str) -> None:
         self.assertEqual(res.runner_kind, "manual")
@@ -48,6 +62,30 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
 
             self._check(res, "claude", sandbox)
             self.assertIn("-p", res.invocation)
+
+    def test_claude_jsonl_normalizes_to_agent_event_envelope(self):
+        with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+            transcript = pathlib.Path(bindir) / "claude.raw.jsonl"
+            res = run_claude_lane(
+                sandbox=sandbox,
+                prompt="x",
+                claude_binary=_fake_claude_jsonl(bindir),
+                transcript_path=str(transcript),
+            )
+
+            self.assertEqual(
+                [event["event_type"] for event in res.normalized_events],
+                ["thread.started", "message.completed", "command.completed"],
+            )
+            self.assertEqual(
+                {event["schema"] for event in res.normalized_events},
+                {"moonweave.agent-event/v1"},
+            )
+            self.assertEqual(
+                {event["provider"] for event in res.normalized_events},
+                {"claude-code"},
+            )
+            self.assertTrue((pathlib.Path(bindir) / "events.normalized.jsonl").exists())
 
     def test_opencode(self):
         with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:

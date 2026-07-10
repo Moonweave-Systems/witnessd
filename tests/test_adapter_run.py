@@ -15,7 +15,7 @@ from depone.agent_fabric.paired_run import validate_runner_receipt
 from depone.agent_fabric.evidence_substrate import ingest_signed_evidence_bundle
 
 from witnessd.adapter_run import LaneBlocked, run_adapter_lane
-from witnessd.runintent import RUN_INTENT_PAYLOAD_TYPE
+from witnessd.runintent import RUN_INTENT_PAYLOAD_TYPE, build_run_intent
 from witnessd.signing import verify_dsse
 
 
@@ -68,6 +68,19 @@ def _fake_codex_stages_tracked_change(directory: str) -> str:
         "cat >/dev/null\n"
         "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
         "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"command_execution\",\"command\":\"update tracked\"}}'\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
+def _fake_claude(directory: str) -> str:
+    path = pathlib.Path(directory) / "claude"
+    path.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"type\":\"session.started\",\"session_id\":\"S1\"}'\n"
+        "printf '%s\\n' '{\"type\":\"assistant.message\",\"message_id\":\"M1\",\"text\":\"done\"}'\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -176,6 +189,8 @@ class TestAdapterRun(unittest.TestCase):
                 "runner-receipt": str(pathlib.Path(evidence_dir, "runner-receipt.json")),
                 "run-intent": str(pathlib.Path(evidence_dir, "run-intent.json")),
                 "redaction-manifest": str(pathlib.Path(evidence_dir, "redaction-manifest.json")),
+                "events.raw": str(pathlib.Path(evidence_dir, "events.raw.jsonl")),
+                "events.normalized": str(pathlib.Path(evidence_dir, "events.normalized.jsonl")),
             }
             verdict = ingest_signed_evidence_bundle(
                 out["bundle"],
@@ -184,6 +199,85 @@ class TestAdapterRun(unittest.TestCase):
                 otel_spans=out["bundle"]["otel_spans"],
             )
             self.assertEqual(verdict["decision"], "pass")
+
+    def test_same_run_intent_codex_and_claude_emit_same_contract_shape(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as codex_bindir,
+            tempfile.TemporaryDirectory() as claude_bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            _init_repo(sandbox)
+            intent = build_run_intent(
+                run_id="provider-neutral-run",
+                baseline={"git_head": "test-head", "git_status_state": "known"},
+                allowed_paths=["noop.txt"],
+                approval_policy="on-request",
+                sandbox_mode="workspace-write",
+                provider="provider-neutral",
+                instruction_hashes={"prompt_sha256": hashlib.sha256(b"do X").hexdigest()},
+                budgets={"max_tokens": 1000, "max_usd": 1.0, "max_depth": 1},
+                capture_profile="full",
+            )
+
+            outputs = {}
+            for adapter, binary_arg, fake_binary in (
+                ("codex", "codex_binary", _fake_codex(codex_bindir)),
+                ("claude", "claude_binary", _fake_claude(claude_bindir)),
+            ):
+                outputs[adapter] = run_adapter_lane(
+                    root=root,
+                    sandbox=sandbox,
+                    adapter=adapter,
+                    task_id=f"{adapter}-lane",
+                    prompt="do X",
+                    arm="direct",
+                    tier="agentic",
+                    is_supported=lambda _model: True,
+                    budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                    evidence_dir=os.path.join(root, f"{adapter}-evidence"),
+                    allowed_touched_files=["noop.txt"],
+                    run_intent=intent,
+                    **{binary_arg: fake_binary},
+                )
+
+            subject_names = {
+                adapter: [
+                    item["name"]
+                    for item in output["bundle"]["statement"]["predicate"]["artifact_index"]
+                ]
+                for adapter, output in outputs.items()
+            }
+            self.assertEqual(subject_names["codex"], subject_names["claude"])
+            self.assertIn("events.raw", subject_names["codex"])
+            self.assertIn("events.normalized", subject_names["codex"])
+
+            schema_keys = {
+                adapter: set(output["normalized_events"][0])
+                for adapter, output in outputs.items()
+            }
+            self.assertEqual(schema_keys["codex"], schema_keys["claude"])
+            self.assertEqual(
+                {event["schema"] for output in outputs.values() for event in output["normalized_events"]},
+                {"moonweave.agent-event/v1"},
+            )
+
+            for adapter, output in outputs.items():
+                evidence_dir = pathlib.Path(output["evidence_dir"])
+                verdict = ingest_signed_evidence_bundle(
+                    output["bundle"],
+                    output["public_key_path"],
+                    {
+                        "capture-manifest": str(evidence_dir / "capture-manifest.json"),
+                        "observer-capture": str(evidence_dir / "observer-capture.json"),
+                        "runner-receipt": str(evidence_dir / "runner-receipt.json"),
+                        "run-intent": str(evidence_dir / "run-intent.json"),
+                        "events.raw": str(evidence_dir / "events.raw.jsonl"),
+                        "events.normalized": str(evidence_dir / "events.normalized.jsonl"),
+                    },
+                    otel_spans=output["bundle"]["otel_spans"],
+                )
+                self.assertEqual(verdict["decision"], "pass", adapter)
 
     def test_codex_uses_isolated_state_namespace(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
