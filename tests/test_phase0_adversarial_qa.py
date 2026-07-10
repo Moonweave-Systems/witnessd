@@ -47,7 +47,6 @@ class Phase0AdversarialQaTests(unittest.TestCase):
 
         self.assertIn("victim.txt", _diff_touched(before, after))
 
-    @unittest.expectedFailure
     def test_qa02_shell_same_size_same_mtime_tamper_detection(self) -> None:
         with tempfile.TemporaryDirectory() as sandbox:
             target = Path(sandbox) / "same.txt"
