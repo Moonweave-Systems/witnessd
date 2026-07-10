@@ -29,6 +29,11 @@ from witnessd.canonical import canonical_hash
 from witnessd.capture import build_capture_manifest
 from witnessd.eventlog import EventLog
 from witnessd.observer import build_observer_capture
+from witnessd.privacy import (
+    CAPTURE_PROFILE_REDACTED,
+    REDACTION_MANIFEST_ARTIFACT_NAME,
+    REDACTION_MANIFEST_SUBJECT_NAME,
+)
 from witnessd.provenance import build_signed_trusted_observer_provenance
 from witnessd.runintent import (
     RUN_INTENT_ARTIFACT_NAME,
@@ -114,6 +119,7 @@ def emit_lane_evidence(
     run_intent_path: str | None = None,
     run_intent: dict[str, Any] | None = None,
     capture_profile: str = "full",
+    redaction_manifest: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble and emit a lane's full evidence set through the runlog SoT.
 
@@ -245,6 +251,12 @@ def emit_lane_evidence(
     manifest_path = _emit_artifact("capture-manifest.json", json.dumps(manifest))
     _emit_artifact("observer-capture.json", json.dumps(manifest["observer_capture"]))
     _emit_artifact("runner-receipt.json", json.dumps(receipt))
+    redaction_manifest_path = None
+    if capture_profile == CAPTURE_PROFILE_REDACTED and redaction_manifest is not None:
+        redaction_manifest_path = _emit_artifact(
+            REDACTION_MANIFEST_ARTIFACT_NAME,
+            json.dumps(redaction_manifest),
+        )
 
     artifacts = {
         "capture-manifest": manifest_path,
@@ -252,6 +264,8 @@ def emit_lane_evidence(
         "runner-receipt": os.path.join(evidence_dir, "runner-receipt.json"),
         RUN_INTENT_SUBJECT_NAME: recorded_run_intent_path,
     }
+    if redaction_manifest_path is not None:
+        artifacts[REDACTION_MANIFEST_SUBJECT_NAME] = redaction_manifest_path
     otel_spans = None
     if runner_kind is not None:
         otel_spans = build_otel_spans(manifest, runner_receipt=receipt)
@@ -323,6 +337,7 @@ def emit_supervised_lane(
     run_intent_path: str | None = None,
     run_intent: dict[str, Any] | None = None,
     capture_profile: str = "full",
+    redaction_manifest: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Emit supervised-lane evidence with per-spawn isolation facts.
 
@@ -366,6 +381,7 @@ def emit_supervised_lane(
         run_intent_path=run_intent_path,
         run_intent=run_intent,
         capture_profile=capture_profile,
+        redaction_manifest=redaction_manifest,
     )
 
 

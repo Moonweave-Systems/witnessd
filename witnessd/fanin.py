@@ -1652,6 +1652,7 @@ def _run_adapter_lane(
         private_key_path=private_key_path,
         public_key_path=public_key_path,
         allowed_touched_files=list(allowed_touched_files),
+        capture_profile=str(spec.get("capture_profile", "full")),
     )
     _commit_lane(worktree, lane_id)
 

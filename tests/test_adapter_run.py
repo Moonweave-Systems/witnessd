@@ -1,6 +1,7 @@
 import json
 import os
 import base64
+import hashlib
 import pathlib
 import shutil
 import stat
@@ -11,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from depone.agent_fabric.paired_run import validate_runner_receipt
+from depone.agent_fabric.evidence_substrate import ingest_signed_evidence_bundle
 
 from witnessd.adapter_run import LaneBlocked, run_adapter_lane
 from witnessd.runintent import RUN_INTENT_PAYLOAD_TYPE
@@ -120,6 +122,68 @@ class TestAdapterRun(unittest.TestCase):
                 item["name"] for item in out["bundle"]["statement"]["subject"]
             ]
             self.assertIn("run-intent", subject_names)
+
+    def test_redacted_capture_profile_emits_manifest_subject_and_verifies(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "evidence")
+            _init_repo(sandbox)
+            secret_prompt = "read /home/operator/private-notes and write code"
+
+            out = run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="t-redacted",
+                prompt=secret_prompt,
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=_fake_codex_writes_env_and_code(bindir),
+                evidence_dir=evidence_dir,
+                allowed_touched_files=["codex-home.txt", "pkg/agent.py"],
+                capture_profile="redacted",
+            )
+
+            run_intent_artifact = json.loads(
+                pathlib.Path(evidence_dir, "run-intent.json").read_text(encoding="utf-8")
+            )
+            intent = json.loads(
+                base64.b64decode(run_intent_artifact["dsse_envelope"]["payload"]).decode(
+                    "utf-8"
+                )
+            )
+            self.assertEqual(intent["capture_profile"], "redacted")
+            self.assertNotIn("pkg/agent.py", json.dumps(intent))
+            self.assertNotIn(secret_prompt, json.dumps(intent))
+
+            redaction_manifest = json.loads(
+                pathlib.Path(evidence_dir, "redaction-manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(redaction_manifest["capture_profile"], "redacted")
+            self.assertEqual(redaction_manifest["prompt_sha256"], hashlib.sha256(secret_prompt.encode("utf-8")).hexdigest())
+            self.assertIn("redaction-manifest", [
+                item["name"] for item in out["bundle"]["statement"]["subject"]
+            ])
+            self.assertNotIn("pkg/agent.py", pathlib.Path(evidence_dir, "capture-manifest.json").read_text(encoding="utf-8"))
+
+            artifact_paths = {
+                "capture-manifest": str(pathlib.Path(evidence_dir, "capture-manifest.json")),
+                "observer-capture": str(pathlib.Path(evidence_dir, "observer-capture.json")),
+                "runner-receipt": str(pathlib.Path(evidence_dir, "runner-receipt.json")),
+                "run-intent": str(pathlib.Path(evidence_dir, "run-intent.json")),
+                "redaction-manifest": str(pathlib.Path(evidence_dir, "redaction-manifest.json")),
+            }
+            verdict = ingest_signed_evidence_bundle(
+                out["bundle"],
+                out["public_key_path"],
+                artifact_paths,
+                otel_spans=out["bundle"]["otel_spans"],
+            )
+            self.assertEqual(verdict["decision"], "pass")
 
     def test_codex_uses_isolated_state_namespace(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:

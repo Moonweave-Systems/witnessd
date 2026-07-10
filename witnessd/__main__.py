@@ -69,6 +69,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
         build_reference_adapter_fixture,
         build_shell_invocation,
     )
+    from witnessd.privacy import (
+        CAPTURE_PROFILE_REDACTED,
+        build_redaction_context,
+        redact_value,
+    )
     from witnessd.signing import gen_operator_keypair
 
     evidence_dir = os.path.dirname(out_path)
@@ -80,6 +85,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
     allowed_touched_files = list(args.allow or [])
     commands = [list(args.command)]
     lane_result = run_shell_lane(sandbox=sandbox, commands=commands)
+    redaction_context = None
+    if args.capture_profile == CAPTURE_PROFILE_REDACTED:
+        redaction_context = build_redaction_context(
+            run_id=args.task_id,
+            prompt=" ".join(args.command),
+            paths=[*allowed_touched_files, *lane_result.get("touched_files", [])],
+            worktree=sandbox,
+        )
+        lane_result = redact_value(lane_result, redaction_context)
+        allowed_touched_files = list(redact_value(allowed_touched_files, redaction_context))
 
     # The source fixture is the declared (A0) side; Depone requires a proper
     # agent-fabric-reference-adapter-fixture, not a placeholder.
@@ -93,7 +108,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
         allowed_touched_files=allowed_touched_files,
         public_key_path=public_key_path,
         task_id=args.task_id,
-        runner_sandbox=sandbox,
+        runner_sandbox=str(redact_value(sandbox, redaction_context)),
+        capture_profile=args.capture_profile,
+        redaction_manifest=(
+            redaction_context["manifest"] if redaction_context is not None else None
+        ),
     )
 
     pending = 1
@@ -395,6 +414,7 @@ def _cmd_run_adapter(args: argparse.Namespace) -> int:
             claude_binary=args.claude_binary,
             opencode_binary=args.opencode_binary,
             allowed_touched_files=list(args.allow or []),
+            capture_profile=args.capture_profile,
         )
     except LaneBlocked as exc:
         print(exc.reason, file=sys.stderr)
@@ -2782,6 +2802,11 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
     run.add_argument("--predicted-usd", type=float, default=0.0)
     run.add_argument(
         "--allow", action="append", default=[], help="allowed touched file"
+    )
+    run.add_argument(
+        "--capture-profile",
+        choices=["full", "redacted"],
+        default="full",
     )
     run.add_argument("command", nargs=argparse.REMAINDER)
 

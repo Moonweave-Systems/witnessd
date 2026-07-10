@@ -18,6 +18,13 @@ from witnessd.eventlog import EventLog
 from witnessd.fixture import build_reference_adapter_fixture, build_shell_invocation
 from witnessd.observer import assert_separated
 from witnessd.preflight import PreflightError, probe_adapter_capability
+from witnessd.privacy import (
+    CAPTURE_PROFILE_FULL,
+    CAPTURE_PROFILE_REDACTED,
+    build_redaction_context,
+    redact_value,
+    validate_capture_profile,
+)
 from witnessd.router import RouteExhaustedError, route_model
 from witnessd.runintent import (
     RUN_INTENT_ARTIFACT_NAME,
@@ -165,7 +172,9 @@ def run_adapter_lane(
     public_key_path: str | None = None,
     allowed_touched_files: list[str] | None = None,
     approval_policy: str = "on-request",
+    capture_profile: str = CAPTURE_PROFILE_FULL,
 ) -> dict[str, Any]:
+    capture_profile = validate_capture_profile(capture_profile)
     worktree = str(Path(sandbox or root).resolve(strict=False))
 
     try:
@@ -229,10 +238,23 @@ def run_adapter_lane(
             private_key, public_key = private_key_path, public_key_path
 
         allowed_for_manifest = list(allowed_touched_files or [])
+        codex_env = namespace.codex_env() if adapter == "codex" else None
+        redaction_context = None
+        if capture_profile == CAPTURE_PROFILE_REDACTED:
+            redaction_context = build_redaction_context(
+                run_id=task_id,
+                prompt=prompt,
+                paths=allowed_for_manifest,
+                worktree=worktree,
+                env=codex_env,
+            )
+        redacted_allowed_for_manifest = list(
+            redact_value(allowed_for_manifest, redaction_context)
+        )
         run_intent = build_run_intent(
             run_id=task_id,
             baseline=git_baseline(worktree),
-            allowed_paths=allowed_for_manifest,
+            allowed_paths=redacted_allowed_for_manifest,
             approval_policy=approval_policy,
             sandbox_mode="workspace-write" if adapter == "codex" else "unknown",
             provider=adapter,
@@ -248,7 +270,7 @@ def run_adapter_lane(
                 "depth": int(depth),
                 "timeout_seconds": int(timeout_seconds),
             },
-            capture_profile="full",
+            capture_profile=capture_profile,
         )
         run_intent_path = lane_evidence_dir / RUN_INTENT_ARTIFACT_NAME
         write_signed_run_intent(
@@ -259,7 +281,6 @@ def run_adapter_lane(
         )
 
         assert_separated(worktree, str(lane_evidence_dir / "capture-manifest.json"))
-        codex_env = namespace.codex_env() if adapter == "codex" else None
         adapter_result = _run_adapter(
             adapter=adapter,
             sandbox=worktree,
@@ -276,30 +297,37 @@ def run_adapter_lane(
             approval_policy=approval_policy,
         )
         diff_patch = _git_diff_patch(worktree, adapter_result.touched_files)
+        lane_result = {
+            "command_receipts": adapter_result.command_receipts,
+            "touched_files": adapter_result.touched_files,
+            "test_output": adapter_result.test_output,
+        }
+        if redaction_context is not None:
+            lane_result = redact_value(lane_result, redaction_context)
+            diff_patch = str(redact_value(diff_patch, redaction_context))
 
         started_at = _now_iso()
         ended_at = _now_iso()
         emitted = emit_lane_evidence(
-            {
-                "command_receipts": adapter_result.command_receipts,
-                "touched_files": adapter_result.touched_files,
-                "test_output": adapter_result.test_output,
-            },
+            lane_result,
             str(lane_evidence_dir),
             private_key,
             fixture=_fixture(adapter, task_id, route_decision),
-            allowed_touched_files=allowed_for_manifest,
+            allowed_touched_files=redacted_allowed_for_manifest,
             public_key_path=public_key,
             task_id=task_id,
-            invocation=adapter_result.invocation,
-            runner_sandbox=worktree,
+            invocation=redact_value(adapter_result.invocation, redaction_context),
+            runner_sandbox=str(redact_value(worktree, redaction_context)),
             runner_kind=adapter_result.runner_kind,
             started_at=started_at,
             ended_at=ended_at,
             diff_patch=diff_patch,
             run_intent_path=str(run_intent_path),
             run_intent=run_intent,
-            capture_profile="full",
+            capture_profile=capture_profile,
+            redaction_manifest=(
+                redaction_context["manifest"] if redaction_context is not None else None
+            ),
         )
 
         return {
