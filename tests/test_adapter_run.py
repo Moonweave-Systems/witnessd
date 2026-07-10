@@ -17,13 +17,10 @@ def _fake_codex(directory: str) -> str:
     path.write_text(
         "#!/bin/sh\n"
         "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
-        "out=\"\"\n"
-        "while [ $# -gt 0 ]; do\n"
-        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
-        "  shift\n"
-        "done\n"
-        ": > \"$out\"\n"
-        "echo done >> \"$out\"\n"
+        "while [ $# -gt 0 ]; do shift; done\n"
+        "cat >/dev/null\n"
+        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
+        "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"message\",\"text\":\"done\"}}'\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -42,13 +39,10 @@ def _fake_codex_writes_env_and_code(directory: str) -> str:
         "def generated():\n"
         "    return 'agent generated code'\n"
         "PY\n"
-        "out=\"\"\n"
-        "while [ $# -gt 0 ]; do\n"
-        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
-        "  shift\n"
-        "done\n"
-        ": > \"$out\"\n"
-        "echo wrote code >> \"$out\"\n"
+        "while [ $# -gt 0 ]; do shift; done\n"
+        "cat >/dev/null\n"
+        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
+        "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"command_execution\",\"command\":\"write code\"}}'\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -63,13 +57,10 @@ def _fake_codex_stages_tracked_change(directory: str) -> str:
         "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
         "printf 'updated\\n' > tracked.txt\n"
         "git add tracked.txt\n"
-        "out=\"\"\n"
-        "while [ $# -gt 0 ]; do\n"
-        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
-        "  shift\n"
-        "done\n"
-        ": > \"$out\"\n"
-        "echo staged tracked change >> \"$out\"\n"
+        "while [ $# -gt 0 ]; do shift; done\n"
+        "cat >/dev/null\n"
+        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
+        "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"command_execution\",\"command\":\"update tracked\"}}'\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -95,6 +86,7 @@ class TestAdapterRun(unittest.TestCase):
                 is_supported=lambda _model: True,
                 budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
                 codex_binary=_fake_codex(bindir),
+                allowed_touched_files=["noop.txt"],
             )
 
             self.assertEqual(validate_runner_receipt(out["runner_receipt"]), [])
@@ -122,6 +114,7 @@ class TestAdapterRun(unittest.TestCase):
                     is_supported=lambda _model: True,
                     budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
                     codex_binary=_fake_codex_writes_env_and_code(bindir),
+                    allowed_touched_files=["codex-home.txt", "pkg/agent.py"],
                 )
             finally:
                 if old_codex_home is None:
@@ -157,6 +150,7 @@ class TestAdapterRun(unittest.TestCase):
                 budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
                 codex_binary=_fake_codex_writes_env_and_code(bindir),
                 evidence_dir=evidence_dir,
+                allowed_touched_files=["codex-home.txt", "pkg/agent.py"],
             )
 
             patch = pathlib.Path(evidence_dir, "git-diff.patch").read_text(
@@ -183,17 +177,22 @@ class TestAdapterRun(unittest.TestCase):
                 budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
                 codex_binary=_fake_codex(bindir),
                 evidence_dir=evidence_dir,
+                allowed_touched_files=["noop.txt"],
             )
 
             receipt = out["runner_receipt"]
-            output_index = receipt["invocation"].index("--output-last-message")
-            self.assertEqual(receipt["invocation"][output_index + 1], "adapter-transcript.txt")
+            self.assertIn("--json", receipt["invocation"])
+            self.assertNotIn("--output-last-message", receipt["invocation"])
             self.assertEqual(receipt["transcript_path"], "evidence/verify.log")
             command_log = json.loads(
                 pathlib.Path(root, "adapter-command.json").read_text(encoding="utf-8")
             )
             self.assertEqual(command_log["command"], receipt["invocation"])
             self.assertTrue(pathlib.Path(root, "adapter-transcript.txt").exists())
+            self.assertIn(
+                '"thread.started"',
+                pathlib.Path(root, "adapter-transcript.txt").read_text(encoding="utf-8"),
+            )
 
     def test_adapter_evidence_includes_staged_tracked_diff_patch(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
@@ -218,6 +217,7 @@ class TestAdapterRun(unittest.TestCase):
                 budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
                 codex_binary=_fake_codex_stages_tracked_change(bindir),
                 evidence_dir=evidence_dir,
+                allowed_touched_files=["tracked.txt"],
             )
 
             patch = pathlib.Path(evidence_dir, "git-diff.patch").read_text(
