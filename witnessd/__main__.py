@@ -412,6 +412,7 @@ def _cmd_run_adapter(args: argparse.Namespace) -> int:
             predicted_usd=args.predicted_usd,
             codex_binary=args.codex_binary,
             claude_binary=args.claude_binary,
+            gemini_binary=args.gemini_binary,
             opencode_binary=args.opencode_binary,
             allowed_touched_files=list(args.allow or []),
             capture_profile=args.capture_profile,
@@ -2778,7 +2779,7 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
     run.add_argument(
         "--adapter",
         default="shell",
-        choices=["shell", "codex", "claude", "opencode"],
+        choices=["shell", "codex", "claude", "gemini", "opencode"],
     )
     run.add_argument("--root", default=".")
     run.add_argument("--runner-sandbox", default=None)
@@ -2794,6 +2795,7 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
     )
     run.add_argument("--codex-binary", default="codex")
     run.add_argument("--claude-binary", default="claude")
+    run.add_argument("--gemini-binary", default="gemini")
     run.add_argument("--opencode-binary", default="opencode")
     run.add_argument("--max-tokens", type=int, default=10**9)
     run.add_argument("--max-usd", type=float, default=10**9)
@@ -2821,7 +2823,7 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
     flowplan.add_argument(
         "--lane-adapter",
         default="shell",
-        choices=["shell", "codex", "claude", "opencode"],
+        choices=["shell", "codex", "claude", "gemini", "opencode"],
     )
     flowplan.add_argument("--json", action="store_true")
     flowplan.set_defaults(

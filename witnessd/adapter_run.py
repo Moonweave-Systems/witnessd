@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 from witnessd.adapters.claude import run_claude_lane
 from witnessd.adapters.codex import run_codex_lane
+from witnessd.adapters.gemini import run_gemini_review_lane
 from witnessd.adapters.opencode import run_opencode_lane
 from witnessd.budget import BudgetExceededError, CostBreaker
 from witnessd.emitter import emit_lane_evidence
@@ -72,6 +73,7 @@ def _run_adapter(
     log_path: str,
     codex_binary: str,
     claude_binary: str,
+    gemini_binary: str,
     opencode_binary: str,
     timeout_seconds: int,
     codex_env: dict[str, str] | None = None,
@@ -97,6 +99,16 @@ def _run_adapter(
             prompt=prompt,
             claude_binary=claude_binary,
             transcript_path=transcript_path,
+            log_path=log_path,
+            timeout_seconds=timeout_seconds,
+        )
+    if adapter == "gemini":
+        return run_gemini_review_lane(
+            sandbox=sandbox,
+            prompt=prompt,
+            gemini_binary=gemini_binary,
+            transcript_path=transcript_path,
+            review_receipt_path=str(Path(transcript_path).with_name("review-receipt.json")),
             log_path=log_path,
             timeout_seconds=timeout_seconds,
         )
@@ -164,6 +176,7 @@ def run_adapter_lane(
     depth: int = 1,
     codex_binary: str = "codex",
     claude_binary: str = "claude",
+    gemini_binary: str = "gemini",
     opencode_binary: str = "opencode",
     timeout_seconds: int = 120,
     evidence_dir: str | None = None,
@@ -184,6 +197,7 @@ def run_adapter_lane(
             repo=worktree,
             codex_binary=codex_binary,
             claude_binary=claude_binary,
+            gemini_binary=gemini_binary,
             opencode_binary=opencode_binary,
             require_ready=True,
         )
@@ -292,6 +306,7 @@ def run_adapter_lane(
             log_path=str(log_path),
             codex_binary=codex_binary,
             claude_binary=claude_binary,
+            gemini_binary=gemini_binary,
             opencode_binary=opencode_binary,
             timeout_seconds=timeout_seconds,
             codex_env=codex_env,
@@ -306,6 +321,9 @@ def run_adapter_lane(
             provider_artifacts["events.raw"] = raw_events_path
         if normalized_events_path is not None:
             provider_artifacts["events.normalized"] = normalized_events_path
+        review_receipt_path = getattr(adapter_result, "review_receipt_path", None)
+        if review_receipt_path is not None:
+            provider_artifacts["review-receipt"] = review_receipt_path
         lane_result = {
             "command_receipts": adapter_result.command_receipts,
             "touched_files": adapter_result.touched_files,

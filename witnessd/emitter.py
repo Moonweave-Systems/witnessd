@@ -272,7 +272,11 @@ def emit_lane_evidence(
     if provider_artifacts:
         for subject_name, source_path in sorted(provider_artifacts.items()):
             source = os.path.abspath(source_path)
-            artifact_name = f"{subject_name}.jsonl"
+            artifact_name = (
+                "review-receipt.json"
+                if subject_name == "review-receipt"
+                else f"{subject_name}.jsonl"
+            )
             with open(source, "rb") as handle:
                 artifacts[subject_name] = _emit_artifact_bytes(artifact_name, handle.read())
     otel_spans = None

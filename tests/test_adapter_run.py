@@ -88,6 +88,19 @@ def _fake_claude(directory: str) -> str:
     return str(path)
 
 
+def _fake_gemini(directory: str) -> str:
+    path = pathlib.Path(directory) / "gemini"
+    path.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"type\":\"message\",\"content\":\"review start\"}'\n"
+        "printf '%s\\n' '{\"type\":\"result\",\"text\":\"[{\\\"severity\\\":\\\"low\\\",\\\"file\\\":\\\"seed.txt\\\",\\\"line\\\":1,\\\"summary\\\":\\\"review note\\\"}]\"}'\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
 def _init_repo(path: str) -> None:
     subprocess.run(["git", "init", "-q", path], check=True)
     subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=path, check=True)
@@ -278,6 +291,50 @@ class TestAdapterRun(unittest.TestCase):
                     otel_spans=output["bundle"]["otel_spans"],
                 )
                 self.assertEqual(verdict["decision"], "pass", adapter)
+
+    def test_gemini_review_receipt_is_signed_bundle_subject(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "gemini-evidence")
+            _init_repo(sandbox)
+
+            out = run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="gemini",
+                task_id="gemini-review",
+                prompt="review only",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                evidence_dir=evidence_dir,
+                gemini_binary=_fake_gemini(bindir),
+            )
+
+            subject_names = [
+                item["name"] for item in out["bundle"]["statement"]["predicate"]["artifact_index"]
+            ]
+            self.assertIn("review-receipt", subject_names)
+            self.assertIn("events.raw", subject_names)
+            self.assertIn("events.normalized", subject_names)
+
+            evidence_root = pathlib.Path(evidence_dir)
+            verdict = ingest_signed_evidence_bundle(
+                out["bundle"],
+                out["public_key_path"],
+                {
+                    "capture-manifest": str(evidence_root / "capture-manifest.json"),
+                    "observer-capture": str(evidence_root / "observer-capture.json"),
+                    "runner-receipt": str(evidence_root / "runner-receipt.json"),
+                    "run-intent": str(evidence_root / "run-intent.json"),
+                    "events.raw": str(evidence_root / "events.raw.jsonl"),
+                    "events.normalized": str(evidence_root / "events.normalized.jsonl"),
+                    "review-receipt": str(evidence_root / "review-receipt.json"),
+                },
+                otel_spans=out["bundle"]["otel_spans"],
+            )
+            self.assertEqual(verdict["decision"], "pass")
 
     def test_codex_uses_isolated_state_namespace(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:

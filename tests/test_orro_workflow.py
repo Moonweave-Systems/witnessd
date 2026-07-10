@@ -179,8 +179,37 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertFalse((root / ".witnessd" / "runs").exists())
             self.assertFalse((root / "team-ledger.json").exists())
 
+    def test_flowplan_role_lanes_review_only_can_route_to_gemini_reviewer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            code, _payload = self._flowplan(
+                [
+                    "review safely",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "review-only",
+                    "--role-lanes-out",
+                    str(out),
+                    "--lane-adapter",
+                    "gemini",
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            role_lanes = json.loads(out.read_text(encoding="utf-8"))
+            self.assertFalse(role_lanes["execution_allowed"])
+            self.assertEqual(role_lanes["workflow_profile"], "review-only")
+            self.assertEqual(len(role_lanes["lanes"]), 1)
+            lane = role_lanes["lanes"][0]
+            self.assertEqual(lane["role_id"], "reviewer")
+            self.assertEqual(lane["adapter"], "gemini")
+            self.assertFalse(lane["may_execute"])
+            self.assertFalse(lane["may_verify"])
+            self.assertEqual(lane["phase"], "review")
+
     def test_flowplan_role_lanes_profiles_block_non_execution_profiles(self) -> None:
-        for profile in ("review-only", "verification-only", "release-readiness"):
+        for profile in ("verification-only", "release-readiness"):
             with self.subTest(profile=profile), tempfile.TemporaryDirectory() as tmp:
                 out = Path(tmp) / "role-lane-plan.json"
                 code, _payload = self._flowplan(

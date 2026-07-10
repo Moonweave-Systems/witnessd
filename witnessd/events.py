@@ -92,6 +92,39 @@ def normalize_claude_jsonl_events(
     return envelopes
 
 
+def normalize_gemini_jsonl_events(
+    raw_jsonl: bytes,
+    *,
+    provider_version: str | None = None,
+) -> list[AgentEventEnvelope]:
+    envelopes: list[AgentEventEnvelope] = []
+    prev_event_hash: str | None = None
+    for seq, line in enumerate(_jsonl_lines(raw_jsonl)):
+        payload = _parse_json_line(line)
+        envelope: AgentEventEnvelope = {
+            "schema": AGENT_EVENT_SCHEMA_V1,
+            "seq": seq,
+            "wall_time": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "monotonic_ns": time.monotonic_ns(),
+            "provider": "google-gemini",
+            "provider_version": provider_version,
+            "thread_id": _string_or_none(payload.get("session_id"))
+            or _string_or_none(payload.get("conversation_id")),
+            "turn_id": _string_or_none(payload.get("turn_id")),
+            "item_id": _string_or_none(payload.get("id"))
+            or _string_or_none(payload.get("message_id"))
+            or _item_id(payload),
+            "event_type": _gemini_event_type(payload),
+            "raw_event_sha256": hashlib.sha256(line).hexdigest(),
+            "payload_sha256": _payload_hash(payload),
+            "prev_event_hash": prev_event_hash,
+            "redaction_manifest_ref": None,
+        }
+        prev_event_hash = canonical_hash(envelope)
+        envelopes.append(envelope)
+    return envelopes
+
+
 def encode_agent_event_jsonl(events: list[AgentEventEnvelope]) -> bytes:
     return b"".join(
         json.dumps(event, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -136,6 +169,17 @@ def _claude_event_type(payload: dict[str, Any]) -> str:
     if source_type in {"tool.completed", "post_tool_use"}:
         return "command.completed"
     if source_type in {"result", "result.message"}:
+        return "turn.completed"
+    return "provider.unknown"
+
+
+def _gemini_event_type(payload: dict[str, Any]) -> str:
+    source_type = payload.get("type")
+    if source_type in {"message", "assistant", "content", "model.output"}:
+        return "message.completed"
+    if source_type in {"tool_call", "tool.completed", "tool_result", "function_call"}:
+        return "command.completed"
+    if source_type in {"result", "final", "response"}:
         return "turn.completed"
     return "provider.unknown"
 

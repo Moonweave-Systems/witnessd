@@ -46,6 +46,7 @@ VALID_RUNNERS = frozenset({"codex-cli", "manual"})
 RUNNER_KIND_BY_ADAPTER = {
     "codex": "codex-cli",
     "claude": "manual",
+    "gemini": "manual",
     "opencode": "manual",
 }
 
@@ -81,6 +82,7 @@ class AdapterResult:
     normalized_events: list[dict[str, Any]] = field(default_factory=list)
     raw_events_path: str | None = None
     normalized_events_path: str | None = None
+    review_receipt_path: str | None = None
 
     def __post_init__(self) -> None:
         if not self.invocation:
