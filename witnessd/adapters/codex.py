@@ -11,6 +11,7 @@ from typing import Any
 
 from witnessd.adapters.base import AdapterResult
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
+from witnessd.events import encode_agent_event_jsonl, normalize_codex_jsonl_events
 
 _OUTPUT_LIMIT = 4096
 
@@ -85,6 +86,14 @@ def _decode_output(value: bytes | str | None) -> str:
     return ""
 
 
+def _output_bytes(value: bytes | str | None) -> bytes:
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    return b""
+
+
 def run_codex_lane(
     *,
     sandbox: str,
@@ -113,6 +122,7 @@ def run_codex_lane(
     transcript = str(Path(transcript_path).resolve(strict=False))
     transcript_binding = transcript_invocation_path or transcript
     Path(transcript).parent.mkdir(parents=True, exist_ok=True)
+    normalized_transcript = str(Path(transcript).with_name("events.normalized.jsonl"))
 
     run_invocation = [
         codex,
@@ -139,19 +149,25 @@ def run_codex_lane(
             timeout=timeout_seconds,
         )
         exit_code = completed.returncode
+        raw_stdout = completed.stdout or b""
         stdout = _decode_output(completed.stdout)
         stderr = _decode_output(completed.stderr)
-        Path(transcript).write_bytes(completed.stdout or b"")
+        Path(transcript).write_bytes(raw_stdout)
     except subprocess.TimeoutExpired as exc:
         exit_code = 124
+        raw_stdout = _output_bytes(exc.stdout)
         stdout = _timeout_text(exc.stdout)
         stderr = _timeout_text(exc.stderr)
-        Path(transcript).write_text(stdout, encoding="utf-8")
+        Path(transcript).write_bytes(raw_stdout)
     except OSError as exc:
         exit_code = 127
+        raw_stdout = b""
         stdout = ""
         stderr = str(exc)
-        Path(transcript).write_text(stderr, encoding="utf-8")
+        Path(transcript).write_bytes(raw_stdout)
+
+    normalized_events = normalize_codex_jsonl_events(raw_stdout)
+    Path(normalized_transcript).write_bytes(encode_agent_event_jsonl(normalized_events))
 
     if log_path is not None:
         _write_command_log(
@@ -181,6 +197,7 @@ def run_codex_lane(
         command_receipts=[command_receipt],
         touched_files=touched_files,
         test_output={"status": TEST_STATUS_NOT_RUN},
+        normalized_events=normalized_events,
     )
 
 

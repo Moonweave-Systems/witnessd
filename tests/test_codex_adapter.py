@@ -47,6 +47,17 @@ class TestCodexAdapter(unittest.TestCase):
             self.assertIn("--json", res.invocation)
             self.assertEqual(res.exit_code, 0)
             self.assertEqual(res.test_output, {"status": "not-run"})
+            self.assertEqual(len(res.normalized_events), 2)
+            self.assertEqual(
+                [event["event_type"] for event in res.normalized_events],
+                ["thread.started", "message.completed"],
+            )
+            self.assertEqual(
+                {event["schema"] for event in res.normalized_events},
+                {"moonweave.agent-event/v1"},
+            )
+            normalized = pathlib.Path(obs) / "events.normalized.jsonl"
+            self.assertTrue(normalized.exists())
 
             receipt = res.to_runner_receipt(
                 arm="direct",

@@ -6,7 +6,7 @@ import json
 import os
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +49,7 @@ class AdapterResult:
     command_receipts: list[dict[str, Any]]
     touched_files: list[str]
     test_output: dict[str, Any]
+    normalized_events: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.invocation:

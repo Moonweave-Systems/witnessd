@@ -115,7 +115,7 @@ def _file_type(mode: int) -> str:
         return "dir"
     if stat.S_ISLNK(mode):
         return "symlink"
-    return "submodule" if stat.S_ISGITLINK(mode) else "file"
+    return "submodule" if (mode & 0o170000) == 0o160000 else "file"
 
 
 def _classify_change(old: SnapshotRecord, new: SnapshotRecord) -> str:

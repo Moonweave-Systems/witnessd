@@ -180,7 +180,6 @@ class Phase0AdversarialQaTests(unittest.TestCase):
             receipt = result.command_receipts[0]
             self.assertIn('"item.completed"', receipt["stdout"])
 
-    @unittest.expectedFailure
     def test_qa09_codex_structured_capture_full_acceptance(self) -> None:
         with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
             repo = Path(sandbox)
@@ -199,6 +198,25 @@ class Phase0AdversarialQaTests(unittest.TestCase):
             self.assertTrue(
                 hasattr(result, "normalized_events"),
                 "Phase 1 C2 owns normalized AgentEventEnvelope capture.",
+            )
+            self.assertTrue(result.normalized_events)
+            self.assertEqual(
+                {event["schema"] for event in result.normalized_events},
+                {"moonweave.agent-event/v1"},
+            )
+            self.assertEqual(
+                [event["event_type"] for event in result.normalized_events],
+                ["thread.started", "command.completed"],
+            )
+            self.assertTrue(
+                all(event["raw_event_sha256"] for event in result.normalized_events)
+            )
+            self.assertIn("delete-me.txt", result.touched_files)
+            normalized_path = raw_events.with_name("events.normalized.jsonl")
+            self.assertTrue(normalized_path.exists())
+            self.assertEqual(
+                len(normalized_path.read_text(encoding="utf-8").splitlines()),
+                len(result.normalized_events),
             )
 
 
