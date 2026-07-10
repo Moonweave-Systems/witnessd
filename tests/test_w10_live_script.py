@@ -11,6 +11,7 @@ def _fake_codex(directory: str) -> str:
     path.write_text(
         "#!/bin/sh\n"
         "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        "saw_json=0\n"
         "cat > wordscore/core.py <<'PY'\n"
         "\"\"\"Word scoring helpers.\"\"\"\n"
         "\n"
@@ -24,13 +25,13 @@ def _fake_codex(directory: str) -> str:
         "    return counts\n"
         "PY\n"
         "python3 -m unittest discover -s tests >/tmp/w10-fake-tests.log 2>&1\n"
-        "out=\"\"\n"
         "while [ $# -gt 0 ]; do\n"
-        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
+        "  if [ \"$1\" = \"--json\" ]; then saw_json=1; fi\n"
         "  shift\n"
         "done\n"
-        ": > \"$out\"\n"
-        "echo 'implemented score_phrase' >> \"$out\"\n"
+        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
+        "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"message\",\"text\":\"implemented score_phrase\"}}'\n"
+        "if [ \"$saw_json\" -ne 1 ]; then exit 9; fi\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -99,8 +100,8 @@ class TestW10LiveScript(unittest.TestCase):
             receipt = json.loads((evidence / "runner-receipt.json").read_text())
             self.assertEqual(receipt["runner_kind"], "codex-cli")
             self.assertEqual(receipt["exit_code"], 0)
-            output_index = receipt["invocation"].index("--output-last-message")
-            self.assertEqual(receipt["invocation"][output_index + 1], "adapter-transcript.txt")
+            self.assertIn("--json", receipt["invocation"])
+            self.assertNotIn("--output-last-message", receipt["invocation"])
             self.assertEqual(receipt["transcript_path"], "evidence/verify.log")
             command_log = json.loads((out / "adapter-command.json").read_text())
             self.assertEqual(command_log["command"], receipt["invocation"])

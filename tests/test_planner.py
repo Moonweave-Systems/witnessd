@@ -288,12 +288,10 @@ def _fake_codex_invalid_draft(directory: Path) -> str:
     path.write_text(
         "#!/bin/sh\n"
         "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
-        "out=\"\"\n"
         "while [ $# -gt 0 ]; do\n"
-        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
         "  shift\n"
         "done\n"
-        "printf '%s\\n' 'not json' > \"$out\"\n"
+        "printf '%s\\n' 'not json'\n"
         "exit 0\n",
         encoding="utf-8",
     )

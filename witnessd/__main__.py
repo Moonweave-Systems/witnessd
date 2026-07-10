@@ -510,6 +510,7 @@ def _cmd_pilot_archive_evidence(args: argparse.Namespace) -> int:
 
 def _cmd_plan(args: argparse.Namespace) -> int:
     from witnessd.adapter_run import LaneBlocked, run_adapter_lane
+    from witnessd.adapters.codex import CodexAdapterError
     from witnessd.orro_workflow import (
         OrroWorkflowError,
         compile_role_lane_plan,
@@ -568,6 +569,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                 opencode_binary=args.opencode_binary,
                 evidence_dir=draft_out,
                 state_root=draft_root,
+                allowed_touched_files=["witnessd-plan-draft.txt"],
             )
             transcript = (
                 Path(result["evidence_dir"]).resolve(strict=False).parent
@@ -581,7 +583,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                     "evidence_dir": result["evidence_dir"],
                 }
             )
-        except (LaneBlocked, PlannerError, OSError) as exc:
+        except (LaneBlocked, PlannerError, OSError, CodexAdapterError) as exc:
             reason = str(exc).split(":", 1)[0]
             draft_events.append(
                 {
