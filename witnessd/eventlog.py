@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from typing import Any
 try:
     import fcntl
@@ -21,6 +22,13 @@ except ImportError:  # pragma: no cover - non-POSIX fallback
     fcntl = None
 
 from witnessd.canonical import canonical_hash
+from witnessd.runlog import verify_runlog
+
+
+class EventLogIntegrityError(RuntimeError):
+    def __init__(self, broken_at: int | None) -> None:
+        super().__init__(f"runlog chain verification failed at {broken_at}")
+        self.broken_at = broken_at
 
 
 class EventLog:
@@ -35,15 +43,11 @@ class EventLog:
             self._prev_event_hash = last_hash if isinstance(last_hash, str) else None
 
     def append(self, event: dict[str, Any]) -> dict[str, Any]:
-        with open(self.path, "a+", encoding="utf-8") as handle:
+        os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
+        with open(_lock_path(self.path), "a+", encoding="utf-8") as handle:
             if fcntl is not None:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            handle.seek(0)
-            existing = [
-                json.loads(line)
-                for line in handle
-                if line.strip()
-            ]
+            existing = self.read()
             if existing:
                 seq = int(existing[-1].get("seq", -1)) + 1
                 prev_event_hash = existing[-1].get("event_hash")
@@ -57,11 +61,7 @@ class EventLog:
             record["event_hash"] = canonical_hash(
                 {key: value for key, value in record.items() if key != "event_hash"}
             )
-            line = json.dumps(record, sort_keys=True, separators=(",", ":"))
-            handle.seek(0, 2)
-            handle.write(line + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
+            _atomic_write_records(self.path, [*existing, record])
             if fcntl is not None:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         self._seq = record["seq"] + 1
@@ -77,4 +77,51 @@ class EventLog:
                         records.append(json.loads(line))
         except FileNotFoundError:
             return []
+        verification = verify_runlog(records)
+        if not verification["ok"]:
+            raise EventLogIntegrityError(verification["broken_at"])
         return records
+
+
+def _lock_path(path: str) -> str:
+    digest = canonical_hash(os.path.abspath(path))[:32]
+    lock_dir = os.path.join(tempfile.gettempdir(), "witnessd-eventlog-locks")
+    os.makedirs(lock_dir, exist_ok=True)
+    return os.path.join(lock_dir, f"{digest}.lock")
+
+
+def _atomic_write_records(path: str, records: list[dict[str, Any]]) -> None:
+    directory = os.path.dirname(os.path.abspath(path))
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=f".{os.path.basename(path)}.",
+        suffix=".tmp",
+        dir=directory,
+        text=True,
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(record, sort_keys=True, separators=(",", ":")))
+                handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+        _fsync_directory(directory)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def _fsync_directory(directory: str) -> None:
+    flags = getattr(os, "O_DIRECTORY", 0) | os.O_RDONLY
+    try:
+        fd = os.open(directory, flags)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)

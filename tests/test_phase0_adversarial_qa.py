@@ -74,7 +74,6 @@ class Phase0AdversarialQaTests(unittest.TestCase):
             self.assertEqual(second_public_path, public_path)
             self.assertEqual(public_key, Path(public_path).read_bytes())
 
-    @unittest.expectedFailure
     def test_qa07_eventlog_rejects_append_after_chain_tamper(self) -> None:
         with tempfile.TemporaryDirectory() as sandbox:
             runlog = Path(sandbox) / "runlog.jsonl"

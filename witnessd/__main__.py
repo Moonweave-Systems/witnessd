@@ -1625,7 +1625,7 @@ def _cmd_faultkit(args: argparse.Namespace) -> int:
 
 
 def _cmd_pause(args: argparse.Namespace) -> int:
-    from witnessd.eventlog import EventLog
+    from witnessd.eventlog import EventLog, EventLogIntegrityError
     from witnessd.pause import PauseError, append_user_pause
 
     try:
@@ -1654,13 +1654,17 @@ def _cmd_kill(args: argparse.Namespace) -> int:
     if not args.all:
         print("ERR_KILL_SCOPE_REQUIRED", file=sys.stderr)
         return 2
-    from witnessd.eventlog import EventLog
+    from witnessd.eventlog import EventLog, EventLogIntegrityError
     from witnessd.killswitch import active_targets_from_runlog, kill_all
     from witnessd.runlog import verify_runlog
     from witnessd.supervisor import WorkerSupervisor
 
-    log = EventLog(args.runlog)
-    records = log.read()
+    try:
+        log = EventLog(args.runlog)
+        records = log.read()
+    except EventLogIntegrityError as exc:
+        print(f"runlog: broken_at={exc.broken_at}", file=sys.stderr)
+        return 1
     verification = verify_runlog(records)
     if not verification["ok"]:
         print(f"runlog: broken_at={verification['broken_at']}", file=sys.stderr)
