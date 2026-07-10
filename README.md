@@ -411,6 +411,16 @@ python3 -m depone team-ledger \
 
 Depone verifies from bytes. It does not run lanes.
 
+## Phase 0 evidence limitations
+
+The current Phase 0 safety patch records known evidence-substrate limitations
+instead of upgrading trust claims. Codex JSONL capture, predeclared write paths,
+preflight fail-closed checks, and operator-key overwrite protection are release
+safety controls. They do not prove code correctness, complete artifact binding,
+or full tamper resistance. Same-size same-mtime content changes, runlog
+chain-hardening, and eventlog scaling remain Phase 1 evidence-core work until
+the redesign gate closes.
+
 ## Development checks
 
 From the Moonweave workspace:
