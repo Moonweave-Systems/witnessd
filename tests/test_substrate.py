@@ -87,6 +87,12 @@ class TestBundleSigned(unittest.TestCase):
             # DSSE signed
             self.assertEqual(bundle["dsse_envelope"]["payloadType"], DSSE_PAYLOAD_TYPE)
             self.assertTrue(bundle["dsse_envelope"]["signatures"])
+            predicate = bundle["statement"]["predicate"]
+            self.assertEqual(
+                [item["name"] for item in predicate["artifact_index"]],
+                ["capture-manifest", "observer-capture"],
+            )
+            self.assertRegex(predicate["artifact_merkle_root"], r"^[0-9a-f]{64}$")
             # inline otel spans, no invented usage fields
             self.assertTrue(bundle["otel_spans"])
             usage_keys = [
@@ -109,6 +115,27 @@ class TestBundleSigned(unittest.TestCase):
                 all(r["status"] == "verified" for r in verdict["subject_results"])
             )
             self.assertEqual(verdict.get("otel_errors"), [])
+
+    def test_signed_bundle_blocks_after_artifact_byte_tamper(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = _a1_manifest()
+            artifacts = _write_artifacts(tmp, manifest)
+            keydir = os.path.join(tmp, "keys")
+            os.makedirs(keydir)
+            priv, pub = gen_operator_keypair(keydir)
+            bundle = build_bundle(manifest, artifacts, priv, pub)
+            with open(artifacts["observer-capture"], "ab") as handle:
+                handle.write(b"x")
+
+            verdict = ingest_signed_evidence_bundle(
+                bundle, pub, artifacts, otel_spans=bundle["otel_spans"]
+            )
+
+            self.assertEqual(verdict["decision"], "blocked")
+            self.assertIn(
+                "mismatch",
+                {result["status"] for result in verdict["subject_results"]},
+            )
 
     def test_assurance_not_upgraded_past_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:

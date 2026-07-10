@@ -62,6 +62,34 @@ def _sha256_file(path: str) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def _artifact_index(subjects: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": item["name"],
+            "digest": {"sha256": item["digest"]["sha256"]},
+        }
+        for item in sorted(subjects, key=lambda record: record["name"])
+    ]
+
+
+def _artifact_merkle_root(artifact_index: list[dict[str, Any]]) -> str:
+    leaves = [
+        canonical_hash({"name": item["name"], "digest": item["digest"]})
+        for item in artifact_index
+    ]
+    if not leaves:
+        return canonical_hash([])
+    level = leaves
+    while len(level) > 1:
+        next_level: list[str] = []
+        for index in range(0, len(level), 2):
+            left = level[index]
+            right = level[index + 1] if index + 1 < len(level) else left
+            next_level.append(canonical_hash({"left": left, "right": right}))
+        level = next_level
+    return level[0]
+
+
 def _span_id(seed: str, offset: int = 0) -> str:
     return canonical_hash({"seed": seed, "offset": offset})[:16]
 
@@ -166,6 +194,7 @@ def build_bundle(
         {"name": name, "digest": {"sha256": _sha256_file(path)}}
         for name, path in sorted(artifacts.items())
     ]
+    artifact_index = _artifact_index(subjects)
     statement = {
         "_type": INTOTO_STATEMENT_TYPE,
         "subject": subjects,
@@ -185,6 +214,8 @@ def build_bundle(
             ),
             "prev_capture_hash": manifest.get("prev_capture_hash"),
             "boundary": boundary,
+            "artifact_index": artifact_index,
+            "artifact_merkle_root": _artifact_merkle_root(artifact_index),
         },
     }
     envelope = {
