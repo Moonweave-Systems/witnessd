@@ -15,7 +15,8 @@ this lane leaves a no-op scan hook so the wiring point already exists.
 from __future__ import annotations
 
 import subprocess
-from typing import Any, Callable
+from pathlib import Path
+from typing import Any, Callable, Iterable
 
 from witnessd.changeset import Baseline, capture_snapshot, diff_snapshots, touched_files
 
@@ -36,8 +37,32 @@ def _snapshot(sandbox: str) -> Baseline:
     return capture_snapshot(sandbox)
 
 
-def _diff_touched(before: Baseline, after: Baseline) -> list[str]:
-    return touched_files(diff_snapshots(before, after))
+def _diff_touched(
+    before: Baseline,
+    after: Baseline,
+    *,
+    sandbox: str | None = None,
+    evidence_paths: Iterable[str] = (),
+) -> list[str]:
+    """touched_files diff, optionally excluding adapter-owned evidence paths.
+
+    Defense-in-depth only: the primary defense is the fail-closed evidence-path
+    separation check (adapters.base.assert_evidence_path_separated) run before
+    any subprocess starts, so evidence paths should never land inside sandbox
+    in the first place. This exclusion guards the rarer case where a path
+    resolves differently between that check and this after-snapshot.
+    """
+    touched = touched_files(diff_snapshots(before, after))
+    if sandbox is None or not evidence_paths:
+        return touched
+    root = Path(sandbox).resolve(strict=False)
+    excluded: set[str] = set()
+    for path in evidence_paths:
+        try:
+            excluded.add(Path(path).resolve(strict=False).relative_to(root).as_posix())
+        except ValueError:
+            continue
+    return [item for item in touched if item not in excluded]
 
 
 CommandRunner = Callable[[list[str], str], dict[str, Any]]
@@ -93,9 +118,7 @@ def run_shell_lane(
     if test_command is not None:
         if argv_scanner is not None:
             argv_scanner(test_command)
-        test_receipt = _run_one(
-            test_command, sandbox, command_runner=command_runner
-        )
+        test_receipt = _run_one(test_command, sandbox, command_runner=command_runner)
         command_receipts.append(test_receipt)
         if test_receipt["exit_code"] == 127:
             test_output = {"status": TEST_STATUS_ERROR}

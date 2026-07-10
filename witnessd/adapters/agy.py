@@ -19,6 +19,7 @@ from witnessd.adapters.base import (
     RawRun,
     RunIntent,
     _resolve_executable,
+    assert_evidence_path_separated,
 )
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
 from witnessd.events import encode_agent_event_jsonl, normalize_agy_text_events
@@ -59,9 +60,7 @@ class AgyCLIAdapter:
             print_timeout=str(print_timeout) if print_timeout is not None else None,
             model=str(model) if model is not None else None,
             add_dirs=(
-                [str(item) for item in add_dirs]
-                if isinstance(add_dirs, list)
-                else None
+                [str(item) for item in add_dirs] if isinstance(add_dirs, list) else None
             ),
         )
 
@@ -366,13 +365,21 @@ def run_agy_review_lane(
 
     repo = str(Path(sandbox).resolve(strict=False))
     transcript = str(Path(transcript_path).resolve(strict=False))
-    Path(transcript).parent.mkdir(parents=True, exist_ok=True)
     normalized_transcript = str(Path(transcript).with_name("events.normalized.jsonl"))
     review_receipt = str(
         Path(review_receipt_path).resolve(strict=False)
         if review_receipt_path is not None
         else Path(transcript).with_name("review-receipt.json")
     )
+    evidence_paths = [
+        transcript,
+        normalized_transcript,
+        review_receipt,
+        *([log_path] if log_path is not None else []),
+    ]
+    for evidence_path in evidence_paths:
+        assert_evidence_path_separated(repo, evidence_path, error_cls=AgyAdapterError)
+    Path(transcript).parent.mkdir(parents=True, exist_ok=True)
     invocation = _agy_invocation(
         agy_binary,
         prompt,
@@ -413,7 +420,9 @@ def run_agy_review_lane(
     )
 
     after = _snapshot(repo)
-    touched_files = _diff_touched(before, after)
+    touched_files = _diff_touched(
+        before, after, sandbox=repo, evidence_paths=evidence_paths
+    )
     test_output: dict[str, Any] = {"status": TEST_STATUS_NOT_RUN}
     if touched_files:
         exit_code = 125

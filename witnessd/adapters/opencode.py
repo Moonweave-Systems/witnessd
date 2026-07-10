@@ -43,4 +43,5 @@ def run_opencode_lane(
         transcript_path=transcript_path,
         log_path=log_path,
         timeout_seconds=timeout_seconds,
+        error_cls=OpenCodeAdapterError,
     )

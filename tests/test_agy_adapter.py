@@ -14,7 +14,7 @@ def _fake_agy(directory: str, *, writes_file: bool = False) -> str:
     write_command = "printf 'changed\\n' > reviewed.txt\n" if writes_file else ""
     path.write_text(
         "#!/bin/sh\n"
-        "printf '%s\\n' \"$@\" > \"$AGY_ARGV_CAPTURE\"\n"
+        'printf \'%s\\n\' "$@" > "$AGY_ARGV_CAPTURE"\n'
         f"{write_command}"
         "if [ -t 1 ]; then\n"
         "  printf '%s\\n' 'Review findings:'\n"
@@ -43,7 +43,10 @@ class TestAgyAdapter(unittest.TestCase):
             self.assertNotIn("--dangerously-skip-permissions", invocation)
 
     def test_review_lane_uses_pty_and_read_only_policy(self):
-        with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             argv_capture = pathlib.Path(bindir) / "argv.txt"
             res = run_agy_review_lane(
                 sandbox=sandbox,
@@ -73,7 +76,9 @@ class TestAgyAdapter(unittest.TestCase):
             self.assertNotIn("--dangerously-skip-permissions", res.invocation)
             self.assertIn("-p", res.invocation)
             self.assertEqual(res.test_output, {"status": "not-run"})
-            self.assertIn(b"Review findings:", pathlib.Path(res.transcript_path).read_bytes())
+            self.assertIn(
+                b"Review findings:", pathlib.Path(res.transcript_path).read_bytes()
+            )
             self.assertEqual(
                 validate_runner_receipt(
                     res.to_runner_receipt(
@@ -88,7 +93,10 @@ class TestAgyAdapter(unittest.TestCase):
             )
 
     def test_agy_text_response_normalizes_to_single_agent_event_envelope(self):
-        with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             res = run_agy_review_lane(
                 sandbox=sandbox,
                 prompt="review only",
@@ -113,7 +121,10 @@ class TestAgyAdapter(unittest.TestCase):
             self.assertTrue((pathlib.Path(bindir) / "events.normalized.jsonl").exists())
 
     def test_review_receipt_reuses_advisory_review_signal_contract(self):
-        with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             receipt_path = pathlib.Path(bindir) / "review-receipt.json"
             res = run_agy_review_lane(
                 sandbox=sandbox,
@@ -129,11 +140,17 @@ class TestAgyAdapter(unittest.TestCase):
             self.assertEqual(receipt["provider"], "google-antigravity")
             self.assertEqual(receipt["can_change_evidence_verdict"], False)
             self.assertEqual(receipt["findings"][0]["severity"], "medium")
-            self.assertEqual(receipt["raw_output_text"], "Review findings:\r\nmedium pkg/a.py:7 check edge case\r\n")
+            self.assertEqual(
+                receipt["raw_output_text"],
+                "Review findings:\r\nmedium pkg/a.py:7 check edge case\r\n",
+            )
             self.assertEqual(res.review_receipt_path, str(receipt_path))
 
     def test_forbidden_write_approval_flags_fail_closed_before_launch(self):
-        with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             for extra_args in (
                 ["--dangerously-skip-permissions"],
                 ["--mode", "accept-edits"],
@@ -147,12 +164,52 @@ class TestAgyAdapter(unittest.TestCase):
                             agy_binary=_fake_agy(bindir),
                             transcript_path=str(pathlib.Path(bindir) / "agy.raw.txt"),
                             extra_args=extra_args,
-                            env={"AGY_ARGV_CAPTURE": str(pathlib.Path(bindir) / "argv.txt")},
+                            env={
+                                "AGY_ARGV_CAPTURE": str(
+                                    pathlib.Path(bindir) / "argv.txt"
+                                )
+                            },
                         )
                     self.assertEqual(cm.exception.code, "ERR_AGY_FORBIDDEN_FLAG")
 
+    def test_transcript_path_inside_sandbox_rejected_failclosed(self):
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            with self.assertRaises(AgyAdapterError) as cm:
+                run_agy_review_lane(
+                    sandbox=sandbox,
+                    prompt="review only",
+                    agy_binary=_fake_agy(bindir),
+                    transcript_path=str(pathlib.Path(sandbox) / "agy.raw.jsonl"),
+                    env={"AGY_ARGV_CAPTURE": str(pathlib.Path(bindir) / "argv.txt")},
+                )
+            self.assertEqual(cm.exception.code, "ERR_EVIDENCE_NOT_SEPARATED")
+
+    def test_review_receipt_path_inside_sandbox_rejected_failclosed(self):
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            with self.assertRaises(AgyAdapterError) as cm:
+                run_agy_review_lane(
+                    sandbox=sandbox,
+                    prompt="review only",
+                    agy_binary=_fake_agy(bindir),
+                    transcript_path=str(pathlib.Path(bindir) / "agy.raw.jsonl"),
+                    review_receipt_path=str(
+                        pathlib.Path(sandbox) / "review-receipt.json"
+                    ),
+                    env={"AGY_ARGV_CAPTURE": str(pathlib.Path(bindir) / "argv.txt")},
+                )
+            self.assertEqual(cm.exception.code, "ERR_EVIDENCE_NOT_SEPARATED")
+
     def test_review_lane_blocks_if_files_change(self):
-        with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             res = run_agy_review_lane(
                 sandbox=sandbox,
                 prompt="review only",

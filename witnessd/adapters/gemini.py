@@ -15,6 +15,7 @@ from witnessd.adapters.base import (
     RawRun,
     RunIntent,
     _resolve_executable,
+    assert_evidence_path_separated,
 )
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
 from witnessd.events import encode_agent_event_jsonl, normalize_gemini_jsonl_events
@@ -141,7 +142,11 @@ def _coerce_finding(value: object) -> dict[str, Any] | None:
     file_path = value.get("file")
     line = value.get("line")
     summary = value.get("summary")
-    if not isinstance(severity, str) or not isinstance(file_path, str) or not isinstance(summary, str):
+    if (
+        not isinstance(severity, str)
+        or not isinstance(file_path, str)
+        or not isinstance(summary, str)
+    ):
         return None
     if not isinstance(line, int):
         line = None
@@ -214,7 +219,9 @@ def _write_review_receipt(
     }
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    target.write_text(
+        json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def run_gemini_review_lane(
@@ -235,13 +242,23 @@ def run_gemini_review_lane(
 
     repo = str(Path(sandbox).resolve(strict=False))
     transcript = str(Path(transcript_path).resolve(strict=False))
-    Path(transcript).parent.mkdir(parents=True, exist_ok=True)
     normalized_transcript = str(Path(transcript).with_name("events.normalized.jsonl"))
     review_receipt = str(
         Path(review_receipt_path).resolve(strict=False)
         if review_receipt_path is not None
         else Path(transcript).with_name("review-receipt.json")
     )
+    evidence_paths = [
+        transcript,
+        normalized_transcript,
+        review_receipt,
+        *([log_path] if log_path is not None else []),
+    ]
+    for evidence_path in evidence_paths:
+        assert_evidence_path_separated(
+            repo, evidence_path, error_cls=GeminiAdapterError
+        )
+    Path(transcript).parent.mkdir(parents=True, exist_ok=True)
     invocation = _gemini_invocation(gemini_binary, prompt)
 
     before = _snapshot(repo)
@@ -283,7 +300,9 @@ def run_gemini_review_lane(
     )
 
     after = _snapshot(repo)
-    touched_files = _diff_touched(before, after)
+    touched_files = _diff_touched(
+        before, after, sandbox=repo, evidence_paths=evidence_paths
+    )
     test_output: dict[str, Any] = {"status": TEST_STATUS_NOT_RUN}
     if touched_files:
         exit_code = 125

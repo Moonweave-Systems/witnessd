@@ -5,16 +5,14 @@ import unittest
 
 from depone.agent_fabric.paired_run import validate_runner_receipt
 
-from witnessd.adapters.claude import run_claude_lane
-from witnessd.adapters.opencode import run_opencode_lane
+from witnessd.adapters.claude import ClaudeAdapterError, run_claude_lane
+from witnessd.adapters.opencode import OpenCodeAdapterError, run_opencode_lane
 
 
 def _fake_cli(directory: str, name: str) -> str:
     path = pathlib.Path(directory) / name
     path.write_text(
-        "#!/bin/sh\n"
-        "echo ran >&2\n"
-        "exit 0\n",
+        "#!/bin/sh\necho ran >&2\nexit 0\n",
         encoding="utf-8",
     )
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
@@ -25,9 +23,9 @@ def _fake_claude_jsonl(directory: str) -> str:
     path = pathlib.Path(directory) / "claude"
     path.write_text(
         "#!/bin/sh\n"
-        "printf '%s\\n' '{\"type\":\"session.started\",\"session_id\":\"S1\"}'\n"
-        "printf '%s\\n' '{\"type\":\"assistant.message\",\"message_id\":\"M1\",\"text\":\"done\"}'\n"
-        "printf '%s\\n' '{\"type\":\"tool.completed\",\"tool_name\":\"Bash\",\"tool_use_id\":\"T1\"}'\n"
+        'printf \'%s\\n\' \'{"type":"session.started","session_id":"S1"}\'\n'
+        'printf \'%s\\n\' \'{"type":"assistant.message","message_id":"M1","text":"done"}\'\n'
+        'printf \'%s\\n\' \'{"type":"tool.completed","tool_name":"Bash","tool_use_id":"T1"}\'\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -52,7 +50,10 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
         self.assertEqual(receipt["runner_kind"], "manual")
 
     def test_claude(self):
-        with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             res = run_claude_lane(
                 sandbox=sandbox,
                 prompt="x",
@@ -64,7 +65,10 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
             self.assertIn("-p", res.invocation)
 
     def test_claude_jsonl_normalizes_to_agent_event_envelope(self):
-        with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             transcript = pathlib.Path(bindir) / "claude.raw.jsonl"
             res = run_claude_lane(
                 sandbox=sandbox,
@@ -88,7 +92,10 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
             self.assertTrue((pathlib.Path(bindir) / "events.normalized.jsonl").exists())
 
     def test_opencode(self):
-        with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             res = run_opencode_lane(
                 sandbox=sandbox,
                 prompt="x",
@@ -98,6 +105,34 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
 
             self._check(res, "opencode", sandbox)
             self.assertIn("run", res.invocation)
+
+    def test_claude_transcript_path_inside_sandbox_rejected_failclosed(self):
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            with self.assertRaises(ClaudeAdapterError) as cm:
+                run_claude_lane(
+                    sandbox=sandbox,
+                    prompt="x",
+                    claude_binary=_fake_cli(bindir, "claude"),
+                    transcript_path=str(pathlib.Path(sandbox) / "claude.txt"),
+                )
+            self.assertEqual(cm.exception.code, "ERR_EVIDENCE_NOT_SEPARATED")
+
+    def test_opencode_transcript_path_inside_sandbox_rejected_failclosed(self):
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            with self.assertRaises(OpenCodeAdapterError) as cm:
+                run_opencode_lane(
+                    sandbox=sandbox,
+                    prompt="x",
+                    opencode_binary=_fake_cli(bindir, "opencode"),
+                    transcript_path=str(pathlib.Path(sandbox) / "opencode.txt"),
+                )
+            self.assertEqual(cm.exception.code, "ERR_EVIDENCE_NOT_SEPARATED")
 
 
 if __name__ == "__main__":
