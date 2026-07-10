@@ -144,6 +144,9 @@ class OrroWorkstyleTests(unittest.TestCase):
 
         self.assertEqual(module.returncode, 0, module.stderr)
         self.assertEqual(alias.returncode, 0, alias.stderr)
+        self.assertIn("deprecated", module.stderr)
+        self.assertIn("ORRO package", module.stderr)
+        self.assertEqual(alias.stderr, "")
         module_payload = json.loads(module.stdout)
         alias_payload = json.loads(alias.stdout)
         self.assertEqual(module_payload["task_class"], "verification-only")
@@ -161,6 +164,8 @@ class OrroWorkstyleTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("deprecated", result.stderr)
+        self.assertIn("ORRO package", result.stderr)
         self.assertIn("advise", result.stdout)
         self.assertNotIn("self-test", result.stdout)
 

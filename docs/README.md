@@ -56,7 +56,7 @@ Use these names in new user-facing docs:
 | `orro auto --until-complete` | bounded post-run loop over proofcheck and handoff only |
 | `orro auto` | future broader continuation mode behind evidence gates |
 | `orro ultra` | future high-autonomy profile |
-| `python3 -m orro` | thin product-name entrypoint hosted in witnessd |
+| `python3 -m orro` | deprecated witnessd compatibility shim for the ORRO-owned command |
 | `orro engine-lock` | write/check distribution metadata for pinned witnessd and Depone commits |
 | Superflow | historical/compatibility name, superseded by ORRO |
 
@@ -67,20 +67,19 @@ The standalone ORRO repository now exists at
 <https://github.com/Moonweave-Systems/ORRO> as the product/distribution/wrapper
 repo. It owns onboarding, examples, distribution drafts, product doctrine, and
 e2e smoke contracts; it must not duplicate witnessd runtime behavior or Depone
-verifier logic. The current executable ORRO entrypoint remains witnessd-hosted
-and is not a third engine. Its help text is product-facing and lists only public
-ORRO commands. It delegates subcommands to the witnessd-hosted ORRO command
-surface. Public setup
-starts with `orro init`, which delegates to witnessd initialization/provisioning
+verifier logic. The product `orro` command is owned by the ORRO package. The
+witnessd-provided `python3 -m orro` and console-script entrypoint are deprecated
+compatibility shims: they warn on stderr, delegate to the witnessd ORRO parser,
+and will be removed in the next major witnessd release. Public setup starts with
+`orro init`, which delegates to witnessd initialization/provisioning
 and creates readiness metadata such as `.witnessd/provision.json`; it is not
 proof or assurance. `orro doctor` checks readiness, not evidence truth. The
 engine lock is distribution metadata only. `--out` writes the pinned commit
 metadata; `--check` detects local environment drift against it. A matching lock
 is readiness alignment only, not evidence verification, merge approval, or an
 assurance increase. A mismatch is readiness-blocked, not verifier-refuted. The
-bare `orro` console script
-points at `orro.__main__:main` and remains an alias layer over the same product
-surface.
+bare `orro` console script from witnessd points at `orro.__main__:main` only for
+compatibility; install the ORRO package for the product-owned command.
 
 `orro advise "<goal>" --repo <repo> --home <home> --json` is the developer
 judgment/workstyle layer. It recommends the smallest safe workflow for the goal

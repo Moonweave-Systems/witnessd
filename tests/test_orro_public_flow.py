@@ -1305,7 +1305,8 @@ class OrroPublicFlowTests(unittest.TestCase):
         help_result = self._orro_module_run([])
 
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
-        self.assertEqual(help_result.stderr, "")
+        self.assertIn("deprecated", help_result.stderr)
+        self.assertIn("ORRO package", help_result.stderr)
         self.assertIn("ORRO Flow", help_result.stdout)
         self.assertIn("init", help_result.stdout)
         self.assertIn("report", help_result.stdout)
