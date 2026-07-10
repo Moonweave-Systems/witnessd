@@ -12,6 +12,7 @@ from typing import Any, Protocol
 
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
 from witnessd.events import AgentEventEnvelope
+from witnessd.observer import ObserverSeparationError, assert_separated
 from witnessd.receipt import build_runner_receipt
 
 RunIntent = dict[str, Any]
@@ -30,17 +31,14 @@ class RawRun:
 class AgentAdapter(Protocol):
     provider: str
 
-    def compile_invocation(self, intent: RunIntent) -> list[str]:
-        ...
+    def compile_invocation(self, intent: RunIntent) -> list[str]: ...
 
-    def run(self, intent: RunIntent, sandbox: str) -> RawRun:
-        ...
+    def run(self, intent: RunIntent, sandbox: str) -> RawRun: ...
 
-    def normalize(self, raw: RawRun) -> list[AgentEventEnvelope]:
-        ...
+    def normalize(self, raw: RawRun) -> list[AgentEventEnvelope]: ...
 
-    def effective_policy(self, raw: RawRun) -> dict[str, Any]:
-        ...
+    def effective_policy(self, raw: RawRun) -> dict[str, Any]: ...
+
 
 VALID_RUNNERS = frozenset({"codex-cli", "manual"})
 RUNNER_KIND_BY_ADAPTER = {
@@ -63,11 +61,30 @@ class AdapterExecutionError(RuntimeError):
         self.message = message
 
 
+def assert_evidence_path_separated(
+    sandbox: str, path: str, *, error_cls: type = AdapterExecutionError
+) -> None:
+    """Fail closed if an adapter-owned evidence path lives inside the runner sandbox.
+
+    Adapters write their own evidence artifacts (transcript, normalized events,
+    review receipts, command logs) outside the observed sandbox so they never
+    pollute the before/after touched_files diff with their own evidence bytes.
+    observer.assert_separated only guards the emitter's evidence_dir; this
+    reuses its containment check for adapter-owned paths and reports the
+    ERR_EVIDENCE_NOT_SEPARATED code through the caller's own error type.
+    """
+    try:
+        assert_separated(sandbox, path)
+    except ObserverSeparationError as exc:
+        raise error_cls(
+            "ERR_EVIDENCE_NOT_SEPARATED",
+            f"adapter evidence path is inside runner sandbox: {path}",
+        ) from exc
+
+
 def assert_runner_kind_valid(runner_kind: str) -> None:
     if runner_kind not in VALID_RUNNERS:
-        raise RunnerKindError(
-            f"runner_kind must be one of {sorted(VALID_RUNNERS)}"
-        )
+        raise RunnerKindError(f"runner_kind must be one of {sorted(VALID_RUNNERS)}")
 
 
 @dataclass(frozen=True)
@@ -93,9 +110,7 @@ class AdapterResult:
         if expected is None:
             raise RunnerKindError(f"unknown adapter: {self.adapter}")
         if self.runner_kind != expected:
-            raise RunnerKindError(
-                f"runner_kind for {self.adapter} must be {expected}"
-            )
+            raise RunnerKindError(f"runner_kind for {self.adapter} must be {expected}")
 
     def to_runner_receipt(
         self,
@@ -123,7 +138,9 @@ class AdapterResult:
 
 
 def _resolve_executable(binary: str, *, unavailable_code: str) -> str:
-    if os.path.sep in binary or (os.path.altsep is not None and os.path.altsep in binary):
+    if os.path.sep in binary or (
+        os.path.altsep is not None and os.path.altsep in binary
+    ):
         path = Path(binary)
         if path.exists() and os.access(path, os.X_OK):
             return str(path)
@@ -182,9 +199,13 @@ def _run_cli_lane(
     transcript_path: str,
     log_path: str | None,
     timeout_seconds: int,
+    error_cls: type = AdapterExecutionError,
 ) -> AdapterResult:
     repo = str(Path(sandbox).resolve(strict=False))
     transcript = str(Path(transcript_path).resolve(strict=False))
+    evidence_paths = [transcript, *([log_path] if log_path is not None else [])]
+    for evidence_path in evidence_paths:
+        assert_evidence_path_separated(repo, evidence_path, error_cls=error_cls)
     Path(transcript).parent.mkdir(parents=True, exist_ok=True)
 
     before = _snapshot(repo)
@@ -239,7 +260,9 @@ def _run_cli_lane(
                 "stderr": stderr[:4096],
             }
         ],
-        touched_files=_diff_touched(before, after),
+        touched_files=_diff_touched(
+            before, after, sandbox=repo, evidence_paths=evidence_paths
+        ),
         test_output={"status": TEST_STATUS_NOT_RUN},
     )
 

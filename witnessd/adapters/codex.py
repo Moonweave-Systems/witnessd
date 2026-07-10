@@ -9,7 +9,12 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from witnessd.adapters.base import AdapterResult, RawRun, RunIntent
+from witnessd.adapters.base import (
+    AdapterResult,
+    RawRun,
+    RunIntent,
+    assert_evidence_path_separated,
+)
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
 from witnessd.events import encode_agent_event_jsonl, normalize_codex_jsonl_events
 
@@ -67,9 +72,7 @@ class CodexCLIAdapter:
             raw_events=b"",
             stdout="",
             stderr="",
-            effective_policy=self.effective_policy(
-                RawRun([], 0, b"", "", "", {})
-            ),
+            effective_policy=self.effective_policy(RawRun([], 0, b"", "", "", {})),
         )
 
     def normalize(self, raw: RawRun):
@@ -206,8 +209,15 @@ def run_codex_lane(
     effective_declared_policy = _codex_approval_policy_arg(approval_policy)
     transcript = str(Path(transcript_path).resolve(strict=False))
     transcript_binding = transcript_invocation_path or transcript
-    Path(transcript).parent.mkdir(parents=True, exist_ok=True)
     normalized_transcript = str(Path(transcript).with_name("events.normalized.jsonl"))
+    evidence_paths = [
+        transcript,
+        normalized_transcript,
+        *([log_path] if log_path is not None else []),
+    ]
+    for evidence_path in evidence_paths:
+        assert_evidence_path_separated(repo, evidence_path, error_cls=CodexAdapterError)
+    Path(transcript).parent.mkdir(parents=True, exist_ok=True)
 
     run_invocation = [
         codex,
@@ -276,7 +286,9 @@ def run_codex_lane(
             exit_code=exit_code,
         )
     after = _snapshot(repo)
-    touched_files = _diff_touched(before, after)
+    touched_files = _diff_touched(
+        before, after, sandbox=repo, evidence_paths=evidence_paths
+    )
     command_receipt: dict[str, Any] = {
         "command": evidence_invocation,
         "cwd": repo,
@@ -304,15 +316,18 @@ def _self_test() -> None:
     import stat
     import tempfile
 
-    with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+    with (
+        tempfile.TemporaryDirectory() as sandbox,
+        tempfile.TemporaryDirectory() as bindir,
+    ):
         fake = Path(bindir) / "codex"
         fake.write_text(
             "#!/bin/sh\n"
-            "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+            'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
             "while [ $# -gt 0 ]; do shift; done\n"
             "cat >/dev/null\n"
-            "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
-            "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"message\",\"text\":\"done\"}}'\n"
+            'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T1"}\'\n'
+            'printf \'%s\\n\' \'{"type":"item.completed","item":{"type":"message","text":"done"}}\'\n'
             "exit 0\n",
             encoding="utf-8",
         )

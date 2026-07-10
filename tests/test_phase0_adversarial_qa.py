@@ -22,14 +22,14 @@ def _fake_codex(directory: str) -> str:
         "#!/bin/sh\n"
         "saw_json=0\n"
         "while [ $# -gt 0 ]; do\n"
-        "  if [ \"$1\" = \"--json\" ]; then saw_json=1; shift; continue; fi\n"
+        '  if [ "$1" = "--json" ]; then saw_json=1; shift; continue; fi\n'
         "  shift\n"
         "done\n"
         "cat >/dev/null\n"
         "rm -f delete-me.txt\n"
-        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
-        "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"command_execution\",\"command\":\"rm delete-me.txt\"}}'\n"
-        "if [ \"$saw_json\" -ne 1 ]; then exit 9; fi\n",
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T1"}\'\n'
+        'printf \'%s\\n\' \'{"type":"item.completed","item":{"type":"command_execution","command":"rm delete-me.txt"}}\'\n'
+        'if [ "$saw_json" -ne 1 ]; then exit 9; fi\n',
         encoding="utf-8",
     )
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
@@ -123,7 +123,9 @@ class Phase0AdversarialQaTests(unittest.TestCase):
                     )
                 elapsed = time.perf_counter() - started
                 records = EventLog(str(path)).read()
-                checkpoint_exists = os.path.exists(EventLog(str(path))._checkpoint_path())
+                checkpoint_exists = os.path.exists(
+                    EventLog(str(path))._checkpoint_path()
+                )
             self.assertEqual(len(records), event_count)
             self.assertEqual(verify_runlog(records), {"ok": True, "broken_at": None})
             bench.append(
@@ -148,7 +150,10 @@ class Phase0AdversarialQaTests(unittest.TestCase):
         self.assertEqual([row["events"] for row in bench], [8, 16, 32])
 
     def test_phase0_codex_write_requires_predeclared_allowed_paths(self) -> None:
-        with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             with self.assertRaises(CodexAdapterError) as error:
                 run_codex_lane(
                     sandbox=sandbox,
@@ -161,11 +166,16 @@ class Phase0AdversarialQaTests(unittest.TestCase):
         self.assertEqual(error.exception.code, "ERR_CODEX_ALLOWED_PATHS_REQUIRED")
 
     def test_phase0_codex_json_capture_preserves_raw_events(self) -> None:
-        with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             repo = Path(sandbox)
             (repo / "delete-me.txt").write_text("x", encoding="utf-8")
-            raw_events = repo / "events.raw.jsonl"
-            command_log = repo / "adapter-command.json"
+            evidence_dir = Path(bindir) / "evidence"
+            evidence_dir.mkdir()
+            raw_events = evidence_dir / "events.raw.jsonl"
+            command_log = evidence_dir / "adapter-command.json"
 
             result = run_codex_lane(
                 sandbox=sandbox,
@@ -185,10 +195,15 @@ class Phase0AdversarialQaTests(unittest.TestCase):
             self.assertIn('"item.completed"', receipt["stdout"])
 
     def test_qa09_codex_structured_capture_full_acceptance(self) -> None:
-        with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             repo = Path(sandbox)
             (repo / "delete-me.txt").write_text("x", encoding="utf-8")
-            raw_events = repo / "events.raw.jsonl"
+            evidence_dir = Path(bindir) / "evidence"
+            evidence_dir.mkdir()
+            raw_events = evidence_dir / "events.raw.jsonl"
 
             result = run_codex_lane(
                 sandbox=sandbox,

@@ -13,6 +13,7 @@ from witnessd.adapters.base import (
     RawRun,
     RunIntent,
     _resolve_executable,
+    assert_evidence_path_separated,
 )
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
 from witnessd.events import encode_agent_event_jsonl, normalize_claude_jsonl_events
@@ -47,7 +48,11 @@ class ClaudeCLIAdapter:
             raw_events=completed.stdout or b"",
             stdout=(completed.stdout or b"").decode("utf-8", errors="replace"),
             stderr=(completed.stderr or b"").decode("utf-8", errors="replace"),
-            effective_policy=self.effective_policy(RawRun(invocation, completed.returncode, completed.stdout or b"", "", "")),
+            effective_policy=self.effective_policy(
+                RawRun(
+                    invocation, completed.returncode, completed.stdout or b"", "", ""
+                )
+            ),
         )
 
     def normalize(self, raw: RawRun):
@@ -79,8 +84,17 @@ def run_claude_lane(
         )
     repo = str(Path(sandbox).resolve(strict=False))
     transcript = str(Path(transcript_path).resolve(strict=False))
-    Path(transcript).parent.mkdir(parents=True, exist_ok=True)
     normalized_transcript = str(Path(transcript).with_name("events.normalized.jsonl"))
+    evidence_paths = [
+        transcript,
+        normalized_transcript,
+        *([log_path] if log_path is not None else []),
+    ]
+    for evidence_path in evidence_paths:
+        assert_evidence_path_separated(
+            repo, evidence_path, error_cls=ClaudeAdapterError
+        )
+    Path(transcript).parent.mkdir(parents=True, exist_ok=True)
     invocation = [_claude_binary(claude_binary), "-p", prompt]
 
     before = _snapshot(repo)
@@ -101,7 +115,11 @@ def run_claude_lane(
         exit_code = 124
         raw_stdout = exc.stdout if isinstance(exc.stdout, bytes) else b""
         stdout = raw_stdout.decode("utf-8", errors="replace")
-        stderr = exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else ""
+        stderr = (
+            exc.stderr.decode("utf-8", errors="replace")
+            if isinstance(exc.stderr, bytes)
+            else ""
+        )
         Path(transcript).write_bytes(raw_stdout)
     except OSError as exc:
         exit_code = 127
@@ -145,7 +163,9 @@ def run_claude_lane(
                 "stderr": stderr[:4096],
             }
         ],
-        touched_files=_diff_touched(before, after),
+        touched_files=_diff_touched(
+            before, after, sandbox=repo, evidence_paths=evidence_paths
+        ),
         test_output={"status": TEST_STATUS_NOT_RUN},
         normalized_events=normalized_events,
         raw_events_path=transcript,
