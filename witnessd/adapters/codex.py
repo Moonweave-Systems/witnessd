@@ -14,6 +14,9 @@ from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapsho
 from witnessd.events import encode_agent_event_jsonl, normalize_codex_jsonl_events
 
 _OUTPUT_LIMIT = 4096
+_ALLOWED_APPROVAL_POLICIES = frozenset(
+    {"never", "on-request", "on-failure", "untrusted"}
+)
 
 
 class CodexAdapterError(RuntimeError):
@@ -94,6 +97,32 @@ def _output_bytes(value: bytes | str | None) -> bytes:
     return b""
 
 
+def _codex_approval_policy_arg(approval_policy: str) -> str:
+    if approval_policy not in _ALLOWED_APPROVAL_POLICIES:
+        raise CodexAdapterError(
+            "ERR_CODEX_APPROVAL_POLICY_UNSUPPORTED",
+            f"unsupported approval policy: {approval_policy}",
+        )
+    return "on-request" if approval_policy == "on-failure" else approval_policy
+
+
+def _effective_approval_policy(raw_jsonl: bytes) -> str | None:
+    for line in raw_jsonl.splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("type") != "effective.settings":
+            continue
+        value = payload.get("approval_policy")
+        return value if isinstance(value, str) else None
+    return None
+
+
 def run_codex_lane(
     *,
     sandbox: str,
@@ -103,6 +132,7 @@ def run_codex_lane(
     transcript_invocation_path: str | None = None,
     log_path: str | None = None,
     sandbox_mode: str = "workspace-write",
+    approval_policy: str = "on-request",
     allowed_touched_files: list[str] | None = None,
     timeout_seconds: int = 120,
     env: dict[str, str] | None = None,
@@ -119,6 +149,7 @@ def run_codex_lane(
 
     repo = str(Path(sandbox).resolve(strict=False))
     codex = _resolve_codex(codex_binary)
+    effective_declared_policy = _codex_approval_policy_arg(approval_policy)
     transcript = str(Path(transcript_path).resolve(strict=False))
     transcript_binding = transcript_invocation_path or transcript
     Path(transcript).parent.mkdir(parents=True, exist_ok=True)
@@ -128,6 +159,8 @@ def run_codex_lane(
         codex,
         "--sandbox",
         sandbox_mode,
+        "--approval-policy",
+        effective_declared_policy,
         "exec",
         "--json",
         "--skip-git-repo-check",
@@ -168,6 +201,16 @@ def run_codex_lane(
 
     normalized_events = normalize_codex_jsonl_events(raw_stdout)
     Path(normalized_transcript).write_bytes(encode_agent_event_jsonl(normalized_events))
+    effective_policy = _effective_approval_policy(raw_stdout)
+    test_output: dict[str, Any] = {"status": TEST_STATUS_NOT_RUN}
+    if effective_policy is not None and effective_policy != effective_declared_policy:
+        exit_code = 125
+        message = (
+            f"effective approval_policy {effective_policy} != "
+            f"declared {effective_declared_policy}"
+        )
+        stderr = f"{stderr}\n{message}".strip()
+        test_output = {"status": "failed", "summary": message}
 
     if log_path is not None:
         _write_command_log(
@@ -196,7 +239,7 @@ def run_codex_lane(
         transcript_path=transcript_binding,
         command_receipts=[command_receipt],
         touched_files=touched_files,
-        test_output={"status": TEST_STATUS_NOT_RUN},
+        test_output=test_output,
         normalized_events=normalized_events,
     )
 

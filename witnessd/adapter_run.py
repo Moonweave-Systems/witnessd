@@ -62,6 +62,7 @@ def _run_adapter(
     timeout_seconds: int,
     codex_env: dict[str, str] | None = None,
     allowed_touched_files: list[str] | None = None,
+    approval_policy: str = "on-request",
 ) -> Any:
     if adapter == "codex":
         return run_codex_lane(
@@ -74,6 +75,7 @@ def _run_adapter(
             timeout_seconds=timeout_seconds,
             env=codex_env,
             allowed_touched_files=allowed_touched_files,
+            approval_policy=approval_policy,
         )
     if adapter == "claude":
         return run_claude_lane(
@@ -155,6 +157,7 @@ def run_adapter_lane(
     private_key_path: str | None = None,
     public_key_path: str | None = None,
     allowed_touched_files: list[str] | None = None,
+    approval_policy: str = "on-request",
 ) -> dict[str, Any]:
     worktree = str(Path(sandbox or root).resolve(strict=False))
 
@@ -233,6 +236,7 @@ def run_adapter_lane(
             timeout_seconds=timeout_seconds,
             codex_env=codex_env,
             allowed_touched_files=allowed_touched_files,
+            approval_policy=approval_policy,
         )
         diff_patch = _git_diff_patch(worktree, adapter_result.touched_files)
         allowed_for_manifest = list(allowed_touched_files or [])

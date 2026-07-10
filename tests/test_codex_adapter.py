@@ -24,6 +24,26 @@ def _fake_codex(directory: str) -> str:
     return str(path)
 
 
+def _fake_codex_policy_probe(directory: str, effective_policy: str) -> str:
+    path = pathlib.Path(directory) / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        "policy=''\n"
+        "while [ $# -gt 0 ]; do\n"
+        "  if [ \"$1\" = \"--approval-policy\" ]; then shift; policy=\"$1\"; shift; continue; fi\n"
+        "  shift\n"
+        "done\n"
+        "cat >/dev/null\n"
+        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
+        f"printf '%s\\n' '{{\"type\":\"effective.settings\",\"approval_policy\":\"{effective_policy}\"}}'\n"
+        "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"message\",\"text\":\"done\"}}'\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
 class TestCodexAdapter(unittest.TestCase):
     def test_result_shape_and_receipt_valid(self):
         with (
@@ -45,6 +65,7 @@ class TestCodexAdapter(unittest.TestCase):
             self.assertTrue(res.invocation and res.invocation[0].endswith("codex"))
             self.assertIn("exec", res.invocation)
             self.assertIn("--json", res.invocation)
+            self.assertIn("--approval-policy", res.invocation)
             self.assertEqual(res.exit_code, 0)
             self.assertEqual(res.test_output, {"status": "not-run"})
             self.assertEqual(len(res.normalized_events), 2)
@@ -80,6 +101,46 @@ class TestCodexAdapter(unittest.TestCase):
             )
 
         self.assertEqual(cm.exception.code, "ERR_CODEX_PROMPT_MISSING")
+
+    def test_approval_policy_passed_to_codex_argv(self):
+        with tempfile.TemporaryDirectory() as repo, tempfile.TemporaryDirectory() as bindir:
+            res = run_codex_lane(
+                sandbox=repo,
+                prompt="do X",
+                codex_binary=_fake_codex_policy_probe(bindir, "untrusted"),
+                transcript_path=os.path.join(repo, "events.raw.jsonl"),
+                sandbox_mode="workspace-write",
+                approval_policy="untrusted",
+                allowed_touched_files=["allowed.txt"],
+            )
+
+        self.assertIn("--approval-policy", res.invocation)
+        self.assertEqual(
+            res.invocation[res.invocation.index("--approval-policy") + 1],
+            "untrusted",
+        )
+        self.assertEqual(res.exit_code, 0)
+
+    def test_effective_approval_policy_mismatch_fails_closed(self):
+        with tempfile.TemporaryDirectory() as repo, tempfile.TemporaryDirectory() as bindir:
+            res = run_codex_lane(
+                sandbox=repo,
+                prompt="do X",
+                codex_binary=_fake_codex_policy_probe(bindir, "never"),
+                transcript_path=os.path.join(repo, "events.raw.jsonl"),
+                sandbox_mode="workspace-write",
+                approval_policy="untrusted",
+                allowed_touched_files=["allowed.txt"],
+            )
+
+        self.assertEqual(res.exit_code, 125)
+        self.assertEqual(
+            res.test_output,
+            {
+                "status": "failed",
+                "summary": "effective approval_policy never != declared untrusted",
+            },
+        )
 
 
 if __name__ == "__main__":
