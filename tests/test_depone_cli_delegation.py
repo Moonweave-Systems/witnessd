@@ -1,58 +1,57 @@
-"""End-to-end coverage for Depone's deprecated CLI shims delegating to witnessd.
+"""In-process coverage for Depone's deprecated shims delegating to a real witnessd.
 
-`depone codex-local-capability`, `depone team-shell-lane-launch`, and `depone
-team-worktree-prep` are compatibility surfaces that Depone kept after its Phase
-4 extraction (`Extract deprecated execution surfaces to witnessd`); they raise
-`ERR_DEPONE_EXECUTION_SURFACE_MOVED_TO_WITNESSD` when witnessd is unavailable,
-so Depone's own standalone test suite cannot exercise the delegated behavior.
-witnessd is the one repo where both sides are guaranteed present, so the
-end-to-end CLI path is tested here instead. See
+`depone.agent_fabric.codex_local_capability` / `team_shell_lane_launch` /
+`team_worktree_prep` are compatibility surfaces that Depone kept after its
+Phase 4 extraction (`Extract deprecated execution surfaces to witnessd`); they
+raise `ERR_DEPONE_EXECUTION_SURFACE_MOVED_TO_WITNESSD` when witnessd is
+unavailable, so Depone's own standalone test suite cannot exercise the
+delegated behavior. witnessd is the one repo where both sides are guaranteed
+present, so the delegation path is tested here instead. See
 depone/docs/phase2-tcb-extraction.md.
 
-Each `depone ...` invocation runs with cwd=DEPONE_ROOT: these are Depone's own
-internal self-checks/CLI surfaces, and their default fixture/contract paths
-resolve relative to Depone's own repo root (not the caller's cwd) on at least
-one of the two contracts this suite may run against (Depone main, pinned by
-CI, vs. Depone's phase0-evidence-safety branch, used for local/sibling
-verification before that branch merges) — same DEPONE_ROOT convention as
-test_depone_replica_conformance.py.
+These call Depone's shim functions directly (plain Python, in-process) rather
+than spawning `depone` as a subprocess. A subprocess needs its own PYTHONPATH
+wired to find *both* depone and witnessd, and a previous version of this file
+that spawned `python -m depone ...` broke exactly that way in CI: it only
+worked locally because witnessd happened to be editable-installed there. An
+in-process call shares this test process's own sys.path — witnessd via
+cwd-based sys.path[0] (every other witnessd test already relies on this for
+`import witnessd`), depone via the PYTHONPATH env var CI already sets — so
+there is no subprocess-boundary case left to get wrong. Same pattern
+test_depone_replica_conformance.py's test_codex_capability_matches_depone_for_missing_binary
+already uses.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-import depone
-
-DEPONE_ROOT = Path(
-    os.environ.get("WITNESSD_DEPONE_ROOT", Path(depone.__file__).resolve().parents[1])
+from depone.agent_fabric.codex_local_capability import (
+    build_codex_local_capability,
+    write_codex_local_capability,
+)
+from depone.agent_fabric.team_launch_preflight import (
+    TEAM_LAUNCH_PREFLIGHT_KIND,
+    TEAM_LAUNCH_PREFLIGHT_SCHEMA_VERSION,
+)
+from depone.agent_fabric.team_shell_lane_launch import (
+    run_shell_lane_command,
+    _self_test as team_shell_lane_launch_self_test,
+)
+from depone.agent_fabric.team_worktree_prep import (
+    build_team_worktree_prep,
+    _self_test as team_worktree_prep_self_test,
 )
 
 
-class DeponeCliDelegationTests(unittest.TestCase):
-    def test_codex_local_capability_self_test(self) -> None:
-        completed = subprocess.run(
-            [sys.executable, "-m", "depone", "codex-local-capability", "--self-test"],
-            cwd=DEPONE_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("codex-local-capability --self-test: pass", completed.stdout)
-
-    def test_codex_local_capability_writes_pass_receipt_for_fake_codex(self) -> None:
+class DeponeShimDelegationTests(unittest.TestCase):
+    def test_codex_local_capability_delegates_pass_receipt_for_fake_codex(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp)
-            root = base / "repo"
-            root.mkdir()
+            root = Path(tmp)
             subprocess.run(["git", "init", "-q"], cwd=root, check=True)
             subprocess.run(
                 ["git", "config", "user.email", "test@example.invalid"],
@@ -70,113 +69,103 @@ class DeponeCliDelegationTests(unittest.TestCase):
             fake_codex.chmod(0o755)
             subprocess.run(["git", "add", "AGENTS.md", "codex"], cwd=root, check=True)
             subprocess.run(["git", "commit", "-qm", "seed"], cwd=root, check=True)
-            out = base / "capability.json"
 
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "depone",
-                    "codex-local-capability",
-                    "--repo",
-                    str(root),
-                    "--codex-binary",
-                    str(fake_codex),
-                    "--instruction-file",
-                    "AGENTS.md",
-                    "--out",
-                    str(out),
-                    "--json",
-                ],
-                cwd=DEPONE_ROOT,
-                capture_output=True,
-                text=True,
-                check=False,
+            receipt = build_codex_local_capability(
+                repo=root,
+                codex_binary=str(fake_codex),
+                instruction_files=[Path("AGENTS.md")],
             )
-            receipt = json.loads(out.read_text(encoding="utf-8"))
+            out = root / "capability.json"
+            write_codex_local_capability(out, receipt)
+            loaded = json.loads(out.read_text(encoding="utf-8"))
 
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        payload = json.loads(completed.stdout)
-        self.assertEqual(payload["decision"], "pass")
         self.assertEqual(receipt["decision"], "pass")
         self.assertEqual(receipt["adapter"]["version"], "codex 0.cli")
+        self.assertEqual(loaded["decision"], "pass")
 
-    def test_team_shell_lane_launch_self_test(self) -> None:
-        completed = subprocess.run(
-            [sys.executable, "-m", "depone", "team-shell-lane-launch", "--self-test"],
-            cwd=DEPONE_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("team-shell-lane-launch --self-test: pass", completed.stdout)
+    def test_team_shell_lane_launch_self_test_delegates_to_witnessd(self) -> None:
+        # No exception means the shim's _self_test() reached witnessd's real
+        # _self_test() and it passed; a WitnessdUnavailableError or a
+        # witnessd-side AssertionError would fail this test.
+        team_shell_lane_launch_self_test()
 
     def test_team_shell_lane_launch_runs_allowlisted_argv(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            allowlist = root / "allowlist.json"
-            receipt_path = root / "receipt.json"
-            transcript_path = root / "transcript.json"
-            allowlist.write_text(
-                json.dumps(
+            receipt = run_shell_lane_command(
+                allowlist={
+                    "commands": [
+                        {
+                            "id": "fixture-echo",
+                            "argv": ["true"],
+                        }
+                    ]
+                },
+                command_id="fixture-echo",
+                cwd=root,
+                transcript_path=root / "transcript.json",
+                agent_role_id="worker",
+            )
+
+        self.assertEqual(receipt["decision"], "pass")
+        self.assertEqual(receipt["boundary"]["uses_shell"], False)
+
+    def test_team_worktree_prep_self_test_delegates_to_witnessd(self) -> None:
+        team_worktree_prep_self_test()
+
+    def test_team_worktree_prep_creates_lane_via_witnessd(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "r@x.invalid"], cwd=repo, check=True
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "prep-test"], cwd=repo, check=True
+            )
+            (repo / "sample.txt").write_text("before\n", encoding="utf-8")
+            subprocess.run(["git", "add", "sample.txt"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
+            base = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=repo, text=True
+            ).strip()
+            preflight = {
+                "kind": TEAM_LAUNCH_PREFLIGHT_KIND,
+                "schema_version": TEAM_LAUNCH_PREFLIGHT_SCHEMA_VERSION,
+                "decision": "pass",
+                "launch_intent": "plan-only",
+                "base_commit": base,
+                "lane_count": 1,
+                "lanes": [
                     {
-                        "commands": [
-                            {
-                                "id": "fixture-echo",
-                                "argv": [sys.executable, "-c", "print('fixture ok')"],
-                            }
-                        ]
-                    },
-                    sort_keys=True,
-                ),
-                encoding="utf-8",
-            )
-
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "depone",
-                    "team-shell-lane-launch",
-                    "--allowlist",
-                    str(allowlist),
-                    "--command-id",
-                    "fixture-echo",
-                    "--cwd",
-                    str(root),
-                    "--out",
-                    str(receipt_path),
-                    "--transcript",
-                    str(transcript_path),
-                    "--agent-role-id",
-                    "worker",
-                    "--json",
+                        "lane_id": "lane-1",
+                        "planned_worktree": "lane-1",
+                        "evidence_dir": "lane-1",
+                        "worktree_receipt": "lane-1/worktree-receipt.json",
+                    }
                 ],
-                cwd=DEPONE_ROOT,
-                capture_output=True,
-                text=True,
-                check=False,
+                "boundary": {
+                    "launches_agents": False,
+                    "creates_worktrees": False,
+                    "executes_commands": False,
+                    "mutates_worktree": False,
+                    "calls_live_models": False,
+                    "raises_assurance": False,
+                },
+                "errors": [],
+            }
+
+            receipt = build_team_worktree_prep(
+                preflight,
+                repo_root=repo,
+                worktree_root=root / "worktrees",
+                create_worktree=True,
             )
 
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            stdout = json.loads(completed.stdout)
-            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-            self.assertEqual(stdout["decision"], "pass")
-            self.assertEqual(receipt["boundary"]["uses_shell"], False)
-
-    def test_team_worktree_prep_self_test(self) -> None:
-        completed = subprocess.run(
-            [sys.executable, "-m", "depone", "team-worktree-prep", "--self-test"],
-            cwd=DEPONE_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("team-worktree-prep --self-test: pass", completed.stdout)
+        self.assertEqual(receipt["decision"], "pass")
+        self.assertEqual(receipt["lanes"][0]["action"], "created")
 
 
 if __name__ == "__main__":
