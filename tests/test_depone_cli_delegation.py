@@ -8,22 +8,38 @@ so Depone's own standalone test suite cannot exercise the delegated behavior.
 witnessd is the one repo where both sides are guaranteed present, so the
 end-to-end CLI path is tested here instead. See
 depone/docs/phase2-tcb-extraction.md.
+
+Each `depone ...` invocation runs with cwd=DEPONE_ROOT: these are Depone's own
+internal self-checks/CLI surfaces, and their default fixture/contract paths
+resolve relative to Depone's own repo root (not the caller's cwd) on at least
+one of the two contracts this suite may run against (Depone main, pinned by
+CI, vs. Depone's phase0-evidence-safety branch, used for local/sibling
+verification before that branch merges) — same DEPONE_ROOT convention as
+test_depone_replica_conformance.py.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+import depone
+
+DEPONE_ROOT = Path(
+    os.environ.get("WITNESSD_DEPONE_ROOT", Path(depone.__file__).resolve().parents[1])
+)
+
 
 class DeponeCliDelegationTests(unittest.TestCase):
     def test_codex_local_capability_self_test(self) -> None:
         completed = subprocess.run(
             [sys.executable, "-m", "depone", "codex-local-capability", "--self-test"],
+            cwd=DEPONE_ROOT,
             capture_output=True,
             text=True,
             check=False,
@@ -72,6 +88,7 @@ class DeponeCliDelegationTests(unittest.TestCase):
                     str(out),
                     "--json",
                 ],
+                cwd=DEPONE_ROOT,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -87,6 +104,7 @@ class DeponeCliDelegationTests(unittest.TestCase):
     def test_team_shell_lane_launch_self_test(self) -> None:
         completed = subprocess.run(
             [sys.executable, "-m", "depone", "team-shell-lane-launch", "--self-test"],
+            cwd=DEPONE_ROOT,
             capture_output=True,
             text=True,
             check=False,
@@ -136,6 +154,7 @@ class DeponeCliDelegationTests(unittest.TestCase):
                     "worker",
                     "--json",
                 ],
+                cwd=DEPONE_ROOT,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -150,6 +169,7 @@ class DeponeCliDelegationTests(unittest.TestCase):
     def test_team_worktree_prep_self_test(self) -> None:
         completed = subprocess.run(
             [sys.executable, "-m", "depone", "team-worktree-prep", "--self-test"],
+            cwd=DEPONE_ROOT,
             capture_output=True,
             text=True,
             check=False,
