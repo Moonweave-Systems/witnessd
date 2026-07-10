@@ -92,6 +92,31 @@ class TestAgyAdapter(unittest.TestCase):
                 [],
             )
 
+    def test_read_only_review_lane_with_separated_evidence_reports_empty_touched_files(
+        self,
+    ):
+        # Live-bug regression: an agy review lane run with transcript_path,
+        # events.normalized.jsonl, and review-receipt.json inside the sandbox
+        # reported touched_files == ['events.normalized.jsonl',
+        # 'events.raw.jsonl', 'review-receipt.json'] for a read-only lane.
+        # With evidence paths correctly separated from the sandbox, none of
+        # the adapter's own evidence artifacts may appear in touched_files.
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            res = run_agy_review_lane(
+                sandbox=sandbox,
+                prompt="review only",
+                agy_binary=_fake_agy(bindir),
+                transcript_path=str(pathlib.Path(bindir) / "agy.raw.jsonl"),
+                review_receipt_path=str(pathlib.Path(bindir) / "review-receipt.json"),
+                env={"AGY_ARGV_CAPTURE": str(pathlib.Path(bindir) / "argv.txt")},
+            )
+
+            self.assertEqual(res.exit_code, 0)
+            self.assertEqual(res.touched_files, [])
+
     def test_agy_text_response_normalizes_to_single_agent_event_envelope(self):
         with (
             tempfile.TemporaryDirectory() as sandbox,
