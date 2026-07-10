@@ -48,7 +48,11 @@ def _snapshot(sandbox: str) -> dict[str, tuple[int, float]]:
 def _diff_touched(
     before: dict[str, tuple[int, float]], after: dict[str, tuple[int, float]]
 ) -> list[str]:
-    touched = [rel for rel, meta in after.items() if before.get(rel) != meta]
+    touched = [
+        rel
+        for rel in set(before) | set(after)
+        if before.get(rel) != after.get(rel)
+    ]
     return sorted(touched)
 
 

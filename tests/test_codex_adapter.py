@@ -13,13 +13,10 @@ def _fake_codex(directory: str) -> str:
     path = pathlib.Path(directory) / "codex"
     path.write_text(
         "#!/bin/sh\n"
-        "out=\"\"\n"
-        "while [ $# -gt 0 ]; do\n"
-        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
-        "  shift\n"
-        "done\n"
-        ": > \"$out\"\n"
-        "echo done >> \"$out\"\n"
+        "while [ $# -gt 0 ]; do shift; done\n"
+        "cat >/dev/null\n"
+        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
+        "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"message\",\"text\":\"done\"}}'\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -41,12 +38,13 @@ class TestCodexAdapter(unittest.TestCase):
                 transcript_path=os.path.join(obs, "transcript.txt"),
                 log_path=os.path.join(obs, "codex.log"),
                 sandbox_mode="workspace-write",
+                allowed_touched_files=["allowed.txt"],
             )
 
             self.assertEqual(res.runner_kind, "codex-cli")
             self.assertTrue(res.invocation and res.invocation[0].endswith("codex"))
             self.assertIn("exec", res.invocation)
-            self.assertIn("--output-last-message", res.invocation)
+            self.assertIn("--json", res.invocation)
             self.assertEqual(res.exit_code, 0)
             self.assertEqual(res.test_output, {"status": "not-run"})
 

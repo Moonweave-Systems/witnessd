@@ -77,6 +77,14 @@ def _timeout_text(value: object) -> str:
     return ""
 
 
+def _decode_output(value: bytes | str | None) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, str):
+        return value
+    return ""
+
+
 def run_codex_lane(
     *,
     sandbox: str,
@@ -86,12 +94,18 @@ def run_codex_lane(
     transcript_invocation_path: str | None = None,
     log_path: str | None = None,
     sandbox_mode: str = "workspace-write",
+    allowed_touched_files: list[str] | None = None,
     timeout_seconds: int = 120,
     env: dict[str, str] | None = None,
 ) -> AdapterResult:
     if not prompt.strip():
         raise CodexAdapterError(
             "ERR_CODEX_PROMPT_MISSING", "codex prompt must not be empty"
+        )
+    if sandbox_mode == "workspace-write" and not allowed_touched_files:
+        raise CodexAdapterError(
+            "ERR_CODEX_ALLOWED_PATHS_REQUIRED",
+            "workspace-write codex runs require predeclared allowed_touched_files",
         )
 
     repo = str(Path(sandbox).resolve(strict=False))
@@ -105,16 +119,13 @@ def run_codex_lane(
         "--sandbox",
         sandbox_mode,
         "exec",
+        "--json",
         "--skip-git-repo-check",
         "--cd",
         repo,
-        "--output-last-message",
-        transcript,
         "-",
     ]
     evidence_invocation = list(run_invocation)
-    output_index = evidence_invocation.index("--output-last-message")
-    evidence_invocation[output_index + 1] = transcript_binding
 
     before = _snapshot(repo)
     try:
@@ -122,25 +133,25 @@ def run_codex_lane(
             run_invocation,
             cwd=repo,
             env=env,
-            input=prompt,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+            input=prompt.encode("utf-8"),
             capture_output=True,
             check=False,
             timeout=timeout_seconds,
         )
         exit_code = completed.returncode
-        stdout = completed.stdout
-        stderr = completed.stderr
+        stdout = _decode_output(completed.stdout)
+        stderr = _decode_output(completed.stderr)
+        Path(transcript).write_bytes(completed.stdout or b"")
     except subprocess.TimeoutExpired as exc:
         exit_code = 124
         stdout = _timeout_text(exc.stdout)
         stderr = _timeout_text(exc.stderr)
+        Path(transcript).write_text(stdout, encoding="utf-8")
     except OSError as exc:
         exit_code = 127
         stdout = ""
         stderr = str(exc)
+        Path(transcript).write_text(stderr, encoding="utf-8")
 
     if log_path is not None:
         _write_command_log(
@@ -151,9 +162,6 @@ def run_codex_lane(
             stderr=stderr,
             exit_code=exit_code,
         )
-    if not Path(transcript).exists():
-        Path(transcript).write_text((stdout or "") + (stderr or ""), encoding="utf-8")
-
     after = _snapshot(repo)
     touched_files = _diff_touched(before, after)
     command_receipt: dict[str, Any] = {
@@ -185,13 +193,10 @@ def _self_test() -> None:
         fake.write_text(
             "#!/bin/sh\n"
             "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
-            "out=\"\"\n"
-            "while [ $# -gt 0 ]; do\n"
-            "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
-            "  shift\n"
-            "done\n"
-            ": > \"$out\"\n"
-            "echo done >> \"$out\"\n"
+            "while [ $# -gt 0 ]; do shift; done\n"
+            "cat >/dev/null\n"
+            "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
+            "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"message\",\"text\":\"done\"}}'\n"
             "exit 0\n",
             encoding="utf-8",
         )
@@ -202,10 +207,13 @@ def _self_test() -> None:
             prompt="self test",
             codex_binary=str(fake),
             transcript_path=str(transcript),
+            sandbox_mode="read-only",
         )
         if result.runner_kind != "codex-cli":
             raise AssertionError("codex adapter must emit runner_kind=codex-cli")
         if "exec" not in result.invocation:
             raise AssertionError("codex invocation must use exec")
+        if "--json" not in result.invocation:
+            raise AssertionError("codex invocation must request JSONL events")
         if not transcript.exists():
             raise AssertionError("codex transcript must be written")

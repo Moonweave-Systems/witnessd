@@ -61,6 +61,7 @@ def _run_adapter(
     opencode_binary: str,
     timeout_seconds: int,
     codex_env: dict[str, str] | None = None,
+    allowed_touched_files: list[str] | None = None,
 ) -> Any:
     if adapter == "codex":
         return run_codex_lane(
@@ -72,6 +73,7 @@ def _run_adapter(
             log_path=log_path,
             timeout_seconds=timeout_seconds,
             env=codex_env,
+            allowed_touched_files=allowed_touched_files,
         )
     if adapter == "claude":
         return run_claude_lane(
@@ -230,6 +232,7 @@ def run_adapter_lane(
             opencode_binary=opencode_binary,
             timeout_seconds=timeout_seconds,
             codex_env=codex_env,
+            allowed_touched_files=allowed_touched_files,
         )
         diff_patch = _git_diff_patch(worktree, adapter_result.touched_files)
         allowed_for_manifest = (
