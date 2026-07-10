@@ -174,6 +174,18 @@ class TestDeponeReplicaConformance(unittest.TestCase):
 
             self.assertEqual(build_codex_local_capability(**kwargs), depone_receipt)
 
+    def test_codex_capability_blocks_when_git_head_unknown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+
+            receipt = build_codex_local_capability(
+                repo=repo,
+                codex_binary="definitely-missing-codex",
+            )
+
+            self.assertIn("git HEAD unknown", receipt["blocked_reasons"])
+
 
 if __name__ == "__main__":
     unittest.main()
