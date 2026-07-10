@@ -18,6 +18,7 @@ class TestAdapterBase(unittest.TestCase):
 
     def test_claude_opencode_manual_until_extension(self):
         self.assertEqual(RUNNER_KIND_BY_ADAPTER["claude"], "manual")
+        self.assertEqual(RUNNER_KIND_BY_ADAPTER["agy"], "manual")
         self.assertEqual(RUNNER_KIND_BY_ADAPTER["opencode"], "manual")
 
     def test_all_mapped_kinds_in_depone_valid_runners(self):
