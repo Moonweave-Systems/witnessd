@@ -70,7 +70,13 @@ def diff_snapshots(before: Baseline, after: Baseline) -> list[ChangeRecord]:
 
 
 def touched_files(changes: list[ChangeRecord]) -> list[str]:
-    return sorted({record["path"] for record in changes})
+    return sorted(
+        {
+            record["path"]
+            for record in changes
+            if record.get("file_type") != "dir"
+        }
+    )
 
 
 def _snapshot_record(path: Path, st: os.stat_result) -> SnapshotRecord:
