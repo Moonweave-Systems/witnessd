@@ -4,6 +4,7 @@ import unittest
 
 from witnessd.signing import (
     ERR_OPENSSL_UNAVAILABLE,
+    ERR_OPERATOR_KEY_CONFLICT,
     DsseSigningError,
     gen_operator_keypair,
     sign_dsse,
@@ -60,6 +61,7 @@ class TestSign(unittest.TestCase):
 
     def test_error_codes_exposed(self):
         self.assertEqual(ERR_OPENSSL_UNAVAILABLE, "ERR_OPENSSL_UNAVAILABLE")
+        self.assertEqual(ERR_OPERATOR_KEY_CONFLICT, "ERR_OPERATOR_KEY_CONFLICT")
 
 
 if __name__ == "__main__":

@@ -66,10 +66,11 @@ class Phase0AdversarialQaTests(unittest.TestCase):
             private_path, public_path = gen_operator_keypair(key_dir)
             public_key = Path(public_path).read_bytes()
 
-            with self.assertRaises(Exception):
-                gen_operator_keypair(key_dir)
+            second_private_path, second_public_path = gen_operator_keypair(key_dir)
 
             self.assertEqual(private_path, str(Path(key_dir) / "operator-ed25519.pem"))
+            self.assertEqual(second_private_path, private_path)
+            self.assertEqual(second_public_path, public_path)
             self.assertEqual(public_key, Path(public_path).read_bytes())
 
     @unittest.expectedFailure

@@ -21,6 +21,7 @@ from typing import Any
 
 ERR_OPENSSL_UNAVAILABLE = "ERR_OPENSSL_UNAVAILABLE"
 ERR_DSSE_SIGN_FAILED = "ERR_DSSE_SIGN_FAILED"
+ERR_OPERATOR_KEY_CONFLICT = "ERR_OPERATOR_KEY_CONFLICT"
 DEFAULT_OPERATOR_KEY_ID = "witnessd-operator-2026q3"
 
 
@@ -59,10 +60,19 @@ def dsse_pae(payload_type: str, payload: bytes) -> bytes:
 
 
 def gen_operator_keypair(out_dir: str) -> tuple[str, str]:
-    """Generate an ephemeral Ed25519 keypair, returning (private_path, public_path)."""
+    """Generate or reuse the persistent operator Ed25519 keypair."""
     openssl = _require_openssl()
     private_key = os.path.join(out_dir, "operator-ed25519.pem")
     public_key = os.path.join(out_dir, "operator-ed25519.pub.pem")
+    private_exists = os.path.exists(private_key)
+    public_exists = os.path.exists(public_key)
+    if private_exists and public_exists:
+        return private_key, public_key
+    if private_exists or public_exists:
+        raise DsseSigningError(
+            ERR_OPERATOR_KEY_CONFLICT,
+            "operator keypair is partially present; refusing to overwrite",
+        )
     for command in (
         [openssl, "genpkey", "-algorithm", "Ed25519", "-out", private_key],
         [openssl, "pkey", "-in", private_key, "-pubout", "-out", public_key],
@@ -73,6 +83,7 @@ def gen_operator_keypair(out_dir: str) -> tuple[str, str]:
                 result.stderr or result.stdout or "openssl keygen failed"
             ).strip()
             raise DsseSigningError(ERR_DSSE_SIGN_FAILED, message)
+    os.chmod(private_key, 0o600)
     return private_key, public_key
 
 
