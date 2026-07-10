@@ -30,7 +30,7 @@ from witnessd.capture import build_capture_manifest
 from witnessd.eventlog import EventLog
 from witnessd.observer import build_observer_capture
 from witnessd.provenance import build_signed_trusted_observer_provenance
-from witnessd.signing import DEFAULT_OPERATOR_KEY_ID
+from witnessd.signing import DEFAULT_OPERATOR_KEY_ID, derive_public_key_id
 from witnessd.substrate import build_bundle, build_evidence_contract, build_otel_spans
 
 TRUSTED_PUBLIC_KEY_ENV = "DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"
@@ -113,6 +113,8 @@ def emit_lane_evidence(
     """
     if _is_inside_or_equal(public_key_path, evidence_dir):
         raise EmitterError("ERR_TRUST_ROOT_NOT_SEPARATED")
+    if key_id == DEFAULT_OPERATOR_KEY_ID:
+        key_id = derive_public_key_id(public_key_path)
 
     os.makedirs(evidence_dir, exist_ok=True)
     os.environ[TRUSTED_PUBLIC_KEY_ENV] = os.path.abspath(public_key_path)

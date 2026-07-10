@@ -146,7 +146,7 @@ def write_rotation_record(
 
 
 def emit_canary_bundle(*, keys_dir: str | Path, out_dir: str | Path) -> Path:
-    from witnessd.signing import DEFAULT_OPERATOR_KEY_ID
+    from witnessd.signing import DEFAULT_OPERATOR_KEY_ID, derive_public_key_id
     from witnessd.substrate import build_bundle
 
     keys = Path(keys_dir)
@@ -155,12 +155,13 @@ def emit_canary_bundle(*, keys_dir: str | Path, out_dir: str | Path) -> Path:
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     canary_path = out_path / CANARY_RECORD_NAME
+    key_id = derive_public_key_id(str(public_key))
     canary = {
         "kind": CANARY_KIND,
         "schema_version": SCHEMA_VERSION,
         "rollout_stage": ROLLOUT_STAGE,
         "created_at": utc_now(),
-        "key_id": DEFAULT_OPERATOR_KEY_ID,
+        "key_id": key_id,
         "public_key_path": str(public_key),
     }
     canary_path.write_text(json.dumps(canary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -177,7 +178,7 @@ def emit_canary_bundle(*, keys_dir: str | Path, out_dir: str | Path) -> Path:
         {"operator-key-rotation-canary": str(canary_path)},
         str(private_key),
         str(public_key),
-        key_id=DEFAULT_OPERATOR_KEY_ID,
+        key_id=key_id,
     )
     bundle_path = out_path / CANARY_BUNDLE_NAME
     bundle_path.write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")

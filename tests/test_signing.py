@@ -6,6 +6,7 @@ from witnessd.signing import (
     ERR_OPENSSL_UNAVAILABLE,
     ERR_OPERATOR_KEY_CONFLICT,
     DsseSigningError,
+    derive_public_key_id,
     gen_operator_keypair,
     sign_dsse,
 )
@@ -48,6 +49,14 @@ class TestSign(unittest.TestCase):
             record = env["signatures"][0]
             self.assertEqual(record["keyid"], "op1")
             base64.b64decode(record["sig"].encode("ascii"), validate=True)
+
+    def test_public_key_id_is_sha256_fingerprint(self):
+        with tempfile.TemporaryDirectory() as d:
+            _priv, pub = gen_operator_keypair(d)
+
+            key_id = derive_public_key_id(pub)
+
+            self.assertRegex(key_id, r"^sha256:[0-9a-f]{64}$")
 
     def test_empty_key_id_rejected(self):
         with tempfile.TemporaryDirectory() as d:

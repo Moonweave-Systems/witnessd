@@ -13,6 +13,7 @@ Runtime is stdlib-only; the crypto is shelled out to `openssl`.
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
 import shutil
 import subprocess
@@ -85,6 +86,12 @@ def gen_operator_keypair(out_dir: str) -> tuple[str, str]:
             raise DsseSigningError(ERR_DSSE_SIGN_FAILED, message)
     os.chmod(private_key, 0o600)
     return private_key, public_key
+
+
+def derive_public_key_id(public_key_path: str) -> str:
+    """Return the operator key id as a SHA-256 fingerprint of the public key."""
+    with open(public_key_path, "rb") as handle:
+        return "sha256:" + hashlib.sha256(handle.read()).hexdigest()
 
 
 def _decode_payload(envelope: dict[str, Any]) -> tuple[str, bytes]:
