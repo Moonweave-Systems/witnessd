@@ -41,9 +41,6 @@ class EventLog:
         checkpoint = self._load_checkpoint()
         if checkpoint is None:
             existing = self.read()
-            self._set_state_from_records(existing)
-            if existing:
-                self._write_checkpoint(existing[-1])
             return
         self._seq = int(checkpoint["seq"]) + 1
         self._prev_event_hash = str(checkpoint["event_hash"])
@@ -62,8 +59,8 @@ class EventLog:
             record["event_hash"] = canonical_hash(
                 {key: value for key, value in record.items() if key != "event_hash"}
             )
-            self._append_record(record)
-            self._write_checkpoint(record)
+            offset = self._append_record(record)
+            self._write_checkpoint(record, offset=offset)
             if fcntl is not None:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         self._seq = record["seq"] + 1
@@ -71,27 +68,16 @@ class EventLog:
         return record
 
     def read(self) -> list[dict[str, Any]]:
-        records: list[dict[str, Any]] = []
-        try:
-            with open(self.path, "r", encoding="utf-8") as handle:
-                for line in handle:
-                    if line.strip():
-                        records.append(json.loads(line))
-        except FileNotFoundError:
-            return []
-        verification = verify_runlog(records)
-        if not verification["ok"]:
-            raise EventLogIntegrityError(verification["broken_at"])
+        records, offset = self._read_verified_records_with_offset()
         self._set_state_from_records(records)
         if records:
-            self._write_checkpoint(records[-1])
+            self._write_checkpoint(records[-1], offset=offset)
         return records
 
     def _checkpoint_for_append(self) -> dict[str, Any] | None:
         checkpoint = self._load_checkpoint()
         if checkpoint is None:
-            records = self.read()
-            return self._checkpoint_from_record(records[-1]) if records else None
+            return self._rebuild_checkpoint_from_file()
 
         try:
             current_size = os.path.getsize(self.path)
@@ -101,8 +87,7 @@ class EventLog:
             raise EventLogIntegrityError(None)
 
         if current_size != int(checkpoint["offset"]):
-            records = self.read()
-            return self._checkpoint_from_record(records[-1]) if records else None
+            return self._rebuild_checkpoint_from_file()
 
         last_record = _read_last_record(self.path)
         if last_record is None:
@@ -119,6 +104,14 @@ class EventLog:
         ):
             raise EventLogIntegrityError(int(checkpoint["seq"]))
         return checkpoint
+
+    def _rebuild_checkpoint_from_file(self) -> dict[str, Any] | None:
+        records, offset = self._read_verified_records_with_offset()
+        self._set_state_from_records(records)
+        if not records:
+            return None
+        self._write_checkpoint(records[-1], offset=offset)
+        return self._checkpoint_from_record(records[-1], offset=offset)
 
     def _checkpoint_path(self) -> str:
         digest = canonical_hash(os.path.abspath(self.path))[:32]
@@ -147,30 +140,50 @@ class EventLog:
             raise EventLogIntegrityError(None)
         return checkpoint
 
-    def _write_checkpoint(self, record: dict[str, Any]) -> None:
-        checkpoint = self._checkpoint_from_record(record)
+    def _write_checkpoint(self, record: dict[str, Any], *, offset: int) -> None:
+        checkpoint = self._checkpoint_from_record(record, offset=offset)
         checkpoint["checkpoint_hash"] = canonical_hash(checkpoint)
         _atomic_write_json(self._checkpoint_path(), checkpoint)
 
-    def _checkpoint_from_record(self, record: dict[str, Any]) -> dict[str, Any]:
+    def _checkpoint_from_record(self, record: dict[str, Any], *, offset: int) -> dict[str, Any]:
         return {
             "schema_version": self.CHECKPOINT_SCHEMA_VERSION,
             "kind": "witnessd-eventlog-checkpoint",
             "path": os.path.abspath(self.path),
-            "offset": os.path.getsize(self.path),
+            "offset": offset,
             "seq": int(record.get("seq", -1)),
             "event_hash": record.get("event_hash"),
         }
 
-    def _append_record(self, record: dict[str, Any]) -> None:
+    def _append_record(self, record: dict[str, Any]) -> int:
         directory = os.path.dirname(os.path.abspath(self.path))
         os.makedirs(directory, exist_ok=True)
-        with open(self.path, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, sort_keys=True, separators=(",", ":")))
-            handle.write("\n")
+        payload = (
+            json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode("utf-8")
+        with open(self.path, "ab") as handle:
+            handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
+            offset = handle.tell()
         _fsync_directory(directory)
+        return offset
+
+    def _read_verified_records_with_offset(self) -> tuple[list[dict[str, Any]], int]:
+        records: list[dict[str, Any]] = []
+        offset = 0
+        try:
+            with open(self.path, "rb") as handle:
+                for line in handle:
+                    offset += len(line)
+                    if line.strip():
+                        records.append(json.loads(line.decode("utf-8")))
+        except FileNotFoundError:
+            return [], 0
+        verification = verify_runlog(records)
+        if not verification["ok"]:
+            raise EventLogIntegrityError(verification["broken_at"])
+        return records, offset
 
     def _set_state_from_records(self, records: list[dict[str, Any]]) -> None:
         if not records:
