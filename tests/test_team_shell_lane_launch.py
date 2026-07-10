@@ -15,6 +15,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from depone.agent_fabric.agent_operating_contract import build_agent_operating_contract
 
@@ -22,6 +23,7 @@ from witnessd.team_shell_lane_launch import (
     TEAM_SHELL_LANE_LAUNCH_KIND,
     TeamShellLaneLaunchError,
     _canonical_hash,
+    _repo_root,
     run_shell_lane_command,
 )
 
@@ -304,6 +306,37 @@ class TeamShellLaneLaunchTests(unittest.TestCase):
             self.assertTrue(receipt["boundary"]["uses_shell"])
             self.assertFalse(receipt["boundary"]["launches_agents"])
             self.assertEqual(receipt["deprecation"]["migration_target"], "witnessd")
+
+    def test_repo_root_prefers_witnessd_depone_root_over_cwd_and_sibling(self) -> None:
+        # In CI, Depone is cloned to $RUNNER_TEMP/depone: neither cwd nor
+        # a "../depone" sibling of the witnessd checkout. Only the
+        # WITNESSD_DEPONE_ROOT env var (the convention every other
+        # cross-repo test/script in this repo already uses) can find it.
+        with tempfile.TemporaryDirectory() as tmp:
+            depone_like = Path(tmp) / "depone"
+            registry = {
+                "roles": [
+                    {
+                        "id": "worker",
+                        "purpose": "test worker",
+                        "allowed_tools": ["read"],
+                        "output_schema": "worker-result-v1",
+                        "evidence_obligations": ["files", "commands", "tests"],
+                        "trust_boundary": "untrusted until reviewed",
+                    }
+                ]
+            }
+            contract = build_agent_operating_contract(registry)
+            (depone_like / "packaging").mkdir(parents=True)
+            (
+                depone_like / "packaging" / "depone-agent-operating-contract.json"
+            ).write_text(json.dumps(contract), encoding="utf-8")
+            (depone_like / "packaging" / "dwm-roles.json").write_text(
+                json.dumps(registry), encoding="utf-8"
+            )
+
+            with patch.dict("os.environ", {"WITNESSD_DEPONE_ROOT": str(depone_like)}):
+                self.assertEqual(_repo_root(), depone_like)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -148,7 +149,9 @@ def run_shell_lane_command(
 
 def _repo_root() -> Path:
     source_root = Path(__file__).resolve().parents[1]
+    env_root = os.environ.get("WITNESSD_DEPONE_ROOT")
     candidates = [
+        *([Path(env_root)] if env_root else []),
         Path.cwd(),
         source_root,
         source_root.parent / "depone",
