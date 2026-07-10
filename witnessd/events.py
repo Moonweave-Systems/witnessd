@@ -125,6 +125,43 @@ def normalize_gemini_jsonl_events(
     return envelopes
 
 
+def normalize_agy_text_events(
+    raw_text: bytes,
+    *,
+    provider_version: str | None = None,
+) -> list[AgentEventEnvelope]:
+    if not raw_text.strip():
+        return []
+    decoded = raw_text.decode("utf-8", errors="replace")
+    payload = {"type": "agent_message.final", "text": decoded}
+    return [
+        {
+            "schema": AGENT_EVENT_SCHEMA_V1,
+            "seq": 0,
+            "wall_time": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "monotonic_ns": time.monotonic_ns(),
+            "provider": "google-antigravity",
+            "provider_version": provider_version,
+            "thread_id": None,
+            "turn_id": None,
+            "item_id": None,
+            "event_type": "message.completed",
+            "raw_event_sha256": hashlib.sha256(raw_text).hexdigest(),
+            "payload_sha256": _payload_hash(payload),
+            "prev_event_hash": None,
+            "redaction_manifest_ref": None,
+        }
+    ]
+
+
+def normalize_agy_jsonl_events(
+    raw_jsonl: bytes,
+    *,
+    provider_version: str | None = None,
+) -> list[AgentEventEnvelope]:
+    return normalize_agy_text_events(raw_jsonl, provider_version=provider_version)
+
+
 def encode_agent_event_jsonl(events: list[AgentEventEnvelope]) -> bytes:
     return b"".join(
         json.dumps(event, sort_keys=True, separators=(",", ":")).encode("utf-8")

@@ -38,7 +38,7 @@ ROLE_LANE_PLAN_BINDING_KIND = "orro-role-lane-plan-binding"
 ROLE_LANE_PLAN_BINDING_SCHEMA_VERSION = "0.1"
 ROLE_DISPATCH_KIND = "orro-role-dispatch"
 ROLE_DISPATCH_SCHEMA_VERSION = "0.1"
-ROLE_LANE_ADAPTERS = ("shell", "codex", "claude", "gemini", "opencode")
+ROLE_LANE_ADAPTERS = ("shell", "codex", "claude", "agy", "gemini", "opencode")
 
 FORBIDDEN_ASSURANCE_SOURCES = [
     "skill text",
@@ -168,7 +168,7 @@ def compile_role_lane_plan(
                 and role.get("may_execute") is True
             ):
                 lanes.append(_role_lane_from_role(role, workflow_plan, lane_adapter))
-    elif profile == "review-only" and lane_adapter == "gemini":
+    elif profile == "review-only" and lane_adapter in {"agy", "gemini"}:
         for role in workflow_plan["roles"]:
             if isinstance(role, dict) and role.get("role_id") == "reviewer":
                 lanes.append(_review_lane_from_role(role, workflow_plan, lane_adapter))
@@ -599,7 +599,7 @@ def _validate_role_lane(lane: Any) -> None:
         if lane.get("may_execute") is not True or lane.get("may_verify") is not False:
             raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane execution boundary is invalid")
     else:
-        if lane.get("adapter") != "gemini" or lane.get("may_execute") is not False or lane.get("may_verify") is not False:
+        if lane.get("adapter") not in {"agy", "gemini"} or lane.get("may_execute") is not False or lane.get("may_verify") is not False:
             raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane review boundary is invalid")
     if lane.get("raises_assurance") is not False:
         raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane must not claim assurance")

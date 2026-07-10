@@ -379,6 +379,8 @@ def _role_lane_plan_team_specs(
             "budget": dict(lane["budget"]),
             "codex_binary": args.codex_binary,
             "claude_binary": args.claude_binary,
+            "agy_binary": args.agy_binary,
+            "gemini_binary": args.gemini_binary,
             "opencode_binary": args.opencode_binary,
         }
         specs.append(spec)
@@ -412,6 +414,7 @@ def _cmd_run_adapter(args: argparse.Namespace) -> int:
             predicted_usd=args.predicted_usd,
             codex_binary=args.codex_binary,
             claude_binary=args.claude_binary,
+            agy_binary=args.agy_binary,
             gemini_binary=args.gemini_binary,
             opencode_binary=args.opencode_binary,
             allowed_touched_files=list(args.allow or []),
@@ -587,6 +590,8 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                 predicted_usd=args.predicted_usd,
                 codex_binary=args.codex_binary,
                 claude_binary=args.claude_binary,
+                agy_binary=args.agy_binary,
+                gemini_binary=args.gemini_binary,
                 opencode_binary=args.opencode_binary,
                 evidence_dir=draft_out,
                 state_root=draft_root,
@@ -2602,7 +2607,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     team_plan_run.add_argument(
         "--lane-adapter",
-        choices=["shell", "codex", "claude", "opencode"],
+        choices=["shell", "codex", "claude", "agy", "gemini", "opencode"],
         default="shell",
     )
     team_plan_run.add_argument("--tier", default="agentic")
@@ -2613,6 +2618,8 @@ def _build_parser() -> argparse.ArgumentParser:
     team_plan_run.add_argument("--codex-auth-source", default="~/.codex/auth.json")
     team_plan_run.add_argument("--codex-binary", default="codex")
     team_plan_run.add_argument("--claude-binary", default="claude")
+    team_plan_run.add_argument("--agy-binary", default="agy")
+    team_plan_run.add_argument("--gemini-binary", default="gemini")
     team_plan_run.add_argument("--opencode-binary", default="opencode")
     team_plan_run.add_argument("--max-parallel", type=int, default=None)
     team_plan_run.add_argument("--fail-fast", action="store_true")
@@ -2751,13 +2758,15 @@ def _add_plan_args(plan: argparse.ArgumentParser) -> None:
     plan.add_argument("goal")
     plan.add_argument("--root", default=".")
     plan.add_argument("--seed", default="w11")
-    plan.add_argument("--draft-adapter", choices=["codex", "claude", "opencode"])
+    plan.add_argument("--draft-adapter", choices=["codex", "claude", "agy", "gemini", "opencode"])
     plan.add_argument("--draft-out", default=None)
     plan.add_argument(
         "--tier", default="agentic", choices=["quick", "agentic", "frontier"]
     )
     plan.add_argument("--codex-binary", default="codex")
     plan.add_argument("--claude-binary", default="claude")
+    plan.add_argument("--agy-binary", default="agy")
+    plan.add_argument("--gemini-binary", default="gemini")
     plan.add_argument("--opencode-binary", default="opencode")
     plan.add_argument("--max-tokens", type=int, default=10**9)
     plan.add_argument("--max-usd", type=float, default=10**9)
@@ -2779,7 +2788,7 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
     run.add_argument(
         "--adapter",
         default="shell",
-        choices=["shell", "codex", "claude", "gemini", "opencode"],
+        choices=["shell", "codex", "claude", "agy", "gemini", "opencode"],
     )
     run.add_argument("--root", default=".")
     run.add_argument("--runner-sandbox", default=None)
@@ -2795,6 +2804,7 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
     )
     run.add_argument("--codex-binary", default="codex")
     run.add_argument("--claude-binary", default="claude")
+    run.add_argument("--agy-binary", default="agy")
     run.add_argument("--gemini-binary", default="gemini")
     run.add_argument("--opencode-binary", default="opencode")
     run.add_argument("--max-tokens", type=int, default=10**9)
@@ -2823,7 +2833,7 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
     flowplan.add_argument(
         "--lane-adapter",
         default="shell",
-        choices=["shell", "codex", "claude", "gemini", "opencode"],
+        choices=["shell", "codex", "claude", "agy", "gemini", "opencode"],
     )
     flowplan.add_argument("--json", action="store_true")
     flowplan.set_defaults(
@@ -2832,6 +2842,8 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
         tier="agentic",
         codex_binary="codex",
         claude_binary="claude",
+        agy_binary="agy",
+        gemini_binary="gemini",
         opencode_binary="opencode",
         max_tokens=10**9,
         max_usd=10**9,

@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 from witnessd.adapters.claude import run_claude_lane
 from witnessd.adapters.codex import run_codex_lane
+from witnessd.adapters.agy import run_agy_review_lane
 from witnessd.adapters.gemini import run_gemini_review_lane
 from witnessd.adapters.opencode import run_opencode_lane
 from witnessd.budget import BudgetExceededError, CostBreaker
@@ -73,6 +74,7 @@ def _run_adapter(
     log_path: str,
     codex_binary: str,
     claude_binary: str,
+    agy_binary: str,
     gemini_binary: str,
     opencode_binary: str,
     timeout_seconds: int,
@@ -99,6 +101,16 @@ def _run_adapter(
             prompt=prompt,
             claude_binary=claude_binary,
             transcript_path=transcript_path,
+            log_path=log_path,
+            timeout_seconds=timeout_seconds,
+        )
+    if adapter == "agy":
+        return run_agy_review_lane(
+            sandbox=sandbox,
+            prompt=prompt,
+            agy_binary=agy_binary,
+            transcript_path=transcript_path,
+            review_receipt_path=str(Path(transcript_path).with_name("review-receipt.json")),
             log_path=log_path,
             timeout_seconds=timeout_seconds,
         )
@@ -176,6 +188,7 @@ def run_adapter_lane(
     depth: int = 1,
     codex_binary: str = "codex",
     claude_binary: str = "claude",
+    agy_binary: str = "agy",
     gemini_binary: str = "gemini",
     opencode_binary: str = "opencode",
     timeout_seconds: int = 120,
@@ -197,6 +210,7 @@ def run_adapter_lane(
             repo=worktree,
             codex_binary=codex_binary,
             claude_binary=claude_binary,
+            agy_binary=agy_binary,
             gemini_binary=gemini_binary,
             opencode_binary=opencode_binary,
             require_ready=True,
@@ -306,6 +320,7 @@ def run_adapter_lane(
             log_path=str(log_path),
             codex_binary=codex_binary,
             claude_binary=claude_binary,
+            agy_binary=agy_binary,
             gemini_binary=gemini_binary,
             opencode_binary=opencode_binary,
             timeout_seconds=timeout_seconds,
