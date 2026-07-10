@@ -123,6 +123,7 @@ class Phase0AdversarialQaTests(unittest.TestCase):
                     )
                 elapsed = time.perf_counter() - started
                 records = EventLog(str(path)).read()
+                checkpoint_exists = os.path.exists(EventLog(str(path))._checkpoint_path())
             self.assertEqual(len(records), event_count)
             self.assertEqual(verify_runlog(records), {"ok": True, "broken_at": None})
             bench.append(
@@ -130,16 +131,20 @@ class Phase0AdversarialQaTests(unittest.TestCase):
                     "events": event_count,
                     "seconds": round(elapsed, 6),
                     "us_per_append": round(elapsed / event_count * 1_000_000, 2),
+                    "checkpoint": checkpoint_exists,
                 }
             )
 
         result = {
             "case": "QA-08 EventLog append scaling",
             "expected_secure_behavior": "near O(1) append or bounded checkpoint verification",
-            "observed": {"bench": bench},
-            "finding": "WARN",
+            "observed": {
+                "bench": bench,
+                "checkpoint": all(row["checkpoint"] for row in bench),
+            },
+            "finding": "PASS" if all(row["checkpoint"] for row in bench) else "WARN",
         }
-        self.assertEqual(result["finding"], "WARN")
+        self.assertEqual(result["finding"], "PASS")
         self.assertEqual([row["events"] for row in bench], [8, 16, 32])
 
     def test_phase0_codex_write_requires_predeclared_allowed_paths(self) -> None:

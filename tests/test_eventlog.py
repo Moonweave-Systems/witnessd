@@ -2,6 +2,7 @@ import multiprocessing
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from witnessd.eventlog import EventLog
 from witnessd.runlog import verify_runlog
@@ -53,6 +54,22 @@ class TestEventLog(unittest.TestCase):
             self.assertEqual(len(records), 120)
             self.assertEqual([record["seq"] for record in records], list(range(120)))
             self.assertEqual(verify_runlog(records), {"ok": True, "broken_at": None})
+
+    def test_append_uses_checkpoint_without_full_runlog_scan(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "runlog.jsonl")
+            EventLog(path).append({"kind": "witnessd-runlog-event", "event": "seed"})
+
+            with mock.patch.object(EventLog, "read", side_effect=AssertionError("full scan")):
+                record = EventLog(path).append(
+                    {"kind": "witnessd-runlog-event", "event": "fast-append"}
+                )
+
+            self.assertEqual(record["seq"], 1)
+            records = EventLog(path).read()
+            self.assertEqual([event["event"] for event in records], ["seed", "fast-append"])
+            self.assertEqual(verify_runlog(records), {"ok": True, "broken_at": None})
+            self.assertTrue(os.path.exists(EventLog(path)._checkpoint_path()))
 
 
 if __name__ == "__main__":
