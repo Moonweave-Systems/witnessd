@@ -63,8 +63,12 @@ def _stored_provenance_evidence_path() -> str:
 def _stored_adapter_transcript_binding() -> str:
     command_log = _load(FIX / "adapter-command.json")
     invocation = command_log["command"]
-    output_index = invocation.index("--output-last-message")
-    return str(invocation[output_index + 1])
+    if "--output-last-message" in invocation:
+        output_index = invocation.index("--output-last-message")
+        return str(invocation[output_index + 1])
+    if "--json" in invocation:
+        return _expected_adapter_transcript_binding()
+    return ""
 
 
 def w10_fixture_uses_portable_internal_paths() -> bool:
@@ -166,7 +170,16 @@ def _assert_runner_receipt() -> dict[str, Any]:
     )
     invocation = receipt.get("invocation", [])
     _require("exec" in invocation, "W10 codex invocation must use exec")
-    _require("--output-last-message" in invocation, "W10 codex invocation must record transcript")
+    if "--json" in invocation:
+        _require(
+            "--output-last-message" not in invocation,
+            "W10 JSON codex invocation must not use legacy transcript flag",
+        )
+    else:
+        _require(
+            "--output-last-message" in invocation,
+            "legacy W10 codex invocation must record transcript",
+        )
     return receipt
 
 
@@ -257,8 +270,7 @@ def _assert_auxiliary_command_and_transcript() -> None:
     _require(command_log["cwd"] == receipt["worktree"], "W10 adapter command cwd must match runner receipt worktree")
     _require(command_log["exit_code"] == receipt["exit_code"], "W10 adapter command exit must match runner receipt")
     invocation = command_log["command"]
-    output_index = invocation.index("--output-last-message")
-    stored_transcript = str(invocation[output_index + 1])
+    stored_transcript = _stored_adapter_transcript_binding()
     expected_transcript = (
         str(transcript)
         if Path(stored_transcript).is_absolute()
