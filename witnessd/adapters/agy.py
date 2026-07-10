@@ -6,6 +6,7 @@ import errno
 import hashlib
 import json
 import os
+import re
 import select
 import subprocess
 import time
@@ -20,9 +21,21 @@ from witnessd.adapters.base import (
     _resolve_executable,
 )
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
-from witnessd.events import encode_agent_event_jsonl, normalize_agy_jsonl_events
+from witnessd.events import encode_agent_event_jsonl, normalize_agy_text_events
 
 _OUTPUT_LIMIT = 4096
+_FORBIDDEN_FLAGS = frozenset(
+    {
+        "--dangerously-skip-permissions",
+        "--approval-mode",
+        "--output-format",
+    }
+)
+_FINDING_RE = re.compile(
+    r"^(?P<severity>low|medium|high|critical)\s+"
+    r"(?P<file>\S+?):(?P<line>\d+)\s+(?P<summary>.+)$",
+    re.IGNORECASE,
+)
 
 
 class AgyAdapterError(AdapterExecutionError):
@@ -37,7 +50,20 @@ class AgyCLIAdapter:
 
     def compile_invocation(self, intent: RunIntent) -> list[str]:
         prompt = str(intent.get("prompt", "-"))
-        return _agy_invocation(self.agy_binary, prompt)
+        print_timeout = intent.get("print_timeout")
+        model = intent.get("model")
+        add_dirs = intent.get("add_dirs")
+        return _agy_invocation(
+            self.agy_binary,
+            prompt,
+            print_timeout=str(print_timeout) if print_timeout is not None else None,
+            model=str(model) if model is not None else None,
+            add_dirs=(
+                [str(item) for item in add_dirs]
+                if isinstance(add_dirs, list)
+                else None
+            ),
+        )
 
     def run(self, intent: RunIntent, sandbox: str) -> RawRun:
         invocation = self.compile_invocation(intent)
@@ -65,7 +91,7 @@ class AgyCLIAdapter:
         )
 
     def normalize(self, raw: RawRun):
-        return normalize_agy_jsonl_events(raw.raw_events)
+        return normalize_agy_text_events(raw.raw_events)
 
     def effective_policy(self, raw: RawRun) -> dict[str, Any]:
         return {"mode": "plan", "output_format": "unconfirmed", "transport": "pty"}
@@ -82,19 +108,39 @@ def _agy_invocation(
     agy_binary: str,
     prompt: str,
     *,
-    output_args: list[str] | None = None,
-    sandbox_args: list[str] | None = None,
+    print_timeout: str | None = None,
+    model: str | None = None,
+    add_dirs: list[str] | None = None,
     extra_args: list[str] | None = None,
 ) -> list[str]:
-    invocation = [_agy_binary(agy_binary), "--mode", "plan"]
-    if sandbox_args:
-        invocation.extend(sandbox_args)
-    if output_args:
-        invocation.extend(output_args)
+    _validate_extra_args(extra_args)
+    invocation = [_agy_binary(agy_binary), "-p", prompt, "--mode", "plan", "--sandbox"]
+    if print_timeout:
+        invocation.extend(["--print-timeout", print_timeout])
+    if model:
+        invocation.extend(["--model", model])
+    for directory in add_dirs or []:
+        invocation.extend(["--add-dir", directory])
     if extra_args:
         invocation.extend(extra_args)
-    invocation.extend(["-p", prompt])
     return invocation
+
+
+def _validate_extra_args(extra_args: list[str] | None) -> None:
+    args = list(extra_args or [])
+    for index, arg in enumerate(args):
+        if arg in _FORBIDDEN_FLAGS:
+            raise AgyAdapterError(
+                "ERR_AGY_FORBIDDEN_FLAG",
+                f"agy review lane forbids {arg}",
+            )
+        if arg == "--mode":
+            value = args[index + 1] if index + 1 < len(args) else ""
+            if value != "plan":
+                raise AgyAdapterError(
+                    "ERR_AGY_FORBIDDEN_FLAG",
+                    "agy review lane requires --mode plan",
+                )
 
 
 def _merged_env(env: dict[str, str] | None) -> dict[str, str] | None:
@@ -176,8 +222,20 @@ def _extract_findings(raw_output: bytes) -> list[dict[str, Any]]:
     for raw_line in raw_output.splitlines():
         if not raw_line.strip():
             continue
+        decoded_line = raw_line.decode("utf-8", errors="replace").strip()
+        match = _FINDING_RE.match(decoded_line)
+        if match is not None:
+            findings.append(
+                {
+                    "severity": match.group("severity").lower(),
+                    "file": match.group("file"),
+                    "line": int(match.group("line")),
+                    "summary": match.group("summary"),
+                }
+            )
+            continue
         try:
-            payload = json.loads(raw_line.decode("utf-8"))
+            payload = json.loads(decoded_line)
         except (UnicodeDecodeError, json.JSONDecodeError):
             continue
         if not isinstance(payload, dict):
@@ -213,6 +271,7 @@ def _write_review_receipt(
         "can_change_evidence_verdict": False,
         "invocation": invocation,
         "raw_output_sha256": hashlib.sha256(raw_output).hexdigest(),
+        "raw_output_text": raw_output.decode("utf-8", errors="replace"),
         "findings": findings,
     }
     target = Path(path)
@@ -295,8 +354,9 @@ def run_agy_review_lane(
     log_path: str | None = None,
     timeout_seconds: int = 120,
     env: dict[str, str] | None = None,
-    output_args: list[str] | None = None,
-    sandbox_args: list[str] | None = None,
+    print_timeout: str | None = None,
+    model: str | None = None,
+    add_dirs: list[str] | None = None,
     extra_args: list[str] | None = None,
 ) -> AdapterResult:
     if not prompt.strip():
@@ -316,8 +376,9 @@ def run_agy_review_lane(
     invocation = _agy_invocation(
         agy_binary,
         prompt,
-        output_args=output_args,
-        sandbox_args=sandbox_args,
+        print_timeout=print_timeout,
+        model=model,
+        add_dirs=add_dirs,
         extra_args=extra_args,
     )
 
@@ -341,7 +402,7 @@ def run_agy_review_lane(
         stderr = str(exc)
         Path(transcript).write_bytes(raw_stdout)
 
-    normalized_events = normalize_agy_jsonl_events(raw_stdout)
+    normalized_events = normalize_agy_text_events(raw_stdout)
     Path(normalized_transcript).write_bytes(encode_agent_event_jsonl(normalized_events))
     findings = _extract_findings(raw_stdout)
     _write_review_receipt(

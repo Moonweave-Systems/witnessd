@@ -106,8 +106,8 @@ def _fake_agy(directory: str) -> str:
     path.write_text(
         "#!/bin/sh\n"
         "if [ -t 1 ]; then\n"
-        "  printf '%s\\n' '{\"type\":\"message\",\"content\":\"review start\"}'\n"
-        "  printf '%s\\n' '{\"type\":\"result\",\"text\":\"[{\\\"severity\\\":\\\"low\\\",\\\"file\\\":\\\"seed.txt\\\",\\\"line\\\":1,\\\"summary\\\":\\\"review note\\\"}]\"}'\n"
+        "  printf '%s\\n' 'Review findings:'\n"
+        "  printf '%s\\n' 'low seed.txt:1 review note'\n"
         "fi\n"
         "exit 0\n",
         encoding="utf-8",

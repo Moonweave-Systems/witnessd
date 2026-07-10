@@ -6,7 +6,7 @@ import unittest
 
 from depone.agent_fabric.paired_run import validate_runner_receipt
 
-from witnessd.adapters.agy import run_agy_review_lane
+from witnessd.adapters.agy import AgyAdapterError, AgyCLIAdapter, run_agy_review_lane
 
 
 def _fake_agy(directory: str, *, writes_file: bool = False) -> str:
@@ -17,9 +17,8 @@ def _fake_agy(directory: str, *, writes_file: bool = False) -> str:
         "printf '%s\\n' \"$@\" > \"$AGY_ARGV_CAPTURE\"\n"
         f"{write_command}"
         "if [ -t 1 ]; then\n"
-        "  printf '%s\\n' '{\"type\":\"message\",\"content\":\"review start\"}'\n"
-        "  printf '%s\\n' '{\"type\":\"tool_call\",\"name\":\"read_file\",\"id\":\"T1\"}'\n"
-        "  printf '%s\\n' '{\"type\":\"result\",\"text\":\"[{\\\"severity\\\":\\\"medium\\\",\\\"file\\\":\\\"pkg/a.py\\\",\\\"line\\\":7,\\\"summary\\\":\\\"check edge case\\\"}]\"}'\n"
+        "  printf '%s\\n' 'Review findings:'\n"
+        "  printf '%s\\n' 'medium pkg/a.py:7 check edge case'\n"
         "else\n"
         "  printf '%s\\n' 'non-tty-final-response-lost' >&2\n"
         "fi\n"
@@ -31,6 +30,18 @@ def _fake_agy(directory: str, *, writes_file: bool = False) -> str:
 
 
 class TestAgyAdapter(unittest.TestCase):
+    def test_compile_invocation_matches_agy_v111_read_only_flags(self):
+        with tempfile.TemporaryDirectory() as bindir:
+            adapter = AgyCLIAdapter(agy_binary=_fake_agy(bindir))
+            invocation = adapter.compile_invocation({"prompt": "review only"})
+
+            self.assertEqual(
+                invocation,
+                [_fake_agy(bindir), "-p", "review only", "--mode", "plan", "--sandbox"],
+            )
+            self.assertNotIn("--output-format", invocation)
+            self.assertNotIn("--dangerously-skip-permissions", invocation)
+
     def test_review_lane_uses_pty_and_read_only_policy(self):
         with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
             argv_capture = pathlib.Path(bindir) / "argv.txt"
@@ -44,11 +55,25 @@ class TestAgyAdapter(unittest.TestCase):
 
             self.assertEqual(res.runner_kind, "manual")
             self.assertEqual(res.exit_code, 0)
+            self.assertEqual(
+                res.invocation,
+                [
+                    _fake_agy(bindir),
+                    "-p",
+                    "review only",
+                    "--mode",
+                    "plan",
+                    "--sandbox",
+                ],
+            )
             self.assertIn("--mode", res.invocation)
             self.assertEqual(res.invocation[res.invocation.index("--mode") + 1], "plan")
+            self.assertIn("--sandbox", res.invocation)
+            self.assertNotIn("--output-format", res.invocation)
+            self.assertNotIn("--dangerously-skip-permissions", res.invocation)
             self.assertIn("-p", res.invocation)
             self.assertEqual(res.test_output, {"status": "not-run"})
-            self.assertIn(b"review start", pathlib.Path(res.transcript_path).read_bytes())
+            self.assertIn(b"Review findings:", pathlib.Path(res.transcript_path).read_bytes())
             self.assertEqual(
                 validate_runner_receipt(
                     res.to_runner_receipt(
@@ -62,7 +87,7 @@ class TestAgyAdapter(unittest.TestCase):
                 [],
             )
 
-    def test_agy_stream_normalizes_to_agent_event_envelope(self):
+    def test_agy_text_response_normalizes_to_single_agent_event_envelope(self):
         with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
             res = run_agy_review_lane(
                 sandbox=sandbox,
@@ -82,8 +107,9 @@ class TestAgyAdapter(unittest.TestCase):
             )
             self.assertEqual(
                 [event["event_type"] for event in res.normalized_events],
-                ["message.completed", "command.completed", "turn.completed"],
+                ["message.completed"],
             )
+            self.assertEqual(len(res.normalized_events), 1)
             self.assertTrue((pathlib.Path(bindir) / "events.normalized.jsonl").exists())
 
     def test_review_receipt_reuses_advisory_review_signal_contract(self):
@@ -103,7 +129,27 @@ class TestAgyAdapter(unittest.TestCase):
             self.assertEqual(receipt["provider"], "google-antigravity")
             self.assertEqual(receipt["can_change_evidence_verdict"], False)
             self.assertEqual(receipt["findings"][0]["severity"], "medium")
+            self.assertEqual(receipt["raw_output_text"], "Review findings:\r\nmedium pkg/a.py:7 check edge case\r\n")
             self.assertEqual(res.review_receipt_path, str(receipt_path))
+
+    def test_forbidden_write_approval_flags_fail_closed_before_launch(self):
+        with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
+            for extra_args in (
+                ["--dangerously-skip-permissions"],
+                ["--mode", "accept-edits"],
+                ["--output-format", "json"],
+            ):
+                with self.subTest(extra_args=extra_args):
+                    with self.assertRaises(AgyAdapterError) as cm:
+                        run_agy_review_lane(
+                            sandbox=sandbox,
+                            prompt="review only",
+                            agy_binary=_fake_agy(bindir),
+                            transcript_path=str(pathlib.Path(bindir) / "agy.raw.txt"),
+                            extra_args=extra_args,
+                            env={"AGY_ARGV_CAPTURE": str(pathlib.Path(bindir) / "argv.txt")},
+                        )
+                    self.assertEqual(cm.exception.code, "ERR_AGY_FORBIDDEN_FLAG")
 
     def test_review_lane_blocks_if_files_change(self):
         with tempfile.TemporaryDirectory() as sandbox, tempfile.TemporaryDirectory() as bindir:
