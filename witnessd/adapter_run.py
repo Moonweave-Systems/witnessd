@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 from datetime import datetime, timezone
@@ -18,7 +19,13 @@ from witnessd.fixture import build_reference_adapter_fixture, build_shell_invoca
 from witnessd.observer import assert_separated
 from witnessd.preflight import PreflightError, probe_adapter_capability
 from witnessd.router import RouteExhaustedError, route_model
-from witnessd.signing import gen_operator_keypair
+from witnessd.runintent import (
+    RUN_INTENT_ARTIFACT_NAME,
+    build_run_intent,
+    git_baseline,
+    write_signed_run_intent,
+)
+from witnessd.signing import derive_public_key_id, gen_operator_keypair
 from witnessd.state import StateNamespace
 from witnessd.status import render_status
 
@@ -221,6 +228,36 @@ def run_adapter_lane(
         else:
             private_key, public_key = private_key_path, public_key_path
 
+        allowed_for_manifest = list(allowed_touched_files or [])
+        run_intent = build_run_intent(
+            run_id=task_id,
+            baseline=git_baseline(worktree),
+            allowed_paths=allowed_for_manifest,
+            approval_policy=approval_policy,
+            sandbox_mode="workspace-write" if adapter == "codex" else "unknown",
+            provider=adapter,
+            instruction_hashes={
+                "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+            },
+            budgets={
+                "max_tokens": int(budget["max_tokens"]),
+                "max_usd": float(budget["max_usd"]),
+                "max_depth": int(budget["max_depth"]),
+                "predicted_tokens": int(predicted_tokens),
+                "predicted_usd": float(predicted_usd),
+                "depth": int(depth),
+                "timeout_seconds": int(timeout_seconds),
+            },
+            capture_profile="full",
+        )
+        run_intent_path = lane_evidence_dir / RUN_INTENT_ARTIFACT_NAME
+        write_signed_run_intent(
+            str(run_intent_path),
+            run_intent,
+            private_key,
+            key_id=derive_public_key_id(public_key),
+        )
+
         assert_separated(worktree, str(lane_evidence_dir / "capture-manifest.json"))
         codex_env = namespace.codex_env() if adapter == "codex" else None
         adapter_result = _run_adapter(
@@ -239,7 +276,6 @@ def run_adapter_lane(
             approval_policy=approval_policy,
         )
         diff_patch = _git_diff_patch(worktree, adapter_result.touched_files)
-        allowed_for_manifest = list(allowed_touched_files or [])
 
         started_at = _now_iso()
         ended_at = _now_iso()
@@ -261,13 +297,18 @@ def run_adapter_lane(
             started_at=started_at,
             ended_at=ended_at,
             diff_patch=diff_patch,
+            run_intent_path=str(run_intent_path),
+            run_intent=run_intent,
+            capture_profile="full",
         )
 
         return {
             "runner_receipt": emitted["receipt"],
             "capture_manifest": emitted["manifest"],
+            "bundle": emitted["bundle"],
             "bundle_path": str(lane_evidence_dir / "bundle.json"),
             "evidence_dir": str(lane_evidence_dir),
+            "public_key_path": emitted["public_key_path"],
             "route": route_decision,
             "status_axis": {
                 "assurance": render_status(pending=1, verdict=None),

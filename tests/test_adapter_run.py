@@ -1,5 +1,6 @@
 import json
 import os
+import base64
 import pathlib
 import shutil
 import stat
@@ -12,6 +13,8 @@ from unittest.mock import patch
 from depone.agent_fabric.paired_run import validate_runner_receipt
 
 from witnessd.adapter_run import LaneBlocked, run_adapter_lane
+from witnessd.runintent import RUN_INTENT_PAYLOAD_TYPE
+from witnessd.signing import verify_dsse
 
 
 def _fake_codex(directory: str) -> str:
@@ -103,6 +106,20 @@ class TestAdapterRun(unittest.TestCase):
             self.assertEqual(validate_runner_receipt(out["runner_receipt"]), [])
             self.assertEqual(out["runner_receipt"]["runner_kind"], "codex-cli")
             self.assertEqual(out["status_axis"]["assurance"], "evidence-pending")
+            run_intent_path = pathlib.Path(out["evidence_dir"], "run-intent.json")
+            self.assertTrue(run_intent_path.exists())
+            run_intent_artifact = json.loads(run_intent_path.read_text(encoding="utf-8"))
+            envelope = run_intent_artifact["dsse_envelope"]
+            self.assertEqual(envelope["payloadType"], RUN_INTENT_PAYLOAD_TYPE)
+            self.assertTrue(verify_dsse(envelope, out["public_key_path"]))
+            intent = json.loads(base64.b64decode(envelope["payload"]).decode("utf-8"))
+            self.assertEqual(intent["run_id"], "t")
+            self.assertEqual(intent["allowed_paths"], ["noop.txt"])
+            self.assertEqual(intent["provider"]["name"], "codex")
+            subject_names = [
+                item["name"] for item in out["bundle"]["statement"]["subject"]
+            ]
+            self.assertIn("run-intent", subject_names)
 
     def test_codex_uses_isolated_state_namespace(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:

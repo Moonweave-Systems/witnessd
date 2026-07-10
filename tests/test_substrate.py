@@ -16,6 +16,7 @@ from depone.verify.evidence_contract import validate_evidence_contract
 from witnessd.canonical import canonical_hash
 from witnessd.capture import build_capture_manifest
 from witnessd.observer import build_observer_capture
+from witnessd.runintent import build_run_intent, write_signed_run_intent
 from witnessd.signing import gen_operator_keypair
 from witnessd.substrate import build_bundle, build_evidence_contract
 
@@ -68,6 +69,25 @@ def _write_artifacts(tmp: str, manifest: dict) -> dict[str, str]:
     return {"capture-manifest": manifest_path, "observer-capture": observer_path}
 
 
+def _add_run_intent_artifact(
+    tmp: str, artifacts: dict[str, str], private_key_path: str
+) -> None:
+    intent = build_run_intent(
+        run_id="w1-task10",
+        baseline={"git_head": "test-head", "git_status_state": "known"},
+        allowed_paths=["depone/example.py"],
+        approval_policy="on-request",
+        sandbox_mode="workspace-write",
+        provider="test",
+        instruction_hashes={"prompt_sha256": canonical_hash("test prompt")},
+        budgets={"max_tokens": 1000, "max_usd": 1.0, "max_depth": 1},
+        capture_profile="full",
+    )
+    path = os.path.join(tmp, "run-intent.json")
+    write_signed_run_intent(path, intent, private_key_path, key_id="test-key")
+    artifacts["run-intent"] = path
+
+
 @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
 class TestBundleSigned(unittest.TestCase):
     def test_signed_bundle_ingests_all_subjects(self):
@@ -77,6 +97,7 @@ class TestBundleSigned(unittest.TestCase):
             keydir = os.path.join(tmp, "keys")
             os.makedirs(keydir)
             priv, pub = gen_operator_keypair(keydir)
+            _add_run_intent_artifact(tmp, artifacts, priv)
 
             bundle = build_bundle(manifest, artifacts, priv, pub)
 
@@ -90,7 +111,7 @@ class TestBundleSigned(unittest.TestCase):
             predicate = bundle["statement"]["predicate"]
             self.assertEqual(
                 [item["name"] for item in predicate["artifact_index"]],
-                ["capture-manifest", "observer-capture"],
+                ["capture-manifest", "observer-capture", "run-intent"],
             )
             self.assertRegex(predicate["artifact_merkle_root"], r"^[0-9a-f]{64}$")
             # inline otel spans, no invented usage fields
@@ -123,6 +144,7 @@ class TestBundleSigned(unittest.TestCase):
             keydir = os.path.join(tmp, "keys")
             os.makedirs(keydir)
             priv, pub = gen_operator_keypair(keydir)
+            _add_run_intent_artifact(tmp, artifacts, priv)
             bundle = build_bundle(manifest, artifacts, priv, pub)
             with open(artifacts["observer-capture"], "ab") as handle:
                 handle.write(b"x")
@@ -144,6 +166,7 @@ class TestBundleSigned(unittest.TestCase):
             keydir = os.path.join(tmp, "keys")
             os.makedirs(keydir)
             priv, pub = gen_operator_keypair(keydir)
+            _add_run_intent_artifact(tmp, artifacts, priv)
             bundle = build_bundle(manifest, artifacts, priv, pub)
             self.assertEqual(bundle["assurance"], manifest["assurance"])
             self.assertEqual(

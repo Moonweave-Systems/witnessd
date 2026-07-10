@@ -11,6 +11,7 @@ from depone.agent_fabric.reference_adapter import build_reference_adapter_fixtur
 from witnessd.canonical import canonical_hash
 from witnessd.capture import build_capture_manifest
 from witnessd.observer import build_observer_capture
+from witnessd.runintent import build_run_intent, write_signed_run_intent
 from witnessd.signing import gen_operator_keypair
 from witnessd.substrate import build_bundle
 
@@ -95,9 +96,25 @@ class TestOvertFields(unittest.TestCase):
             keydir = os.path.join(tmp, "keys")
             os.makedirs(keydir)
             private_key, public_key = gen_operator_keypair(keydir)
+            run_intent = build_run_intent(
+                run_id="w8-overt",
+                baseline={"git_head": "test-head", "git_status_state": "known"},
+                allowed_paths=["depone/example.py"],
+                approval_policy="on-request",
+                sandbox_mode="workspace-write",
+                provider="test",
+                instruction_hashes={"prompt_sha256": canonical_hash("test prompt")},
+                budgets={"max_tokens": 1000, "max_usd": 1.0, "max_depth": 1},
+                capture_profile="full",
+            )
+            run_intent_path = os.path.join(tmp, "run-intent.json")
+            write_signed_run_intent(
+                run_intent_path, run_intent, private_key, key_id="test-key"
+            )
             artifacts = {
                 "capture-manifest": manifest_path,
                 "observer-capture": observer_path,
+                "run-intent": run_intent_path,
             }
             bundle = build_bundle(manifest, artifacts, private_key, public_key)
 
