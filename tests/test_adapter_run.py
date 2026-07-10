@@ -70,12 +70,21 @@ def _fake_codex_stages_tracked_change(directory: str) -> str:
     return str(path)
 
 
+def _init_repo(path: str) -> None:
+    subprocess.run(["git", "init", "-q", path], check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "test"], cwd=path, check=True)
+    pathlib.Path(path, "seed.txt").write_text("seed\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], cwd=path, check=True)
+
+
 @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
 class TestAdapterRun(unittest.TestCase):
     def test_happy_path_emits_valid_receipt(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
             sandbox = os.path.join(root, "repo")
-            subprocess.run(["git", "init", "-q", sandbox], check=True)
+            _init_repo(sandbox)
 
             out = run_adapter_lane(
                 root=root,
@@ -98,7 +107,7 @@ class TestAdapterRun(unittest.TestCase):
     def test_codex_uses_isolated_state_namespace(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
             sandbox = os.path.join(root, "repo")
-            subprocess.run(["git", "init", "-q", sandbox], check=True)
+            _init_repo(sandbox)
             outside_codex_home = os.path.join(root, "operator-codex-home")
             os.makedirs(outside_codex_home)
 
@@ -138,7 +147,7 @@ class TestAdapterRun(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
             sandbox = os.path.join(root, "repo")
             evidence_dir = os.path.join(root, "evidence")
-            subprocess.run(["git", "init", "-q", sandbox], check=True)
+            _init_repo(sandbox)
 
             run_adapter_lane(
                 root=root,
@@ -165,7 +174,7 @@ class TestAdapterRun(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
             sandbox = os.path.join(root, "repo")
             evidence_dir = os.path.join(root, "evidence")
-            subprocess.run(["git", "init", "-q", sandbox], check=True)
+            _init_repo(sandbox)
 
             out = run_adapter_lane(
                 root=root,
@@ -200,7 +209,7 @@ class TestAdapterRun(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             sandbox = os.path.join(root, "repo")
             evidence_dir = os.path.join(root, "evidence")
-            subprocess.run(["git", "init", "-q", sandbox], check=True)
+            _init_repo(sandbox)
 
             with patch("witnessd.adapter_run.probe_adapter_capability"), patch(
                 "witnessd.adapter_run._run_adapter",
@@ -278,7 +287,7 @@ class TestAdapterRun(unittest.TestCase):
     def test_route_exhausted_ends_blocked_not_silent(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
             sandbox = os.path.join(root, "repo")
-            subprocess.run(["git", "init", "-q", sandbox], check=True)
+            _init_repo(sandbox)
 
             with self.assertRaises(LaneBlocked) as cm:
                 run_adapter_lane(
@@ -305,7 +314,7 @@ class TestAdapterRun(unittest.TestCase):
     def test_budget_blowout_hard_stops(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
             sandbox = os.path.join(root, "repo")
-            subprocess.run(["git", "init", "-q", sandbox], check=True)
+            _init_repo(sandbox)
 
             with self.assertRaises(LaneBlocked) as cm:
                 run_adapter_lane(

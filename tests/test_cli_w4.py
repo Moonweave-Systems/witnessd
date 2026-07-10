@@ -30,12 +30,21 @@ def _fake_codex(directory: str) -> str:
     return str(path)
 
 
+def _init_repo(path: str) -> None:
+    subprocess.run(["git", "init", "-q", path], check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "test"], cwd=path, check=True)
+    pathlib.Path(path, "seed.txt").write_text("seed\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], cwd=path, check=True)
+
+
 class TestCliW4(unittest.TestCase):
     @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
     def test_run_codex_adapter_emits_valid_receipt(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
             sandbox = os.path.join(root, "repo")
-            subprocess.run(["git", "init", "-q", sandbox], check=True)
+            _init_repo(sandbox)
             out = io.StringIO()
 
             with redirect_stdout(out):
@@ -77,7 +86,7 @@ class TestCliW4(unittest.TestCase):
     def test_run_codex_adapter_without_allow_fails_structured(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
             sandbox = os.path.join(root, "repo")
-            subprocess.run(["git", "init", "-q", sandbox], check=True)
+            _init_repo(sandbox)
             err = io.StringIO()
 
             with redirect_stderr(err):
@@ -127,7 +136,7 @@ class TestCliW4(unittest.TestCase):
     def test_faultkit_budget_blowout_records_event_and_returns_nonzero(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
             sandbox = os.path.join(root, "repo")
-            subprocess.run(["git", "init", "-q", sandbox], check=True)
+            _init_repo(sandbox)
             out = io.StringIO()
 
             with redirect_stdout(out):
