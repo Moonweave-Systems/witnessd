@@ -6,6 +6,8 @@ import stat
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from depone.agent_fabric.paired_run import validate_runner_receipt
 
@@ -192,6 +194,53 @@ class TestAdapterRun(unittest.TestCase):
             self.assertIn(
                 '"thread.started"',
                 pathlib.Path(root, "adapter-transcript.txt").read_text(encoding="utf-8"),
+            )
+
+    def test_missing_allowlist_is_not_filled_from_observed_touches(self):
+        with tempfile.TemporaryDirectory() as root:
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "evidence")
+            subprocess.run(["git", "init", "-q", sandbox], check=True)
+
+            with patch("witnessd.adapter_run.probe_adapter_capability"), patch(
+                "witnessd.adapter_run._run_adapter",
+                return_value=SimpleNamespace(
+                    command_receipts=[
+                        {
+                            "command": ["fake-adapter"],
+                            "exit_code": 0,
+                            "stdout": "",
+                            "stderr": "",
+                        }
+                    ],
+                    touched_files=["touched.txt"],
+                    test_output={"status": "not-run"},
+                    invocation=["fake-adapter"],
+                    runner_kind="fake-adapter",
+                ),
+            ):
+                run_adapter_lane(
+                    root=root,
+                    sandbox=sandbox,
+                    adapter="codex",
+                    task_id="t",
+                    prompt="do X",
+                    arm="direct",
+                    tier="agentic",
+                    is_supported=lambda _model: True,
+                    budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                    evidence_dir=evidence_dir,
+                )
+
+            manifest = json.loads(
+                pathlib.Path(evidence_dir, "capture-manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(manifest["allowed_touched_files"], [])
+            self.assertIn(
+                "touched.txt",
+                manifest["observer_capture"]["touched_files"],
             )
 
     def test_adapter_evidence_includes_staged_tracked_diff_patch(self):

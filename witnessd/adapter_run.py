@@ -235,11 +235,7 @@ def run_adapter_lane(
             allowed_touched_files=allowed_touched_files,
         )
         diff_patch = _git_diff_patch(worktree, adapter_result.touched_files)
-        allowed_for_manifest = (
-            list(allowed_touched_files)
-            if allowed_touched_files is not None
-            else adapter_result.touched_files
-        )
+        allowed_for_manifest = list(allowed_touched_files or [])
 
         started_at = _now_iso()
         ended_at = _now_iso()
