@@ -372,6 +372,7 @@ def _cmd_run_adapter(args: argparse.Namespace) -> int:
         return 2
 
     from witnessd.adapter_run import LaneBlocked, run_adapter_lane
+    from witnessd.adapters.codex import CodexAdapterError
 
     try:
         result = run_adapter_lane(
@@ -393,9 +394,13 @@ def _cmd_run_adapter(args: argparse.Namespace) -> int:
             codex_binary=args.codex_binary,
             claude_binary=args.claude_binary,
             opencode_binary=args.opencode_binary,
+            allowed_touched_files=list(args.allow or []),
         )
     except LaneBlocked as exc:
         print(exc.reason, file=sys.stderr)
+        return 1
+    except CodexAdapterError as exc:
+        print(exc.code, file=sys.stderr)
         return 1
 
     pending = 1

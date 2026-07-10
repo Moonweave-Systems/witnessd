@@ -19,13 +19,10 @@ def _fake_codex(directory: str) -> str:
     path.write_text(
         "#!/bin/sh\n"
         "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
-        "out=\"\"\n"
-        "while [ $# -gt 0 ]; do\n"
-        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
-        "  shift\n"
-        "done\n"
-        ": > \"$out\"\n"
-        "echo done >> \"$out\"\n"
+        "printf 'ok\\n' > out.txt\n"
+        "cat >/dev/null\n"
+        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
+        "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"message\",\"text\":\"done\"}}'\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -59,6 +56,8 @@ class TestCliW4(unittest.TestCase):
                         "agentic",
                         "--codex-binary",
                         _fake_codex(bindir),
+                        "--allow",
+                        "out.txt",
                         "--",
                         "do X",
                     ]
@@ -73,6 +72,40 @@ class TestCliW4(unittest.TestCase):
             self.assertEqual(validate_runner_receipt(receipt), [])
             self.assertEqual(receipt["runner_kind"], "codex-cli")
             self.assertIn("evidence-pending", out.getvalue())
+
+    @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
+    def test_run_codex_adapter_without_allow_fails_structured(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+            sandbox = os.path.join(root, "repo")
+            subprocess.run(["git", "init", "-q", sandbox], check=True)
+            err = io.StringIO()
+
+            with redirect_stderr(err):
+                code = main(
+                    [
+                        "run",
+                        "--adapter",
+                        "codex",
+                        "--root",
+                        root,
+                        "--runner-sandbox",
+                        sandbox,
+                        "--task-id",
+                        "t",
+                        "--arm",
+                        "direct",
+                        "--tier",
+                        "agentic",
+                        "--codex-binary",
+                        _fake_codex(bindir),
+                        "--",
+                        "do X",
+                    ]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertIn("ERR_CODEX_ALLOWED_PATHS_REQUIRED", err.getvalue())
+            self.assertNotIn("Traceback", err.getvalue())
 
     def test_doctor_detects_state_contention(self):
         with tempfile.TemporaryDirectory() as root:
