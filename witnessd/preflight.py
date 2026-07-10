@@ -57,6 +57,7 @@ def probe_adapter_capability(
     repo: str,
     codex_binary: str = "codex",
     claude_binary: str = "claude",
+    gemini_binary: str = "gemini",
     opencode_binary: str = "opencode",
     require_ready: bool = False,
     **kwargs: object,
@@ -70,6 +71,10 @@ def probe_adapter_capability(
     elif adapter == "claude":
         receipt = _local_adapter_capability(
             "claude", binary=claude_binary, repo=repo
+        )
+    elif adapter == "gemini":
+        receipt = _local_adapter_capability(
+            "gemini", binary=gemini_binary, repo=repo
         )
     elif adapter == "opencode":
         receipt = _local_adapter_capability(

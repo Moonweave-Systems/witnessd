@@ -370,17 +370,11 @@ required by `handoff` / `orro handoff`. A missing, malformed, unreadable, or
 non-pass `proofcheck-verdict.json`, or one copied from another evidence snapshot,
 blocks handoff and does not write `orro-handoff.json`.
 
-`python3 -m orro <subcommand>` is the product-name entrypoint hosted in this repo.
-Its help shows only the ORRO public commands: `init`, `scout`, `flowplan`,
-`advise`, `proofrun`, `proofcheck`, `handoff`, `next`, `report`, `auto`,
-`doctor`, and `engine-lock`. Subcommands delegate to the same ORRO parser used by
-`python3 -m witnessd orro ...`.
-
-This checkout defines minimal packaging metadata for an installed `orro` console
-script that points to the same module entrypoint. ORRO remains a wrapper/product
-surface hosted in witnessd for now; marketplace release and published package
-work remain deferred. Product/distribution docs now live in
-`Moonweave-Systems/ORRO`.
+`python3 -m orro <subcommand>` and the witnessd-provided `orro` console script
+are deprecated compatibility shims. They warn on stderr, delegate to the same
+ORRO parser used by `python3 -m witnessd orro ...`, and will be removed in the
+next major witnessd release. The standalone `Moonweave-Systems/ORRO` package now
+owns the product `orro` command and distribution docs.
 
 ## Session skill
 
@@ -410,6 +404,16 @@ python3 -m depone team-ledger \
 ```
 
 Depone verifies from bytes. It does not run lanes.
+
+## Phase 0 evidence limitations
+
+The current Phase 0 safety patch records known evidence-substrate limitations
+instead of upgrading trust claims. Codex JSONL capture, predeclared write paths,
+preflight fail-closed checks, and operator-key overwrite protection are release
+safety controls. They do not prove code correctness, complete artifact binding,
+or full tamper resistance. Same-size same-mtime content changes, runlog
+chain-hardening, and eventlog scaling remain Phase 1 evidence-core work until
+the redesign gate closes.
 
 ## Development checks
 

@@ -19,6 +19,7 @@ ARTIFACT_NAMES = {
     "capture-manifest.json",
     "observer-capture.json",
     "runner-receipt.json",
+    "run-intent.json",
     "bundle.json",
     "evidence-contract.json",
     "git-diff-name-only.txt",

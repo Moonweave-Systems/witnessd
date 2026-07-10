@@ -7,6 +7,7 @@ import os
 from typing import Any
 
 from witnessd.canonical import canonical_hash
+from witnessd.runintent import build_run_intent, write_signed_run_intent
 from witnessd.runlog import append_runlog
 from witnessd.substrate import build_bundle
 
@@ -116,6 +117,24 @@ def promote_learning_delta(
     with open(delta_path, "w", encoding="utf-8") as handle:
         json.dump(delta, handle, sort_keys=True, indent=2)
         handle.write("\n")
+    run_intent_path = os.path.join(evidence_dir, "run-intent.json")
+    run_intent = build_run_intent(
+        run_id=run_id,
+        baseline={"capture_hash": delta["provenance"]["capture_hash"]},
+        allowed_paths=[str(delta.get("target", ""))],
+        approval_policy="operator-approved",
+        sandbox_mode="learning-promotion",
+        provider="witnessd-learning",
+        instruction_hashes={"delta_sha256": canonical_hash(delta)},
+        budgets={},
+        capture_profile="full",
+    )
+    write_signed_run_intent(
+        run_intent_path,
+        run_intent,
+        priv,
+        key_id="witnessd-learning-operator",
+    )
 
     manifest = {
         "kind": LEARNING_DELTA_KIND,
@@ -125,7 +144,7 @@ def promote_learning_delta(
     }
     bundle = build_bundle(
         manifest,
-        {"learning-delta": delta_path},
+        {"learning-delta": delta_path, "run-intent": run_intent_path},
         priv,
         pub,
         key_id="witnessd-learning-operator",
@@ -145,7 +164,7 @@ def promote_learning_delta(
     return {
         "promoted": True,
         "bundle": bundle,
-        "artifact_paths": {"learning-delta": delta_path},
+        "artifact_paths": {"learning-delta": delta_path, "run-intent": run_intent_path},
         "delta_path": delta_path,
     }
 

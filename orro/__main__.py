@@ -1,4 +1,4 @@
-"""Run the witnessd-hosted ORRO surface as ``python3 -m orro``."""
+"""Deprecated witnessd-hosted ``orro`` shim."""
 
 from __future__ import annotations
 
@@ -6,6 +6,11 @@ import sys
 
 from witnessd.__main__ import main as witnessd_main
 
+
+DEPRECATION_WARNING = (
+    "warning: witnessd-hosted orro is deprecated; install the ORRO package for "
+    "the orro command. This shim will be removed in the next major witnessd release."
+)
 
 ORRO_HELP = """usage: orro [-h] {init,advise,scout,flowplan,proofrun,proofcheck,handoff,next,report,auto,doctor,engine-lock} ...
 
@@ -42,6 +47,7 @@ options:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    print(DEPRECATION_WARNING, file=sys.stderr)
     if not args or args[0] in {"-h", "--help"}:
         print(ORRO_HELP)
         return 0

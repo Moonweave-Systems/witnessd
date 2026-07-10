@@ -288,17 +288,25 @@ def _fake_codex_invalid_draft(directory: Path) -> str:
     path.write_text(
         "#!/bin/sh\n"
         "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
-        "out=\"\"\n"
         "while [ $# -gt 0 ]; do\n"
-        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
         "  shift\n"
         "done\n"
-        "printf '%s\\n' 'not json' > \"$out\"\n"
+        "printf '%s\\n' 'not json'\n"
         "exit 0\n",
         encoding="utf-8",
     )
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
     return str(path)
+
+
+def _init_repo(path: Path) -> None:
+    path.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.email", "w@x.invalid"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "w11"], cwd=path, check=True)
+    (path / "seed.txt").write_text("seed\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], cwd=path, check=True)
 
 
 @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
@@ -307,8 +315,7 @@ class TestPlannerCliDraft(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
             repo = Path(root) / "repo"
             draft_dir = Path(root) / "draft"
-            repo.mkdir()
-            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            _init_repo(repo)
 
             stdout = io.StringIO()
             with redirect_stdout(stdout):

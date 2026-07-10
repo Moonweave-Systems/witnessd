@@ -16,11 +16,13 @@ def _fake_codex(directory: Path) -> str:
     path.write_text(
         "#!/bin/sh\n"
         "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
-        "out=\"\"\n"
+        "saw_json=0\n"
         "while [ $# -gt 0 ]; do\n"
-        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
+        "  if [ \"$1\" = \"--json\" ]; then saw_json=1; fi\n"
         "  shift\n"
         "done\n"
+        "if [ \"$saw_json\" -ne 1 ]; then echo 'missing --json' >&2; exit 9; fi\n"
+        "cat >/dev/null\n"
         "mkdir -p v2_demo\n"
         "cat > v2_demo/live_agent_result.py <<'PY'\n"
         "\"\"\"Fake live-agent output for the v2 plan-run rehearsal.\"\"\"\n"
@@ -31,7 +33,8 @@ def _fake_codex(directory: Path) -> str:
         "def v2_agent_marker() -> str:\n"
         "    return \"fake-codex-plan-run\"\n"
         "PY\n"
-        "printf '%s\\n' 'implemented v2_agent_marker' > \"$out\"\n"
+        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
+        "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"message\",\"text\":\"implemented v2_agent_marker\"}}'\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -112,6 +115,8 @@ class TestV2PlanRun(unittest.TestCase):
             receipt = json.loads((lane_dir / "runner-receipt.json").read_text())
             self.assertEqual(receipt["runner_kind"], "codex-cli")
             self.assertEqual(receipt["exit_code"], 0)
+            self.assertIn("--json", receipt["invocation"])
+            self.assertNotIn("--output-last-message", receipt["invocation"])
             patch = (lane_dir / "git-diff.patch").read_text(encoding="utf-8")
             self.assertIn("+def v2_agent_marker() -> str:", patch)
 

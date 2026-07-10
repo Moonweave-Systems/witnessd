@@ -9,10 +9,14 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from witnessd.adapters.base import AdapterResult
+from witnessd.adapters.base import AdapterResult, RawRun, RunIntent
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
+from witnessd.events import encode_agent_event_jsonl, normalize_codex_jsonl_events
 
 _OUTPUT_LIMIT = 4096
+_ALLOWED_APPROVAL_POLICIES = frozenset(
+    {"never", "on-request", "on-failure", "untrusted"}
+)
 
 
 class CodexAdapterError(RuntimeError):
@@ -20,6 +24,60 @@ class CodexAdapterError(RuntimeError):
         super().__init__(f"{code}: {message}")
         self.code = code
         self.message = message
+
+
+class CodexCLIAdapter:
+    provider = "codex-cli"
+
+    def __init__(
+        self,
+        *,
+        codex_binary: str = "codex",
+        sandbox_mode: str = "workspace-write",
+        approval_policy: str = "on-request",
+    ) -> None:
+        self.codex_binary = codex_binary
+        self.sandbox_mode = sandbox_mode
+        self.approval_policy = approval_policy
+
+    def compile_invocation(self, intent: RunIntent) -> list[str]:
+        sandbox_mode = str(intent.get("sandbox", {}).get("mode", self.sandbox_mode))
+        approval_policy = str(
+            intent.get("approval", {}).get("policy", self.approval_policy)
+        )
+        return [
+            _resolve_codex(self.codex_binary),
+            "--sandbox",
+            sandbox_mode,
+            "--approval-policy",
+            _codex_approval_policy_arg(approval_policy),
+            "exec",
+            "--json",
+            "--skip-git-repo-check",
+            "--cd",
+            ".",
+            "-",
+        ]
+
+    def run(self, intent: RunIntent, sandbox: str) -> RawRun:
+        _ = sandbox
+        return RawRun(
+            invocation=self.compile_invocation(intent),
+            exit_code=0,
+            raw_events=b"",
+            stdout="",
+            stderr="",
+            effective_policy=self.effective_policy(
+                RawRun([], 0, b"", "", "", {})
+            ),
+        )
+
+    def normalize(self, raw: RawRun):
+        return normalize_codex_jsonl_events(raw.raw_events)
+
+    def effective_policy(self, raw: RawRun) -> dict[str, Any]:
+        value = _effective_approval_policy(raw.raw_events)
+        return {"approval_policy": value} if value is not None else {}
 
 
 def _resolve_codex(codex_binary: str) -> str:
@@ -77,6 +135,48 @@ def _timeout_text(value: object) -> str:
     return ""
 
 
+def _decode_output(value: bytes | str | None) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, str):
+        return value
+    return ""
+
+
+def _output_bytes(value: bytes | str | None) -> bytes:
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    return b""
+
+
+def _codex_approval_policy_arg(approval_policy: str) -> str:
+    if approval_policy not in _ALLOWED_APPROVAL_POLICIES:
+        raise CodexAdapterError(
+            "ERR_CODEX_APPROVAL_POLICY_UNSUPPORTED",
+            f"unsupported approval policy: {approval_policy}",
+        )
+    return "on-request" if approval_policy == "on-failure" else approval_policy
+
+
+def _effective_approval_policy(raw_jsonl: bytes) -> str | None:
+    for line in raw_jsonl.splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("type") != "effective.settings":
+            continue
+        value = payload.get("approval_policy")
+        return value if isinstance(value, str) else None
+    return None
+
+
 def run_codex_lane(
     *,
     sandbox: str,
@@ -86,6 +186,8 @@ def run_codex_lane(
     transcript_invocation_path: str | None = None,
     log_path: str | None = None,
     sandbox_mode: str = "workspace-write",
+    approval_policy: str = "on-request",
+    allowed_touched_files: list[str] | None = None,
     timeout_seconds: int = 120,
     env: dict[str, str] | None = None,
 ) -> AdapterResult:
@@ -93,28 +195,34 @@ def run_codex_lane(
         raise CodexAdapterError(
             "ERR_CODEX_PROMPT_MISSING", "codex prompt must not be empty"
         )
+    if sandbox_mode == "workspace-write" and not allowed_touched_files:
+        raise CodexAdapterError(
+            "ERR_CODEX_ALLOWED_PATHS_REQUIRED",
+            "workspace-write codex runs require predeclared allowed_touched_files",
+        )
 
     repo = str(Path(sandbox).resolve(strict=False))
     codex = _resolve_codex(codex_binary)
+    effective_declared_policy = _codex_approval_policy_arg(approval_policy)
     transcript = str(Path(transcript_path).resolve(strict=False))
     transcript_binding = transcript_invocation_path or transcript
     Path(transcript).parent.mkdir(parents=True, exist_ok=True)
+    normalized_transcript = str(Path(transcript).with_name("events.normalized.jsonl"))
 
     run_invocation = [
         codex,
         "--sandbox",
         sandbox_mode,
+        "--approval-policy",
+        effective_declared_policy,
         "exec",
+        "--json",
         "--skip-git-repo-check",
         "--cd",
         repo,
-        "--output-last-message",
-        transcript,
         "-",
     ]
     evidence_invocation = list(run_invocation)
-    output_index = evidence_invocation.index("--output-last-message")
-    evidence_invocation[output_index + 1] = transcript_binding
 
     before = _snapshot(repo)
     try:
@@ -122,25 +230,41 @@ def run_codex_lane(
             run_invocation,
             cwd=repo,
             env=env,
-            input=prompt,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+            input=prompt.encode("utf-8"),
             capture_output=True,
             check=False,
             timeout=timeout_seconds,
         )
         exit_code = completed.returncode
-        stdout = completed.stdout
-        stderr = completed.stderr
+        raw_stdout = completed.stdout or b""
+        stdout = _decode_output(completed.stdout)
+        stderr = _decode_output(completed.stderr)
+        Path(transcript).write_bytes(raw_stdout)
     except subprocess.TimeoutExpired as exc:
         exit_code = 124
+        raw_stdout = _output_bytes(exc.stdout)
         stdout = _timeout_text(exc.stdout)
         stderr = _timeout_text(exc.stderr)
+        Path(transcript).write_bytes(raw_stdout)
     except OSError as exc:
         exit_code = 127
+        raw_stdout = b""
         stdout = ""
         stderr = str(exc)
+        Path(transcript).write_bytes(raw_stdout)
+
+    normalized_events = normalize_codex_jsonl_events(raw_stdout)
+    Path(normalized_transcript).write_bytes(encode_agent_event_jsonl(normalized_events))
+    effective_policy = _effective_approval_policy(raw_stdout)
+    test_output: dict[str, Any] = {"status": TEST_STATUS_NOT_RUN}
+    if effective_policy is not None and effective_policy != effective_declared_policy:
+        exit_code = 125
+        message = (
+            f"effective approval_policy {effective_policy} != "
+            f"declared {effective_declared_policy}"
+        )
+        stderr = f"{stderr}\n{message}".strip()
+        test_output = {"status": "failed", "summary": message}
 
     if log_path is not None:
         _write_command_log(
@@ -151,9 +275,6 @@ def run_codex_lane(
             stderr=stderr,
             exit_code=exit_code,
         )
-    if not Path(transcript).exists():
-        Path(transcript).write_text((stdout or "") + (stderr or ""), encoding="utf-8")
-
     after = _snapshot(repo)
     touched_files = _diff_touched(before, after)
     command_receipt: dict[str, Any] = {
@@ -172,7 +293,10 @@ def run_codex_lane(
         transcript_path=transcript_binding,
         command_receipts=[command_receipt],
         touched_files=touched_files,
-        test_output={"status": TEST_STATUS_NOT_RUN},
+        test_output=test_output,
+        normalized_events=normalized_events,
+        raw_events_path=transcript,
+        normalized_events_path=normalized_transcript,
     )
 
 
@@ -185,13 +309,10 @@ def _self_test() -> None:
         fake.write_text(
             "#!/bin/sh\n"
             "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
-            "out=\"\"\n"
-            "while [ $# -gt 0 ]; do\n"
-            "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
-            "  shift\n"
-            "done\n"
-            ": > \"$out\"\n"
-            "echo done >> \"$out\"\n"
+            "while [ $# -gt 0 ]; do shift; done\n"
+            "cat >/dev/null\n"
+            "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
+            "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"message\",\"text\":\"done\"}}'\n"
             "exit 0\n",
             encoding="utf-8",
         )
@@ -202,10 +323,13 @@ def _self_test() -> None:
             prompt="self test",
             codex_binary=str(fake),
             transcript_path=str(transcript),
+            sandbox_mode="read-only",
         )
         if result.runner_kind != "codex-cli":
             raise AssertionError("codex adapter must emit runner_kind=codex-cli")
         if "exec" not in result.invocation:
             raise AssertionError("codex invocation must use exec")
+        if "--json" not in result.invocation:
+            raise AssertionError("codex invocation must request JSONL events")
         if not transcript.exists():
             raise AssertionError("codex transcript must be written")

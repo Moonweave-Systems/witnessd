@@ -14,9 +14,10 @@ this lane leaves a no-op scan hook so the wiring point already exists.
 
 from __future__ import annotations
 
-import os
 import subprocess
 from typing import Any, Callable
+
+from witnessd.changeset import Baseline, capture_snapshot, diff_snapshots, touched_files
 
 _OUTPUT_LIMIT = 4096
 
@@ -31,25 +32,12 @@ def _scan_argv(command: list[str]) -> None:
     return None
 
 
-def _snapshot(sandbox: str) -> dict[str, tuple[int, float]]:
-    snapshot: dict[str, tuple[int, float]] = {}
-    for root, _dirs, files in os.walk(sandbox):
-        for name in files:
-            abs_path = os.path.join(root, name)
-            rel_path = os.path.relpath(abs_path, sandbox)
-            try:
-                stat = os.stat(abs_path)
-            except OSError:
-                continue
-            snapshot[rel_path] = (stat.st_size, stat.st_mtime)
-    return snapshot
+def _snapshot(sandbox: str) -> Baseline:
+    return capture_snapshot(sandbox)
 
 
-def _diff_touched(
-    before: dict[str, tuple[int, float]], after: dict[str, tuple[int, float]]
-) -> list[str]:
-    touched = [rel for rel, meta in after.items() if before.get(rel) != meta]
-    return sorted(touched)
+def _diff_touched(before: Baseline, after: Baseline) -> list[str]:
+    return touched_files(diff_snapshots(before, after))
 
 
 CommandRunner = Callable[[list[str], str], dict[str, Any]]

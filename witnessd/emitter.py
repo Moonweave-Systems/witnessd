@@ -29,8 +29,20 @@ from witnessd.canonical import canonical_hash
 from witnessd.capture import build_capture_manifest
 from witnessd.eventlog import EventLog
 from witnessd.observer import build_observer_capture
+from witnessd.privacy import (
+    CAPTURE_PROFILE_REDACTED,
+    REDACTION_MANIFEST_ARTIFACT_NAME,
+    REDACTION_MANIFEST_SUBJECT_NAME,
+)
 from witnessd.provenance import build_signed_trusted_observer_provenance
-from witnessd.signing import DEFAULT_OPERATOR_KEY_ID
+from witnessd.runintent import (
+    RUN_INTENT_ARTIFACT_NAME,
+    RUN_INTENT_SUBJECT_NAME,
+    build_run_intent,
+    git_baseline,
+    write_signed_run_intent,
+)
+from witnessd.signing import DEFAULT_OPERATOR_KEY_ID, derive_public_key_id
 from witnessd.substrate import build_bundle, build_evidence_contract, build_otel_spans
 
 TRUSTED_PUBLIC_KEY_ENV = "DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"
@@ -104,6 +116,11 @@ def emit_lane_evidence(
     epoch_seconds: int = 300,
     monotonic_counter: int = 1,
     parent_attestation_id: str | None = None,
+    run_intent_path: str | None = None,
+    run_intent: dict[str, Any] | None = None,
+    capture_profile: str = "full",
+    redaction_manifest: dict[str, Any] | None = None,
+    provider_artifacts: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Assemble and emit a lane's full evidence set through the runlog SoT.
 
@@ -113,9 +130,25 @@ def emit_lane_evidence(
     """
     if _is_inside_or_equal(public_key_path, evidence_dir):
         raise EmitterError("ERR_TRUST_ROOT_NOT_SEPARATED")
+    if key_id == DEFAULT_OPERATOR_KEY_ID:
+        key_id = derive_public_key_id(public_key_path)
 
     os.makedirs(evidence_dir, exist_ok=True)
     os.environ[TRUSTED_PUBLIC_KEY_ENV] = os.path.abspath(public_key_path)
+    if run_intent_path is None:
+        intent = run_intent or build_run_intent(
+            run_id=task_id,
+            baseline=git_baseline(runner_sandbox) if runner_sandbox else {},
+            allowed_paths=allowed_touched_files,
+            approval_policy="unknown",
+            sandbox_mode="unknown",
+            provider=runner_kind or "manual",
+            instruction_hashes={},
+            budgets={},
+            capture_profile=capture_profile,
+        )
+        run_intent_path = os.path.join(evidence_dir, RUN_INTENT_ARTIFACT_NAME)
+        write_signed_run_intent(run_intent_path, intent, private_key_path, key_id=key_id)
 
     source_fixture_hash = canonical_hash(fixture)
     observer_capture = build_observer_capture(
@@ -162,9 +195,8 @@ def emit_lane_evidence(
         )
     )
 
-    def _emit_artifact(name: str, content: str) -> str:
+    def _emit_artifact_bytes(name: str, data: bytes) -> str:
         path = os.path.join(evidence_dir, name)
-        data = content.encode("utf-8")
         with open(path, "wb") as handle:
             handle.write(data)
         events.append(
@@ -180,6 +212,29 @@ def emit_lane_evidence(
         )
         return path
 
+    def _emit_artifact(name: str, content: str) -> str:
+        return _emit_artifact_bytes(name, content.encode("utf-8"))
+
+    def _record_existing_artifact(name: str, path: str) -> str:
+        with open(path, "rb") as handle:
+            data = handle.read()
+        events.append(
+            log.append(
+                {
+                    "kind": "witnessd-runlog-event",
+                    "event": "emit-artifact",
+                    "artifact": name,
+                    "path": os.path.abspath(path),
+                    "content_sha256": hashlib.sha256(data).hexdigest(),
+                }
+            )
+        )
+        return path
+
+    recorded_run_intent_path = _record_existing_artifact(
+        RUN_INTENT_ARTIFACT_NAME,
+        run_intent_path,
+    )
     _emit_artifact("verify.log", _transcript(lane_result))
 
     from witnessd.receipt import build_runner_receipt
@@ -199,12 +254,31 @@ def emit_lane_evidence(
     manifest_path = _emit_artifact("capture-manifest.json", json.dumps(manifest))
     _emit_artifact("observer-capture.json", json.dumps(manifest["observer_capture"]))
     _emit_artifact("runner-receipt.json", json.dumps(receipt))
+    redaction_manifest_path = None
+    if capture_profile == CAPTURE_PROFILE_REDACTED and redaction_manifest is not None:
+        redaction_manifest_path = _emit_artifact(
+            REDACTION_MANIFEST_ARTIFACT_NAME,
+            json.dumps(redaction_manifest),
+        )
 
     artifacts = {
         "capture-manifest": manifest_path,
         "observer-capture": os.path.join(evidence_dir, "observer-capture.json"),
         "runner-receipt": os.path.join(evidence_dir, "runner-receipt.json"),
+        RUN_INTENT_SUBJECT_NAME: recorded_run_intent_path,
     }
+    if redaction_manifest_path is not None:
+        artifacts[REDACTION_MANIFEST_SUBJECT_NAME] = redaction_manifest_path
+    if provider_artifacts:
+        for subject_name, source_path in sorted(provider_artifacts.items()):
+            source = os.path.abspath(source_path)
+            artifact_name = (
+                "review-receipt.json"
+                if subject_name == "review-receipt"
+                else f"{subject_name}.jsonl"
+            )
+            with open(source, "rb") as handle:
+                artifacts[subject_name] = _emit_artifact_bytes(artifact_name, handle.read())
     otel_spans = None
     if runner_kind is not None:
         otel_spans = build_otel_spans(manifest, runner_receipt=receipt)
@@ -273,6 +347,11 @@ def emit_supervised_lane(
     parent_attestation_id: str | None = None,
     isolation_model: str | None = None,
     observer_launched: bool = False,
+    run_intent_path: str | None = None,
+    run_intent: dict[str, Any] | None = None,
+    capture_profile: str = "full",
+    redaction_manifest: dict[str, Any] | None = None,
+    provider_artifacts: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Emit supervised-lane evidence with per-spawn isolation facts.
 
@@ -313,6 +392,11 @@ def emit_supervised_lane(
         epoch_seconds=epoch_seconds,
         monotonic_counter=monotonic_counter,
         parent_attestation_id=parent_attestation_id,
+        run_intent_path=run_intent_path,
+        run_intent=run_intent,
+        capture_profile=capture_profile,
+        redaction_manifest=redaction_manifest,
+        provider_artifacts=provider_artifacts,
     )
 
 

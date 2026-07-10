@@ -16,7 +16,9 @@ CODEX_LOCAL_CAPABILITY_KIND = "depone-codex-local-capability"
 CODEX_LOCAL_CAPABILITY_SCHEMA_VERSION = "0.1"
 DEFAULT_CODEX_ROLE_ID = "worker"
 ALLOWED_SANDBOX_MODES = frozenset({"read-only", "workspace-write"})
-ALLOWED_APPROVAL_POLICIES = frozenset({"on-request", "on-failure", "never"})
+ALLOWED_APPROVAL_POLICIES = frozenset(
+    {"never", "on-request", "on-failure", "untrusted"}
+)
 
 AGENT_CONTRACT_FACTS = {
     "agent_contract_id": "depone-agent-operating-contract.v0.1",
@@ -55,6 +57,11 @@ def build_codex_local_capability(
     git_facts = _git_facts(resolved_repo)
     if git_facts.get("is_git_worktree") is not True:
         blocked_reasons.append("repo is not a git worktree")
+    probe_errors = git_facts.get("probe_errors")
+    if isinstance(probe_errors, list):
+        for probe_error in probe_errors:
+            if isinstance(probe_error, str):
+                blocked_reasons.append(probe_error)
     if git_facts.get("dirty") is True:
         blocked_reasons.append("repo working tree is dirty")
     contract = _agent_contract_facts(role_id)
@@ -244,18 +251,41 @@ def _validate_version_probe(probe: Any, errors: list[str]) -> None:
 
 
 def _git_facts(repo: Path) -> dict[str, object]:
-    root = _git(repo, ["rev-parse", "--show-toplevel"])
-    head = _git(repo, ["rev-parse", "HEAD"])
-    branch = _git(repo, ["branch", "--show-current"])
-    status = _git(repo, ["status", "--porcelain"])
+    root = _git_probe(repo, ["rev-parse", "--show-toplevel"], "git root unknown")
+    head = _git_probe(repo, ["rev-parse", "HEAD"], "git HEAD unknown")
+    branch = _git_probe(repo, ["branch", "--show-current"], "git branch unknown")
+    status = _git_probe(repo, ["status", "--porcelain"], "git status unknown")
+    probe_errors = [
+        str(probe["error"])
+        for probe in (root, head, branch, status)
+        if probe["error"] is not None
+    ]
     return {
         "path": repo.as_posix(),
-        "is_git_worktree": root is not None,
-        "root": root,
-        "head": head,
-        "branch": branch,
-        "dirty": bool(status),
+        "is_git_worktree": root["known"],
+        "root": root["value"],
+        "head": head["value"],
+        "branch": branch["value"],
+        "dirty": None if not status["known"] else bool(status["value"]),
+        "probe_errors": probe_errors,
+        "error": "; ".join(probe_errors) if probe_errors else None,
     }
+
+
+def _git_probe(repo: Path, args: list[str], error_label: str) -> dict[str, object]:
+    try:
+        completed = subprocess.run(
+            ["git", "-C", repo.as_posix(), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {"known": False, "value": None, "error": error_label}
+    if completed.returncode != 0:
+        return {"known": False, "value": None, "error": error_label}
+    return {"known": True, "value": completed.stdout.strip(), "error": None}
 
 
 def _git(repo: Path, args: list[str]) -> str | None:
@@ -288,7 +318,34 @@ def _instruction_facts(repo: Path, instruction_files: list[Path]) -> list[dict[s
             )
             continue
         resolved = path if path.is_absolute() else repo / path
-        if not resolved.exists() or not resolved.is_file():
+        try:
+            resolved.lstat()
+        except OSError:
+            facts.append({"path": path.as_posix(), "present": False, "sha256": None})
+            continue
+        if resolved.is_symlink():
+            facts.append(
+                {
+                    "path": path.as_posix(),
+                    "present": False,
+                    "sha256": None,
+                    "blocked_reason": "instruction file must not be a symlink",
+                }
+            )
+            continue
+        try:
+            resolved.resolve(strict=True).relative_to(repo)
+        except (OSError, ValueError):
+            facts.append(
+                {
+                    "path": path.as_posix(),
+                    "present": False,
+                    "sha256": None,
+                    "blocked_reason": "instruction file target escapes repo boundary",
+                }
+            )
+            continue
+        if not resolved.is_file():
             facts.append({"path": path.as_posix(), "present": False, "sha256": None})
             continue
         facts.append(

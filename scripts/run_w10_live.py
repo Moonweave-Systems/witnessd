@@ -244,6 +244,7 @@ def main(argv: list[str] | None = None) -> int:
             evidence_dir=str(evidence_dir),
             private_key_path=private_key,
             public_key_path=str(fixture_public_key),
+            allowed_touched_files=["wordscore/core.py"],
         )
     except LaneBlocked as exc:
         _write_prompt_note(

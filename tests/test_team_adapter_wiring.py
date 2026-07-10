@@ -169,13 +169,15 @@ def _fake_codex(directory: str) -> str:
         'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
         "mkdir -p pkg\n"
         "echo agent > pkg/agent.py\n"
-        'out=""\n'
+        "saw_json=0\n"
         "while [ $# -gt 0 ]; do\n"
-        '  if [ "$1" = "--output-last-message" ]; then out="$2"; fi\n'
+        '  if [ "$1" = "--json" ]; then saw_json=1; fi\n'
         "  shift\n"
         "done\n"
-        ': > "$out"\n'
-        'echo done >> "$out"\n'
+        'if [ "$saw_json" -ne 1 ]; then echo "missing --json" >&2; exit 9; fi\n'
+        "cat >/dev/null\n"
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T1"}\'\n'
+        'printf \'%s\\n\' \'{"type":"item.completed","item":{"type":"message","text":"done"}}\'\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -190,13 +192,15 @@ def _fake_codex_touches_outside_region(directory: str) -> str:
         'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
         "mkdir -p pkg\n"
         "echo outside > pkg/outside.py\n"
-        'out=""\n'
+        "saw_json=0\n"
         "while [ $# -gt 0 ]; do\n"
-        '  if [ "$1" = "--output-last-message" ]; then out="$2"; fi\n'
+        '  if [ "$1" = "--json" ]; then saw_json=1; fi\n'
         "  shift\n"
         "done\n"
-        ': > "$out"\n'
-        'echo done >> "$out"\n'
+        'if [ "$saw_json" -ne 1 ]; then echo "missing --json" >&2; exit 9; fi\n'
+        "cat >/dev/null\n"
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T1"}\'\n'
+        'printf \'%s\\n\' \'{"type":"item.completed","item":{"type":"message","text":"done"}}\'\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -261,6 +265,8 @@ class TestTeamAdapterLedgerContract(unittest.TestCase):
             )
             self.assertEqual(validate_runner_receipt(receipt), [])
             self.assertEqual(receipt["runner_kind"], "codex-cli")
+            self.assertIn("--json", receipt["invocation"])
+            self.assertNotIn("--output-last-message", receipt["invocation"])
 
     def test_cli_adapter_lane_region_bounds_capture_manifest(self):
         from depone.agent_fabric.capture_bridge import validate_capture_manifest

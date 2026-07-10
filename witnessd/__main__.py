@@ -69,6 +69,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
         build_reference_adapter_fixture,
         build_shell_invocation,
     )
+    from witnessd.privacy import (
+        CAPTURE_PROFILE_REDACTED,
+        build_redaction_context,
+        redact_value,
+    )
     from witnessd.signing import gen_operator_keypair
 
     evidence_dir = os.path.dirname(out_path)
@@ -80,6 +85,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
     allowed_touched_files = list(args.allow or [])
     commands = [list(args.command)]
     lane_result = run_shell_lane(sandbox=sandbox, commands=commands)
+    redaction_context = None
+    if args.capture_profile == CAPTURE_PROFILE_REDACTED:
+        redaction_context = build_redaction_context(
+            run_id=args.task_id,
+            prompt=" ".join(args.command),
+            paths=[*allowed_touched_files, *lane_result.get("touched_files", [])],
+            worktree=sandbox,
+        )
+        lane_result = redact_value(lane_result, redaction_context)
+        allowed_touched_files = list(redact_value(allowed_touched_files, redaction_context))
 
     # The source fixture is the declared (A0) side; Depone requires a proper
     # agent-fabric-reference-adapter-fixture, not a placeholder.
@@ -93,7 +108,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
         allowed_touched_files=allowed_touched_files,
         public_key_path=public_key_path,
         task_id=args.task_id,
-        runner_sandbox=sandbox,
+        runner_sandbox=str(redact_value(sandbox, redaction_context)),
+        capture_profile=args.capture_profile,
+        redaction_manifest=(
+            redaction_context["manifest"] if redaction_context is not None else None
+        ),
     )
 
     pending = 1
@@ -372,6 +391,7 @@ def _cmd_run_adapter(args: argparse.Namespace) -> int:
         return 2
 
     from witnessd.adapter_run import LaneBlocked, run_adapter_lane
+    from witnessd.adapters.codex import CodexAdapterError
 
     try:
         result = run_adapter_lane(
@@ -392,10 +412,16 @@ def _cmd_run_adapter(args: argparse.Namespace) -> int:
             predicted_usd=args.predicted_usd,
             codex_binary=args.codex_binary,
             claude_binary=args.claude_binary,
+            gemini_binary=args.gemini_binary,
             opencode_binary=args.opencode_binary,
+            allowed_touched_files=list(args.allow or []),
+            capture_profile=args.capture_profile,
         )
     except LaneBlocked as exc:
         print(exc.reason, file=sys.stderr)
+        return 1
+    except CodexAdapterError as exc:
+        print(exc.code, file=sys.stderr)
         return 1
 
     pending = 1
@@ -505,6 +531,7 @@ def _cmd_pilot_archive_evidence(args: argparse.Namespace) -> int:
 
 def _cmd_plan(args: argparse.Namespace) -> int:
     from witnessd.adapter_run import LaneBlocked, run_adapter_lane
+    from witnessd.adapters.codex import CodexAdapterError
     from witnessd.orro_workflow import (
         OrroWorkflowError,
         compile_role_lane_plan,
@@ -563,6 +590,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                 opencode_binary=args.opencode_binary,
                 evidence_dir=draft_out,
                 state_root=draft_root,
+                allowed_touched_files=["witnessd-plan-draft.txt"],
             )
             transcript = (
                 Path(result["evidence_dir"]).resolve(strict=False).parent
@@ -576,7 +604,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                     "evidence_dir": result["evidence_dir"],
                 }
             )
-        except (LaneBlocked, PlannerError, OSError) as exc:
+        except (LaneBlocked, PlannerError, OSError, CodexAdapterError) as exc:
             reason = str(exc).split(":", 1)[0]
             draft_events.append(
                 {
@@ -1618,7 +1646,7 @@ def _cmd_faultkit(args: argparse.Namespace) -> int:
 
 
 def _cmd_pause(args: argparse.Namespace) -> int:
-    from witnessd.eventlog import EventLog
+    from witnessd.eventlog import EventLog, EventLogIntegrityError
     from witnessd.pause import PauseError, append_user_pause
 
     try:
@@ -1647,13 +1675,17 @@ def _cmd_kill(args: argparse.Namespace) -> int:
     if not args.all:
         print("ERR_KILL_SCOPE_REQUIRED", file=sys.stderr)
         return 2
-    from witnessd.eventlog import EventLog
+    from witnessd.eventlog import EventLog, EventLogIntegrityError
     from witnessd.killswitch import active_targets_from_runlog, kill_all
     from witnessd.runlog import verify_runlog
     from witnessd.supervisor import WorkerSupervisor
 
-    log = EventLog(args.runlog)
-    records = log.read()
+    try:
+        log = EventLog(args.runlog)
+        records = log.read()
+    except EventLogIntegrityError as exc:
+        print(f"runlog: broken_at={exc.broken_at}", file=sys.stderr)
+        return 1
     verification = verify_runlog(records)
     if not verification["ok"]:
         print(f"runlog: broken_at={verification['broken_at']}", file=sys.stderr)
@@ -2747,7 +2779,7 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
     run.add_argument(
         "--adapter",
         default="shell",
-        choices=["shell", "codex", "claude", "opencode"],
+        choices=["shell", "codex", "claude", "gemini", "opencode"],
     )
     run.add_argument("--root", default=".")
     run.add_argument("--runner-sandbox", default=None)
@@ -2763,6 +2795,7 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
     )
     run.add_argument("--codex-binary", default="codex")
     run.add_argument("--claude-binary", default="claude")
+    run.add_argument("--gemini-binary", default="gemini")
     run.add_argument("--opencode-binary", default="opencode")
     run.add_argument("--max-tokens", type=int, default=10**9)
     run.add_argument("--max-usd", type=float, default=10**9)
@@ -2771,6 +2804,11 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
     run.add_argument("--predicted-usd", type=float, default=0.0)
     run.add_argument(
         "--allow", action="append", default=[], help="allowed touched file"
+    )
+    run.add_argument(
+        "--capture-profile",
+        choices=["full", "redacted"],
+        default="full",
     )
     run.add_argument("command", nargs=argparse.REMAINDER)
 
@@ -2785,7 +2823,7 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
     flowplan.add_argument(
         "--lane-adapter",
         default="shell",
-        choices=["shell", "codex", "claude", "opencode"],
+        choices=["shell", "codex", "claude", "gemini", "opencode"],
     )
     flowplan.add_argument("--json", action="store_true")
     flowplan.set_defaults(

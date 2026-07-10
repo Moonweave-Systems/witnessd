@@ -275,7 +275,7 @@ class TestPilotCanary(unittest.TestCase):
             )
             signatures = bundle["dsse_envelope"]["signatures"]
             self.assertEqual(len(signatures), 1)
-            self.assertEqual(signatures[0]["keyid"], DEFAULT_OPERATOR_KEY_ID)
+            self.assertRegex(signatures[0]["keyid"], r"^sha256:[0-9a-f]{64}$")
             self.assertTrue(verify_dsse(bundle["dsse_envelope"], public_key))
 
 

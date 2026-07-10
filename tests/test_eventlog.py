@@ -2,6 +2,7 @@ import multiprocessing
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from witnessd.eventlog import EventLog
 from witnessd.runlog import verify_runlog
@@ -52,6 +53,52 @@ class TestEventLog(unittest.TestCase):
             records = EventLog(path).read()
             self.assertEqual(len(records), 120)
             self.assertEqual([record["seq"] for record in records], list(range(120)))
+            self.assertEqual(verify_runlog(records), {"ok": True, "broken_at": None})
+
+    def test_append_uses_checkpoint_without_full_runlog_scan(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "runlog.jsonl")
+            EventLog(path).append({"kind": "witnessd-runlog-event", "event": "seed"})
+
+            with mock.patch.object(EventLog, "read", side_effect=AssertionError("full scan")):
+                record = EventLog(path).append(
+                    {"kind": "witnessd-runlog-event", "event": "fast-append"}
+                )
+
+            self.assertEqual(record["seq"], 1)
+            records = EventLog(path).read()
+            self.assertEqual([event["event"] for event in records], ["seed", "fast-append"])
+            self.assertEqual(verify_runlog(records), {"ok": True, "broken_at": None})
+            self.assertTrue(os.path.exists(EventLog(path)._checkpoint_path()))
+
+    def test_read_checkpoint_uses_verified_eof_offset(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "runlog.jsonl")
+            EventLog(path).append({"kind": "witnessd-runlog-event", "event": "seed"})
+            checkpoint_path = EventLog(path)._checkpoint_path()
+            os.unlink(checkpoint_path)
+
+            original_set_state = EventLog._set_state_from_records
+            interleaved = False
+
+            def interleave_append(self, records):
+                nonlocal interleaved
+                original_set_state(self, records)
+                if not interleaved and records:
+                    interleaved = True
+                    EventLog(path).append(
+                        {"kind": "witnessd-runlog-event", "event": "interleaved"}
+                    )
+
+            with mock.patch.object(EventLog, "_set_state_from_records", interleave_append):
+                EventLog(path)
+
+            EventLog(path).append({"kind": "witnessd-runlog-event", "event": "after-read"})
+            records = EventLog(path).read()
+            self.assertEqual(
+                [event["event"] for event in records],
+                ["seed", "interleaved", "after-read"],
+            )
             self.assertEqual(verify_runlog(records), {"ok": True, "broken_at": None})
 
 

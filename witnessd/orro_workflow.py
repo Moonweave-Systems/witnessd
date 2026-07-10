@@ -38,7 +38,7 @@ ROLE_LANE_PLAN_BINDING_KIND = "orro-role-lane-plan-binding"
 ROLE_LANE_PLAN_BINDING_SCHEMA_VERSION = "0.1"
 ROLE_DISPATCH_KIND = "orro-role-dispatch"
 ROLE_DISPATCH_SCHEMA_VERSION = "0.1"
-ROLE_LANE_ADAPTERS = ("shell", "codex", "claude", "opencode")
+ROLE_LANE_ADAPTERS = ("shell", "codex", "claude", "gemini", "opencode")
 
 FORBIDDEN_ASSURANCE_SOURCES = [
     "skill text",
@@ -168,6 +168,10 @@ def compile_role_lane_plan(
                 and role.get("may_execute") is True
             ):
                 lanes.append(_role_lane_from_role(role, workflow_plan, lane_adapter))
+    elif profile == "review-only" and lane_adapter == "gemini":
+        for role in workflow_plan["roles"]:
+            if isinstance(role, dict) and role.get("role_id") == "reviewer":
+                lanes.append(_review_lane_from_role(role, workflow_plan, lane_adapter))
     return {
         "kind": ROLE_LANE_PLAN_KIND,
         "schema_version": ROLE_LANE_PLAN_SCHEMA_VERSION,
@@ -555,6 +559,32 @@ def _role_lane_from_role(
     }
 
 
+def _review_lane_from_role(
+    role: dict[str, Any], workflow_plan: dict[str, Any], lane_adapter: str
+) -> dict[str, Any]:
+    profile = str(workflow_plan["profile"])
+    role_id = str(role["role_id"])
+    digest = hashlib.sha256(
+        f"{workflow_plan['goal']}:{profile}:{role_id}:{lane_adapter}".encode("utf-8")
+    ).hexdigest()[:12]
+    lane_id = f"{role_id}-{digest}"
+    return {
+        "lane_id": lane_id,
+        "role_id": role_id,
+        "role_purpose": role.get("purpose", ""),
+        "phase": "review",
+        "engine": "witnessd",
+        "adapter": lane_adapter,
+        "tier": "quick",
+        "region": ["."],
+        "prompt": f"Review ORRO goal without editing files: {workflow_plan['goal']}",
+        "budget": {"max_tokens": 0, "max_usd": 0.0, "max_depth": 1},
+        "may_execute": False,
+        "may_verify": False,
+        "raises_assurance": False,
+    }
+
+
 def _validate_role_lane(lane: Any) -> None:
     if not isinstance(lane, dict):
         raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan lane must be a JSON object")
@@ -563,10 +593,14 @@ def _validate_role_lane(lane: Any) -> None:
             raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, f"role-lane field is invalid: {field}")
     if lane["adapter"] not in ROLE_LANE_ADAPTERS:
         raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_ADAPTER_UNSUPPORTED, "role-lane adapter is unsupported")
-    if lane.get("phase") != "proofrun" or lane.get("engine") != "witnessd":
+    if lane.get("phase") not in {"proofrun", "review"} or lane.get("engine") != "witnessd":
         raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane phase or engine is invalid")
-    if lane.get("may_execute") is not True or lane.get("may_verify") is not False:
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane execution boundary is invalid")
+    if lane.get("phase") == "proofrun":
+        if lane.get("may_execute") is not True or lane.get("may_verify") is not False:
+            raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane execution boundary is invalid")
+    else:
+        if lane.get("adapter") != "gemini" or lane.get("may_execute") is not False or lane.get("may_verify") is not False:
+            raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane review boundary is invalid")
     if lane.get("raises_assurance") is not False:
         raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane must not claim assurance")
     region = lane.get("region")
