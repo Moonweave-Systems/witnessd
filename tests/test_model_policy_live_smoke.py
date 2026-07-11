@@ -205,10 +205,18 @@ class TestModelPolicyLiveSmokeRunnerLane(unittest.TestCase):
 # `run_team`: OwnershipRegistry.claim() (witnessd/lock.py) rejects
 # region == ["."], which is exactly what every reviewer lane declares
 # (review is whole-repo and read-only, so it has no specific file to own).
-# Making that runnable would mean loosening region-claim or bypassing it for
-# non-executing lanes -- a real change to the "review-only does not execute"
-# boundary in moonweave/CLAUDE.md, not a model-routing concern. Deferred as
-# a separate, explicit design decision; not fixed in this change.
+# This is not a bug to fix by loosening region-claim -- the write-lane path
+# (proofrun/run_team + region locking) is simply the wrong shape for a
+# review lane in the first place. The decided direction (a follow-up wave,
+# not this change) is to wire reviewer role-lane-plan lanes through the
+# existing read-only advisory review path instead:
+# `run_agy_review_lane` -> review-receipt.json (can_change_evidence_verdict:
+# false, non-assurance), called directly rather than through
+# run_team/OwnershipRegistry. That path never touches region-claim or the
+# proofrun phase-gate at all, so it needs no lock.py change, and it
+# preserves the "review-only does not execute" invariant rather than
+# bending it: review-receipt is already a non-assurance advisory artifact,
+# so nothing about that invariant is in tension with it.
 
 
 if __name__ == "__main__":
