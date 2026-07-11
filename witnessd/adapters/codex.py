@@ -17,6 +17,11 @@ from witnessd.adapters.base import (
 )
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
 from witnessd.events import encode_agent_event_jsonl, normalize_codex_jsonl_events
+from witnessd.model_declaration import (
+    VERIFICATION_REJECTED,
+    VERIFICATION_VERIFIED,
+    build_model_declaration,
+)
 
 _OUTPUT_LIMIT = 4096
 _ALLOWED_APPROVAL_POLICIES = frozenset(
@@ -50,12 +55,14 @@ class CodexCLIAdapter:
         approval_policy = str(
             intent.get("approval", {}).get("policy", self.approval_policy)
         )
+        model = intent.get("model")
         return [
             _resolve_codex(self.codex_binary),
             "--sandbox",
             sandbox_mode,
             "--ask-for-approval",
             _codex_approval_policy_arg(approval_policy),
+            *(["-m", str(model)] if model else []),
             "exec",
             "--json",
             "--skip-git-repo-check",
@@ -188,6 +195,36 @@ def _effective_approval_policy(raw_jsonl: bytes) -> str | None:
     return None
 
 
+def _codex_model_rejection(raw_jsonl: bytes) -> str | None:
+    """Scan for codex's own turn.failed signal that the requested model was
+    rejected (live-verified against codex-cli 0.144.1): an invalid -m value
+    produces a turn.failed event whose error message names the model and
+    says it is "not supported" or "not found". Narrow substring match on
+    purpose -- turn.failed can fail for unrelated reasons (network, auth,
+    quota), and only a model-specific rejection should escalate this lane
+    closed.
+    """
+    for line in raw_jsonl.splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict) or payload.get("type") != "turn.failed":
+            continue
+        error = payload.get("error")
+        message = error.get("message") if isinstance(error, dict) else None
+        if not isinstance(message, str):
+            continue
+        lowered = message.lower()
+        if "model" in lowered and (
+            "not supported" in lowered or "not found" in lowered
+        ):
+            return message
+    return None
+
+
 def run_codex_lane(
     *,
     sandbox: str,
@@ -201,6 +238,7 @@ def run_codex_lane(
     allowed_touched_files: list[str] | None = None,
     timeout_seconds: int = 120,
     env: dict[str, str] | None = None,
+    model: str | None = None,
 ) -> AdapterResult:
     if not prompt.strip():
         raise CodexAdapterError(
@@ -233,6 +271,7 @@ def run_codex_lane(
         sandbox_mode,
         "--ask-for-approval",
         effective_declared_policy,
+        *(["-m", model] if model else []),
         "exec",
         "--json",
         "--skip-git-repo-check",
@@ -284,6 +323,27 @@ def run_codex_lane(
         stderr = f"{stderr}\n{message}".strip()
         test_output = {"status": "failed", "summary": message}
 
+    model_declaration = None
+    if model is not None:
+        rejection = _codex_model_rejection(raw_stdout)
+        if rejection is not None:
+            exit_code = 125
+            message = f"requested model {model} rejected: {rejection}"
+            stderr = f"{stderr}\n{message}".strip()
+            test_output = {"status": "failed", "summary": message}
+            model_declaration = build_model_declaration(
+                adapter="codex",
+                requested_model=model,
+                verification_status=VERIFICATION_REJECTED,
+                detail=rejection,
+            )
+        else:
+            model_declaration = build_model_declaration(
+                adapter="codex",
+                requested_model=model,
+                verification_status=VERIFICATION_VERIFIED,
+            )
+
     if log_path is not None:
         _write_command_log(
             log_path,
@@ -317,6 +377,7 @@ def run_codex_lane(
         normalized_events=normalized_events,
         raw_events_path=transcript,
         normalized_events_path=normalized_transcript,
+        model_declaration=model_declaration,
     )
 
 
