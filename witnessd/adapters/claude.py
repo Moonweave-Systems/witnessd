@@ -25,6 +25,11 @@ from witnessd.adapters.base import (
 )
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
 from witnessd.events import encode_agent_event_jsonl, normalize_claude_jsonl_events
+from witnessd.model_declaration import (
+    VERIFICATION_CONFIRMED,
+    VERIFICATION_REJECTED,
+    build_model_declaration,
+)
 
 
 class ClaudeAdapterError(AdapterExecutionError):
@@ -39,10 +44,12 @@ class ClaudeCLIAdapter:
 
     def compile_invocation(self, intent: RunIntent) -> list[str]:
         prompt = str(intent.get("prompt", "-"))
+        model = intent.get("model")
         return [
             _claude_binary(self.claude_binary),
             "-p",
             prompt,
+            *(["--model", str(model)] if model else []),
             "--output-format",
             "stream-json",
             "--verbose",
@@ -84,6 +91,43 @@ def _claude_binary(path: str) -> str:
         raise ClaudeAdapterError(exc.code, exc.message) from exc
 
 
+def _claude_model_rejection(raw_jsonl: bytes) -> str | None:
+    """Scan for claude's own signal that the requested model was rejected
+    (live-verified against claude-code 2.1.207 through the actual
+    subprocess.run adapter path -- not just a manual terminal check, which
+    first suggested a narrower shape than what actually happens): the
+    process exit code is not a reliable signal by itself (observed both 0
+    and 1 for the same rejection across separate runs), and the specific
+    `error: "model_not_found"` code was found on the "assistant" message
+    event, not the terminal "result" event as first assumed -- so this scans
+    every event, not just "result". Narrow, exact match on that specific
+    error code on purpose: claude's is_error can also fire for unrelated API
+    errors, and only a model-rejection-specific signal should escalate this
+    lane closed.
+    """
+    for line in raw_jsonl.splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("error") == "model_not_found":
+            result_text = payload.get("result")
+            if isinstance(result_text, str):
+                return result_text
+            message = payload.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and isinstance(item.get("text"), str):
+                        return item["text"]
+            return "model_not_found"
+    return None
+
+
 def run_claude_lane(
     *,
     sandbox: str,
@@ -92,6 +136,7 @@ def run_claude_lane(
     transcript_path: str,
     log_path: str | None = None,
     timeout_seconds: int = 120,
+    model: str | None = None,
 ) -> AdapterResult:
     if not prompt.strip():
         raise ClaudeAdapterError(
@@ -114,6 +159,7 @@ def run_claude_lane(
         _claude_binary(claude_binary),
         "-p",
         prompt,
+        *(["--model", model] if model else []),
         "--output-format",
         "stream-json",
         "--verbose",
@@ -152,6 +198,28 @@ def run_claude_lane(
 
     normalized_events = normalize_claude_jsonl_events(raw_stdout)
     Path(normalized_transcript).write_bytes(encode_agent_event_jsonl(normalized_events))
+    test_output: dict[str, Any] = {"status": TEST_STATUS_NOT_RUN}
+    model_declaration = None
+    if model is not None:
+        rejection = _claude_model_rejection(raw_stdout)
+        if rejection is not None:
+            exit_code = 125
+            message = f"requested model {model} rejected: {rejection}"
+            stderr = f"{stderr}\n{message}".strip()
+            test_output = {"status": "failed", "summary": message}
+            model_declaration = build_model_declaration(
+                adapter="claude",
+                requested_model=model,
+                verification_status=VERIFICATION_REJECTED,
+                detail=rejection,
+            )
+        else:
+            model_declaration = build_model_declaration(
+                adapter="claude",
+                requested_model=model,
+                verification_status=VERIFICATION_CONFIRMED,
+            )
+
     if log_path is not None:
         Path(log_path).parent.mkdir(parents=True, exist_ok=True)
         Path(log_path).write_text(
@@ -188,8 +256,9 @@ def run_claude_lane(
         touched_files=_diff_touched(
             before, after, sandbox=repo, evidence_paths=evidence_paths
         ),
-        test_output={"status": TEST_STATUS_NOT_RUN},
+        test_output=test_output,
         normalized_events=normalized_events,
         raw_events_path=transcript,
         normalized_events_path=normalized_transcript,
+        model_declaration=model_declaration,
     )

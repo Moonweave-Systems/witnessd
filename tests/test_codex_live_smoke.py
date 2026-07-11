@@ -128,6 +128,57 @@ class TestCodexLiveSmoke(unittest.TestCase):
                 "touched_files must be exactly the agent's edit, no state-dir noise",
             )
 
+    def test_real_codex_accepts_a_valid_model(self):
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as evidence,
+        ):
+            res = run_codex_lane(
+                sandbox=sandbox,
+                prompt="Reply with the single word OK. Do not edit any files.",
+                transcript_path=str(Path(evidence) / "events.raw.jsonl"),
+                sandbox_mode="workspace-write",
+                approval_policy="never",
+                allowed_touched_files=["untouched.txt"],
+                model="gpt-5.5",
+                timeout_seconds=120,
+            )
+
+            self.assertEqual(res.exit_code, 0)
+            self.assertEqual(
+                res.model_declaration,
+                {
+                    "kind": "moonweave-model-declaration",
+                    "schema_version": "1.0",
+                    "can_change_evidence_verdict": False,
+                    "adapter": "codex",
+                    "requested_model": "gpt-5.5",
+                    "verification_status": "verified",
+                    "detail": None,
+                },
+            )
+
+    def test_real_codex_rejects_an_invalid_model_failclosed(self):
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as evidence,
+        ):
+            res = run_codex_lane(
+                sandbox=sandbox,
+                prompt="Reply with the single word OK. Do not edit any files.",
+                transcript_path=str(Path(evidence) / "events.raw.jsonl"),
+                sandbox_mode="workspace-write",
+                approval_policy="never",
+                allowed_touched_files=["untouched.txt"],
+                model="nonexistent-model-xyz",
+                timeout_seconds=120,
+            )
+
+            self.assertEqual(res.exit_code, 125)
+            self.assertEqual(res.test_output["status"], "failed")
+            self.assertEqual(res.model_declaration["verification_status"], "rejected")
+            self.assertIsNotNone(res.model_declaration["detail"])
+
 
 if __name__ == "__main__":
     unittest.main()

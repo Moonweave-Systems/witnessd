@@ -35,6 +35,10 @@ from witnessd.adapters.base import (
 )
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
 from witnessd.events import encode_agent_event_jsonl, normalize_agy_text_events
+from witnessd.model_declaration import (
+    VERIFICATION_REQUESTED_UNCONFIRMED,
+    build_model_declaration,
+)
 
 _OUTPUT_LIMIT = 4096
 _FORBIDDEN_FLAGS = frozenset(
@@ -445,6 +449,20 @@ def run_agy_review_lane(
         stderr = f"{stderr}\n{message}".strip()
         test_output = {"status": "failed", "summary": message}
 
+    model_declaration = None
+    if model is not None:
+        # agy's --model has no rejection signal at all (live-verified: an
+        # invalid model silently falls back to a default, no error, no exit
+        # code change, and the transcript never names the model actually
+        # used), so this can never honestly claim "verified" -- only that a
+        # model was requested. Do not "upgrade" this to verified even if a
+        # future agy version starts echoing the model; re-verify live first.
+        model_declaration = build_model_declaration(
+            adapter="agy",
+            requested_model=model,
+            verification_status=VERIFICATION_REQUESTED_UNCONFIRMED,
+        )
+
     if log_path is not None:
         _write_command_log(
             log_path,
@@ -476,4 +494,5 @@ def run_agy_review_lane(
         raw_events_path=transcript,
         normalized_events_path=normalized_transcript,
         review_receipt_path=review_receipt,
+        model_declaration=model_declaration,
     )

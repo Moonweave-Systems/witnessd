@@ -445,6 +445,104 @@ class TestAdapterRun(unittest.TestCase):
             )
             self.assertEqual(verdict["decision"], "pass")
 
+    def test_explicit_model_wires_through_to_codex_invocation_and_declaration(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "model-evidence")
+            _init_repo(sandbox)
+
+            out = run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="t-model",
+                prompt="do X",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=_fake_codex(bindir),
+                evidence_dir=evidence_dir,
+                allowed_touched_files=["noop.txt"],
+                model="gpt-5.5",
+            )
+
+            self.assertIn("-m", out["runner_receipt"]["invocation"])
+            self.assertEqual(
+                out["runner_receipt"]["invocation"][
+                    out["runner_receipt"]["invocation"].index("-m") + 1
+                ],
+                "gpt-5.5",
+            )
+            subject_names = [
+                item["name"]
+                for item in out["bundle"]["statement"]["predicate"]["artifact_index"]
+            ]
+            self.assertIn("model-declaration", subject_names)
+
+            declaration = json.loads(
+                (pathlib.Path(evidence_dir) / "model-declaration.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(declaration["requested_model"], "gpt-5.5")
+            self.assertEqual(declaration["verification_status"], "verified")
+            self.assertFalse(declaration["can_change_evidence_verdict"])
+
+            evidence_root = pathlib.Path(evidence_dir)
+            verdict = ingest_signed_evidence_bundle(
+                out["bundle"],
+                out["public_key_path"],
+                {
+                    "capture-manifest": str(evidence_root / "capture-manifest.json"),
+                    "observer-capture": str(evidence_root / "observer-capture.json"),
+                    "runner-receipt": str(evidence_root / "runner-receipt.json"),
+                    "run-intent": str(evidence_root / "run-intent.json"),
+                    "events.raw": str(evidence_root / "events.raw.jsonl"),
+                    "events.normalized": str(evidence_root / "events.normalized.jsonl"),
+                    "model-declaration": str(evidence_root / "model-declaration.json"),
+                },
+                otel_spans=out["bundle"]["otel_spans"],
+            )
+            self.assertEqual(verdict["decision"], "pass")
+
+    def test_no_model_requested_emits_no_model_declaration_artifact(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "no-model-evidence")
+            _init_repo(sandbox)
+
+            out = run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="t-no-model",
+                prompt="do X",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=_fake_codex(bindir),
+                evidence_dir=evidence_dir,
+                allowed_touched_files=["noop.txt"],
+            )
+
+            self.assertNotIn("-m", out["runner_receipt"]["invocation"])
+            subject_names = [
+                item["name"]
+                for item in out["bundle"]["statement"]["predicate"]["artifact_index"]
+            ]
+            self.assertNotIn("model-declaration", subject_names)
+            self.assertFalse(
+                (pathlib.Path(evidence_dir) / "model-declaration.json").exists()
+            )
+
     def test_codex_uses_isolated_state_namespace(self):
         with (
             tempfile.TemporaryDirectory() as root,

@@ -117,6 +117,39 @@ class TestAgyLiveSmoke(unittest.TestCase):
                 self.assertEqual(res.exit_code, 0)
                 self.assertEqual(res.touched_files, [])
 
+    def test_real_agy_requested_model_is_always_reported_unverified(self):
+        # agy's --model has no rejection signal at all (live-verified: an
+        # invalid model would silently fall back, no error, no exit code
+        # change), so a requested model can never be marked "verified" here
+        # -- only that a real agy actually accepted the --model flag and ran.
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as evidence,
+        ):
+            sandbox_path = Path(sandbox)
+            _seed_repo(sandbox_path, _BUGGY_CALC)
+            res = run_agy_review_lane(
+                sandbox=sandbox,
+                prompt="Review calc.py for bugs. Do not edit any files.",
+                transcript_path=str(Path(evidence) / "events.raw.jsonl"),
+                model="gemini-3.5-flash",
+                timeout_seconds=150,
+            )
+
+            self.assertIn("--model", res.invocation)
+            self.assertEqual(
+                res.model_declaration,
+                {
+                    "kind": "moonweave-model-declaration",
+                    "schema_version": "1.0",
+                    "can_change_evidence_verdict": False,
+                    "adapter": "agy",
+                    "requested_model": "gemini-3.5-flash",
+                    "verification_status": "requested-unverified",
+                    "detail": None,
+                },
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

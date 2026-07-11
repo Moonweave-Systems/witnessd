@@ -148,7 +148,9 @@ def emit_lane_evidence(
             capture_profile=capture_profile,
         )
         run_intent_path = os.path.join(evidence_dir, RUN_INTENT_ARTIFACT_NAME)
-        write_signed_run_intent(run_intent_path, intent, private_key_path, key_id=key_id)
+        write_signed_run_intent(
+            run_intent_path, intent, private_key_path, key_id=key_id
+        )
 
     source_fixture_hash = canonical_hash(fixture)
     observer_capture = build_observer_capture(
@@ -275,10 +277,14 @@ def emit_lane_evidence(
             artifact_name = (
                 "review-receipt.json"
                 if subject_name == "review-receipt"
+                else "model-declaration.json"
+                if subject_name == "model-declaration"
                 else f"{subject_name}.jsonl"
             )
             with open(source, "rb") as handle:
-                artifacts[subject_name] = _emit_artifact_bytes(artifact_name, handle.read())
+                artifacts[subject_name] = _emit_artifact_bytes(
+                    artifact_name, handle.read()
+                )
     otel_spans = None
     if runner_kind is not None:
         otel_spans = build_otel_spans(manifest, runner_receipt=receipt)
@@ -370,7 +376,9 @@ def emit_supervised_lane(
         model=isolation_model or ISOLATION_MODEL,
         observer_launched=observer_launched,
     )
-    isolation = facts if verify_isolation_boundary(facts).get("boundary") is True else None
+    isolation = (
+        facts if verify_isolation_boundary(facts).get("boundary") is True else None
+    )
     return emit_lane_evidence(
         lane_result,
         evidence_dir,
@@ -431,7 +439,9 @@ def _self_test() -> None:
         )
         if result["provenance"].get("kind") != PROVENANCE_KIND:
             raise AssertionError("trusted provenance kind mismatch")
-        if result["provenance"].get("manifest_hash") != canonical_hash(result["manifest"]):
+        if result["provenance"].get("manifest_hash") != canonical_hash(
+            result["manifest"]
+        ):
             raise AssertionError("trusted provenance manifest_hash mismatch")
     print("witnessd emitter --self-test: pass")
 

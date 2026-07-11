@@ -248,6 +248,55 @@ class TestAgyAdapter(unittest.TestCase):
             self.assertIn("read-only", res.test_output["summary"])
             self.assertIn("reviewed.txt", res.touched_files)
 
+    def test_no_model_requested_emits_no_declaration(self):
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            res = run_agy_review_lane(
+                sandbox=sandbox,
+                prompt="review only",
+                agy_binary=_fake_agy(bindir),
+                transcript_path=str(pathlib.Path(bindir) / "agy.raw.jsonl"),
+                env={"AGY_ARGV_CAPTURE": str(pathlib.Path(bindir) / "argv.txt")},
+            )
+
+            self.assertIsNone(res.model_declaration)
+
+    def test_requested_model_is_always_reported_unverified(self):
+        # agy's --model has no rejection signal at all (live-verified: an
+        # invalid model silently falls back to a default with no error), so
+        # a requested model can never be marked "verified" -- only that it
+        # was asked for.
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            res = run_agy_review_lane(
+                sandbox=sandbox,
+                prompt="review only",
+                agy_binary=_fake_agy(bindir),
+                transcript_path=str(pathlib.Path(bindir) / "agy.raw.jsonl"),
+                env={"AGY_ARGV_CAPTURE": str(pathlib.Path(bindir) / "argv.txt")},
+                model="gemini-3.5-flash",
+            )
+
+            self.assertEqual(
+                res.model_declaration,
+                {
+                    "kind": "moonweave-model-declaration",
+                    "schema_version": "1.0",
+                    "can_change_evidence_verdict": False,
+                    "adapter": "agy",
+                    "requested_model": "gemini-3.5-flash",
+                    "verification_status": "requested-unverified",
+                    "detail": None,
+                },
+            )
+            argv = pathlib.Path(bindir, "argv.txt").read_text(encoding="utf-8")
+            self.assertIn("--model", argv)
+            self.assertIn("gemini-3.5-flash", argv)
+
 
 if __name__ == "__main__":
     unittest.main()
