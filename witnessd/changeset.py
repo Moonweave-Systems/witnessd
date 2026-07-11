@@ -29,6 +29,15 @@ class SnapshotRecord(TypedDict):
 Baseline = dict[str, SnapshotRecord]
 
 
+# witnessd's own runtime state dir (StateNamespace.state_dir). run_adapter_lane
+# fails closed against this ever nesting inside an observed sandbox (see
+# adapter_run.py's assert_separated(worktree, namespace.state_dir)); this is
+# defense-in-depth for that same invariant at the snapshot layer, in case a
+# caller's state_root resolves inside sandbox through some path the guard
+# doesn't catch (e.g. a symlink swap between the guard check and this walk).
+_EXCLUDED_DIR_NAMES = frozenset({".witnessd"})
+
+
 def capture_snapshot(sandbox: str) -> Baseline:
     root = Path(sandbox)
     records: Baseline = {}
@@ -36,7 +45,8 @@ def capture_snapshot(sandbox: str) -> Baseline:
         dirs[:] = [
             name
             for name in dirs
-            if not (Path(current_root) / name).is_symlink()
+            if name not in _EXCLUDED_DIR_NAMES
+            and not (Path(current_root) / name).is_symlink()
         ]
         for name in [*dirs, *files]:
             abs_path = Path(current_root) / name
@@ -71,11 +81,7 @@ def diff_snapshots(before: Baseline, after: Baseline) -> list[ChangeRecord]:
 
 def touched_files(changes: list[ChangeRecord]) -> list[str]:
     return sorted(
-        {
-            record["path"]
-            for record in changes
-            if record.get("file_type") != "dir"
-        }
+        {record["path"] for record in changes if record.get("file_type") != "dir"}
     )
 
 
