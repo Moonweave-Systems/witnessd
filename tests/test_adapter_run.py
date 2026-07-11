@@ -13,11 +13,30 @@ from unittest.mock import patch
 
 from depone.agent_fabric.paired_run import validate_runner_receipt
 from depone.agent_fabric.evidence_substrate import ingest_signed_evidence_bundle
+from depone.verify.adapters.base import EvidenceContext, EvidenceFile
+from depone.verify.evidence_contract import validate_evidence_contract
 
 from witnessd.adapter_run import LaneBlocked, run_adapter_lane
 from witnessd.observer import ObserverSeparationError
 from witnessd.runintent import RUN_INTENT_PAYLOAD_TYPE, build_run_intent
 from witnessd.signing import verify_dsse
+
+
+def _evidence_context_from_dir(root: pathlib.Path) -> EvidenceContext:
+    files = []
+    for path in sorted(root.rglob("*")):
+        if path.is_dir():
+            continue
+        rel = path.relative_to(root).as_posix()
+        content = path.read_text(encoding="utf-8")
+        files.append(
+            EvidenceFile(
+                path=rel,
+                content=content,
+                sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            )
+        )
+    return EvidenceContext(run_id=None, files=files, raw={})
 
 
 def _fake_codex(directory: str) -> str:
@@ -160,13 +179,23 @@ class TestAdapterRun(unittest.TestCase):
             run_intent_artifact = json.loads(
                 run_intent_path.read_text(encoding="utf-8")
             )
+            self.assertEqual(run_intent_artifact["schema_version"], "1.0")
             envelope = run_intent_artifact["dsse_envelope"]
             self.assertEqual(envelope["payloadType"], RUN_INTENT_PAYLOAD_TYPE)
             self.assertTrue(verify_dsse(envelope, out["public_key_path"]))
             intent = json.loads(base64.b64decode(envelope["payload"]).decode("utf-8"))
+            self.assertEqual(intent["schema_version"], "1.0")
+            self.assertNotIn("role_capability", intent)
             self.assertEqual(intent["run_id"], "t")
             self.assertEqual(intent["allowed_paths"], ["noop.txt"])
             self.assertEqual(intent["provider"]["name"], "codex")
+            evidence_contract = json.loads(
+                pathlib.Path(out["evidence_dir"], "evidence-contract.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(evidence_contract["schema_version"], "v105.verify_wedge")
+            self.assertNotIn("role_capability_write_scope", evidence_contract)
             subject_names = [
                 item["name"] for item in out["bundle"]["statement"]["subject"]
             ]
@@ -256,6 +285,84 @@ class TestAdapterRun(unittest.TestCase):
                 out["bundle"],
                 out["public_key_path"],
                 artifact_paths,
+                otel_spans=out["bundle"]["otel_spans"],
+            )
+            self.assertEqual(verdict["decision"], "pass")
+
+    def test_redacted_write_scope_is_rederived_by_depone_without_raw_paths(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "redacted-write-scope-evidence")
+            _init_repo(sandbox)
+
+            out = run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="t-redacted-write-scope",
+                prompt="write pkg/agent.py",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=_fake_codex_writes_env_and_code(bindir),
+                evidence_dir=evidence_dir,
+                allowed_touched_files=["codex-home.txt", "pkg/agent.py"],
+                write_scope=["pkg/**", "codex-home.txt"],
+                role_id="runner",
+                role_capability="execute",
+                capture_profile="redacted",
+            )
+
+            evidence_root = pathlib.Path(evidence_dir)
+            self.assertEqual(
+                validate_evidence_contract(_evidence_context_from_dir(evidence_root)),
+                [],
+            )
+
+            run_intent_artifact = json.loads(
+                (evidence_root / "run-intent.json").read_text(encoding="utf-8")
+            )
+            run_intent = json.loads(
+                base64.b64decode(
+                    run_intent_artifact["dsse_envelope"]["payload"]
+                ).decode("utf-8")
+            )
+            declared_scope = run_intent["role_capability"]["declared_write_scope"]
+            self.assertNotIn("pkg/agent.py", json.dumps(declared_scope))
+            self.assertNotIn("pkg/**", json.dumps(declared_scope))
+
+            declaration = json.loads(
+                (evidence_root / "write-scope-declaration.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(declaration["declared_write_scope"], declared_scope)
+            self.assertEqual(declaration["verification_status"], "verified")
+            self.assertEqual(declaration["conformance"], "pass")
+            self.assertNotIn("pkg/agent.py", json.dumps(declaration))
+            self.assertNotIn("pkg/**", json.dumps(declaration))
+
+            verdict = ingest_signed_evidence_bundle(
+                out["bundle"],
+                out["public_key_path"],
+                {
+                    "capture-manifest": str(evidence_root / "capture-manifest.json"),
+                    "observer-capture": str(evidence_root / "observer-capture.json"),
+                    "runner-receipt": str(evidence_root / "runner-receipt.json"),
+                    "run-intent": str(evidence_root / "run-intent.json"),
+                    "events.raw": str(evidence_root / "events.raw.jsonl"),
+                    "events.normalized": str(evidence_root / "events.normalized.jsonl"),
+                    "redaction-manifest": str(
+                        evidence_root / "redaction-manifest.json"
+                    ),
+                    "write-scope-declaration": str(
+                        evidence_root / "write-scope-declaration.json"
+                    ),
+                },
                 otel_spans=out["bundle"]["otel_spans"],
             )
             self.assertEqual(verdict["decision"], "pass")
@@ -558,6 +665,45 @@ class TestAdapterRun(unittest.TestCase):
             self.assertEqual(declaration["conformance"], "pass")
 
             evidence_root = pathlib.Path(evidence_dir)
+            run_intent_artifact = json.loads(
+                (evidence_root / "run-intent.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(run_intent_artifact["schema_version"], "1.1")
+            run_intent = json.loads(
+                base64.b64decode(
+                    run_intent_artifact["dsse_envelope"]["payload"]
+                ).decode("utf-8")
+            )
+            self.assertEqual(run_intent["schema_version"], "1.1")
+            self.assertEqual(
+                run_intent["role_capability"],
+                {
+                    "schema_version": "1.0",
+                    "role_id": "runner",
+                    "capability": "execute",
+                    "declared_write_scope": ["pkg/**", "codex-home.txt"],
+                },
+            )
+            evidence_contract = json.loads(
+                (evidence_root / "evidence-contract.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                evidence_contract["schema_version"],
+                "v106.role_capability_write_scope",
+            )
+            self.assertEqual(
+                evidence_contract["role_capability_write_scope"],
+                {
+                    "run_intent_path": "run-intent.json",
+                    "bundle_path": "bundle.json",
+                },
+            )
+            self.assertEqual(
+                validate_evidence_contract(_evidence_context_from_dir(evidence_root)),
+                [],
+            )
             verdict = ingest_signed_evidence_bundle(
                 out["bundle"],
                 out["public_key_path"],

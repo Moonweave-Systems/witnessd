@@ -31,6 +31,7 @@ from witnessd.privacy import (
 from witnessd.router import RouteExhaustedError, route_model
 from witnessd.runintent import (
     RUN_INTENT_ARTIFACT_NAME,
+    build_role_capability_intent,
     build_run_intent,
     git_baseline,
     write_signed_run_intent,
@@ -334,6 +335,13 @@ def run_adapter_lane(
         redacted_allowed_for_manifest = list(
             redact_value(allowed_for_manifest, redaction_context)
         )
+        redacted_write_scope = None
+        if write_scope is not None:
+            redacted_write_scope = (
+                list(redacted_allowed_for_manifest)
+                if redaction_context is not None
+                else list(write_scope)
+            )
         if run_intent is None:
             run_intent = build_run_intent(
                 run_id=task_id,
@@ -355,6 +363,15 @@ def run_adapter_lane(
                     "timeout_seconds": int(timeout_seconds),
                 },
                 capture_profile=capture_profile,
+                role_capability=(
+                    build_role_capability_intent(
+                        role_id=role_id or task_id,
+                        capability=role_capability or "execute",
+                        declared_write_scope=redacted_write_scope,
+                    )
+                    if redacted_write_scope is not None
+                    else None
+                ),
             )
         run_intent_path = lane_evidence_dir / RUN_INTENT_ARTIFACT_NAME
         write_signed_run_intent(
@@ -412,14 +429,23 @@ def run_adapter_lane(
                 json.dumps(tool_declaration, sort_keys=True), encoding="utf-8"
             )
             provider_artifacts["tool-declaration"] = str(tool_declaration_path)
-        if write_scope is not None:
+        lane_result = {
+            "command_receipts": adapter_result.command_receipts,
+            "touched_files": adapter_result.touched_files,
+            "test_output": adapter_result.test_output,
+        }
+        if redaction_context is not None:
+            lane_result = redact_value(lane_result, redaction_context)
+            diff_patch = str(redact_value(diff_patch, redaction_context))
+
+        if redacted_write_scope is not None:
             write_scope_declaration = build_write_scope_declaration(
                 role_id=role_id or task_id,
                 lane_id=task_id,
                 capability=role_capability or "execute",
-                declared_write_scope=list(write_scope),
-                allowed_touched_files=allowed_for_manifest,
-                touched_files=adapter_result.touched_files,
+                declared_write_scope=redacted_write_scope,
+                allowed_touched_files=redacted_allowed_for_manifest,
+                touched_files=list(lane_result.get("touched_files", [])),
             )
             write_scope_declaration_path = task_dir / "write-scope-declaration.json"
             write_scope_declaration_path.write_text(
@@ -429,14 +455,6 @@ def run_adapter_lane(
             provider_artifacts["write-scope-declaration"] = str(
                 write_scope_declaration_path
             )
-        lane_result = {
-            "command_receipts": adapter_result.command_receipts,
-            "touched_files": adapter_result.touched_files,
-            "test_output": adapter_result.test_output,
-        }
-        if redaction_context is not None:
-            lane_result = redact_value(lane_result, redaction_context)
-            diff_patch = str(redact_value(diff_patch, redaction_context))
 
         started_at = _now_iso()
         ended_at = _now_iso()
@@ -461,6 +479,9 @@ def run_adapter_lane(
                 redaction_context["manifest"] if redaction_context is not None else None
             ),
             provider_artifacts=provider_artifacts,
+            write_scope=redacted_write_scope,
+            role_id=role_id,
+            role_capability=role_capability,
         )
 
         return {

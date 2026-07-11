@@ -39,6 +39,7 @@ BUNDLE_SCHEMA_VERSION = "1.0"
 SIGNING_STATUS_UNSIGNED = "unsigned-content-addressed"
 SIGNING_STATUS_OPERATOR_KEY = "signed-ed25519-operator-key"
 EVIDENCE_CONTRACT_SCHEMA_VERSION = "v105.verify_wedge"
+ROLE_CAPABILITY_EVIDENCE_CONTRACT_SCHEMA_VERSION = "v106.role_capability_write_scope"
 EVIDENCE_MODE_CONTEMPORANEOUS = "contemporaneous"
 EVIDENCE_MODE_POST_HOC = "post_hoc"
 DEFAULT_EPOCH_SECONDS = 300
@@ -257,19 +258,32 @@ def build_evidence_contract(
     touched_files: list[str],
     exit_code: int,
     diff_patch: str = "",
+    write_scope: list[str] | None = None,
 ) -> dict[str, str]:
-    """Build the `v105.verify_wedge` evidence-contract plus its companion files.
+    """Build the evidence-contract plus its companion files.
 
     Returns a name -> content map ready to write at the evidence root. The
     contract declares `allowed_touched_files` and `expected_exit_code` as
-    enforcement directives that Depone's `validate_evidence_contract` checks
-    against the git-diff / exit-code artifacts.
+    enforcement directives that Depone's `validate_evidence_contract` checks.
+    When `write_scope` is supplied, the contract also activates Depone's v106
+    role-capability write-scope conformance axis; the declared scope itself
+    stays in the signed run-intent artifact.
     """
+    schema_version = (
+        ROLE_CAPABILITY_EVIDENCE_CONTRACT_SCHEMA_VERSION
+        if write_scope is not None
+        else EVIDENCE_CONTRACT_SCHEMA_VERSION
+    )
     contract = {
-        "schema_version": EVIDENCE_CONTRACT_SCHEMA_VERSION,
+        "schema_version": schema_version,
         "allowed_touched_files": list(allowed_touched_files),
         "expected_exit_code": exit_code,
     }
+    if write_scope is not None:
+        contract["role_capability_write_scope"] = {
+            "run_intent_path": "run-intent.json",
+            "bundle_path": "bundle.json",
+        }
     name_only = "".join(f"{name}\n" for name in touched_files)
     return {
         "evidence-contract.json": json.dumps(contract, indent=2),

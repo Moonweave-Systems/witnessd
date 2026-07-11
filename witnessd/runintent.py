@@ -21,6 +21,8 @@ RUN_INTENT_ARTIFACT_NAME = "run-intent.json"
 RUN_INTENT_SUBJECT_NAME = "run-intent"
 RUN_INTENT_ARTIFACT_KIND = "moonweave-run-intent-artifact"
 RUN_INTENT_SCHEMA_VERSION = "1.0"
+RUN_INTENT_ROLE_CAPABILITY_SCHEMA_VERSION = "1.1"
+ROLE_CAPABILITY_SCHEMA_VERSION = "1.0"
 RUN_INTENT_PAYLOAD_TYPE = "application/vnd.moonweave.run-intent+json"
 DEFAULT_ADAPTER_VERSION = "witnessd.adapter_run/1"
 
@@ -67,9 +69,15 @@ def build_run_intent(
     budgets: dict[str, Any],
     capture_profile: str = "full",
     adapter_version: str = DEFAULT_ADAPTER_VERSION,
+    role_capability: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
-        "schema_version": RUN_INTENT_SCHEMA_VERSION,
+    schema_version = (
+        RUN_INTENT_ROLE_CAPABILITY_SCHEMA_VERSION
+        if role_capability is not None
+        else RUN_INTENT_SCHEMA_VERSION
+    )
+    intent = {
+        "schema_version": schema_version,
         "run_id": run_id,
         "baseline": baseline,
         "allowed_paths": list(allowed_paths),
@@ -80,6 +88,9 @@ def build_run_intent(
         "budgets": dict(budgets),
         "capture_profile": capture_profile,
     }
+    if role_capability is not None:
+        intent["role_capability"] = dict(role_capability)
+    return intent
 
 
 def sign_run_intent(
@@ -96,9 +107,23 @@ def sign_run_intent(
     }
     return {
         "kind": RUN_INTENT_ARTIFACT_KIND,
-        "schema_version": RUN_INTENT_SCHEMA_VERSION,
+        "schema_version": str(intent.get("schema_version", RUN_INTENT_SCHEMA_VERSION)),
         "intent": intent,
         "dsse_envelope": sign_dsse(envelope, private_key_path, key_id=key_id),
+    }
+
+
+def build_role_capability_intent(
+    *,
+    role_id: str,
+    capability: str,
+    declared_write_scope: list[str],
+) -> dict[str, Any]:
+    return {
+        "schema_version": ROLE_CAPABILITY_SCHEMA_VERSION,
+        "role_id": role_id,
+        "capability": capability,
+        "declared_write_scope": list(declared_write_scope),
     }
 
 
