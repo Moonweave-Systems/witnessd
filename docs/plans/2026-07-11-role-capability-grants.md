@@ -214,3 +214,48 @@ justifies leaving the code-evidence moat.
 - Whether `write_scope` globs need read-scope as a separate dimension (S2 covers
   write; read-scope may be a later dimension if a role must be blocked from
   reading paths, not just writing them).
+
+## 9. Future direction (post-S5) — team-identity rolepacks
+
+Decision (2026-07-11): the rolepack is not just a bundle of permission grants —
+it is the vehicle for a **team identity**. The direction beyond S5 is to let a
+rolepack carry, in addition to the capability grants (S1–S3), the rest of what
+makes a team a team:
+
+- **flow** — which workflow profile the team runs (`code-change`, `review-only`,
+  … ; already a first-class primitive).
+- **domain knowledge** — an `orro skillpack` reference (knowledge-as-code,
+  progressive disclosure; primitive already exists).
+- **rules** — skillpack/rule bodies loaded on frontmatter/path match (primitive
+  already exists).
+
+So a fully-realised rolepack becomes:
+
+```jsonc
+{
+  "kind": "moonweave-rolepack",
+  "schema_version": "0.2+",          // gated: new fields land with a version bump
+  "name": "designer",
+  "profile": "…",                    // flow
+  "skillpack_ref": "…",              // domain knowledge
+  "rules": [ … ],                    // rules
+  "grants": [ { role_id, capability, adapters, model_policy_ref, write_scope, tools }, … ]
+}
+```
+
+This is **composition, not greenfield**: skillpack, profiles, and rule bodies are
+existing primitives; the work is binding them onto the rolepack and threading
+them through compilation/execution so the evidence still re-derives conformance
+(a role stayed within its granted tools/scope AND ran under the declared
+knowledge/rules/flow).
+
+**Extension mechanism — explicit, not silent.** S1 rejects unknown grant fields
+and S4 rejects unknown rolepack fields on purpose (silent-ignore prevention). New
+team-identity fields therefore arrive only with a `schema_version` bump and an
+extended validator — never by lax acceptance. `schema_version` is the seam.
+
+This is where a **designer team** (or any domain team) plugs in: a rolepack whose
+grants, skillpack, rules, and flow encode that domain — while non-code execution
+stays gated by §7 (advisory-first until the evidence substrate justifies
+generalising). Sequenced after S5 so the capability contract is proven-by-Depone
+before team identity is layered on top.
