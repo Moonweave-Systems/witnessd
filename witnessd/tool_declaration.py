@@ -8,7 +8,7 @@ from typing import Any
 TOOL_DECLARATION_KIND = "moonweave-tool-declaration"
 TOOL_DECLARATION_SCHEMA_VERSION = "1.0"
 ENFORCEMENT_ENFORCED = "enforced"
-USAGE_VERIFIED = "verified"
+USAGE_CONFIRMED = "verified"
 USAGE_ENFORCED_ONLY = "enforced-only"
 
 
@@ -35,7 +35,7 @@ def build_tool_declaration(
     status = (
         usage_verification_status
         if usage_verification_status is not None
-        else USAGE_VERIFIED
+        else USAGE_CONFIRMED
         if observed
         else USAGE_ENFORCED_ONLY
     )
