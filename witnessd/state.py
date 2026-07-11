@@ -52,9 +52,48 @@ class StateNamespace:
         env = dict(base_env or os.environ)
         codex_home = self.state_dir / "codex-home"
         codex_home.mkdir(parents=True, exist_ok=True)
+        _seed_codex_auth_from_ambient_home(codex_home, env)
         env["CODEX_HOME"] = str(codex_home)
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         return env
+
+
+def _ambient_codex_home(env: dict[str, str]) -> Path:
+    configured = env.get("CODEX_HOME")
+    if configured:
+        return Path(configured)
+    home = env.get("HOME")
+    return Path(home) / ".codex" if home else Path.home() / ".codex"
+
+
+def _seed_codex_auth_from_ambient_home(
+    isolated_codex_home: Path, ambient_env: dict[str, str]
+) -> None:
+    """Fallback-seed the isolated CODEX_HOME with the ambient codex auth.json.
+
+    codex_env() isolates CODEX_HOME per state namespace so a lane cannot read
+    or mutate the operator's global codex session state, but a freshly
+    created CODEX_HOME has no credentials -- every real, authenticated codex
+    run through witnessd (called directly, not through the `witnessd team
+    run --codex-auth-source ...` CLI) fails with 401 unless an auth.json is
+    copied in. This is deliberately a fallback only: `__main__._seed_codex_auth`
+    already lets an operator stage an explicit auth source into this same
+    path before the lane runs, and that deliberate choice must win, so this
+    no-ops if an auth.json is already there. It also no-ops if the ambient
+    auth.json doesn't exist; fake/offline codex binaries never read it.
+    state_dir (and this copy with it) is not deleted when the run ends -- it
+    persists under <root>/.witnessd/codex-home until the operator cleans
+    that directory, the same lifetime as the rest of the namespace's
+    runlog/session state.
+    """
+    destination = isolated_codex_home / "auth.json"
+    if destination.exists():
+        return
+    source = _ambient_codex_home(ambient_env) / "auth.json"
+    if not source.exists():
+        return
+    destination.write_bytes(source.read_bytes())
+    destination.chmod(0o600)
 
 
 def _norm(path: str) -> str:

@@ -54,7 +54,7 @@ class CodexCLIAdapter:
             _resolve_codex(self.codex_binary),
             "--sandbox",
             sandbox_mode,
-            "--approval-policy",
+            "--ask-for-approval",
             _codex_approval_policy_arg(approval_policy),
             "exec",
             "--json",
@@ -164,6 +164,14 @@ def _codex_approval_policy_arg(approval_policy: str) -> str:
 
 
 def _effective_approval_policy(raw_jsonl: bytes) -> str | None:
+    # KNOWN LIMITATION (not fixed here, kept as parsing logic verbatim): real
+    # codex-cli 0.144.1 `exec --json` output never emits an "effective.settings"
+    # event, so this always returns None against the live binary and the
+    # declared/effective parity check below (run_codex_lane) becomes a no-op
+    # -- it still works against the fake test binary, which does emit that
+    # event, but it cannot catch a real approval-policy mismatch today.
+    # Follow-up needed once codex exposes effective settings some other way
+    # (e.g. `codex debug` output or a future exec event).
     for line in raw_jsonl.splitlines():
         if not line.strip():
             continue
@@ -223,7 +231,7 @@ def run_codex_lane(
         codex,
         "--sandbox",
         sandbox_mode,
-        "--approval-policy",
+        "--ask-for-approval",
         effective_declared_policy,
         "exec",
         "--json",
