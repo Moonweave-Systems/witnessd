@@ -478,7 +478,9 @@ class OrroWorkflowTests(unittest.TestCase):
         self.assertEqual(lane["role_capability"]["capability"], "execute")
         self.assertEqual(lane["role_capability"]["model_policy_ref"], "default")
         self.assertEqual(lane["role_capability"]["write_scope"], ["orro/**", "docs/**"])
+        self.assertEqual(lane["role_capability"]["tools"], {"mcp": [], "allow": []})
         self.assertEqual(lane["granted_write_scope"], ["orro/**", "docs/**"])
+        self.assertEqual(lane["granted_tools"], {"mcp": [], "allow": []})
         self.assertEqual(lane["region"], [f"orro/{lane['lane_id']}.txt"])
 
     def test_compile_role_lane_plan_rejects_region_outside_write_scope(self) -> None:
@@ -537,6 +539,31 @@ class OrroWorkflowTests(unittest.TestCase):
         self.assertEqual(len(specs), 1)
         self.assertEqual(specs[0]["adapter"], "codex")
         self.assertEqual(specs[0]["model"], "gpt-5.5")
+
+    def test_role_lane_plan_team_specs_carries_granted_tools(self) -> None:
+        import argparse
+
+        from witnessd.__main__ import _role_lane_plan_team_specs
+        from witnessd.role_capability import DEFAULT_DEVELOPER_ROLEPACK
+
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan,
+            tier="frontier",
+            policy=DEFAULT_MODEL_POLICY,
+            rolepack=DEFAULT_DEVELOPER_ROLEPACK,
+        )
+        args = argparse.Namespace(
+            codex_binary="codex",
+            claude_binary="claude",
+            agy_binary="agy",
+            gemini_binary="gemini",
+            opencode_binary="opencode",
+        )
+
+        specs = _role_lane_plan_team_specs(role_lane_plan, args)
+
+        self.assertEqual(specs[0]["tools"], {"mcp": [], "allow": []})
 
     def test_role_lane_plan_team_specs_omits_model_when_not_policy_resolved(
         self,

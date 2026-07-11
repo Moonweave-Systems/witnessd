@@ -1750,6 +1750,7 @@ def _run_adapter_lane(
         write_scope=spec.get("write_scope"),
         role_id=spec.get("role_id"),
         role_capability=spec.get("role_capability"),
+        tools=spec.get("tools"),
     )
     _commit_lane(worktree, lane_id)
 

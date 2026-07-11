@@ -281,6 +281,8 @@ def emit_lane_evidence(
                 if subject_name == "model-declaration"
                 else "write-scope-declaration.json"
                 if subject_name == "write-scope-declaration"
+                else "tool-declaration.json"
+                if subject_name == "tool-declaration"
                 else f"{subject_name}.jsonl"
             )
             with open(source, "rb") as handle:

@@ -42,6 +42,7 @@ from witnessd.write_scope_declaration import (
     build_write_scope_declaration,
     write_scope_allows_paths,
 )
+from witnessd.tool_declaration import normalize_tool_grant
 
 
 class LaneBlocked(RuntimeError):
@@ -89,6 +90,10 @@ def _run_adapter(
     allowed_touched_files: list[str] | None = None,
     approval_policy: str = "on-request",
     model: str | None = None,
+    tools: dict[str, Any] | None = None,
+    role_id: str | None = None,
+    role_capability: str | None = None,
+    lane_id: str | None = None,
 ) -> Any:
     if adapter == "codex":
         return run_codex_lane(
@@ -103,6 +108,10 @@ def _run_adapter(
             allowed_touched_files=allowed_touched_files,
             approval_policy=approval_policy,
             model=model,
+            tools=tools,
+            role_id=role_id,
+            role_capability=role_capability,
+            lane_id=lane_id,
         )
     if adapter == "claude":
         return run_claude_lane(
@@ -113,6 +122,10 @@ def _run_adapter(
             log_path=log_path,
             timeout_seconds=timeout_seconds,
             model=model,
+            tools=tools,
+            role_id=role_id,
+            role_capability=role_capability,
+            lane_id=lane_id,
         )
     if adapter == "agy":
         return run_agy_review_lane(
@@ -221,6 +234,7 @@ def run_adapter_lane(
     write_scope: list[str] | None = None,
     role_id: str | None = None,
     role_capability: str | None = None,
+    tools: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     capture_profile = validate_capture_profile(capture_profile)
     worktree = str(Path(sandbox or root).resolve(strict=False))
@@ -306,6 +320,7 @@ def run_adapter_lane(
                 "ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION",
                 "allowed_touched_files are outside declared write_scope",
             )
+        normalized_tools = normalize_tool_grant(tools) if tools is not None else None
         codex_env = namespace.codex_env() if adapter == "codex" else None
         redaction_context = None
         if capture_profile == CAPTURE_PROFILE_REDACTED:
@@ -367,6 +382,10 @@ def run_adapter_lane(
             allowed_touched_files=allowed_touched_files,
             approval_policy=approval_policy,
             model=model,
+            tools=normalized_tools,
+            role_id=role_id,
+            role_capability=role_capability,
+            lane_id=task_id,
         )
         diff_patch = _git_diff_patch(worktree, adapter_result.touched_files)
         provider_artifacts = {}
@@ -386,6 +405,13 @@ def run_adapter_lane(
                 json.dumps(model_declaration, sort_keys=True), encoding="utf-8"
             )
             provider_artifacts["model-declaration"] = str(model_declaration_path)
+        tool_declaration = getattr(adapter_result, "tool_declaration", None)
+        if tool_declaration is not None:
+            tool_declaration_path = task_dir / "tool-declaration.json"
+            tool_declaration_path.write_text(
+                json.dumps(tool_declaration, sort_keys=True), encoding="utf-8"
+            )
+            provider_artifacts["tool-declaration"] = str(tool_declaration_path)
         if write_scope is not None:
             write_scope_declaration = build_write_scope_declaration(
                 role_id=role_id or task_id,

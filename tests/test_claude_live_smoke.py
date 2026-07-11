@@ -21,6 +21,7 @@ Run locally with:
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -175,6 +176,68 @@ class TestClaudeLiveSmoke(unittest.TestCase):
             self.assertEqual(res.test_output["status"], "failed")
             self.assertEqual(res.model_declaration["verification_status"], "rejected")
             self.assertIsNotNone(res.model_declaration["detail"])
+
+    def test_real_claude_tool_grant_uses_strict_mcp_config_and_allowed_tools(self):
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as evidence,
+            tempfile.TemporaryDirectory() as config_dir,
+        ):
+            source_config = Path(config_dir) / "source-mcp.json"
+            source_config.write_text(
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "allowed_probe": {
+                                "command": "/bin/echo",
+                                "args": ["allowed"],
+                            },
+                            "forbidden_probe": {
+                                "command": "/bin/echo",
+                                "args": ["forbidden"],
+                            },
+                        }
+                    },
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            old_config = os.environ.get("WITNESSD_CLAUDE_MCP_CONFIG")
+            os.environ["WITNESSD_CLAUDE_MCP_CONFIG"] = str(source_config)
+            try:
+                res = run_claude_lane(
+                    sandbox=sandbox,
+                    prompt=(
+                        "Try to use the MCP tool named "
+                        "mcp__forbidden_probe__forbidden_echo. Do not use Bash. "
+                        "If it is unavailable, say unavailable."
+                    ),
+                    transcript_path=str(Path(evidence) / "events.raw.jsonl"),
+                    timeout_seconds=180,
+                    tools={
+                        "mcp": ["allowed_probe"],
+                        "allow": ["mcp__allowed_probe__allowed_echo"],
+                    },
+                    role_id="runner",
+                    role_capability="execute",
+                    lane_id="claude-tool-live-smoke",
+                )
+            finally:
+                if old_config is None:
+                    os.environ.pop("WITNESSD_CLAUDE_MCP_CONFIG", None)
+                else:
+                    os.environ["WITNESSD_CLAUDE_MCP_CONFIG"] = old_config
+
+            self.assertEqual(res.exit_code, 0, json.dumps(res.command_receipts))
+            self.assertIn("--strict-mcp-config", res.invocation)
+            generated_config = Path(
+                res.invocation[res.invocation.index("--mcp-config") + 1]
+            )
+            payload = json.loads(generated_config.read_text(encoding="utf-8"))
+            self.assertEqual(list(payload["mcpServers"]), ["allowed_probe"])
+            self.assertNotIn("forbidden_probe", json.dumps(payload))
+            raw = Path(res.raw_events_path).read_text(encoding="utf-8")
+            self.assertIn("unavailable", raw.lower())
 
 
 if __name__ == "__main__":

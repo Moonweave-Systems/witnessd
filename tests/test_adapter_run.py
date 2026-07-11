@@ -606,6 +606,56 @@ class TestAdapterRun(unittest.TestCase):
                 ctx.exception.reason, "ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION"
             )
 
+    def test_tool_declaration_is_signed_bundle_subject(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "tool-evidence")
+            _init_repo(sandbox)
+
+            out = run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="t-tools",
+                prompt="do X",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=_fake_codex(bindir),
+                evidence_dir=evidence_dir,
+                allowed_touched_files=["noop.txt"],
+                tools={"mcp": ["filesystem"], "allow": ["read_file"]},
+                role_id="runner",
+                role_capability="execute",
+            )
+
+            subject_names = [
+                item["name"]
+                for item in out["bundle"]["statement"]["predicate"]["artifact_index"]
+            ]
+            self.assertIn("tool-declaration", subject_names)
+
+            declaration = json.loads(
+                (pathlib.Path(evidence_dir) / "tool-declaration.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(declaration["kind"], "moonweave-tool-declaration")
+            self.assertFalse(declaration["can_change_evidence_verdict"])
+            self.assertEqual(declaration["role_id"], "runner")
+            self.assertEqual(declaration["capability"], "execute")
+            self.assertEqual(declaration["adapter"], "codex")
+            self.assertEqual(
+                declaration["declared_tools"],
+                {"mcp": ["filesystem"], "allow": ["read_file"]},
+            )
+            self.assertEqual(declaration["enforcement_status"], "enforced")
+            self.assertEqual(declaration["usage_verification_status"], "enforced-only")
+
     def test_no_model_requested_emits_no_model_declaration_artifact(self):
         with (
             tempfile.TemporaryDirectory() as root,

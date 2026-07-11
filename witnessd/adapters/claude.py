@@ -11,6 +11,7 @@ requires --verbose" (live-verified against claude-code 2.1.207).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,7 @@ from witnessd.model_declaration import (
     VERIFICATION_REJECTED,
     build_model_declaration,
 )
+from witnessd.tool_declaration import build_tool_declaration, normalize_tool_grant
 
 
 class ClaudeAdapterError(AdapterExecutionError):
@@ -137,6 +139,10 @@ def run_claude_lane(
     log_path: str | None = None,
     timeout_seconds: int = 120,
     model: str | None = None,
+    tools: dict[str, Any] | None = None,
+    role_id: str | None = None,
+    role_capability: str | None = None,
+    lane_id: str | None = None,
 ) -> AdapterResult:
     if not prompt.strip():
         raise ClaudeAdapterError(
@@ -144,6 +150,7 @@ def run_claude_lane(
         )
     repo = str(Path(sandbox).resolve(strict=False))
     transcript = str(Path(transcript_path).resolve(strict=False))
+    task_dir = Path(transcript).parent
     normalized_transcript = str(Path(transcript).with_name("events.normalized.jsonl"))
     evidence_paths = [
         transcript,
@@ -160,6 +167,7 @@ def run_claude_lane(
         "-p",
         prompt,
         *(["--model", model] if model else []),
+        *_claude_tool_args(tools, task_dir),
         "--output-format",
         "stream-json",
         "--verbose",
@@ -219,6 +227,20 @@ def run_claude_lane(
                 requested_model=model,
                 verification_status=VERIFICATION_CONFIRMED,
             )
+    tool_declaration = None
+    if tools is not None:
+        observed_tool_uses = _claude_observed_tool_uses(raw_stdout)
+        tool_declaration = build_tool_declaration(
+            role_id=role_id or lane_id or "claude",
+            lane_id=lane_id or role_id or "claude",
+            capability=role_capability or "execute",
+            adapter="claude",
+            declared_tools=normalize_tool_grant(tools),
+            observed_tool_uses=observed_tool_uses,
+            detail=None
+            if observed_tool_uses
+            else "claude stream-json did not include tool_use events for this run",
+        )
 
     if log_path is not None:
         Path(log_path).parent.mkdir(parents=True, exist_ok=True)
@@ -261,4 +283,74 @@ def run_claude_lane(
         raw_events_path=transcript,
         normalized_events_path=normalized_transcript,
         model_declaration=model_declaration,
+        tool_declaration=tool_declaration,
     )
+
+
+def _claude_tool_args(tools: dict[str, Any] | None, task_dir: Path) -> list[str]:
+    if tools is None:
+        return []
+    normalized = normalize_tool_grant(tools)
+    config_path = task_dir / "claude-mcp-config.json"
+    config_path.write_text(
+        json.dumps(_filtered_claude_mcp_config(normalized["mcp"]), sort_keys=True),
+        encoding="utf-8",
+    )
+    args = ["--mcp-config", str(config_path), "--strict-mcp-config"]
+    if normalized["allow"]:
+        args.extend(["--allowedTools", ",".join(normalized["allow"])])
+    else:
+        args.extend(["--allowedTools", ""])
+    return args
+
+
+def _filtered_claude_mcp_config(allowed_mcp: list[str]) -> dict[str, Any]:
+    source = os.environ.get("WITNESSD_CLAUDE_MCP_CONFIG")
+    if not source:
+        return {"mcpServers": {}}
+    try:
+        payload = json.loads(Path(source).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"mcpServers": {}}
+    servers = payload.get("mcpServers") if isinstance(payload, dict) else None
+    if not isinstance(servers, dict):
+        return {"mcpServers": {}}
+    return {
+        "mcpServers": {
+            name: servers[name]
+            for name in allowed_mcp
+            if name in servers and isinstance(servers[name], dict)
+        }
+    }
+
+
+def _claude_observed_tool_uses(raw_jsonl: bytes) -> list[dict[str, Any]]:
+    observed: list[dict[str, Any]] = []
+    for line in raw_jsonl.splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        _collect_tool_uses(payload, observed)
+    return observed
+
+
+def _collect_tool_uses(value: Any, observed: list[dict[str, Any]]) -> None:
+    if isinstance(value, dict):
+        if value.get("type") == "tool_use":
+            name = value.get("name")
+            observed.append(
+                {
+                    "tool_name": name if isinstance(name, str) else None,
+                    "tool_use_id": value.get("id") if isinstance(value.get("id"), str) else None,
+                }
+            )
+        for item in value.values():
+            _collect_tool_uses(item, observed)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_tool_uses(item, observed)

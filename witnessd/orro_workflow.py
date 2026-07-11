@@ -722,6 +722,16 @@ def _role_capability_lane_fields(grant: RoleCapabilityGrant) -> dict[str, Any]:
             if grant.write_scope is not None
             else {}
         ),
+        **(
+            {
+                "granted_tools": {
+                    "mcp": list(grant.tools["mcp"]),
+                    "allow": list(grant.tools["allow"]),
+                }
+            }
+            if grant.tools is not None
+            else {}
+        ),
     }
 
 
@@ -904,6 +914,21 @@ def _validate_role_lane(lane: Any) -> None:
             raise OrroWorkflowError(
                 ERR_ORRO_ROLE_LANE_PLAN_INVALID,
                 "role-lane granted_write_scope is invalid",
+            )
+    if "granted_tools" in lane:
+        granted_tools = lane["granted_tools"]
+        if (
+            not isinstance(granted_tools, dict)
+            or set(granted_tools) != {"mcp", "allow"}
+            or not all(
+                isinstance(granted_tools[key], list)
+                and all(isinstance(item, str) and item for item in granted_tools[key])
+                for key in ("mcp", "allow")
+            )
+        ):
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+                "role-lane granted_tools is invalid",
             )
     region = lane.get("region")
     if (
