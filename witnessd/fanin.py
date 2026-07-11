@@ -81,7 +81,9 @@ def run_team(
     registry = OwnershipRegistry(log, run_id=run_id)
     root = Path(repo_root).resolve()
     start_commit = base_commit or _git(root, ["rev-parse", "HEAD"])
-    observer_path = Path(observer_dir).resolve() if observer_dir else base_dir / "observer"
+    observer_path = (
+        Path(observer_dir).resolve() if observer_dir else base_dir / "observer"
+    )
     observer_path.mkdir(parents=True, exist_ok=True)
     os.chmod(observer_path, 0o700)
 
@@ -257,9 +259,7 @@ def _run_claimed_lanes_parallel(
                 )
                 active[handle] = job
 
-            completed = [
-                handle for handle in active if handle.popen.poll() is not None
-            ]
+            completed = [handle for handle in active if handle.popen.poll() is not None]
             if not completed:
                 time.sleep(0.02)
                 continue
@@ -329,7 +329,9 @@ def _normalize_merge_groups(
             or not files
         ):
             raise ValueError("ERR_TEAM_MERGE_GROUP_INVALID")
-        normalized_sources = sorted({str(source).strip() for source in sources if str(source).strip()})
+        normalized_sources = sorted(
+            {str(source).strip() for source in sources if str(source).strip()}
+        )
         normalized_files = _normalize_repo_region(files)
         if len(normalized_sources) < 2 or not normalized_files:
             raise ValueError("ERR_TEAM_MERGE_GROUP_INVALID")
@@ -415,7 +417,9 @@ def _run_merge_groups(
             for source in source_lanes
             if isinstance(source, dict)
         ]
-        schedule = _parent_schedule_lane(lane_id, base_dir=base_dir, repo_root=repo_root)
+        schedule = _parent_schedule_lane(
+            lane_id, base_dir=base_dir, repo_root=repo_root
+        )
         receipt_rel = f"{lane_id}/team-merge-attempt-receipt.json"
         evidence_dir = base_dir / lane_id
         evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -541,7 +545,8 @@ def _build_team_merge_attempt_receipt(
             "errors": [
                 {
                     "code": "ERR_TEAM_MERGE_ATTEMPT_FAILED",
-                    "message": message or "depone team-merge-attempt did not write a receipt",
+                    "message": message
+                    or "depone team-merge-attempt did not write a receipt",
                 }
             ],
             "boundary": {
@@ -554,7 +559,9 @@ def _build_team_merge_attempt_receipt(
         }
 
 
-def _parent_schedule_lane(lane_id: str, *, base_dir: Path, repo_root: Path) -> dict[str, Any]:
+def _parent_schedule_lane(
+    lane_id: str, *, base_dir: Path, repo_root: Path
+) -> dict[str, Any]:
     pid = os.getpid()
     pid_start = read_pid_start_time(pid)
     return {
@@ -563,7 +570,9 @@ def _parent_schedule_lane(lane_id: str, *, base_dir: Path, repo_root: Path) -> d
         "spawned_monotonic_ns": time.monotonic_ns(),
         "pid": pid,
         "pid_start_token": f"{pid}:{pid_start}",
-        "worktree": _display_path(base_dir / "worktrees" / lane_id, base_dir, repo_root),
+        "worktree": _display_path(
+            base_dir / "worktrees" / lane_id, base_dir, repo_root
+        ),
         "state_root": "merge-lane-local",
     }
 
@@ -575,7 +584,16 @@ def _capture_merge_conflict_bytes(
     with tempfile.TemporaryDirectory(prefix="witnessd-merge-conflict-") as tmp:
         worktree = Path(tmp) / "worktree"
         add_result = subprocess.run(
-            ["git", "-C", str(repo), "worktree", "add", "--detach", str(worktree), base],
+            [
+                "git",
+                "-C",
+                str(repo),
+                "worktree",
+                "add",
+                "--detach",
+                str(worktree),
+                base,
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -613,7 +631,15 @@ def _capture_merge_conflict_bytes(
             )
         finally:
             subprocess.run(
-                ["git", "-C", str(repo), "worktree", "remove", "--force", str(worktree)],
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "worktree",
+                    "remove",
+                    "--force",
+                    str(worktree),
+                ],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -689,7 +715,9 @@ def _spawn_lane_exec(
         "spawned_monotonic_ns": spawned_ns,
         "pid": handle.pid,
         "pid_start_token": f"{handle.pid}:{pid_start}",
-        "worktree": _display_path(base_dir / "worktrees" / lane_id, base_dir, repo_root),
+        "worktree": _display_path(
+            base_dir / "worktrees" / lane_id, base_dir, repo_root
+        ),
         "state_root": _display_path(
             _lane_state_root(job["spec"], state_root, repo_root), base_dir, repo_root
         ),
@@ -717,9 +745,13 @@ def _cancel_active_lanes(
 ) -> None:
     if not active:
         return
-    result = kill_all(None, log, run_id, grace=0.2, targets=[
-        _kill_target_from_handle(handle) for handle in active
-    ])
+    result = kill_all(
+        None,
+        log,
+        run_id,
+        grace=0.2,
+        targets=[_kill_target_from_handle(handle) for handle in active],
+    )
     outcomes = {
         (outcome["lane_id"], outcome["pid"]): outcome
         for outcome in result.get("outcomes", [])
@@ -728,7 +760,9 @@ def _cancel_active_lanes(
         handle.popen.wait()
         outcome = outcomes.get((handle.lane_id, handle.pid), {})
         supervisor_exit_code = outcome.get("exit_code")
-        exit_code = int(supervisor_exit_code) if isinstance(supervisor_exit_code, int) else -9
+        exit_code = (
+            int(supervisor_exit_code) if isinstance(supervisor_exit_code, int) else -9
+        )
         schedule = job["schedule"]
         _finish_schedule_lane(schedule, exit_code)
         schedule_lanes.append(schedule)
@@ -753,9 +787,13 @@ def _reap_remaining(supervisor: WorkerSupervisor, log: EventLog, run_id: str) ->
     handles = supervisor.handles()
     if not handles:
         return
-    kill_all(None, log, run_id, grace=0.2, targets=[
-        _kill_target_from_handle(handle) for handle in handles
-    ])
+    kill_all(
+        None,
+        log,
+        run_id,
+        grace=0.2,
+        targets=[_kill_target_from_handle(handle) for handle in handles],
+    )
     for handle in handles:
         handle.popen.wait()
         supervisor.forget(handle)
@@ -775,7 +813,8 @@ def _read_lane_exec_result(
             and payload.get("attempt_id") == job.get("attempt_id")
             and payload.get("lane_id") == job.get("lane_id")
             and payload.get("lane_exec_pid") == job.get("lane_exec_pid")
-            and payload.get("lane_exec_pid_start_token") == job.get("lane_exec_pid_start_token")
+            and payload.get("lane_exec_pid_start_token")
+            == job.get("lane_exec_pid_start_token")
             and isinstance(payload.get("lane"), dict)
         ):
             lane = payload["lane"]
@@ -785,7 +824,9 @@ def _read_lane_exec_result(
         lane_id=str(job["lane_id"]),
         adapter=str(job["spec"].get("adapter", "shell")),
         base_commit=base_commit,
-        reason=ERR_TEAM_LANE_EXEC_FAILED if exit_code else ERR_TEAM_LANE_INDETERMINATE_PARENT_CRASH,
+        reason=ERR_TEAM_LANE_EXEC_FAILED
+        if exit_code
+        else ERR_TEAM_LANE_INDETERMINATE_PARENT_CRASH,
     )
 
 
@@ -794,7 +835,9 @@ def _lane_failed(lane: dict[str, Any]) -> bool:
     return ledger_lane.get("verification_state") != "pass"
 
 
-def _cancelled_lane(lane_id: str, spec: dict[str, Any], base_commit: str) -> dict[str, Any]:
+def _cancelled_lane(
+    lane_id: str, spec: dict[str, Any], base_commit: str
+) -> dict[str, Any]:
     return _blocked_adapter_lane(
         lane_id=lane_id,
         adapter=str(spec.get("adapter", "shell")),
@@ -826,7 +869,9 @@ def _finish_schedule_lane(schedule: dict[str, Any], exit_code: int) -> None:
     schedule["exit_code"] = int(exit_code)
 
 
-def _lane_state_root(spec: dict[str, Any], state_root: str | None, repo_root: Path) -> Path:
+def _lane_state_root(
+    spec: dict[str, Any], state_root: str | None, repo_root: Path
+) -> Path:
     lane_state_root = spec.get("state_root")
     if lane_state_root:
         return Path(str(lane_state_root)).resolve(strict=False)
@@ -976,7 +1021,9 @@ def resume_audit(out_dir: str, *, run_id: str = "w15-resume-audit") -> dict[str,
             "blocked_reason": ERR_TEAM_LANE_INDETERMINATE_PARENT_CRASH,
         }
 
-    def _complete_lane_or_none(lane_id: str, result: dict[str, Any]) -> dict[str, Any] | None:
+    def _complete_lane_or_none(
+        lane_id: str, result: dict[str, Any]
+    ) -> dict[str, Any] | None:
         lane = result.get("lane")
         if not isinstance(lane, dict):
             return None
@@ -1022,7 +1069,11 @@ def resume_audit(out_dir: str, *, run_id: str = "w15-resume-audit") -> dict[str,
                 lanes.append(_indeterminate_lane(lane_id))
                 continue
             complete_lane = _complete_lane_or_none(lane_id, result)
-            lanes.append(complete_lane if complete_lane is not None else _indeterminate_lane(lane_id))
+            lanes.append(
+                complete_lane
+                if complete_lane is not None
+                else _indeterminate_lane(lane_id)
+            )
             continue
         lanes.append(_indeterminate_lane(lane_id))
     audit = {
@@ -1198,14 +1249,21 @@ def _load_resume_controls(base_dir: Path, *, run_id: str) -> list[dict[str, Any]
         lane_id = str(payload.get("lane_id", ""))
         if not lane_id:
             raise ValueError("ERR_TEAM_RESUME_CONTROL_INVALID")
-        for field in ("base_commit", "repo_root", "private_key_path", "public_key_path"):
+        for field in (
+            "base_commit",
+            "repo_root",
+            "private_key_path",
+            "public_key_path",
+        ):
             if not isinstance(payload.get(field), str) or not payload.get(field):
                 raise ValueError("ERR_TEAM_RESUME_CONTROL_INVALID")
         if not isinstance(payload.get("spec"), dict) or not isinstance(
             payload.get("allowed_touched_files"), list
         ):
             raise ValueError("ERR_TEAM_RESUME_CONTROL_INVALID")
-        controls.append({"lane_id": lane_id, "payload": payload, "spec_path": spec_path})
+        controls.append(
+            {"lane_id": lane_id, "payload": payload, "spec_path": spec_path}
+        )
     return controls
 
 
@@ -1298,7 +1356,9 @@ def _latest_resume_attempt_lane(
             if best is None or attempt > best[0]:
                 best = (attempt, None)
             continue
-        ledger_lane = _prefix_resume_attempt_lane(dict(lane["ledger_lane"]), attempt=attempt)
+        ledger_lane = _prefix_resume_attempt_lane(
+            dict(lane["ledger_lane"]), attempt=attempt
+        )
         if ledger_lane.get("lane_id") != lane_id:
             if best is None or attempt > best[0]:
                 best = (attempt, None)
@@ -1389,7 +1449,9 @@ def _next_resume_attempt(base_dir: Path) -> int:
     return max(found) + 1
 
 
-def _prefix_resume_attempt_lane(lane: dict[str, Any], *, attempt: int) -> dict[str, Any]:
+def _prefix_resume_attempt_lane(
+    lane: dict[str, Any], *, attempt: int
+) -> dict[str, Any]:
     prefix = f"attempts/attempt-{attempt}"
     for key in ("evidence_dir", "worktree_receipt", "evidence_next_verdict"):
         value = lane.get(key)
@@ -1519,7 +1581,9 @@ def _run_write_lane(
         worktrees_dir=str(base_dir / "worktrees"),
     )
     evidence_dir = base_dir / lane_id
-    assert_separated(runner_sandbox=worktree, out_path=str(evidence_dir / "capture-manifest.json"))
+    assert_separated(
+        runner_sandbox=worktree, out_path=str(evidence_dir / "capture-manifest.json")
+    )
 
     lane_result = run_shell_lane(
         sandbox=worktree,
@@ -1620,7 +1684,9 @@ def _run_adapter_lane(
         worktrees_dir=str(base_dir / "worktrees"),
     )
     evidence_dir = base_dir / lane_id
-    assert_separated(runner_sandbox=worktree, out_path=str(evidence_dir / "capture-manifest.json"))
+    assert_separated(
+        runner_sandbox=worktree, out_path=str(evidence_dir / "capture-manifest.json")
+    )
 
     lane_state_root = spec.get("state_root")
     adapter_state_root = (
@@ -1653,6 +1719,7 @@ def _run_adapter_lane(
         public_key_path=public_key_path,
         allowed_touched_files=list(allowed_touched_files),
         capture_profile=str(spec.get("capture_profile", "full")),
+        model=spec.get("model"),
     )
     _commit_lane(worktree, lane_id)
 
