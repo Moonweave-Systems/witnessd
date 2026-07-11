@@ -1,4 +1,16 @@
-"""Antigravity CLI read-only review adapter for W4 lanes."""
+"""Antigravity CLI read-only review adapter for W4 lanes.
+
+`--mode plan` is agy's own advisory read-only flag, not a hard guarantee:
+live-verified that an edit-inducing prompt makes agy write to the sandbox
+even with `--mode plan` set (agy 1.1.1). run_agy_review_lane() does not
+trust that flag -- it independently snapshots the sandbox before/after and
+fails closed (exit 125, test_output.status="failed") on ANY touched file,
+regardless of what agy's own mode claims. See the touched_files check below.
+
+agy also has no structured JSON event output (text/PTY transcript only);
+normalize_agy_text_events() parses that text, and no attempt is made to
+force a JSON event contract onto it.
+"""
 
 from __future__ import annotations
 
@@ -424,6 +436,9 @@ def run_agy_review_lane(
         before, after, sandbox=repo, evidence_paths=evidence_paths
     )
     test_output: dict[str, Any] = {"status": TEST_STATUS_NOT_RUN}
+    # Hard enforcement, independent of agy's own --mode plan: any touched
+    # file at all fails this lane closed. Do not weaken this to an allowlist
+    # or "expected" edits -- a review lane has none, by contract.
     if touched_files:
         exit_code = 125
         message = "read-only review lane changed files"
