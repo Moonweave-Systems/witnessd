@@ -30,7 +30,7 @@ def _fake_codex_policy_probe(directory: str, effective_policy: str) -> str:
         "#!/bin/sh\n"
         "policy=''\n"
         "while [ $# -gt 0 ]; do\n"
-        '  if [ "$1" = "--approval-policy" ]; then shift; policy="$1"; shift; continue; fi\n'
+        '  if [ "$1" = "--ask-for-approval" ]; then shift; policy="$1"; shift; continue; fi\n'
         "  shift\n"
         "done\n"
         "cat >/dev/null\n"
@@ -65,7 +65,7 @@ class TestCodexAdapter(unittest.TestCase):
             self.assertTrue(res.invocation and res.invocation[0].endswith("codex"))
             self.assertIn("exec", res.invocation)
             self.assertIn("--json", res.invocation)
-            self.assertIn("--approval-policy", res.invocation)
+            self.assertIn("--ask-for-approval", res.invocation)
             self.assertEqual(res.exit_code, 0)
             self.assertEqual(res.test_output, {"status": "not-run"})
             self.assertEqual(len(res.normalized_events), 2)
@@ -134,9 +134,9 @@ class TestCodexAdapter(unittest.TestCase):
                 allowed_touched_files=["allowed.txt"],
             )
 
-        self.assertIn("--approval-policy", res.invocation)
+        self.assertIn("--ask-for-approval", res.invocation)
         self.assertEqual(
-            res.invocation[res.invocation.index("--approval-policy") + 1],
+            res.invocation[res.invocation.index("--ask-for-approval") + 1],
             "untrusted",
         )
         self.assertEqual(res.exit_code, 0)
