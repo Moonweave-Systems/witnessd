@@ -15,6 +15,7 @@ from depone.agent_fabric.paired_run import validate_runner_receipt
 from depone.agent_fabric.evidence_substrate import ingest_signed_evidence_bundle
 
 from witnessd.adapter_run import LaneBlocked, run_adapter_lane
+from witnessd.observer import ObserverSeparationError
 from witnessd.runintent import RUN_INTENT_PAYLOAD_TYPE, build_run_intent
 from witnessd.signing import verify_dsse
 
@@ -23,11 +24,11 @@ def _fake_codex(directory: str) -> str:
     path = pathlib.Path(directory) / "codex"
     path.write_text(
         "#!/bin/sh\n"
-        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
         "while [ $# -gt 0 ]; do shift; done\n"
         "cat >/dev/null\n"
-        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
-        "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"message\",\"text\":\"done\"}}'\n"
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T1"}\'\n'
+        'printf \'%s\\n\' \'{"type":"item.completed","item":{"type":"message","text":"done"}}\'\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -39,7 +40,7 @@ def _fake_codex_writes_env_and_code(directory: str) -> str:
     path = pathlib.Path(directory) / "codex"
     path.write_text(
         "#!/bin/sh\n"
-        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
         "printf '%s\\n' \"$CODEX_HOME\" > codex-home.txt\n"
         "mkdir -p pkg\n"
         "cat > pkg/agent.py <<'PY'\n"
@@ -48,8 +49,8 @@ def _fake_codex_writes_env_and_code(directory: str) -> str:
         "PY\n"
         "while [ $# -gt 0 ]; do shift; done\n"
         "cat >/dev/null\n"
-        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
-        "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"command_execution\",\"command\":\"write code\"}}'\n"
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T1"}\'\n'
+        'printf \'%s\\n\' \'{"type":"item.completed","item":{"type":"command_execution","command":"write code"}}\'\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -61,13 +62,13 @@ def _fake_codex_stages_tracked_change(directory: str) -> str:
     path = pathlib.Path(directory) / "codex"
     path.write_text(
         "#!/bin/sh\n"
-        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
         "printf 'updated\\n' > tracked.txt\n"
         "git add tracked.txt\n"
         "while [ $# -gt 0 ]; do shift; done\n"
         "cat >/dev/null\n"
-        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T1\"}'\n"
-        "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"command_execution\",\"command\":\"update tracked\"}}'\n"
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T1"}\'\n'
+        'printf \'%s\\n\' \'{"type":"item.completed","item":{"type":"command_execution","command":"update tracked"}}\'\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -79,8 +80,8 @@ def _fake_claude(directory: str) -> str:
     path = pathlib.Path(directory) / "claude"
     path.write_text(
         "#!/bin/sh\n"
-        "printf '%s\\n' '{\"type\":\"session.started\",\"session_id\":\"S1\"}'\n"
-        "printf '%s\\n' '{\"type\":\"assistant.message\",\"message_id\":\"M1\",\"text\":\"done\"}'\n"
+        'printf \'%s\\n\' \'{"type":"session.started","session_id":"S1"}\'\n'
+        'printf \'%s\\n\' \'{"type":"assistant.message","message_id":"M1","text":"done"}\'\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -92,8 +93,8 @@ def _fake_gemini(directory: str) -> str:
     path = pathlib.Path(directory) / "gemini"
     path.write_text(
         "#!/bin/sh\n"
-        "printf '%s\\n' '{\"type\":\"message\",\"content\":\"review start\"}'\n"
-        "printf '%s\\n' '{\"type\":\"result\",\"text\":\"[{\\\"severity\\\":\\\"low\\\",\\\"file\\\":\\\"seed.txt\\\",\\\"line\\\":1,\\\"summary\\\":\\\"review note\\\"}]\"}'\n"
+        'printf \'%s\\n\' \'{"type":"message","content":"review start"}\'\n'
+        'printf \'%s\\n\' \'{"type":"result","text":"[{\\"severity\\":\\"low\\",\\"file\\":\\"seed.txt\\",\\"line\\":1,\\"summary\\":\\"review note\\"}]"}\'\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -118,7 +119,9 @@ def _fake_agy(directory: str) -> str:
 
 def _init_repo(path: str) -> None:
     subprocess.run(["git", "init", "-q", path], check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.invalid"], cwd=path, check=True
+    )
     subprocess.run(["git", "config", "user.name", "test"], cwd=path, check=True)
     pathlib.Path(path, "seed.txt").write_text("seed\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=path, check=True)
@@ -128,7 +131,10 @@ def _init_repo(path: str) -> None:
 @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
 class TestAdapterRun(unittest.TestCase):
     def test_happy_path_emits_valid_receipt(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             sandbox = os.path.join(root, "repo")
             _init_repo(sandbox)
 
@@ -151,7 +157,9 @@ class TestAdapterRun(unittest.TestCase):
             self.assertEqual(out["status_axis"]["assurance"], "evidence-pending")
             run_intent_path = pathlib.Path(out["evidence_dir"], "run-intent.json")
             self.assertTrue(run_intent_path.exists())
-            run_intent_artifact = json.loads(run_intent_path.read_text(encoding="utf-8"))
+            run_intent_artifact = json.loads(
+                run_intent_path.read_text(encoding="utf-8")
+            )
             envelope = run_intent_artifact["dsse_envelope"]
             self.assertEqual(envelope["payloadType"], RUN_INTENT_PAYLOAD_TYPE)
             self.assertTrue(verify_dsse(envelope, out["public_key_path"]))
@@ -165,7 +173,10 @@ class TestAdapterRun(unittest.TestCase):
             self.assertIn("run-intent", subject_names)
 
     def test_redacted_capture_profile_emits_manifest_subject_and_verifies(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             sandbox = os.path.join(root, "repo")
             evidence_dir = os.path.join(root, "evidence")
             _init_repo(sandbox)
@@ -188,12 +199,14 @@ class TestAdapterRun(unittest.TestCase):
             )
 
             run_intent_artifact = json.loads(
-                pathlib.Path(evidence_dir, "run-intent.json").read_text(encoding="utf-8")
+                pathlib.Path(evidence_dir, "run-intent.json").read_text(
+                    encoding="utf-8"
+                )
             )
             intent = json.loads(
-                base64.b64decode(run_intent_artifact["dsse_envelope"]["payload"]).decode(
-                    "utf-8"
-                )
+                base64.b64decode(
+                    run_intent_artifact["dsse_envelope"]["payload"]
+                ).decode("utf-8")
             )
             self.assertEqual(intent["capture_profile"], "redacted")
             self.assertNotIn("pkg/agent.py", json.dumps(intent))
@@ -205,20 +218,39 @@ class TestAdapterRun(unittest.TestCase):
                 )
             )
             self.assertEqual(redaction_manifest["capture_profile"], "redacted")
-            self.assertEqual(redaction_manifest["prompt_sha256"], hashlib.sha256(secret_prompt.encode("utf-8")).hexdigest())
-            self.assertIn("redaction-manifest", [
-                item["name"] for item in out["bundle"]["statement"]["subject"]
-            ])
-            self.assertNotIn("pkg/agent.py", pathlib.Path(evidence_dir, "capture-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                redaction_manifest["prompt_sha256"],
+                hashlib.sha256(secret_prompt.encode("utf-8")).hexdigest(),
+            )
+            self.assertIn(
+                "redaction-manifest",
+                [item["name"] for item in out["bundle"]["statement"]["subject"]],
+            )
+            self.assertNotIn(
+                "pkg/agent.py",
+                pathlib.Path(evidence_dir, "capture-manifest.json").read_text(
+                    encoding="utf-8"
+                ),
+            )
 
             artifact_paths = {
-                "capture-manifest": str(pathlib.Path(evidence_dir, "capture-manifest.json")),
-                "observer-capture": str(pathlib.Path(evidence_dir, "observer-capture.json")),
-                "runner-receipt": str(pathlib.Path(evidence_dir, "runner-receipt.json")),
+                "capture-manifest": str(
+                    pathlib.Path(evidence_dir, "capture-manifest.json")
+                ),
+                "observer-capture": str(
+                    pathlib.Path(evidence_dir, "observer-capture.json")
+                ),
+                "runner-receipt": str(
+                    pathlib.Path(evidence_dir, "runner-receipt.json")
+                ),
                 "run-intent": str(pathlib.Path(evidence_dir, "run-intent.json")),
-                "redaction-manifest": str(pathlib.Path(evidence_dir, "redaction-manifest.json")),
+                "redaction-manifest": str(
+                    pathlib.Path(evidence_dir, "redaction-manifest.json")
+                ),
                 "events.raw": str(pathlib.Path(evidence_dir, "events.raw.jsonl")),
-                "events.normalized": str(pathlib.Path(evidence_dir, "events.normalized.jsonl")),
+                "events.normalized": str(
+                    pathlib.Path(evidence_dir, "events.normalized.jsonl")
+                ),
             }
             verdict = ingest_signed_evidence_bundle(
                 out["bundle"],
@@ -243,7 +275,9 @@ class TestAdapterRun(unittest.TestCase):
                 approval_policy="on-request",
                 sandbox_mode="workspace-write",
                 provider="provider-neutral",
-                instruction_hashes={"prompt_sha256": hashlib.sha256(b"do X").hexdigest()},
+                instruction_hashes={
+                    "prompt_sha256": hashlib.sha256(b"do X").hexdigest()
+                },
                 budgets={"max_tokens": 1000, "max_usd": 1.0, "max_depth": 1},
                 capture_profile="full",
             )
@@ -272,7 +306,9 @@ class TestAdapterRun(unittest.TestCase):
             subject_names = {
                 adapter: [
                     item["name"]
-                    for item in output["bundle"]["statement"]["predicate"]["artifact_index"]
+                    for item in output["bundle"]["statement"]["predicate"][
+                        "artifact_index"
+                    ]
                 ]
                 for adapter, output in outputs.items()
             }
@@ -286,7 +322,11 @@ class TestAdapterRun(unittest.TestCase):
             }
             self.assertEqual(schema_keys["codex"], schema_keys["claude"])
             self.assertEqual(
-                {event["schema"] for output in outputs.values() for event in output["normalized_events"]},
+                {
+                    event["schema"]
+                    for output in outputs.values()
+                    for event in output["normalized_events"]
+                },
                 {"moonweave.agent-event/v1"},
             )
 
@@ -301,14 +341,19 @@ class TestAdapterRun(unittest.TestCase):
                         "runner-receipt": str(evidence_dir / "runner-receipt.json"),
                         "run-intent": str(evidence_dir / "run-intent.json"),
                         "events.raw": str(evidence_dir / "events.raw.jsonl"),
-                        "events.normalized": str(evidence_dir / "events.normalized.jsonl"),
+                        "events.normalized": str(
+                            evidence_dir / "events.normalized.jsonl"
+                        ),
                     },
                     otel_spans=output["bundle"]["otel_spans"],
                 )
                 self.assertEqual(verdict["decision"], "pass", adapter)
 
     def test_gemini_review_receipt_is_signed_bundle_subject(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             sandbox = os.path.join(root, "repo")
             evidence_dir = os.path.join(root, "gemini-evidence")
             _init_repo(sandbox)
@@ -328,7 +373,8 @@ class TestAdapterRun(unittest.TestCase):
             )
 
             subject_names = [
-                item["name"] for item in out["bundle"]["statement"]["predicate"]["artifact_index"]
+                item["name"]
+                for item in out["bundle"]["statement"]["predicate"]["artifact_index"]
             ]
             self.assertIn("review-receipt", subject_names)
             self.assertIn("events.raw", subject_names)
@@ -352,7 +398,10 @@ class TestAdapterRun(unittest.TestCase):
             self.assertEqual(verdict["decision"], "pass")
 
     def test_agy_review_receipt_is_signed_bundle_subject(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             sandbox = os.path.join(root, "repo")
             evidence_dir = os.path.join(root, "agy-evidence")
             _init_repo(sandbox)
@@ -372,7 +421,8 @@ class TestAdapterRun(unittest.TestCase):
             )
 
             subject_names = [
-                item["name"] for item in out["bundle"]["statement"]["predicate"]["artifact_index"]
+                item["name"]
+                for item in out["bundle"]["statement"]["predicate"]["artifact_index"]
             ]
             self.assertIn("review-receipt", subject_names)
             self.assertIn("events.raw", subject_names)
@@ -396,7 +446,10 @@ class TestAdapterRun(unittest.TestCase):
             self.assertEqual(verdict["decision"], "pass")
 
     def test_codex_uses_isolated_state_namespace(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             sandbox = os.path.join(root, "repo")
             _init_repo(sandbox)
             outside_codex_home = os.path.join(root, "operator-codex-home")
@@ -424,9 +477,11 @@ class TestAdapterRun(unittest.TestCase):
                 else:
                     os.environ["CODEX_HOME"] = old_codex_home
 
-            used_home = pathlib.Path(sandbox, "codex-home.txt").read_text(
-                encoding="utf-8"
-            ).strip()
+            used_home = (
+                pathlib.Path(sandbox, "codex-home.txt")
+                .read_text(encoding="utf-8")
+                .strip()
+            )
             self.assertTrue(
                 os.path.realpath(used_home).startswith(
                     os.path.realpath(os.path.join(root, ".witnessd"))
@@ -434,8 +489,38 @@ class TestAdapterRun(unittest.TestCase):
             )
             self.assertNotEqual(used_home, outside_codex_home)
 
+    def test_state_dir_inside_sandbox_rejected_failclosed(self):
+        # Live-bug regression: a caller passing `root` equal to `sandbox`
+        # with no explicit `state_root` used to let .witnessd/codex-home
+        # land inside the observed sandbox -- a real codex run then wrote
+        # its own cache/plugin/config files there, and those showed up as
+        # ~350 polluting entries in touched_files alongside the agent's
+        # actual edit. Must fail closed before anything runs.
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            _init_repo(sandbox)
+            with self.assertRaises(ObserverSeparationError):
+                run_adapter_lane(
+                    root=sandbox,
+                    sandbox=sandbox,
+                    adapter="codex",
+                    task_id="t",
+                    prompt="do X",
+                    arm="direct",
+                    tier="agentic",
+                    is_supported=lambda _model: True,
+                    budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                    codex_binary=_fake_codex(bindir),
+                    allowed_touched_files=["noop.txt"],
+                )
+
     def test_adapter_evidence_includes_generated_diff_patch(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             sandbox = os.path.join(root, "repo")
             evidence_dir = os.path.join(root, "evidence")
             _init_repo(sandbox)
@@ -462,7 +547,10 @@ class TestAdapterRun(unittest.TestCase):
             self.assertIn("pkg/agent.py", patch)
 
     def test_codex_transcript_binding_is_relative_to_evidence_parent(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             sandbox = os.path.join(root, "repo")
             evidence_dir = os.path.join(root, "evidence")
             _init_repo(sandbox)
@@ -493,7 +581,9 @@ class TestAdapterRun(unittest.TestCase):
             self.assertTrue(pathlib.Path(root, "adapter-transcript.txt").exists())
             self.assertIn(
                 '"thread.started"',
-                pathlib.Path(root, "adapter-transcript.txt").read_text(encoding="utf-8"),
+                pathlib.Path(root, "adapter-transcript.txt").read_text(
+                    encoding="utf-8"
+                ),
             )
 
     def test_missing_allowlist_is_not_filled_from_observed_touches(self):
@@ -502,21 +592,24 @@ class TestAdapterRun(unittest.TestCase):
             evidence_dir = os.path.join(root, "evidence")
             _init_repo(sandbox)
 
-            with patch("witnessd.adapter_run.probe_adapter_capability"), patch(
-                "witnessd.adapter_run._run_adapter",
-                return_value=SimpleNamespace(
-                    command_receipts=[
-                        {
-                            "command": ["fake-adapter"],
-                            "exit_code": 0,
-                            "stdout": "",
-                            "stderr": "",
-                        }
-                    ],
-                    touched_files=["touched.txt"],
-                    test_output={"status": "not-run"},
-                    invocation=["fake-adapter"],
-                    runner_kind="fake-adapter",
+            with (
+                patch("witnessd.adapter_run.probe_adapter_capability"),
+                patch(
+                    "witnessd.adapter_run._run_adapter",
+                    return_value=SimpleNamespace(
+                        command_receipts=[
+                            {
+                                "command": ["fake-adapter"],
+                                "exit_code": 0,
+                                "stdout": "",
+                                "stderr": "",
+                            }
+                        ],
+                        touched_files=["touched.txt"],
+                        test_output={"status": "not-run"},
+                        invocation=["fake-adapter"],
+                        runner_kind="fake-adapter",
+                    ),
                 ),
             ):
                 run_adapter_lane(
@@ -544,13 +637,24 @@ class TestAdapterRun(unittest.TestCase):
             )
 
     def test_adapter_evidence_includes_staged_tracked_diff_patch(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             sandbox = os.path.join(root, "repo")
             evidence_dir = os.path.join(root, "evidence")
             subprocess.run(["git", "init", "-q", sandbox], check=True)
-            pathlib.Path(sandbox, "tracked.txt").write_text("original\n", encoding="utf-8")
-            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=sandbox, check=True)
-            subprocess.run(["git", "config", "user.name", "test"], cwd=sandbox, check=True)
+            pathlib.Path(sandbox, "tracked.txt").write_text(
+                "original\n", encoding="utf-8"
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.invalid"],
+                cwd=sandbox,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "test"], cwd=sandbox, check=True
+            )
             subprocess.run(["git", "add", "tracked.txt"], cwd=sandbox, check=True)
             subprocess.run(["git", "commit", "-qm", "seed"], cwd=sandbox, check=True)
 
@@ -576,7 +680,10 @@ class TestAdapterRun(unittest.TestCase):
             self.assertIn("+updated", patch)
 
     def test_route_exhausted_ends_blocked_not_silent(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             sandbox = os.path.join(root, "repo")
             _init_repo(sandbox)
 
@@ -603,7 +710,10 @@ class TestAdapterRun(unittest.TestCase):
             self.assertNotIn("VERIFIED", json.dumps(events))
 
     def test_budget_blowout_hard_stops(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
             sandbox = os.path.join(root, "repo")
             _init_repo(sandbox)
 

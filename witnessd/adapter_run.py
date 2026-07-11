@@ -50,7 +50,9 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _fixture(adapter: str, task_id: str, route_decision: dict[str, Any]) -> dict[str, Any]:
+def _fixture(
+    adapter: str, task_id: str, route_decision: dict[str, Any]
+) -> dict[str, Any]:
     invocation = build_shell_invocation(task_id)
     invocation["profile"] = "w4-adapter-run"
     invocation["route"] = {
@@ -110,7 +112,9 @@ def _run_adapter(
             prompt=prompt,
             agy_binary=agy_binary,
             transcript_path=transcript_path,
-            review_receipt_path=str(Path(transcript_path).with_name("review-receipt.json")),
+            review_receipt_path=str(
+                Path(transcript_path).with_name("review-receipt.json")
+            ),
             log_path=log_path,
             timeout_seconds=timeout_seconds,
         )
@@ -120,7 +124,9 @@ def _run_adapter(
             prompt=prompt,
             gemini_binary=gemini_binary,
             transcript_path=transcript_path,
-            review_receipt_path=str(Path(transcript_path).with_name("review-receipt.json")),
+            review_receipt_path=str(
+                Path(transcript_path).with_name("review-receipt.json")
+            ),
             log_path=log_path,
             timeout_seconds=timeout_seconds,
         )
@@ -163,7 +169,9 @@ def _git_diff_patch(worktree: str, touched_files: list[str]) -> str:
     if tracked.returncode == 0 and tracked.stdout:
         patch_parts.append(tracked.stdout)
 
-    untracked = run_git(["ls-files", "--others", "--exclude-standard", "--", *touched_files])
+    untracked = run_git(
+        ["ls-files", "--others", "--exclude-standard", "--", *touched_files]
+    )
     for relpath in [line for line in untracked.stdout.splitlines() if line]:
         diff = run_git(["diff", "--no-index", "--", "/dev/null", relpath])
         if diff.returncode in {0, 1} and diff.stdout:
@@ -219,6 +227,17 @@ def run_adapter_lane(
         raise LaneBlocked("preflight_blocked", exc.message) from exc
 
     with StateNamespace(state_root or root) as namespace:
+        # Fail closed if the runtime's own state dir (.witnessd, including
+        # codex-home) would land inside the observed sandbox: a real codex
+        # run writes cache/plugin/config files under codex-home, and those
+        # would otherwise pollute the before/after touched_files diff with
+        # witnessd's own runtime state rather than the agent's actual
+        # changes (and would leave any seeded codex auth.json sitting inside
+        # the agent-writable sandbox). This only fires when a caller passes
+        # `root` equal to (or nesting inside) `sandbox` without a separate
+        # `state_root` -- every real call site (team/fanin worktrees, the
+        # CLI, existing tests) already keeps them apart.
+        assert_separated(worktree, str(namespace.state_dir))
         log = EventLog(namespace.runlog_path)
         try:
             route_decision = route_model(
