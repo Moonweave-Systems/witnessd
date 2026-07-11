@@ -284,6 +284,52 @@ class TestCodexAdapter(unittest.TestCase):
         self.assertEqual(res.model_declaration["requested_model"], "bad-model")
         self.assertIsNotNone(res.model_declaration["detail"])
 
+    def test_tools_grant_filters_isolated_codex_mcp_config(self):
+        with (
+            tempfile.TemporaryDirectory() as repo,
+            tempfile.TemporaryDirectory() as bindir,
+            tempfile.TemporaryDirectory() as home,
+            tempfile.TemporaryDirectory() as codex_home,
+        ):
+            ambient = pathlib.Path(home) / ".codex"
+            ambient.mkdir()
+            (ambient / "config.toml").write_text(
+                "[mcp_servers.allowed]\n"
+                'command = "/bin/echo"\n'
+                'args = ["allowed"]\n'
+                "\n"
+                "[mcp_servers.forbidden]\n"
+                'command = "/bin/echo"\n'
+                'args = ["forbidden"]\n',
+                encoding="utf-8",
+            )
+            env = {"HOME": home, "CODEX_HOME": codex_home, "PATH": os.environ["PATH"]}
+
+            res = run_codex_lane(
+                sandbox=repo,
+                prompt="do X",
+                codex_binary=_fake_codex(bindir),
+                transcript_path=os.path.join(bindir, "events.raw.jsonl"),
+                sandbox_mode="workspace-write",
+                allowed_touched_files=["allowed.txt"],
+                env=env,
+                tools={"mcp": ["allowed"], "allow": ["read_file"]},
+                role_id="runner",
+                role_capability="execute",
+                lane_id="t-tools",
+            )
+
+            config = pathlib.Path(codex_home) / "config.toml"
+            self.assertIn("[mcp_servers.allowed]", config.read_text(encoding="utf-8"))
+            self.assertNotIn("forbidden", config.read_text(encoding="utf-8"))
+            self.assertEqual(
+                res.tool_declaration["declared_tools"],
+                {"mcp": ["allowed"], "allow": ["read_file"]},
+            )
+            self.assertEqual(
+                res.tool_declaration["usage_verification_status"], "enforced-only"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

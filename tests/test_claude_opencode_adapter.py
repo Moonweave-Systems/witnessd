@@ -1,3 +1,5 @@
+import json
+import os
 import pathlib
 import stat
 import tempfile
@@ -125,6 +127,62 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
                 {"claude-code"},
             )
             self.assertTrue((pathlib.Path(bindir) / "events.normalized.jsonl").exists())
+
+    def test_claude_tools_grant_filters_mcp_config_and_allowed_tools(self):
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+            tempfile.TemporaryDirectory() as config_dir,
+        ):
+            source_config = pathlib.Path(config_dir) / "source-mcp.json"
+            source_config.write_text(
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "allowed": {"command": "/bin/echo", "args": ["allowed"]},
+                            "forbidden": {
+                                "command": "/bin/echo",
+                                "args": ["forbidden"],
+                            },
+                        }
+                    },
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            old_config = os.environ.get("WITNESSD_CLAUDE_MCP_CONFIG")
+            os.environ["WITNESSD_CLAUDE_MCP_CONFIG"] = str(source_config)
+            try:
+                transcript = pathlib.Path(bindir) / "claude.raw.jsonl"
+                res = run_claude_lane(
+                    sandbox=sandbox,
+                    prompt="x",
+                    claude_binary=_fake_claude_jsonl(bindir),
+                    transcript_path=str(transcript),
+                    tools={
+                        "mcp": ["allowed"],
+                        "allow": ["mcp__allowed__allowed_echo"],
+                    },
+                    role_id="runner",
+                    role_capability="execute",
+                    lane_id="t-tools",
+                )
+            finally:
+                if old_config is None:
+                    os.environ.pop("WITNESSD_CLAUDE_MCP_CONFIG", None)
+                else:
+                    os.environ["WITNESSD_CLAUDE_MCP_CONFIG"] = old_config
+
+            self.assertIn("--mcp-config", res.invocation)
+            self.assertIn("--strict-mcp-config", res.invocation)
+            self.assertIn("--allowedTools", res.invocation)
+            self.assertIn("mcp__allowed__allowed_echo", res.invocation)
+            generated = pathlib.Path(
+                res.invocation[res.invocation.index("--mcp-config") + 1]
+            )
+            payload = json.loads(generated.read_text(encoding="utf-8"))
+            self.assertEqual(list(payload["mcpServers"]), ["allowed"])
+            self.assertEqual(res.tool_declaration["adapter"], "claude")
 
     def test_opencode(self):
         with (

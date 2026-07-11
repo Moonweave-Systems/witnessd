@@ -20,6 +20,7 @@ Run locally with:
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import subprocess
 import tempfile
@@ -178,6 +179,70 @@ class TestCodexLiveSmoke(unittest.TestCase):
             self.assertEqual(res.test_output["status"], "failed")
             self.assertEqual(res.model_declaration["verification_status"], "rejected")
             self.assertIsNotNone(res.model_declaration["detail"])
+
+    def test_real_codex_tool_grant_exposes_only_allowed_mcp_config(self):
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as evidence,
+            tempfile.TemporaryDirectory() as home,
+            tempfile.TemporaryDirectory() as codex_home,
+        ):
+            ambient = Path(home) / ".codex"
+            ambient.mkdir()
+            real_auth = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "auth.json"
+            if real_auth.exists():
+                (Path(codex_home) / "auth.json").write_bytes(real_auth.read_bytes())
+                (Path(codex_home) / "auth.json").chmod(0o600)
+            ambient_config = ambient / "config.toml"
+            ambient_config.write_text(
+                "[mcp_servers.allowed_probe]\n"
+                'command = "/bin/echo"\n'
+                'args = ["allowed"]\n'
+                "\n"
+                "[mcp_servers.forbidden_probe]\n"
+                'command = "/bin/echo"\n'
+                'args = ["forbidden"]\n',
+                encoding="utf-8",
+            )
+            env = {
+                **os.environ,
+                "HOME": home,
+                "CODEX_HOME": codex_home,
+                "PYTHONNOUSERSITE": "1",
+            }
+
+            res = run_codex_lane(
+                sandbox=sandbox,
+                prompt=(
+                    "Try to use the MCP tool named "
+                    "mcp__forbidden_probe__forbidden_echo. Do not use shell. "
+                    "If it is unavailable, say unavailable."
+                ),
+                transcript_path=str(Path(evidence) / "events.raw.jsonl"),
+                sandbox_mode="read-only",
+                approval_policy="never",
+                timeout_seconds=180,
+                env=env,
+                tools={
+                    "mcp": ["allowed_probe"],
+                    "allow": ["mcp__allowed_probe__allowed_echo"],
+                },
+                role_id="runner",
+                role_capability="execute",
+                lane_id="codex-tool-live-smoke",
+            )
+
+            config_text = (Path(codex_home) / "config.toml").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("[mcp_servers.allowed_probe]", config_text)
+            self.assertNotIn("forbidden_probe", config_text)
+            self.assertEqual(res.exit_code, 0, json.dumps(res.command_receipts))
+            self.assertEqual(
+                res.tool_declaration["usage_verification_status"], "enforced-only"
+            )
+            raw = Path(res.raw_events_path).read_text(encoding="utf-8")
+            self.assertIn("unavailable", raw.lower())
 
 
 if __name__ == "__main__":

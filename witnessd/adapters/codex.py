@@ -22,6 +22,11 @@ from witnessd.model_declaration import (
     VERIFICATION_REJECTED,
     build_model_declaration,
 )
+from witnessd.tool_declaration import (
+    USAGE_ENFORCED_ONLY,
+    build_tool_declaration,
+    normalize_tool_grant,
+)
 
 _OUTPUT_LIMIT = 4096
 _ALLOWED_APPROVAL_POLICIES = frozenset(
@@ -239,6 +244,10 @@ def run_codex_lane(
     timeout_seconds: int = 120,
     env: dict[str, str] | None = None,
     model: str | None = None,
+    tools: dict[str, Any] | None = None,
+    role_id: str | None = None,
+    role_capability: str | None = None,
+    lane_id: str | None = None,
 ) -> AdapterResult:
     if not prompt.strip():
         raise CodexAdapterError(
@@ -252,6 +261,9 @@ def run_codex_lane(
 
     repo = str(Path(sandbox).resolve(strict=False))
     codex = _resolve_codex(codex_binary)
+    normalized_tools = normalize_tool_grant(tools) if tools is not None else None
+    if normalized_tools is not None:
+        _write_restricted_codex_mcp_config(env, normalized_tools["mcp"])
     effective_declared_policy = _codex_approval_policy_arg(approval_policy)
     transcript = str(Path(transcript_path).resolve(strict=False))
     transcript_binding = transcript_invocation_path or transcript
@@ -343,6 +355,18 @@ def run_codex_lane(
                 requested_model=model,
                 verification_status=VERIFICATION_CONFIRMED,
             )
+    tool_declaration = None
+    if normalized_tools is not None:
+        tool_declaration = build_tool_declaration(
+            role_id=role_id or lane_id or "codex",
+            lane_id=lane_id or role_id or "codex",
+            capability=role_capability or "execute",
+            adapter="codex",
+            declared_tools=normalized_tools,
+            observed_tool_uses=[],
+            usage_verification_status=USAGE_ENFORCED_ONLY,
+            detail="codex exec --json did not expose MCP/tool usage events in live probe",
+        )
 
     if log_path is not None:
         _write_command_log(
@@ -378,7 +402,63 @@ def run_codex_lane(
         raw_events_path=transcript,
         normalized_events_path=normalized_transcript,
         model_declaration=model_declaration,
+        tool_declaration=tool_declaration,
     )
+
+
+def _write_restricted_codex_mcp_config(
+    env: dict[str, str] | None, allowed_mcp: list[str]
+) -> None:
+    if env is None:
+        return
+    codex_home_value = env.get("CODEX_HOME")
+    if not codex_home_value:
+        return
+    codex_home = Path(codex_home_value)
+    codex_home.mkdir(parents=True, exist_ok=True)
+    destination = codex_home / "config.toml"
+    source = _ambient_codex_config(env)
+    blocks = _extract_codex_mcp_blocks(source.read_text(encoding="utf-8")) if source.exists() else {}
+    selected = [
+        blocks[name].rstrip() + "\n"
+        for name in allowed_mcp
+        if name in blocks
+    ]
+    destination.write_text("\n".join(selected), encoding="utf-8")
+
+
+def _ambient_codex_config(env: dict[str, str]) -> Path:
+    home = env.get("HOME")
+    return (Path(home) / ".codex" / "config.toml") if home else Path.home() / ".codex" / "config.toml"
+
+
+def _extract_codex_mcp_blocks(config_text: str) -> dict[str, str]:
+    blocks: dict[str, list[str]] = {}
+    current_name: str | None = None
+    current_lines: list[str] = []
+    for line in config_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            if current_name is not None:
+                blocks[current_name] = current_lines
+            current_name = _mcp_server_name(stripped)
+            current_lines = [line] if current_name is not None else []
+            continue
+        if current_name is not None:
+            current_lines.append(line)
+    if current_name is not None:
+        blocks[current_name] = current_lines
+    return {name: "\n".join(lines) for name, lines in blocks.items()}
+
+
+def _mcp_server_name(header: str) -> str | None:
+    prefix = "[mcp_servers."
+    if not header.startswith(prefix) or not header.endswith("]"):
+        return None
+    name = header[len(prefix) : -1].strip()
+    if len(name) >= 2 and name[0] == name[-1] == '"':
+        name = name[1:-1]
+    return name or None
 
 
 def _self_test() -> None:

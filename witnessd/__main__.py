@@ -403,6 +403,12 @@ def _attach_role_capability_team_fields(spec: dict, lane: dict) -> None:
         spec["role_capability"] = role_capability.get("capability")
     if isinstance(lane.get("granted_write_scope"), list):
         spec["write_scope"] = list(lane["granted_write_scope"])
+    if isinstance(lane.get("granted_tools"), dict):
+        granted_tools = lane["granted_tools"]
+        spec["tools"] = {
+            "mcp": list(granted_tools.get("mcp", [])),
+            "allow": list(granted_tools.get("allow", [])),
+        }
 
 
 def _cmd_run_adapter(args: argparse.Namespace) -> int:

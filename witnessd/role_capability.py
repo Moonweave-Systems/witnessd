@@ -19,6 +19,7 @@ _GRANT_FIELDS = {
     "adapters",
     "model_policy_ref",
     "write_scope",
+    "tools",
 }
 _ROLEPACK_FIELDS = {"kind", "schema_version", "name", "grants"}
 
@@ -30,6 +31,7 @@ class RoleCapabilityGrant:
     adapters: tuple[str, ...]
     model_policy_ref: str
     write_scope: tuple[str, ...] | None = None
+    tools: dict[str, tuple[str, ...]] | None = None
     schema_version: str = ROLE_CAPABILITY_SCHEMA_VERSION
 
     @classmethod
@@ -52,6 +54,7 @@ class RoleCapabilityGrant:
         model_policy_ref = payload.get("model_policy_ref")
         adapters = payload.get("adapters")
         write_scope = payload.get("write_scope")
+        tools = payload.get("tools")
         if not isinstance(role_id, str) or not role_id:
             raise ValueError("role capability grant role_id is invalid")
         if capability not in ROLE_CAPABILITY_CAPABILITIES:
@@ -77,12 +80,22 @@ class RoleCapabilityGrant:
             or not all(isinstance(item, str) and item for item in write_scope)
         ):
             raise ValueError("role capability grant write_scope must be a string list")
+        if tools is not None:
+            _validate_tools(tools)
         return cls(
             role_id=role_id,
             capability=str(capability),
             adapters=tuple(adapters),
             model_policy_ref=model_policy_ref,
             write_scope=tuple(write_scope) if write_scope is not None else None,
+            tools=(
+                {
+                    "mcp": tuple(tools.get("mcp", [])),
+                    "allow": tuple(tools.get("allow", [])),
+                }
+                if tools is not None
+                else None
+            ),
             schema_version=schema_version,
         )
 
@@ -96,6 +109,11 @@ class RoleCapabilityGrant:
         }
         if self.write_scope is not None:
             payload["write_scope"] = list(self.write_scope)
+        if self.tools is not None:
+            payload["tools"] = {
+                "mcp": list(self.tools["mcp"]),
+                "allow": list(self.tools["allow"]),
+            }
         return payload
 
 
@@ -111,6 +129,7 @@ DEFAULT_DEVELOPER_ROLEPACK: dict[str, Any] = {
             "adapters": ["shell", "codex", "claude", "opencode"],
             "model_policy_ref": "default",
             "write_scope": ["orro/**", "docs/**"],
+            "tools": {"mcp": [], "allow": []},
         },
         {
             "schema_version": ROLE_CAPABILITY_SCHEMA_VERSION,
@@ -119,9 +138,27 @@ DEFAULT_DEVELOPER_ROLEPACK: dict[str, Any] = {
             "adapters": ["agy", "gemini"],
             "model_policy_ref": "default",
             "write_scope": [],
+            "tools": {"mcp": [], "allow": []},
         },
     ],
 }
+
+
+def _validate_tools(tools: Any) -> None:
+    if not isinstance(tools, dict):
+        raise ValueError("role capability grant tools must be an object")
+    unknown = set(tools) - {"mcp", "allow"}
+    if unknown:
+        raise ValueError(
+            "role capability grant tools has unsupported fields: "
+            + ", ".join(sorted(unknown))
+        )
+    for key in ("mcp", "allow"):
+        value = tools.get(key, [])
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) and item for item in value
+        ):
+            raise ValueError(f"role capability grant tools.{key} must be a string list")
 
 
 def validate_rolepack(rolepack: dict[str, Any]) -> None:
