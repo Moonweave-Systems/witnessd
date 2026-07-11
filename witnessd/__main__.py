@@ -94,7 +94,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
             worktree=sandbox,
         )
         lane_result = redact_value(lane_result, redaction_context)
-        allowed_touched_files = list(redact_value(allowed_touched_files, redaction_context))
+        allowed_touched_files = list(
+            redact_value(allowed_touched_files, redaction_context)
+        )
 
     # The source fixture is the declared (A0) side; Depone requires a proper
     # agent-fabric-reference-adapter-fixture, not a placeholder.
@@ -148,9 +150,7 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
 
     repo = Path(args.repo or ".").resolve(strict=False)
     home = Path(
-        args.home
-        or os.environ.get("WITNESSD_HOME")
-        or (repo / ".witnessd")
+        args.home or os.environ.get("WITNESSD_HOME") or (repo / ".witnessd")
     ).resolve(strict=False)
     try:
         validate_depone_pin(home)
@@ -165,7 +165,9 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     if getattr(args, "workflow_plan", None):
         workflow_plan_source = Path(args.workflow_plan).resolve(strict=False)
         try:
-            workflow_plan = load_workflow_plan(workflow_plan_source, expected_goal=args.goal)
+            workflow_plan = load_workflow_plan(
+                workflow_plan_source, expected_goal=args.goal
+            )
         except OrroWorkflowError as exc:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 2
@@ -198,7 +200,11 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     if args.run_dir:
         out_dir = Path(args.run_dir).resolve(strict=False)
     else:
-        out_dir = home / "runs" / f"run-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{time.monotonic_ns()}"
+        out_dir = (
+            home
+            / "runs"
+            / f"run-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{time.monotonic_ns()}"
+        )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     workflow_plan_ref: dict[str, object] | None = None
@@ -247,7 +253,9 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     lane_specs = (
         _role_lane_plan_team_specs(role_lane_plan, args)
         if role_lane_plan is not None
-        else [_lane_packet_to_run_team_spec(packet, args) for packet in sealed["packets"]]
+        else [
+            _lane_packet_to_run_team_spec(packet, args) for packet in sealed["packets"]
+        ]
     )
     run_team(
         lane_specs,
@@ -383,6 +391,8 @@ def _role_lane_plan_team_specs(
             "gemini_binary": args.gemini_binary,
             "opencode_binary": args.opencode_binary,
         }
+        if lane.get("model") is not None:
+            spec["model"] = lane["model"]
         specs.append(spec)
     return specs
 
@@ -567,10 +577,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
 
     if args.draft_adapter:
         draft_root = f"{root.rstrip(os.sep)}-witnessd-plan-draft"
-        draft_out = (
-            args.draft_out
-            or os.path.join(draft_root, "evidence")
-        )
+        draft_out = args.draft_out or os.path.join(draft_root, "evidence")
         try:
             result = run_adapter_lane(
                 root=root,
@@ -631,9 +638,13 @@ def _cmd_plan(args: argparse.Namespace) -> int:
             workflow_plan = compile_workflow_plan(goal=args.goal, profile="code-change")
             payload["workflow_plan"] = workflow_plan
         try:
+            from witnessd.model_policy import DEFAULT_MODEL_POLICY
+
             role_lane_plan = compile_role_lane_plan(
                 workflow_plan=workflow_plan,
                 lane_adapter=args.lane_adapter,
+                tier=args.role_lane_tier,
+                policy=DEFAULT_MODEL_POLICY if args.model_policy == "default" else None,
             )
             role_lane_plan_ref = write_role_lane_plan(
                 Path(args.role_lanes_out).resolve(strict=False),
@@ -696,9 +707,7 @@ def _cmd_verify(args: argparse.Namespace) -> int:
 
         run_dir = Path(args.run_dir).resolve(strict=False)
         home = Path(
-            args.home
-            or os.environ.get("WITNESSD_HOME")
-            or run_dir.parent.parent
+            args.home or os.environ.get("WITNESSD_HOME") or run_dir.parent.parent
         ).resolve(strict=False)
         ledger_path = run_dir / "team-ledger.json"
         verdict_path = run_dir / "team-ledger-verdict.json"
@@ -829,7 +838,9 @@ def _proofcheck_binding(
         "kind": "orro-proofcheck-binding",
         "schema_version": "1.0",
         "evidence_dir": str(evidence_dir),
-        "artifact_hashes": _collect_orro_artifact_hashes(evidence_dir, out_path=out_path),
+        "artifact_hashes": _collect_orro_artifact_hashes(
+            evidence_dir, out_path=out_path
+        ),
     }
 
 
@@ -912,10 +923,26 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         "verifier_command": payload.get("verifier_command", "proofcheck"),
         "decision": payload.get("decision", "blocked"),
         "evidence_dir": str(evidence_dir),
-        **({"orro_binding": binding} if binding is not None and binding_error is None else {}),
-        **({"workflow_plan": workflow_plan_ref} if workflow_plan_ref is not None else {}),
-        **({"role_lane_plan": role_lane_plan_ref} if role_lane_plan_ref is not None else {}),
-        **({"workflow_role_dispatch": workflow_role_dispatch} if workflow_role_dispatch is not None else {}),
+        **(
+            {"orro_binding": binding}
+            if binding is not None and binding_error is None
+            else {}
+        ),
+        **(
+            {"workflow_plan": workflow_plan_ref}
+            if workflow_plan_ref is not None
+            else {}
+        ),
+        **(
+            {"role_lane_plan": role_lane_plan_ref}
+            if role_lane_plan_ref is not None
+            else {}
+        ),
+        **(
+            {"workflow_role_dispatch": workflow_role_dispatch}
+            if workflow_role_dispatch is not None
+            else {}
+        ),
         "error_count": payload.get("error_count", 1 if payload.get("error") else 0),
         **({"out": payload["out"]} if payload.get("out") else {}),
         **({"errors": payload["errors"]} if payload.get("errors") else {}),
@@ -1032,9 +1059,21 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         "evidence_dir": str(evidence_dir),
         "artifact_hashes": artifact_hashes,
         "decision_refs": decision_refs,
-        **({"workflow_plan": workflow_plan_ref} if workflow_plan_ref is not None else {}),
-        **({"role_lane_plan": role_lane_plan_ref} if role_lane_plan_ref is not None else {}),
-        **({"workflow_role_dispatch": workflow_role_dispatch} if workflow_role_dispatch is not None else {}),
+        **(
+            {"workflow_plan": workflow_plan_ref}
+            if workflow_plan_ref is not None
+            else {}
+        ),
+        **(
+            {"role_lane_plan": role_lane_plan_ref}
+            if role_lane_plan_ref is not None
+            else {}
+        ),
+        **(
+            {"workflow_role_dispatch": workflow_role_dispatch}
+            if workflow_role_dispatch is not None
+            else {}
+        ),
         "boundary": {
             "approves_merge": False,
             "raises_assurance": False,
@@ -1321,7 +1360,9 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
         write_auto_session,
     )
 
-    mode_count = sum(bool(mode) for mode in (args.dry_run, args.once, args.until_complete))
+    mode_count = sum(
+        bool(mode) for mode in (args.dry_run, args.once, args.until_complete)
+    )
     if mode_count > 1:
         _emit_orro_error(
             args,
@@ -1386,7 +1427,9 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
             would_run = current_payload.get("would_run", [])
             if current_code != 0 or not would_run:
                 payload_reasons = current_payload.get("reasons", [])
-                reasons = list(payload_reasons) if isinstance(payload_reasons, list) else []
+                reasons = (
+                    list(payload_reasons) if isinstance(payload_reasons, list) else []
+                )
                 maybe_error = current_payload.get("error")
                 error = maybe_error if isinstance(maybe_error, dict) else None
                 break
@@ -1419,7 +1462,10 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
         complete = decision_final == "complete"
         blocked = not complete
         if blocked and error is None:
-            if len(steps) >= max_steps and decision_final in {"needs-proofcheck", "ready-for-handoff"}:
+            if len(steps) >= max_steps and decision_final in {
+                "needs-proofcheck",
+                "ready-for-handoff",
+            }:
                 error = {
                     "code": "ERR_ORRO_AUTO_MAX_STEPS_REACHED",
                     "message": "orro auto --until-complete stopped before complete because --max-steps was reached",
@@ -1427,12 +1473,20 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
                 reasons = [*reasons, "max steps reached before completion"]
             else:
                 maybe_error = current_payload.get("error")
-                error = maybe_error if isinstance(maybe_error, dict) else {
-                    "code": "ERR_ORRO_AUTO_BLOCKED",
-                    "message": "ORRO auto until-complete is blocked by continuation state",
-                }
+                error = (
+                    maybe_error
+                    if isinstance(maybe_error, dict)
+                    else {
+                        "code": "ERR_ORRO_AUTO_BLOCKED",
+                        "message": "ORRO auto until-complete is blocked by continuation state",
+                    }
+                )
                 payload_reasons = current_payload.get("reasons", reasons)
-                reasons = list(payload_reasons) if isinstance(payload_reasons, list) else reasons
+                reasons = (
+                    list(payload_reasons)
+                    if isinstance(payload_reasons, list)
+                    else reasons
+                )
         session = build_auto_session(
             run_dir,
             max_steps=max_steps,
@@ -1470,7 +1524,9 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
             decision_after=decision_before,
             wrote=[],
             reasons=list(payload.get("reasons", [])),
-            error=payload.get("error") if isinstance(payload.get("error"), dict) else None,
+            error=payload.get("error")
+            if isinstance(payload.get("error"), dict)
+            else None,
         )
         if args.out:
             try:
@@ -1555,7 +1611,12 @@ def _run_orro_auto_step(
         wrote=wrote,
         error=error,
     )
-    return child_code, receipt, after_code if before_code == 0 or child_code == 0 else before_code, after_payload
+    return (
+        child_code,
+        receipt,
+        after_code if before_code == 0 or child_code == 0 else before_code,
+        after_payload,
+    )
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
@@ -1651,7 +1712,7 @@ def _cmd_faultkit(args: argparse.Namespace) -> int:
 
 
 def _cmd_pause(args: argparse.Namespace) -> int:
-    from witnessd.eventlog import EventLog, EventLogIntegrityError
+    from witnessd.eventlog import EventLog
     from witnessd.pause import PauseError, append_user_pause
 
     try:
@@ -1866,7 +1927,11 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
         print("ERR_TEAM_RUN_STATE_ROOT_INSIDE_OUTPUT", file=sys.stderr)
         return 2
     codex_specs = [spec for spec in lane_specs if spec.get("adapter") == "codex"]
-    if len(codex_specs) > 1 and state_root is None and not _codex_specs_are_isolated(codex_specs):
+    if (
+        len(codex_specs) > 1
+        and state_root is None
+        and not _codex_specs_are_isolated(codex_specs)
+    ):
         print("ERR_TEAM_RUN_MULTI_CODEX_UNISOLATED", file=sys.stderr)
         return 2
     if state_root is not None and codex_specs:
@@ -2182,7 +2247,9 @@ def _cmd_team_resume_audit(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(audit, sort_keys=True))
     else:
-        print(f"team_resume_audit: {Path(args.out).resolve(strict=False) / 'team-resume-audit.json'}")
+        print(
+            f"team_resume_audit: {Path(args.out).resolve(strict=False) / 'team-resume-audit.json'}"
+        )
     return 0
 
 
@@ -2200,7 +2267,11 @@ def _cmd_team_resume(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 2
     if args.json:
-        print(json.dumps({"ledger": str(result["base_dir"] / "team-ledger.json")}, sort_keys=True))
+        print(
+            json.dumps(
+                {"ledger": str(result["base_dir"] / "team-ledger.json")}, sort_keys=True
+            )
+        )
     else:
         print(f"team_resume: {result['base_dir'] / 'team-ledger.json'}")
     return 0
@@ -2274,6 +2345,8 @@ def _parse_team_lane(text: str) -> dict:
         "allowed_touched_files": list(region),
         "prompt": prompt,
     }
+    if "model" in fields:
+        parsed["model"] = fields["model"]
     return parsed
 
 
@@ -2625,7 +2698,9 @@ def _build_parser() -> argparse.ArgumentParser:
     team_plan_run.add_argument("--fail-fast", action="store_true")
     team_plan_run.set_defaults(func=_cmd_team_plan_run)
 
-    team_ledger = sub.add_parser("team-ledger", help="show team-ledger status pending Depone verification")
+    team_ledger = sub.add_parser(
+        "team-ledger", help="show team-ledger status pending Depone verification"
+    )
     team_ledger.add_argument("--ledger", required=True)
     team_ledger.add_argument("--json", action="store_true")
     team_ledger.set_defaults(func=_cmd_team_ledger)
@@ -2758,7 +2833,9 @@ def _add_plan_args(plan: argparse.ArgumentParser) -> None:
     plan.add_argument("goal")
     plan.add_argument("--root", default=".")
     plan.add_argument("--seed", default="w11")
-    plan.add_argument("--draft-adapter", choices=["codex", "claude", "agy", "gemini", "opencode"])
+    plan.add_argument(
+        "--draft-adapter", choices=["codex", "claude", "agy", "gemini", "opencode"]
+    )
     plan.add_argument("--draft-out", default=None)
     plan.add_argument(
         "--tier", default="agentic", choices=["quick", "agentic", "frontier"]
@@ -2834,6 +2911,19 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
         "--lane-adapter",
         default="shell",
         choices=["shell", "codex", "claude", "agy", "gemini", "opencode"],
+    )
+    flowplan.add_argument(
+        "--role-lane-tier",
+        default="quick",
+        choices=["quick", "agentic", "frontier"],
+        help="tier stamped on each compiled role lane (also the model-policy lookup key)",
+    )
+    flowplan.add_argument(
+        "--model-policy",
+        default="off",
+        choices=["off", "default"],
+        help="off (default) keeps --lane-adapter uniform across lanes; "
+        "default resolves each lane's (role, tier) to a policy adapter/model",
     )
     flowplan.add_argument("--json", action="store_true")
     flowplan.set_defaults(

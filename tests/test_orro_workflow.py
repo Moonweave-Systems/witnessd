@@ -8,10 +8,13 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from witnessd.__main__ import main
+from witnessd.model_policy import DEFAULT_MODEL_POLICY
 from witnessd.orro_workflow import (
     OrroWorkflowError,
     assert_workflow_phase_allowed,
+    compile_role_lane_plan,
     compile_workflow_plan,
+    validate_role_lane_plan,
 )
 
 
@@ -58,12 +61,19 @@ class OrroWorkflowTests(unittest.TestCase):
         self.assertEqual(plan["profile"], "review-only")
         self.assertFalse(any(role["may_execute"] for role in plan["roles"]))
         self.assertNotIn("proofrun", plan["flow"])
-        self.assertFalse(any(call["phase"] == "proofrun" for call in plan["engine_calls"]))
+        self.assertFalse(
+            any(call["phase"] == "proofrun" for call in plan["engine_calls"])
+        )
         self.assertNotIn("proofrun emits evidence", plan["required_gates"])
-        self.assertIn("review-only handoff is intent; formal ORRO handoff still requires proofcheck", plan["required_gates"])
+        self.assertIn(
+            "review-only handoff is intent; formal ORRO handoff still requires proofcheck",
+            plan["required_gates"],
+        )
         self.assertIn("model confidence", plan["forbidden_assurance_sources"])
 
-    def test_verification_only_profile_delegates_verification_without_execution(self) -> None:
+    def test_verification_only_profile_delegates_verification_without_execution(
+        self,
+    ) -> None:
         code, payload = self._flowplan(
             ["verify this evidence", "--root", ".", "--profile", "verification-only"]
         )
@@ -71,7 +81,9 @@ class OrroWorkflowTests(unittest.TestCase):
         self.assertEqual(code, 0)
         plan = payload["workflow_plan"]
         self.assertEqual(plan["profile"], "verification-only")
-        proofcheck = next(call for call in plan["engine_calls"] if call["phase"] == "proofcheck")
+        proofcheck = next(
+            call for call in plan["engine_calls"] if call["phase"] == "proofcheck"
+        )
         self.assertEqual(proofcheck["engine"], "Depone")
         self.assertFalse(proofcheck["executes"])
         self.assertTrue(proofcheck["verifies"])
@@ -81,17 +93,23 @@ class OrroWorkflowTests(unittest.TestCase):
         code_change = compile_workflow_plan(goal="fix parser", profile="code-change")
         assert_workflow_phase_allowed(code_change, "proofrun")
 
-        review_only = compile_workflow_plan(goal="review this PR", profile="review-only")
+        review_only = compile_workflow_plan(
+            goal="review this PR", profile="review-only"
+        )
         with self.assertRaises(OrroWorkflowError) as cm:
             assert_workflow_phase_allowed(review_only, "proofrun")
         self.assertEqual(cm.exception.code, "ERR_ORRO_WORKFLOW_PLAN_PHASE_FORBIDDEN")
 
-        verification_only = compile_workflow_plan(goal="verify evidence", profile="verification-only")
+        verification_only = compile_workflow_plan(
+            goal="verify evidence", profile="verification-only"
+        )
         with self.assertRaises(OrroWorkflowError) as cm:
             assert_workflow_phase_allowed(verification_only, "proofrun")
         self.assertEqual(cm.exception.code, "ERR_ORRO_WORKFLOW_PLAN_PHASE_FORBIDDEN")
 
-    def test_docs_change_requires_evidence_gates_before_handoff_when_executing(self) -> None:
+    def test_docs_change_requires_evidence_gates_before_handoff_when_executing(
+        self,
+    ) -> None:
         code, payload = self._flowplan(
             ["update docs", "--root", ".", "--profile", "docs-change"]
         )
@@ -136,7 +154,9 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(json.loads(out.read_text(encoding="utf-8")), payload)
 
-    def test_flowplan_role_lanes_out_writes_executable_intent_for_code_change(self) -> None:
+    def test_flowplan_role_lanes_out_writes_executable_intent_for_code_change(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             out = root / "role-lane-plan.json"
@@ -161,7 +181,9 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertEqual(role_lanes["goal"], "fix parser")
             self.assertTrue(role_lanes["execution_allowed"])
             self.assertRegex(role_lanes["workflow_plan_hash"], r"^[0-9a-f]{64}$")
-            self.assertEqual(payload["role_lane_plan"]["path"], str(out.resolve(strict=False)))
+            self.assertEqual(
+                payload["role_lane_plan"]["path"], str(out.resolve(strict=False))
+            )
             self.assertRegex(payload["role_lane_plan"]["sha256"], r"^[0-9a-f]{64}$")
             self.assertEqual(
                 payload["role_lane_plan"]["workflow_plan_hash"],
@@ -296,6 +318,164 @@ class OrroWorkflowTests(unittest.TestCase):
                 ]
             )
 
+    def test_flowplan_role_lanes_default_policy_off_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            code, _payload = self._flowplan(
+                [
+                    "fix parser",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(out),
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            role_lanes = json.loads(out.read_text(encoding="utf-8"))
+            for lane in role_lanes["lanes"]:
+                self.assertEqual(lane["tier"], "quick")
+                self.assertNotIn("model", lane)
+                self.assertNotIn("resolved_via_policy", lane)
+
+    def test_flowplan_role_lanes_model_policy_default_resolves_runner_to_codex(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            code, _payload = self._flowplan(
+                [
+                    "fix parser",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(out),
+                    "--model-policy",
+                    "default",
+                    "--role-lane-tier",
+                    "frontier",
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            role_lanes = json.loads(out.read_text(encoding="utf-8"))
+            runner_lanes = [
+                lane for lane in role_lanes["lanes"] if lane["role_id"] == "runner"
+            ]
+            self.assertEqual(len(runner_lanes), 1)
+            lane = runner_lanes[0]
+            self.assertEqual(lane["tier"], "frontier")
+            self.assertEqual(lane["adapter"], "codex")
+            self.assertEqual(lane["model"], "gpt-5.5")
+            self.assertTrue(lane["resolved_via_policy"])
+            self.assertEqual(lane["policy_role_kind"], "runner")
+            self.assertEqual(lane["policy_tier"], "frontier")
+
+    def test_flowplan_role_lanes_model_policy_default_resolves_reviewer_to_agy(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            code, _payload = self._flowplan(
+                [
+                    "review safely",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "review-only",
+                    "--role-lanes-out",
+                    str(out),
+                    "--model-policy",
+                    "default",
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            role_lanes = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(len(role_lanes["lanes"]), 1)
+            lane = role_lanes["lanes"][0]
+            self.assertEqual(lane["role_id"], "reviewer")
+            self.assertEqual(lane["tier"], "quick")
+            self.assertEqual(lane["adapter"], "agy")
+            self.assertEqual(lane["model"], "gemini-3.1-pro")
+            self.assertTrue(lane["resolved_via_policy"])
+
+    def test_compile_role_lane_plan_policy_unresolved_combo_fails_closed(self) -> None:
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        incomplete_policy = {
+            "kind": DEFAULT_MODEL_POLICY["kind"],
+            "schema_version": DEFAULT_MODEL_POLICY["schema_version"],
+            "routes": [],
+        }
+        with self.assertRaises(OrroWorkflowError) as ctx:
+            compile_role_lane_plan(
+                workflow_plan=workflow_plan, policy=incomplete_policy
+            )
+        self.assertEqual(ctx.exception.code, "ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED")
+
+    def test_validate_role_lane_plan_rejects_review_only_vendor_in_execution_lane(
+        self,
+    ) -> None:
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        role_lane_plan = compile_role_lane_plan(workflow_plan=workflow_plan)
+        role_lane_plan["lanes"][0]["adapter"] = "agy"
+
+        with self.assertRaises(OrroWorkflowError):
+            validate_role_lane_plan(role_lane_plan)
+
+    def test_role_lane_plan_team_specs_carries_policy_model_through(self) -> None:
+        import argparse
+
+        from witnessd.__main__ import _role_lane_plan_team_specs
+
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan,
+            tier="frontier",
+            policy=DEFAULT_MODEL_POLICY,
+        )
+        args = argparse.Namespace(
+            codex_binary="codex",
+            claude_binary="claude",
+            agy_binary="agy",
+            gemini_binary="gemini",
+            opencode_binary="opencode",
+        )
+
+        specs = _role_lane_plan_team_specs(role_lane_plan, args)
+
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(specs[0]["adapter"], "codex")
+        self.assertEqual(specs[0]["model"], "gpt-5.5")
+
+    def test_role_lane_plan_team_specs_omits_model_when_not_policy_resolved(
+        self,
+    ) -> None:
+        import argparse
+
+        from witnessd.__main__ import _role_lane_plan_team_specs
+
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan, lane_adapter="codex"
+        )
+        args = argparse.Namespace(
+            codex_binary="codex",
+            claude_binary="claude",
+            agy_binary="agy",
+            gemini_binary="gemini",
+            opencode_binary="opencode",
+        )
+
+        specs = _role_lane_plan_team_specs(role_lane_plan, args)
+
+        self.assertEqual(len(specs), 1)
+        self.assertNotIn("model", specs[0])
+
     def test_invalid_profile_fails_closed(self) -> None:
         stdout = io.StringIO()
         with redirect_stdout(stdout):
@@ -320,7 +500,13 @@ class OrroWorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             code, payload = self._flowplan(
-                ["plan without execution", "--root", str(root), "--profile", "code-change"]
+                [
+                    "plan without execution",
+                    "--root",
+                    str(root),
+                    "--profile",
+                    "code-change",
+                ]
             )
 
             self.assertEqual(code, 0)

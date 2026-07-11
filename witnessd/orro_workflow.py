@@ -13,6 +13,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from witnessd.model_policy import resolve_policy_route
+
 
 ERR_ORRO_WORKFLOW_PROFILE_UNKNOWN = "ERR_ORRO_WORKFLOW_PROFILE_UNKNOWN"
 ERR_ORRO_WORKFLOW_PLAN_LOAD_FAILED = "ERR_ORRO_WORKFLOW_PLAN_LOAD_FAILED"
@@ -25,8 +27,11 @@ ERR_ORRO_ROLE_LANE_ADAPTER_UNSUPPORTED = "ERR_ORRO_ROLE_LANE_ADAPTER_UNSUPPORTED
 ERR_ORRO_ROLE_LANE_PLAN_LOAD_FAILED = "ERR_ORRO_ROLE_LANE_PLAN_LOAD_FAILED"
 ERR_ORRO_ROLE_LANE_PLAN_INVALID = "ERR_ORRO_ROLE_LANE_PLAN_INVALID"
 ERR_ORRO_ROLE_LANE_PLAN_HASH_MISMATCH = "ERR_ORRO_ROLE_LANE_PLAN_HASH_MISMATCH"
-ERR_ORRO_ROLE_LANE_PLAN_EXECUTION_FORBIDDEN = "ERR_ORRO_ROLE_LANE_PLAN_EXECUTION_FORBIDDEN"
+ERR_ORRO_ROLE_LANE_PLAN_EXECUTION_FORBIDDEN = (
+    "ERR_ORRO_ROLE_LANE_PLAN_EXECUTION_FORBIDDEN"
+)
 ERR_ORRO_ROLE_LANE_PLAN_EMPTY = "ERR_ORRO_ROLE_LANE_PLAN_EMPTY"
+ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED = "ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED"
 
 WORKFLOW_PLAN_KIND = "orro-workflow-plan"
 WORKFLOW_PLAN_SCHEMA_VERSION = "0.1"
@@ -39,6 +44,13 @@ ROLE_LANE_PLAN_BINDING_SCHEMA_VERSION = "0.1"
 ROLE_DISPATCH_KIND = "orro-role-dispatch"
 ROLE_DISPATCH_SCHEMA_VERSION = "0.1"
 ROLE_LANE_ADAPTERS = ("shell", "codex", "claude", "agy", "gemini", "opencode")
+# Review-only vendors (agy/gemini) must never land in an execution/proofrun
+# lane, policy-resolved or not -- they have no execution role in this design,
+# only a read-only review one (enforced in _validate_role_lane).
+REVIEW_ONLY_ADAPTERS = ("agy", "gemini")
+EXECUTION_LANE_ADAPTERS = tuple(
+    adapter for adapter in ROLE_LANE_ADAPTERS if adapter not in REVIEW_ONLY_ADAPTERS
+)
 
 FORBIDDEN_ASSURANCE_SOURCES = [
     "skill text",
@@ -90,57 +102,96 @@ def compile_workflow_plan(*, goal: str, profile: str) -> dict[str, Any]:
     }
 
 
-def load_workflow_plan(path: Path, *, expected_goal: str | None = None) -> dict[str, Any]:
+def load_workflow_plan(
+    path: Path, *, expected_goal: str | None = None
+) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_LOAD_FAILED, str(exc)) from exc
     if not isinstance(payload, dict):
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan must be a JSON object")
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan must be a JSON object"
+        )
     plan = payload.get("workflow_plan") if "workflow_plan" in payload else payload
     if not isinstance(plan, dict):
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow_plan must be a JSON object")
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow_plan must be a JSON object"
+        )
     validate_workflow_plan(plan)
     if expected_goal is not None and plan.get("goal") != expected_goal:
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_GOAL_MISMATCH, "workflow plan goal does not match proofrun goal")
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_GOAL_MISMATCH,
+            "workflow plan goal does not match proofrun goal",
+        )
     return deepcopy(plan)
 
 
 def validate_workflow_plan(plan: dict[str, Any]) -> None:
     if plan.get("kind") != WORKFLOW_PLAN_KIND:
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan kind is invalid")
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan kind is invalid"
+        )
     if plan.get("schema_version") != WORKFLOW_PLAN_SCHEMA_VERSION:
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan schema_version is invalid")
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan schema_version is invalid"
+        )
     if plan.get("profile") not in PROFILE_NAMES:
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan profile is invalid")
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan profile is invalid"
+        )
     flow = plan.get("flow")
     if not isinstance(flow, list) or not all(isinstance(phase, str) for phase in flow):
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan flow must be a string list")
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan flow must be a string list"
+        )
     roles = plan.get("roles")
     if not isinstance(roles, list):
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan roles must be a list")
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan roles must be a list"
+        )
     engine_calls = plan.get("engine_calls")
     if not isinstance(engine_calls, list):
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan engine_calls must be a list")
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan engine_calls must be a list"
+        )
     boundary = plan.get("boundary")
-    if not isinstance(boundary, dict) or boundary.get("orro_is_third_engine") is not False:
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan boundary is invalid")
+    if (
+        not isinstance(boundary, dict)
+        or boundary.get("orro_is_third_engine") is not False
+    ):
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan boundary is invalid"
+        )
     if (
         boundary.get("depone_verifies") is not True
         or boundary.get("witnessd_executes") is not True
         or boundary.get("orro_exposes_workflow") is not True
     ):
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan boundary is invalid")
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan boundary is invalid"
+        )
     if plan.get("raises_assurance") is not None:
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan must not claim assurance")
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan must not claim assurance"
+        )
     for role in roles:
         if not isinstance(role, dict) or role.get("raises_assurance") is not False:
-            raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan role must not claim assurance")
+            raise OrroWorkflowError(
+                ERR_ORRO_WORKFLOW_PLAN_INVALID,
+                "workflow plan role must not claim assurance",
+            )
     for call in engine_calls:
         if not isinstance(call, dict):
-            raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan engine_call must be a JSON object")
+            raise OrroWorkflowError(
+                ERR_ORRO_WORKFLOW_PLAN_INVALID,
+                "workflow plan engine_call must be a JSON object",
+            )
         if call.get("executes") is True and call.get("verifies") is True:
-            raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_INVALID, "workflow plan engine_call cannot execute and verify")
+            raise OrroWorkflowError(
+                ERR_ORRO_WORKFLOW_PLAN_INVALID,
+                "workflow plan engine_call cannot execute and verify",
+            )
 
 
 def workflow_plan_hash(plan: dict[str, Any]) -> str:
@@ -149,7 +200,11 @@ def workflow_plan_hash(plan: dict[str, Any]) -> str:
 
 
 def compile_role_lane_plan(
-    *, workflow_plan: dict[str, Any], lane_adapter: str = "shell"
+    *,
+    workflow_plan: dict[str, Any],
+    lane_adapter: str = "shell",
+    tier: str = "quick",
+    policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     validate_workflow_plan(workflow_plan)
     if lane_adapter not in ROLE_LANE_ADAPTERS:
@@ -167,11 +222,21 @@ def compile_role_lane_plan(
                 and role.get("phase") == "proofrun"
                 and role.get("may_execute") is True
             ):
-                lanes.append(_role_lane_from_role(role, workflow_plan, lane_adapter))
-    elif profile == "review-only" and lane_adapter in {"agy", "gemini"}:
+                lanes.append(
+                    _role_lane_from_role(
+                        role, workflow_plan, lane_adapter, tier, policy
+                    )
+                )
+    elif profile == "review-only" and (
+        policy is not None or lane_adapter in {"agy", "gemini"}
+    ):
         for role in workflow_plan["roles"]:
             if isinstance(role, dict) and role.get("role_id") == "reviewer":
-                lanes.append(_review_lane_from_role(role, workflow_plan, lane_adapter))
+                lanes.append(
+                    _review_lane_from_role(
+                        role, workflow_plan, lane_adapter, tier, policy
+                    )
+                )
     return {
         "kind": ROLE_LANE_PLAN_KIND,
         "schema_version": ROLE_LANE_PLAN_SCHEMA_VERSION,
@@ -203,7 +268,9 @@ def role_lane_plan_file_ref(path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError) as exc:
         raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_LOAD_FAILED, str(exc)) from exc
     if not isinstance(payload, dict):
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan must be a JSON object")
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan must be a JSON object"
+        )
     validate_role_lane_plan(payload)
     return {
         "path": str(path.resolve(strict=False)),
@@ -215,15 +282,15 @@ def role_lane_plan_file_ref(path: Path) -> dict[str, Any]:
     }
 
 
-def load_role_lane_plan(
-    path: Path, *, workflow_plan: dict[str, Any]
-) -> dict[str, Any]:
+def load_role_lane_plan(path: Path, *, workflow_plan: dict[str, Any]) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_LOAD_FAILED, str(exc)) from exc
     if not isinstance(payload, dict):
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan must be a JSON object")
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan must be a JSON object"
+        )
     validate_role_lane_plan(payload)
     expected_hash = workflow_plan_hash(workflow_plan)
     if payload.get("workflow_plan_hash") != expected_hash:
@@ -247,20 +314,37 @@ def load_role_lane_plan(
 
 def validate_role_lane_plan(plan: dict[str, Any]) -> None:
     if plan.get("kind") != ROLE_LANE_PLAN_KIND:
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan kind is invalid")
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan kind is invalid"
+        )
     if plan.get("schema_version") != ROLE_LANE_PLAN_SCHEMA_VERSION:
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan schema_version is invalid")
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan schema_version is invalid"
+        )
     if plan.get("workflow_profile") not in PROFILE_NAMES:
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan profile is invalid")
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan profile is invalid"
+        )
     if not isinstance(plan.get("goal"), str) or not plan.get("goal"):
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan goal is invalid")
-    if not isinstance(plan.get("workflow_plan_hash"), str) or len(plan["workflow_plan_hash"]) != 64:
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan workflow hash is invalid")
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan goal is invalid"
+        )
+    if (
+        not isinstance(plan.get("workflow_plan_hash"), str)
+        or len(plan["workflow_plan_hash"]) != 64
+    ):
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan workflow hash is invalid"
+        )
     if plan.get("execution_allowed") not in {True, False}:
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan execution flag is invalid")
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan execution flag is invalid"
+        )
     lanes = plan.get("lanes")
     if not isinstance(lanes, list):
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan lanes must be a list")
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan lanes must be a list"
+        )
     boundary = plan.get("boundary")
     if (
         not isinstance(boundary, dict)
@@ -271,7 +355,9 @@ def validate_role_lane_plan(plan: dict[str, Any]) -> None:
         or boundary.get("raises_assurance") is not False
         or boundary.get("approves_merge") is not False
     ):
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan boundary is invalid")
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan boundary is invalid"
+        )
     for lane in lanes:
         _validate_role_lane(lane)
 
@@ -301,12 +387,17 @@ def write_role_lane_plan_binding(
             json.dumps(role_lane_plan, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        binding_path.write_text(json.dumps(binding, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        binding_path.write_text(
+            json.dumps(binding, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
     except OSError as exc:
         raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_WRITE_FAILED, str(exc)) from exc
     ref = role_lane_plan_binding_ref(run_dir)
     if ref is None:
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_WRITE_FAILED, "role-lane plan binding was not readable")
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_WRITE_FAILED,
+            "role-lane plan binding was not readable",
+        )
     return ref
 
 
@@ -355,13 +446,20 @@ def write_workflow_plan_binding(
         "boundary": _binding_boundary(),
     }
     try:
-        plan_path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        binding_path.write_text(json.dumps(binding, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        plan_path.write_text(
+            json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        binding_path.write_text(
+            json.dumps(binding, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
     except OSError as exc:
         raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED, str(exc)) from exc
     ref = workflow_plan_binding_ref(run_dir)
     if ref is None:
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED, "workflow plan binding was not readable")
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED,
+            "workflow plan binding was not readable",
+        )
     return ref
 
 
@@ -381,11 +479,16 @@ def write_workflow_role_dispatch(
         raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED, str(exc)) from exc
     ref = workflow_role_dispatch_ref(run_dir)
     if ref is None:
-        raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED, "workflow role dispatch was not readable")
+        raise OrroWorkflowError(
+            ERR_ORRO_WORKFLOW_PLAN_WRITE_FAILED,
+            "workflow role dispatch was not readable",
+        )
     return ref
 
 
-def build_workflow_role_dispatch(*, plan: dict[str, Any], run_dir: Path) -> dict[str, Any]:
+def build_workflow_role_dispatch(
+    *, plan: dict[str, Any], run_dir: Path
+) -> dict[str, Any]:
     validate_workflow_plan(plan)
     lane_ids = _team_ledger_lane_ids(run_dir / "team-ledger.json")
     has_team_ledger = (run_dir / "team-ledger.json").is_file()
@@ -401,7 +504,9 @@ def build_workflow_role_dispatch(*, plan: dict[str, Any], run_dir: Path) -> dict
             "may_verify": role.get("may_verify") is True,
             "raises_assurance": False,
             "status": _role_status(role_phase, has_team_ledger),
-            "evidence_refs": ["team-ledger.json"] if role_phase == "proofrun" and has_team_ledger else [],
+            "evidence_refs": ["team-ledger.json"]
+            if role_phase == "proofrun" and has_team_ledger
+            else [],
         }
         if role_phase == "proofrun" and role_lane_ref is not None:
             role_record["evidence_refs"].append("role-lane-plan.json")
@@ -531,13 +636,49 @@ def _canonical_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _resolve_lane_adapter_and_model(
+    *, role_kind: str, tier: str, lane_adapter: str, policy: dict[str, Any] | None
+) -> tuple[str, dict[str, Any]]:
+    """Return (adapter, extra_lane_fields) for a role lane.
+
+    Without a policy this is the pre-existing uniform behavior: the caller's
+    lane_adapter, no model field at all. With a policy, (role_kind, tier) must
+    resolve to a concrete (adapter, model) -- an unmapped combo fails closed
+    rather than silently falling back to lane_adapter, matching the "no quiet
+    degradation" rule the rest of this feature follows.
+    """
+    if policy is None:
+        return lane_adapter, {}
+    route = resolve_policy_route(policy, role_kind=role_kind, tier=tier)
+    if route is None:
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED,
+            f"no model policy route for role_kind={role_kind!r} tier={tier!r}",
+        )
+    return route["adapter"], {
+        "model": route["model"],
+        "resolved_via_policy": True,
+        "policy_role_kind": role_kind,
+        "policy_tier": tier,
+    }
+
+
 def _role_lane_from_role(
-    role: dict[str, Any], workflow_plan: dict[str, Any], lane_adapter: str
+    role: dict[str, Any],
+    workflow_plan: dict[str, Any],
+    lane_adapter: str,
+    tier: str,
+    policy: dict[str, Any] | None,
 ) -> dict[str, Any]:
     profile = str(workflow_plan["profile"])
     role_id = str(role["role_id"])
+    resolved_adapter, extra = _resolve_lane_adapter_and_model(
+        role_kind=role_id, tier=tier, lane_adapter=lane_adapter, policy=policy
+    )
     digest = hashlib.sha256(
-        f"{workflow_plan['goal']}:{profile}:{role_id}:{lane_adapter}".encode("utf-8")
+        f"{workflow_plan['goal']}:{profile}:{role_id}:{resolved_adapter}".encode(
+            "utf-8"
+        )
     ).hexdigest()[:12]
     region_root = "docs" if profile == "docs-change" else "orro"
     lane_id = f"{role_id}-{digest}"
@@ -548,24 +689,34 @@ def _role_lane_from_role(
         "role_purpose": role.get("purpose", ""),
         "phase": "proofrun",
         "engine": "witnessd",
-        "adapter": lane_adapter,
-        "tier": "quick",
+        "adapter": resolved_adapter,
+        "tier": tier,
         "region": region,
         "prompt": f"Execute ORRO role {role_id} for goal: {workflow_plan['goal']}",
         "budget": {"max_tokens": 0, "max_usd": 0.0, "max_depth": 1},
         "may_execute": True,
         "may_verify": False,
         "raises_assurance": False,
+        **extra,
     }
 
 
 def _review_lane_from_role(
-    role: dict[str, Any], workflow_plan: dict[str, Any], lane_adapter: str
+    role: dict[str, Any],
+    workflow_plan: dict[str, Any],
+    lane_adapter: str,
+    tier: str,
+    policy: dict[str, Any] | None,
 ) -> dict[str, Any]:
     profile = str(workflow_plan["profile"])
     role_id = str(role["role_id"])
+    resolved_adapter, extra = _resolve_lane_adapter_and_model(
+        role_kind=role_id, tier=tier, lane_adapter=lane_adapter, policy=policy
+    )
     digest = hashlib.sha256(
-        f"{workflow_plan['goal']}:{profile}:{role_id}:{lane_adapter}".encode("utf-8")
+        f"{workflow_plan['goal']}:{profile}:{role_id}:{resolved_adapter}".encode(
+            "utf-8"
+        )
     ).hexdigest()[:12]
     lane_id = f"{role_id}-{digest}"
     return {
@@ -574,41 +725,81 @@ def _review_lane_from_role(
         "role_purpose": role.get("purpose", ""),
         "phase": "review",
         "engine": "witnessd",
-        "adapter": lane_adapter,
-        "tier": "quick",
+        "adapter": resolved_adapter,
+        "tier": tier,
         "region": ["."],
         "prompt": f"Review ORRO goal without editing files: {workflow_plan['goal']}",
         "budget": {"max_tokens": 0, "max_usd": 0.0, "max_depth": 1},
         "may_execute": False,
         "may_verify": False,
         "raises_assurance": False,
+        **extra,
     }
 
 
 def _validate_role_lane(lane: Any) -> None:
     if not isinstance(lane, dict):
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan lane must be a JSON object")
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan lane must be a JSON object"
+        )
     for field in ("lane_id", "role_id", "phase", "engine", "adapter", "tier", "prompt"):
         if not isinstance(lane.get(field), str) or not lane.get(field):
-            raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, f"role-lane field is invalid: {field}")
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_PLAN_INVALID, f"role-lane field is invalid: {field}"
+            )
     if lane["adapter"] not in ROLE_LANE_ADAPTERS:
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_ADAPTER_UNSUPPORTED, "role-lane adapter is unsupported")
-    if lane.get("phase") not in {"proofrun", "review"} or lane.get("engine") != "witnessd":
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane phase or engine is invalid")
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_ADAPTER_UNSUPPORTED, "role-lane adapter is unsupported"
+        )
+    if (
+        lane.get("phase") not in {"proofrun", "review"}
+        or lane.get("engine") != "witnessd"
+    ):
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane phase or engine is invalid"
+        )
     if lane.get("phase") == "proofrun":
-        if lane.get("may_execute") is not True or lane.get("may_verify") is not False:
-            raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane execution boundary is invalid")
+        if (
+            lane.get("may_execute") is not True
+            or lane.get("may_verify") is not False
+            or lane.get("adapter") not in EXECUTION_LANE_ADAPTERS
+        ):
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+                "role-lane execution boundary is invalid",
+            )
     else:
-        if lane.get("adapter") not in {"agy", "gemini"} or lane.get("may_execute") is not False or lane.get("may_verify") is not False:
-            raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane review boundary is invalid")
+        if (
+            lane.get("adapter") not in REVIEW_ONLY_ADAPTERS
+            or lane.get("may_execute") is not False
+            or lane.get("may_verify") is not False
+        ):
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane review boundary is invalid"
+            )
     if lane.get("raises_assurance") is not False:
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane must not claim assurance")
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane must not claim assurance"
+        )
+    if "model" in lane and (not isinstance(lane["model"], str) or not lane["model"]):
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+            "role-lane model must be a non-empty string",
+        )
     region = lane.get("region")
-    if not isinstance(region, list) or not region or not all(isinstance(item, str) and item for item in region):
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane region is invalid")
+    if (
+        not isinstance(region, list)
+        or not region
+        or not all(isinstance(item, str) and item for item in region)
+    ):
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane region is invalid"
+        )
     budget = lane.get("budget")
     if not isinstance(budget, dict):
-        raise OrroWorkflowError(ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane budget is invalid")
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane budget is invalid"
+        )
 
 
 def _binding_boundary() -> dict[str, bool]:
@@ -646,8 +837,18 @@ def _profile_spec(profile: str) -> dict[str, Any]:
     specs: dict[str, dict[str, Any]] = {
         "code-change": {
             "roles": [
-                _role("scout", "collect repository context before planning", "ORRO/witnessd", "scout"),
-                _role("planner", "compile an execution plan without running workers", "ORRO/witnessd", "flowplan"),
+                _role(
+                    "scout",
+                    "collect repository context before planning",
+                    "ORRO/witnessd",
+                    "scout",
+                ),
+                _role(
+                    "planner",
+                    "compile an execution plan without running workers",
+                    "ORRO/witnessd",
+                    "flowplan",
+                ),
                 _role(
                     "runner",
                     "execute the planned work and emit evidence",
@@ -662,7 +863,12 @@ def _profile_spec(profile: str) -> dict[str, Any]:
                     "proofcheck",
                     may_verify=True,
                 ),
-                _role("handoff", "package review references after proofcheck", "ORRO/witnessd", "handoff"),
+                _role(
+                    "handoff",
+                    "package review references after proofcheck",
+                    "ORRO/witnessd",
+                    "handoff",
+                ),
             ],
             "flow": ["scout", "flowplan", "proofrun", "proofcheck", "handoff"],
             "engine_calls": [
@@ -676,8 +882,18 @@ def _profile_spec(profile: str) -> dict[str, Any]:
         },
         "review-only": {
             "roles": [
-                _role("scout", "collect review context without execution", "ORRO/witnessd", "scout"),
-                _role("reviewer", "inspect existing changes and evidence references", "ORRO", "flowplan"),
+                _role(
+                    "scout",
+                    "collect review context without execution",
+                    "ORRO/witnessd",
+                    "scout",
+                ),
+                _role(
+                    "reviewer",
+                    "inspect existing changes and evidence references",
+                    "ORRO",
+                    "flowplan",
+                ),
             ],
             "flow": ["scout", "flowplan"],
             "engine_calls": [
@@ -692,8 +908,19 @@ def _profile_spec(profile: str) -> dict[str, Any]:
         },
         "verification-only": {
             "roles": [
-                _role("verifier", "verify existing persisted evidence bytes", "Depone", "proofcheck", may_verify=True),
-                _role("handoff", "package verifier decision references", "ORRO/witnessd", "handoff"),
+                _role(
+                    "verifier",
+                    "verify existing persisted evidence bytes",
+                    "Depone",
+                    "proofcheck",
+                    may_verify=True,
+                ),
+                _role(
+                    "handoff",
+                    "package verifier decision references",
+                    "ORRO/witnessd",
+                    "handoff",
+                ),
             ],
             "flow": ["proofcheck", "handoff"],
             "engine_calls": [
@@ -707,8 +934,15 @@ def _profile_spec(profile: str) -> dict[str, Any]:
         },
         "docs-change": {
             "roles": [
-                _role("scout", "collect documentation context", "ORRO/witnessd", "scout"),
-                _role("planner", "plan documentation edits without execution", "ORRO/witnessd", "flowplan"),
+                _role(
+                    "scout", "collect documentation context", "ORRO/witnessd", "scout"
+                ),
+                _role(
+                    "planner",
+                    "plan documentation edits without execution",
+                    "ORRO/witnessd",
+                    "flowplan",
+                ),
                 _role(
                     "runner",
                     "apply documentation changes and emit evidence when execution is needed",
@@ -716,8 +950,19 @@ def _profile_spec(profile: str) -> dict[str, Any]:
                     "proofrun",
                     may_execute=True,
                 ),
-                _role("verifier", "verify emitted evidence bytes", "Depone", "proofcheck", may_verify=True),
-                _role("handoff", "package documentation change review", "ORRO/witnessd", "handoff"),
+                _role(
+                    "verifier",
+                    "verify emitted evidence bytes",
+                    "Depone",
+                    "proofcheck",
+                    may_verify=True,
+                ),
+                _role(
+                    "handoff",
+                    "package documentation change review",
+                    "ORRO/witnessd",
+                    "handoff",
+                ),
             ],
             "flow": ["scout", "flowplan", "proofrun", "proofcheck", "handoff"],
             "engine_calls": [
@@ -731,11 +976,34 @@ def _profile_spec(profile: str) -> dict[str, Any]:
         },
         "release-readiness": {
             "roles": [
-                _role("setup", "prepare local readiness metadata", "ORRO/witnessd", "init"),
-                _role("doctor", "check local engine and adapter readiness", "ORRO/witnessd", "doctor"),
-                _role("lock", "write or check distribution metadata", "ORRO/witnessd", "engine-lock"),
-                _role("verifier", "verify release evidence bytes when supplied", "Depone", "proofcheck", may_verify=True),
-                _role("handoff", "package release review references", "ORRO/witnessd", "handoff"),
+                _role(
+                    "setup", "prepare local readiness metadata", "ORRO/witnessd", "init"
+                ),
+                _role(
+                    "doctor",
+                    "check local engine and adapter readiness",
+                    "ORRO/witnessd",
+                    "doctor",
+                ),
+                _role(
+                    "lock",
+                    "write or check distribution metadata",
+                    "ORRO/witnessd",
+                    "engine-lock",
+                ),
+                _role(
+                    "verifier",
+                    "verify release evidence bytes when supplied",
+                    "Depone",
+                    "proofcheck",
+                    may_verify=True,
+                ),
+                _role(
+                    "handoff",
+                    "package release review references",
+                    "ORRO/witnessd",
+                    "handoff",
+                ),
             ],
             "flow": ["init", "doctor", "engine-lock", "proofcheck", "handoff"],
             "engine_calls": [

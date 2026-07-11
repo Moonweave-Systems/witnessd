@@ -27,6 +27,20 @@ class TestTeamAdapterLaneParsing(unittest.TestCase):
             },
         )
 
+    def test_parse_adapter_lane_carries_explicit_model(self):
+        parsed = _parse_team_lane(
+            "L1:adapter=codex:tier=frontier:region=a.txt:prompt=do X:model=gpt-5.5"
+        )
+
+        self.assertEqual(parsed["model"], "gpt-5.5")
+
+    def test_parse_adapter_lane_without_model_omits_it(self):
+        parsed = _parse_team_lane(
+            "L1:adapter=codex:tier=agentic:region=a.txt:prompt=do X"
+        )
+
+        self.assertNotIn("model", parsed)
+
     def test_parse_legacy_lane_keeps_placeholder_command(self):
         parsed = _parse_team_lane("L1:a.txt,b.txt")
 
@@ -267,6 +281,51 @@ class TestTeamAdapterLedgerContract(unittest.TestCase):
             self.assertEqual(receipt["runner_kind"], "codex-cli")
             self.assertIn("--json", receipt["invocation"])
             self.assertNotIn("--output-last-message", receipt["invocation"])
+
+    def test_team_run_wires_explicit_model_into_adapter_invocation(self):
+        # run_team's lane specs are the same dicts _role_lane_plan_team_specs
+        # (and _parse_team_lane) build -- if either one sets spec["model"] but
+        # fanin's per-lane executor never reads it, the model routing policy
+        # would silently do nothing once it reaches a real team run. This
+        # closes that specific link (fake codex binary is enough here since
+        # this only checks the invocation shape, not real model acceptance --
+        # that's already live-verified in test_codex_live_smoke.py).
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            root = Path(tmp)
+            repo = root / "repo"
+            out_dir = root / "evidence"
+            keys = root / "keys"
+            repo.mkdir()
+            keys.mkdir()
+            base_commit = _seed_repo(repo)
+            private_key_path, public_key_path = gen_operator_keypair(str(keys))
+            result = run_team(
+                [
+                    {
+                        "lane_id": "codex-lane",
+                        "adapter": "codex",
+                        "tier": "frontier",
+                        "model": "gpt-5.5",
+                        "region": ["pkg/agent.py"],
+                        "prompt": "write agent",
+                        "codex_binary": _fake_codex(bindir),
+                    },
+                ],
+                repo_root=str(repo),
+                out_dir=str(out_dir),
+                private_key_path=private_key_path,
+                public_key_path=public_key_path,
+                base_commit=base_commit,
+            )
+
+            receipt = json.loads(
+                (result["base_dir"] / "codex-lane" / "runner-receipt.json").read_text()
+            )
+            self.assertIn("-m", receipt["invocation"])
+            self.assertIn("gpt-5.5", receipt["invocation"])
 
     def test_cli_adapter_lane_region_bounds_capture_manifest(self):
         from depone.agent_fabric.capture_bridge import validate_capture_manifest
