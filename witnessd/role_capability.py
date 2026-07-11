@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -22,6 +24,13 @@ _GRANT_FIELDS = {
     "tools",
 }
 _ROLEPACK_FIELDS = {"kind", "schema_version", "name", "grants"}
+
+
+class RolepackError(ValueError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.message = message
 
 
 @dataclass(frozen=True)
@@ -143,6 +152,10 @@ DEFAULT_DEVELOPER_ROLEPACK: dict[str, Any] = {
     ],
 }
 
+ROLEPACK_REGISTRY: dict[str, dict[str, Any]] = {
+    "developer": DEFAULT_DEVELOPER_ROLEPACK,
+}
+
 
 def _validate_tools(tools: Any) -> None:
     if not isinstance(tools, dict):
@@ -163,6 +176,32 @@ def _validate_tools(tools: Any) -> None:
 
 def validate_rolepack(rolepack: dict[str, Any]) -> None:
     _rolepack_grants(rolepack)
+
+
+def resolve_rolepack(name: str | None) -> dict[str, Any] | None:
+    if name is None:
+        return None
+    rolepack = ROLEPACK_REGISTRY.get(name)
+    if rolepack is None:
+        raise RolepackError(
+            "ERR_ORRO_ROLEPACK_UNKNOWN", f"unknown rolepack: {name}"
+        )
+    validate_rolepack(rolepack)
+    return rolepack
+
+
+def load_rolepack_file(path: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise RolepackError("ERR_ORRO_ROLEPACK_LOAD_FAILED", str(exc)) from exc
+    except json.JSONDecodeError as exc:
+        raise RolepackError("ERR_ORRO_ROLEPACK_INVALID", str(exc)) from exc
+    try:
+        validate_rolepack(payload)
+    except ValueError as exc:
+        raise RolepackError("ERR_ORRO_ROLEPACK_INVALID", str(exc)) from exc
+    return payload
 
 
 def grant_for_role(

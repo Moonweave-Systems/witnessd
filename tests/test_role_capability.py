@@ -6,8 +6,10 @@ from witnessd.role_capability import (
     DEFAULT_DEVELOPER_ROLEPACK,
     ROLEPACK_KIND,
     ROLEPACK_SCHEMA_VERSION,
+    RolepackError,
     RoleCapabilityGrant,
     grant_for_role,
+    resolve_rolepack,
     validate_rolepack,
 )
 
@@ -33,6 +35,16 @@ class RoleCapabilityTests(unittest.TestCase):
         self.assertEqual(reviewer.model_policy_ref, "default")
         self.assertEqual(reviewer.write_scope, ())
         self.assertEqual(reviewer.tools, {"mcp": (), "allow": ()})
+
+    def test_resolve_builtin_developer_rolepack(self) -> None:
+        self.assertEqual(resolve_rolepack("developer"), DEFAULT_DEVELOPER_ROLEPACK)
+        self.assertIsNone(resolve_rolepack(None))
+
+    def test_resolve_unknown_rolepack_fails_closed(self) -> None:
+        with self.assertRaises(RolepackError) as ctx:
+            resolve_rolepack("designer")
+
+        self.assertEqual(ctx.exception.code, "ERR_ORRO_ROLEPACK_UNKNOWN")
 
     def test_rolepack_accepts_s3_tools_grant(self) -> None:
         rolepack = {

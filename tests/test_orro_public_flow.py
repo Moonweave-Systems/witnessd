@@ -1263,6 +1263,31 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertNotIn("team_ledger", payload)
             self.assertFalse((root / ".witnessd").exists())
 
+    def test_orro_module_flowplan_accepts_rolepack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            root.mkdir(exist_ok=True)
+            out = root / "role-lane-plan.json"
+
+            flowplan = self._orro_module_run(
+                [
+                    "flowplan",
+                    "plan goal",
+                    "--root",
+                    str(root),
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(out),
+                    "--rolepack",
+                    "developer",
+                ]
+            )
+
+            self.assertEqual(flowplan.returncode, 0, flowplan.stderr)
+            lane = json.loads(out.read_text(encoding="utf-8"))["lanes"][0]
+            self.assertEqual(lane["role_capability"]["role_id"], "runner")
+
     def test_orro_module_doctor_json_works(self) -> None:
         doctor = self._orro_module_run(["doctor", "--json"])
 

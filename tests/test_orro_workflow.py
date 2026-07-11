@@ -25,6 +25,12 @@ class OrroWorkflowTests(unittest.TestCase):
             code = main(["orro", "flowplan", *args])
         return code, json.loads(stdout.getvalue())
 
+    def _flowplan_raw(self, args: list[str]) -> tuple[int, str]:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(["orro", "flowplan", *args])
+        return code, stdout.getvalue()
+
     def test_code_change_profile_emits_orro_workflow_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -339,6 +345,192 @@ class OrroWorkflowTests(unittest.TestCase):
                 self.assertEqual(lane["tier"], "quick")
                 self.assertNotIn("model", lane)
                 self.assertNotIn("resolved_via_policy", lane)
+                self.assertNotIn("granted_adapters", lane)
+                self.assertNotIn("granted_write_scope", lane)
+                self.assertNotIn("granted_tools", lane)
+
+    def test_flowplan_rolepack_developer_inlines_grants(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            code, _payload = self._flowplan(
+                [
+                    "fix parser",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(out),
+                    "--model-policy",
+                    "default",
+                    "--role-lane-tier",
+                    "frontier",
+                    "--rolepack",
+                    "developer",
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            role_lanes = json.loads(out.read_text(encoding="utf-8"))
+            lane = role_lanes["lanes"][0]
+            self.assertEqual(
+                lane["granted_adapters"], ["shell", "codex", "claude", "opencode"]
+            )
+            self.assertEqual(lane["granted_write_scope"], ["orro/**", "docs/**"])
+            self.assertEqual(lane["granted_tools"], {"mcp": [], "allow": []})
+            self.assertEqual(lane["role_capability"]["role_id"], "runner")
+
+    def test_flowplan_unknown_rolepack_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            code, text = self._flowplan_raw(
+                [
+                    "fix parser",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(out),
+                    "--rolepack",
+                    "designer",
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 1)
+            payload = json.loads(text)
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_ROLEPACK_UNKNOWN")
+            self.assertFalse(out.exists())
+
+    def test_flowplan_rolepack_file_loads_custom_rolepack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rolepack_path = root / "rolepack.json"
+            out = root / "role-lane-plan.json"
+            rolepack_path.write_text(
+                json.dumps(
+                    {
+                        "kind": "moonweave-rolepack",
+                        "schema_version": "0.1",
+                        "name": "custom",
+                        "grants": [
+                            {
+                                "role_id": "runner",
+                                "capability": "execute",
+                                "adapters": ["shell"],
+                                "model_policy_ref": "default",
+                                "write_scope": ["orro/**"],
+                                "tools": {"mcp": [], "allow": []},
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            code, _payload = self._flowplan(
+                [
+                    "fix parser",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(out),
+                    "--rolepack-file",
+                    str(rolepack_path),
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            lane = json.loads(out.read_text(encoding="utf-8"))["lanes"][0]
+            self.assertEqual(lane["granted_adapters"], ["shell"])
+
+    def test_flowplan_rolepack_name_and_file_conflict_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            rolepack_path = Path(tmp) / "rolepack.json"
+            rolepack_path.write_text("{}", encoding="utf-8")
+            code, text = self._flowplan_raw(
+                [
+                    "fix parser",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(Path(tmp) / "role-lane-plan.json"),
+                    "--rolepack",
+                    "developer",
+                    "--rolepack-file",
+                    str(rolepack_path),
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(
+                json.loads(text)["error"]["code"], "ERR_ORRO_ROLEPACK_CONFLICT"
+            )
+
+    def test_flowplan_rolepack_file_invalid_schema_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            rolepack_path = Path(tmp) / "rolepack.json"
+            rolepack_path.write_text(
+                json.dumps(
+                    {
+                        "kind": "moonweave-rolepack",
+                        "schema_version": "0.1",
+                        "name": "future",
+                        "skillpack": "future-field",
+                        "grants": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            code, text = self._flowplan_raw(
+                [
+                    "fix parser",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(Path(tmp) / "role-lane-plan.json"),
+                    "--rolepack-file",
+                    str(rolepack_path),
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(
+                json.loads(text)["error"]["code"], "ERR_ORRO_ROLEPACK_INVALID"
+            )
+
+    def test_witnessd_flowplan_alias_accepts_rolepack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "flowplan",
+                        "fix parser",
+                        "--root",
+                        tmp,
+                        "--profile",
+                        "code-change",
+                        "--role-lanes-out",
+                        str(out),
+                        "--rolepack",
+                        "developer",
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            lane = json.loads(out.read_text(encoding="utf-8"))["lanes"][0]
+            self.assertEqual(lane["role_capability"]["role_id"], "runner")
 
     def test_flowplan_role_lanes_model_policy_default_resolves_runner_to_codex(
         self,
