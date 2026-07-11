@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 from datetime import datetime, timezone
@@ -83,6 +84,7 @@ def _run_adapter(
     codex_env: dict[str, str] | None = None,
     allowed_touched_files: list[str] | None = None,
     approval_policy: str = "on-request",
+    model: str | None = None,
 ) -> Any:
     if adapter == "codex":
         return run_codex_lane(
@@ -96,6 +98,7 @@ def _run_adapter(
             env=codex_env,
             allowed_touched_files=allowed_touched_files,
             approval_policy=approval_policy,
+            model=model,
         )
     if adapter == "claude":
         return run_claude_lane(
@@ -105,6 +108,7 @@ def _run_adapter(
             transcript_path=transcript_path,
             log_path=log_path,
             timeout_seconds=timeout_seconds,
+            model=model,
         )
     if adapter == "agy":
         return run_agy_review_lane(
@@ -117,6 +121,7 @@ def _run_adapter(
             ),
             log_path=log_path,
             timeout_seconds=timeout_seconds,
+            model=model,
         )
     if adapter == "gemini":
         return run_gemini_review_lane(
@@ -208,6 +213,7 @@ def run_adapter_lane(
     approval_policy: str = "on-request",
     capture_profile: str = CAPTURE_PROFILE_FULL,
     run_intent: dict[str, Any] | None = None,
+    model: str | None = None,
 ) -> dict[str, Any]:
     capture_profile = validate_capture_profile(capture_profile)
     worktree = str(Path(sandbox or root).resolve(strict=False))
@@ -346,6 +352,7 @@ def run_adapter_lane(
             codex_env=codex_env,
             allowed_touched_files=allowed_touched_files,
             approval_policy=approval_policy,
+            model=model,
         )
         diff_patch = _git_diff_patch(worktree, adapter_result.touched_files)
         provider_artifacts = {}
@@ -358,6 +365,13 @@ def run_adapter_lane(
         review_receipt_path = getattr(adapter_result, "review_receipt_path", None)
         if review_receipt_path is not None:
             provider_artifacts["review-receipt"] = review_receipt_path
+        model_declaration = getattr(adapter_result, "model_declaration", None)
+        if model_declaration is not None:
+            model_declaration_path = task_dir / "model-declaration.json"
+            model_declaration_path.write_text(
+                json.dumps(model_declaration, sort_keys=True), encoding="utf-8"
+            )
+            provider_artifacts["model-declaration"] = str(model_declaration_path)
         lane_result = {
             "command_receipts": adapter_result.command_receipts,
             "touched_files": adapter_result.touched_files,
