@@ -1,4 +1,16 @@
-"""Gemini CLI read-only review adapter for W4 lanes."""
+"""Gemini CLI read-only review adapter for W4 lanes.
+
+DEPRECATED: Google has retired the free-tier Gemini Code Assist product this
+adapter targets. Live-verified against gemini-cli 0.28.2/0.35.3: the CLI
+itself fails closed on its own with `IneligibleTierError: This client is no
+longer supported for Gemini Code Assist for individuals. To continue using
+Gemini, please migrate to the Antigravity suite of products`, i.e. Google is
+directing users to Antigravity -- already covered by witnessd.adapters.agy,
+this codebase's `google-antigravity` adapter. Kept here unmodified (not
+removed, to avoid regressing existing wiring/tests) but do not chase new
+gemini-cli flags or try to make it work again; use agy for Google-model
+review lanes going forward.
+"""
 
 from __future__ import annotations
 
