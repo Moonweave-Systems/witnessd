@@ -12,7 +12,7 @@ DEPRECATION_WARNING = (
     "the orro command. This shim will be removed in the next major witnessd release."
 )
 
-ORRO_HELP = """usage: orro [-h] {init,advise,scout,flowplan,proofrun,proofcheck,handoff,next,report,auto,doctor,engine-lock} ...
+ORRO_HELP = """usage: orro [-h] {init,advise,scout,flowplan,proofrun,proofcheck,handoff,next,report,review,auto,doctor,engine-lock} ...
 
 ORRO - Observed Run & Review Orchestrator
 
@@ -29,6 +29,7 @@ public commands:
   handoff      maintainer review package gated by proofcheck-verdict.json
   next         non-executing continuation gate over persisted run artifacts
   report       human-facing summary of observed ORRO artifacts and next action
+  review       advisory read-only reviewer lanes; not proof or assurance
   auto         dry-run, one-step, or bounded post-run automation
   doctor       ORRO readiness check; does not verify evidence
   engine-lock  write/check distribution metadata for pinned engine commits

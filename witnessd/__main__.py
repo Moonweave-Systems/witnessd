@@ -1349,6 +1349,38 @@ def _cmd_orro_report(args: argparse.Namespace) -> int:
     return code
 
 
+def _cmd_orro_review(args: argparse.Namespace) -> int:
+    from witnessd.orro_review import OrroReviewError, run_review_role_lane_plan
+
+    if not args.role_lane_plan:
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_REVIEW_ROLE_LANE_PLAN_REQUIRED",
+            message="--role-lane-plan is required",
+        )
+        return 2
+    repo = Path(args.repo).resolve(strict=False)
+    home = Path(
+        args.home or os.environ.get("WITNESSD_HOME") or (repo / ".witnessd")
+    ).resolve(strict=False)
+    run_dir = Path(args.run_dir).resolve(strict=False) if args.run_dir else None
+    try:
+        code, payload = run_review_role_lane_plan(
+            repo=repo,
+            home=home,
+            role_lane_plan_path=Path(args.role_lane_plan).resolve(strict=False),
+            run_dir=run_dir,
+            agy_binary=args.agy_binary,
+            gemini_binary=args.gemini_binary,
+            timeout_seconds=args.timeout_seconds,
+        )
+    except OrroReviewError as exc:
+        _emit_orro_error(args, code=exc.code, message=exc.message)
+        return 1
+    print(json.dumps(payload, sort_keys=True))
+    return code
+
+
 def _cmd_orro_auto(args: argparse.Namespace) -> int:
     from witnessd.orro_auto import (
         OrroAutoError,
@@ -2600,6 +2632,24 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_report.add_argument("--json", action="store_true")
     orro_report.set_defaults(func=_cmd_orro_report)
 
+    orro_review = sub.add_parser(
+        "orro-review",
+        help=argparse.SUPPRESS,
+        description=(
+            "Run review-only role lanes through advisory read-only adapters. "
+            "Not proofrun, not proofcheck, and not assurance."
+        ),
+    )
+    orro_review.add_argument("--repo", required=True)
+    orro_review.add_argument("--home", default=None)
+    orro_review.add_argument("--run-dir", default=None)
+    orro_review.add_argument("--role-lane-plan", required=True)
+    orro_review.add_argument("--agy-binary", default="agy")
+    orro_review.add_argument("--gemini-binary", default="gemini")
+    orro_review.add_argument("--timeout-seconds", type=int, default=120)
+    orro_review.add_argument("--json", action="store_true")
+    orro_review.set_defaults(func=_cmd_orro_review)
+
     orro_auto = sub.add_parser("orro-auto", help=argparse.SUPPRESS)
     orro_auto.add_argument("run_dir", nargs="?")
     orro_auto.add_argument("--dry-run", action="store_true")
@@ -3006,6 +3056,8 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
         return ["orro-advise", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "report":
         return ["orro-report", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "review":
+        return ["orro-review", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "auto":
         return ["orro-auto", *argv[2:]]
     return argv
