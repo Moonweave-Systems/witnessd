@@ -124,6 +124,58 @@ class TestClaudeLiveSmoke(unittest.TestCase):
             self.assertIn("calc.py", receipt["touched_files"])
             self.assertNotIn(".witnessd", str(receipt["touched_files"]))
 
+    def test_real_claude_accepts_a_valid_model(self):
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as evidence,
+        ):
+            res = run_claude_lane(
+                sandbox=sandbox,
+                prompt="Reply with the single word OK. Do not edit any files.",
+                transcript_path=str(Path(evidence) / "events.raw.jsonl"),
+                model="sonnet",
+                timeout_seconds=120,
+            )
+
+            self.assertEqual(res.exit_code, 0)
+            self.assertEqual(
+                res.model_declaration,
+                {
+                    "kind": "moonweave-model-declaration",
+                    "schema_version": "1.0",
+                    "can_change_evidence_verdict": False,
+                    "adapter": "claude",
+                    "requested_model": "sonnet",
+                    "verification_status": "verified",
+                    "detail": None,
+                },
+            )
+
+    def test_real_claude_rejects_an_invalid_model_failclosed(self):
+        # Live-verified through the actual adapter path (not a manual
+        # terminal check): claude's exit code alone is not a reliable model-
+        # rejection signal (observed both 0 and 1 for the same rejection
+        # across separate runs), and the "model_not_found" error code lands
+        # on the "assistant" message event, not the terminal "result" event.
+        # The lane must still fail closed rather than trusting the process
+        # exit code.
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as evidence,
+        ):
+            res = run_claude_lane(
+                sandbox=sandbox,
+                prompt="Reply with the single word OK. Do not edit any files.",
+                transcript_path=str(Path(evidence) / "events.raw.jsonl"),
+                model="nonexistent-model-xyz",
+                timeout_seconds=120,
+            )
+
+            self.assertEqual(res.exit_code, 125)
+            self.assertEqual(res.test_output["status"], "failed")
+            self.assertEqual(res.model_declaration["verification_status"], "rejected")
+            self.assertIsNotNone(res.model_declaration["detail"])
+
 
 if __name__ == "__main__":
     unittest.main()
