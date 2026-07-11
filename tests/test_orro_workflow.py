@@ -417,6 +417,67 @@ class OrroWorkflowTests(unittest.TestCase):
             )
         self.assertEqual(ctx.exception.code, "ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED")
 
+    def test_compile_role_lane_plan_policy_adapter_outside_role_grant_fails_closed(
+        self,
+    ) -> None:
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        agy_runner_policy = {
+            "kind": DEFAULT_MODEL_POLICY["kind"],
+            "schema_version": DEFAULT_MODEL_POLICY["schema_version"],
+            "routes": [
+                {
+                    "role_kind": "runner",
+                    "tier": "quick",
+                    "candidates": [{"adapter": "agy", "model": "review-model"}],
+                }
+            ],
+        }
+        rolepack = {
+            "kind": "moonweave-rolepack",
+            "schema_version": "0.1",
+            "name": "developer",
+            "grants": [
+                {
+                    "role_id": "runner",
+                    "capability": "execute",
+                    "adapters": ["codex"],
+                    "model_policy_ref": "default",
+                }
+            ],
+        }
+
+        with self.assertRaises(OrroWorkflowError) as ctx:
+            compile_role_lane_plan(
+                workflow_plan=workflow_plan,
+                policy=agy_runner_policy,
+                rolepack=rolepack,
+            )
+
+        self.assertEqual(ctx.exception.code, "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED")
+
+    def test_compile_role_lane_plan_inlines_role_capability_when_rolepack_is_supplied(
+        self,
+    ) -> None:
+        from witnessd.role_capability import DEFAULT_DEVELOPER_ROLEPACK
+
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan,
+            tier="frontier",
+            policy=DEFAULT_MODEL_POLICY,
+            rolepack=DEFAULT_DEVELOPER_ROLEPACK,
+        )
+
+        validate_role_lane_plan(role_lane_plan)
+        lane = role_lane_plan["lanes"][0]
+        self.assertEqual(lane["adapter"], "codex")
+        self.assertEqual(
+            lane["granted_adapters"], ["shell", "codex", "claude", "opencode"]
+        )
+        self.assertEqual(lane["role_capability"]["role_id"], "runner")
+        self.assertEqual(lane["role_capability"]["capability"], "execute")
+        self.assertEqual(lane["role_capability"]["model_policy_ref"], "default")
+
     def test_validate_role_lane_plan_rejects_review_only_vendor_in_execution_lane(
         self,
     ) -> None:
