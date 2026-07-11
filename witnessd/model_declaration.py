@@ -25,13 +25,13 @@ MODEL_DECLARATION_SCHEMA_VERSION = "1.0"
 
 # codex: the CLI itself fails the turn loud (turn.failed with a model-specific
 # message) on an invalid model -- accepting a turn without that signal is as
-# close to "verified" as this evidence layer can honestly claim.
-VERIFICATION_VERIFIED = "verified"
+# close to this status as this evidence layer can honestly claim.
+VERIFICATION_CONFIRMED = "verified"
 # claude/codex: the CLI's own signal reported the requested model was rejected.
 VERIFICATION_REJECTED = "rejected"
 # agy: --model has no rejection signal at all (silent fallback observed live),
-# so a request can never be marked verified -- only that it was asked for.
-VERIFICATION_REQUESTED_UNVERIFIED = "requested-unverified"
+# so a request can never be marked confirmed -- only that it was asked for.
+VERIFICATION_REQUESTED_UNCONFIRMED = "requested-unverified"
 
 
 def build_model_declaration(

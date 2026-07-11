@@ -36,7 +36,7 @@ from witnessd.adapters.base import (
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
 from witnessd.events import encode_agent_event_jsonl, normalize_agy_text_events
 from witnessd.model_declaration import (
-    VERIFICATION_REQUESTED_UNVERIFIED,
+    VERIFICATION_REQUESTED_UNCONFIRMED,
     build_model_declaration,
 )
 
@@ -460,7 +460,7 @@ def run_agy_review_lane(
         model_declaration = build_model_declaration(
             adapter="agy",
             requested_model=model,
-            verification_status=VERIFICATION_REQUESTED_UNVERIFIED,
+            verification_status=VERIFICATION_REQUESTED_UNCONFIRMED,
         )
 
     if log_path is not None:

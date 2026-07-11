@@ -18,8 +18,8 @@ from witnessd.adapters.base import (
 from witnessd.adapters.shell import TEST_STATUS_NOT_RUN, _diff_touched, _snapshot
 from witnessd.events import encode_agent_event_jsonl, normalize_codex_jsonl_events
 from witnessd.model_declaration import (
+    VERIFICATION_CONFIRMED,
     VERIFICATION_REJECTED,
-    VERIFICATION_VERIFIED,
     build_model_declaration,
 )
 
@@ -341,7 +341,7 @@ def run_codex_lane(
             model_declaration = build_model_declaration(
                 adapter="codex",
                 requested_model=model,
-                verification_status=VERIFICATION_VERIFIED,
+                verification_status=VERIFICATION_CONFIRMED,
             )
 
     if log_path is not None:
