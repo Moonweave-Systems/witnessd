@@ -29,23 +29,28 @@ class SnapshotRecord(TypedDict):
 Baseline = dict[str, SnapshotRecord]
 
 
-# witnessd's own runtime state dir (StateNamespace.state_dir). run_adapter_lane
-# fails closed against this ever nesting inside an observed sandbox (see
-# adapter_run.py's assert_separated(worktree, namespace.state_dir)); this is
-# defense-in-depth for that same invariant at the snapshot layer, in case a
-# caller's state_root resolves inside sandbox through some path the guard
-# doesn't catch (e.g. a symlink swap between the guard check and this walk).
-_EXCLUDED_DIR_NAMES = frozenset({".witnessd"})
+# witnessd's own runtime state dir (StateNamespace.state_dir == sandbox_root
+# / ".witnessd" -- the exact shape produced by the state_root/sandbox
+# collision run_adapter_lane fails closed against, see adapter_run.py's
+# assert_separated(worktree, namespace.state_dir)). This is defense-in-depth
+# for that same invariant at the snapshot layer, in case a caller's
+# state_root resolves inside sandbox through some path the guard doesn't
+# catch (e.g. a symlink swap between the guard check and this walk).
+# Scoped to the sandbox root only (not any nested ".witnessd" at arbitrary
+# depth) so an observed repo that happens to contain its own unrelated
+# ".witnessd"-named directory deeper in its tree is never silently hidden.
+_STATE_DIR_NAME = ".witnessd"
 
 
 def capture_snapshot(sandbox: str) -> Baseline:
     root = Path(sandbox)
     records: Baseline = {}
     for current_root, dirs, files in os.walk(root, followlinks=False):
+        at_sandbox_root = Path(current_root) == root
         dirs[:] = [
             name
             for name in dirs
-            if name not in _EXCLUDED_DIR_NAMES
+            if not (at_sandbox_root and name == _STATE_DIR_NAME)
             and not (Path(current_root) / name).is_symlink()
         ]
         for name in [*dirs, *files]:

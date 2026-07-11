@@ -42,6 +42,22 @@ class TestChangesetStateDirExclusion(unittest.TestCase):
 
             self.assertIn("pkg/mod.py", snapshot)
 
+    def test_nested_witnessd_named_dir_is_not_hidden(self):
+        # The exclusion is scoped to the sandbox root only, matching the
+        # exact shape run_adapter_lane's guard defends against
+        # (state_dir == sandbox_root/.witnessd). An observed repo that
+        # happens to contain its own unrelated ".witnessd"-named directory
+        # deeper in its tree (e.g. a vendored sub-project) must still have
+        # its real content tracked, not silently hidden.
+        with tempfile.TemporaryDirectory() as sandbox:
+            nested = Path(sandbox) / "vendor" / "some-project" / ".witnessd"
+            nested.mkdir(parents=True)
+            (nested / "unrelated.txt").write_text("real content", encoding="utf-8")
+
+            snapshot = capture_snapshot(sandbox)
+
+            self.assertIn("vendor/some-project/.witnessd/unrelated.txt", snapshot)
+
 
 if __name__ == "__main__":
     unittest.main()
