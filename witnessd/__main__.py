@@ -653,17 +653,37 @@ def _cmd_plan(args: argparse.Namespace) -> int:
             payload["workflow_plan"] = workflow_plan
         try:
             from witnessd.model_policy import DEFAULT_MODEL_POLICY
+            from witnessd.role_capability import (
+                RolepackError,
+                load_rolepack_file,
+                resolve_rolepack,
+            )
+
+            if args.rolepack and args.rolepack_file:
+                raise RolepackError(
+                    "ERR_ORRO_ROLEPACK_CONFLICT",
+                    "--rolepack and --rolepack-file are mutually exclusive",
+                )
+            rolepack = (
+                load_rolepack_file(args.rolepack_file)
+                if args.rolepack_file
+                else resolve_rolepack(args.rolepack)
+            )
 
             role_lane_plan = compile_role_lane_plan(
                 workflow_plan=workflow_plan,
                 lane_adapter=args.lane_adapter,
                 tier=args.role_lane_tier,
                 policy=DEFAULT_MODEL_POLICY if args.model_policy == "default" else None,
+                rolepack=rolepack,
             )
             role_lane_plan_ref = write_role_lane_plan(
                 Path(args.role_lanes_out).resolve(strict=False),
                 role_lane_plan,
             )
+        except RolepackError as exc:
+            _emit_orro_error(args, code=exc.code, message=exc.message)
+            return 1
         except OrroWorkflowError as exc:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 1
@@ -2988,6 +3008,16 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
         choices=["off", "default"],
         help="off (default) keeps --lane-adapter uniform across lanes; "
         "default resolves each lane's (role, tier) to a policy adapter/model",
+    )
+    flowplan.add_argument(
+        "--rolepack",
+        default=None,
+        help="named rolepack to apply when compiling --role-lanes-out",
+    )
+    flowplan.add_argument(
+        "--rolepack-file",
+        default=None,
+        help="JSON rolepack file to apply when compiling --role-lanes-out",
     )
     flowplan.add_argument("--json", action="store_true")
     flowplan.set_defaults(
