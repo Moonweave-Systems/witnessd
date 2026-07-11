@@ -63,6 +63,17 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
 
             self._check(res, "claude", sandbox)
             self.assertIn("-p", res.invocation)
+            # Live-verified: claude rejects --output-format stream-json without
+            # --verbose ("Error: When using --print, --output-format=stream-json
+            # requires --verbose"), and without --output-format at all it never
+            # emits structured JSONL, only free text -- so normalize_claude_
+            # jsonl_events has nothing to parse. Both flags are required.
+            self.assertIn("--output-format", res.invocation)
+            self.assertEqual(
+                res.invocation[res.invocation.index("--output-format") + 1],
+                "stream-json",
+            )
+            self.assertIn("--verbose", res.invocation)
 
     def test_claude_jsonl_normalizes_to_agent_event_envelope(self):
         with (

@@ -1,4 +1,12 @@
-"""Claude Code adapter for W4 runner lanes."""
+"""Claude Code adapter for W4 runner lanes.
+
+`--output-format stream-json` is required for claude to emit the structured
+JSONL events normalize_claude_jsonl_events() parses -- without it, claude
+only prints free text and there are no events to normalize. `--verbose` must
+be passed alongside it: claude rejects `--print --output-format stream-json`
+on its own with "Error: When using --print, --output-format=stream-json
+requires --verbose" (live-verified against claude-code 2.1.207).
+"""
 
 from __future__ import annotations
 
@@ -31,7 +39,14 @@ class ClaudeCLIAdapter:
 
     def compile_invocation(self, intent: RunIntent) -> list[str]:
         prompt = str(intent.get("prompt", "-"))
-        return [_claude_binary(self.claude_binary), "-p", prompt]
+        return [
+            _claude_binary(self.claude_binary),
+            "-p",
+            prompt,
+            "--output-format",
+            "stream-json",
+            "--verbose",
+        ]
 
     def run(self, intent: RunIntent, sandbox: str) -> RawRun:
         invocation = self.compile_invocation(intent)
@@ -95,7 +110,14 @@ def run_claude_lane(
             repo, evidence_path, error_cls=ClaudeAdapterError
         )
     Path(transcript).parent.mkdir(parents=True, exist_ok=True)
-    invocation = [_claude_binary(claude_binary), "-p", prompt]
+    invocation = [
+        _claude_binary(claude_binary),
+        "-p",
+        prompt,
+        "--output-format",
+        "stream-json",
+        "--verbose",
+    ]
 
     before = _snapshot(repo)
     try:
