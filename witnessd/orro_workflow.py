@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from witnessd.model_policy import resolve_policy_route
+from witnessd.role_capability import RoleCapabilityGrant, grant_for_role
 
 
 ERR_ORRO_WORKFLOW_PROFILE_UNKNOWN = "ERR_ORRO_WORKFLOW_PROFILE_UNKNOWN"
@@ -32,6 +33,7 @@ ERR_ORRO_ROLE_LANE_PLAN_EXECUTION_FORBIDDEN = (
 )
 ERR_ORRO_ROLE_LANE_PLAN_EMPTY = "ERR_ORRO_ROLE_LANE_PLAN_EMPTY"
 ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED = "ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED"
+ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED = "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED"
 
 WORKFLOW_PLAN_KIND = "orro-workflow-plan"
 WORKFLOW_PLAN_SCHEMA_VERSION = "0.1"
@@ -205,6 +207,7 @@ def compile_role_lane_plan(
     lane_adapter: str = "shell",
     tier: str = "quick",
     policy: dict[str, Any] | None = None,
+    rolepack: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     validate_workflow_plan(workflow_plan)
     if lane_adapter not in ROLE_LANE_ADAPTERS:
@@ -224,7 +227,7 @@ def compile_role_lane_plan(
             ):
                 lanes.append(
                     _role_lane_from_role(
-                        role, workflow_plan, lane_adapter, tier, policy
+                        role, workflow_plan, lane_adapter, tier, policy, rolepack
                     )
                 )
     elif profile == "review-only" and (
@@ -234,7 +237,7 @@ def compile_role_lane_plan(
             if isinstance(role, dict) and role.get("role_id") == "reviewer":
                 lanes.append(
                     _review_lane_from_role(
-                        role, workflow_plan, lane_adapter, tier, policy
+                        role, workflow_plan, lane_adapter, tier, policy, rolepack
                     )
                 )
     return {
@@ -663,17 +666,66 @@ def _resolve_lane_adapter_and_model(
     }
 
 
+def _role_capability_for_lane(
+    *,
+    rolepack: dict[str, Any] | None,
+    role_id: str,
+    phase: str,
+    adapter: str,
+) -> dict[str, Any]:
+    if rolepack is None:
+        return {}
+    grant = grant_for_role(rolepack, role_id)
+    if grant is None:
+        raise OrroWorkflowError(
+            ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED,
+            f"rolepack does not grant role_id={role_id!r}",
+        )
+    expected_capability = "execute" if phase == "proofrun" else "review"
+    if grant.capability != expected_capability:
+        raise OrroWorkflowError(
+            ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED,
+            (
+                f"role_id={role_id!r} grant capability {grant.capability!r} "
+                f"does not match phase {phase!r}"
+            ),
+        )
+    if adapter not in grant.adapters:
+        raise OrroWorkflowError(
+            ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED,
+            (
+                f"adapter {adapter!r} is not granted for role_id={role_id!r} "
+                f"capability={grant.capability!r}"
+            ),
+        )
+    return _role_capability_lane_fields(grant)
+
+
+def _role_capability_lane_fields(grant: RoleCapabilityGrant) -> dict[str, Any]:
+    return {
+        "granted_adapters": list(grant.adapters),
+        "role_capability": grant.to_dict(),
+    }
+
+
 def _role_lane_from_role(
     role: dict[str, Any],
     workflow_plan: dict[str, Any],
     lane_adapter: str,
     tier: str,
     policy: dict[str, Any] | None,
+    rolepack: dict[str, Any] | None,
 ) -> dict[str, Any]:
     profile = str(workflow_plan["profile"])
     role_id = str(role["role_id"])
     resolved_adapter, extra = _resolve_lane_adapter_and_model(
         role_kind=role_id, tier=tier, lane_adapter=lane_adapter, policy=policy
+    )
+    role_capability = _role_capability_for_lane(
+        rolepack=rolepack,
+        role_id=role_id,
+        phase="proofrun",
+        adapter=resolved_adapter,
     )
     digest = hashlib.sha256(
         f"{workflow_plan['goal']}:{profile}:{role_id}:{resolved_adapter}".encode(
@@ -697,6 +749,7 @@ def _role_lane_from_role(
         "may_execute": True,
         "may_verify": False,
         "raises_assurance": False,
+        **role_capability,
         **extra,
     }
 
@@ -707,11 +760,18 @@ def _review_lane_from_role(
     lane_adapter: str,
     tier: str,
     policy: dict[str, Any] | None,
+    rolepack: dict[str, Any] | None,
 ) -> dict[str, Any]:
     profile = str(workflow_plan["profile"])
     role_id = str(role["role_id"])
     resolved_adapter, extra = _resolve_lane_adapter_and_model(
         role_kind=role_id, tier=tier, lane_adapter=lane_adapter, policy=policy
+    )
+    role_capability = _role_capability_for_lane(
+        rolepack=rolepack,
+        role_id=role_id,
+        phase="review",
+        adapter=resolved_adapter,
     )
     digest = hashlib.sha256(
         f"{workflow_plan['goal']}:{profile}:{role_id}:{resolved_adapter}".encode(
@@ -733,6 +793,7 @@ def _review_lane_from_role(
         "may_execute": False,
         "may_verify": False,
         "raises_assurance": False,
+        **role_capability,
         **extra,
     }
 
@@ -786,6 +847,36 @@ def _validate_role_lane(lane: Any) -> None:
             ERR_ORRO_ROLE_LANE_PLAN_INVALID,
             "role-lane model must be a non-empty string",
         )
+    if "granted_adapters" in lane:
+        granted_adapters = lane["granted_adapters"]
+        if (
+            not isinstance(granted_adapters, list)
+            or not granted_adapters
+            or not all(isinstance(adapter, str) and adapter for adapter in granted_adapters)
+            or lane["adapter"] not in granted_adapters
+        ):
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+                "role-lane granted_adapters is invalid",
+            )
+    if "role_capability" in lane:
+        role_capability = lane["role_capability"]
+        if not isinstance(role_capability, dict):
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+                "role-lane role_capability is invalid",
+            )
+        if role_capability.get("role_id") != lane["role_id"]:
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+                "role-lane role_capability role_id is invalid",
+            )
+        expected_capability = "execute" if lane["phase"] == "proofrun" else "review"
+        if role_capability.get("capability") != expected_capability:
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+                "role-lane role_capability capability is invalid",
+            )
     region = lane.get("region")
     if (
         not isinstance(region, list)
