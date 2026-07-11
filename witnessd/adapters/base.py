@@ -101,6 +101,7 @@ class AdapterResult:
     raw_events_path: str | None = None
     normalized_events_path: str | None = None
     review_receipt_path: str | None = None
+    model_declaration: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if not self.invocation:
