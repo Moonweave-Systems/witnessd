@@ -42,6 +42,7 @@ The cross-engine artifact boundary is summarized in
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro next` | non-executing continuation gate over persisted run artifacts |
 | `orro report` | human-facing summary of observed artifacts and next safe action |
+| `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
 | `orro auto --until-complete` | bounded post-run proofcheck/handoff loop; orchestration metadata only |
@@ -129,6 +130,14 @@ compression layer over observed artifacts. It reports state, next safe action,
 proofcheck/handoff status, reviewer focus, and do-not-trust boundaries. It does
 not execute, verify evidence, approve merge, raise assurance, replace
 proofcheck, or replace human review.
+
+`python3 -m orro review --repo <repo> --home .witnessd --role-lane-plan role-lane-plan.json --json`
+runs review-only role lanes through advisory read-only review adapters and
+emits `review-receipt.json` artifacts plus `orro-review-summary.json`. It does
+not run proofrun, enter team execution, claim write regions, verify evidence,
+approve merge, or raise assurance. Review receipts are advisory context only:
+`can_change_evidence_verdict` remains false, and formal ORRO handoff still
+requires a passing bound proofcheck verdict.
 
 `python3 -m orro auto --dry-run <run-dir> --home .witnessd --json` consumes
 the continuation decision and emits an `orro-auto-plan` with the exact command
