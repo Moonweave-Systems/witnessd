@@ -367,15 +367,13 @@ def _role_lane_plan_team_specs(
         adapter = str(lane["adapter"])
         region = list(lane["region"])
         if adapter == "shell":
-            specs.append(
-                {
-                    "lane_id": lane["lane_id"],
-                    "region": region,
-                    "commands": [
-                        _default_team_lane_command(str(lane["lane_id"]), region)
-                    ],
-                }
-            )
+            spec = {
+                "lane_id": lane["lane_id"],
+                "region": region,
+                "commands": [_default_team_lane_command(str(lane["lane_id"]), region)],
+            }
+            _attach_role_capability_team_fields(spec, lane)
+            specs.append(spec)
             continue
         spec = {
             "lane_id": lane["lane_id"],
@@ -391,10 +389,20 @@ def _role_lane_plan_team_specs(
             "gemini_binary": args.gemini_binary,
             "opencode_binary": args.opencode_binary,
         }
+        _attach_role_capability_team_fields(spec, lane)
         if lane.get("model") is not None:
             spec["model"] = lane["model"]
         specs.append(spec)
     return specs
+
+
+def _attach_role_capability_team_fields(spec: dict, lane: dict) -> None:
+    role_capability = lane.get("role_capability")
+    if isinstance(role_capability, dict):
+        spec["role_id"] = lane.get("role_id")
+        spec["role_capability"] = role_capability.get("capability")
+    if isinstance(lane.get("granted_write_scope"), list):
+        spec["write_scope"] = list(lane["granted_write_scope"])
 
 
 def _cmd_run_adapter(args: argparse.Namespace) -> int:

@@ -477,6 +477,31 @@ class OrroWorkflowTests(unittest.TestCase):
         self.assertEqual(lane["role_capability"]["role_id"], "runner")
         self.assertEqual(lane["role_capability"]["capability"], "execute")
         self.assertEqual(lane["role_capability"]["model_policy_ref"], "default")
+        self.assertEqual(lane["role_capability"]["write_scope"], ["orro/**", "docs/**"])
+        self.assertEqual(lane["granted_write_scope"], ["orro/**", "docs/**"])
+        self.assertEqual(lane["region"], [f"orro/{lane['lane_id']}.txt"])
+
+    def test_compile_role_lane_plan_rejects_region_outside_write_scope(self) -> None:
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        rolepack = {
+            "kind": "moonweave-rolepack",
+            "schema_version": "0.1",
+            "name": "developer",
+            "grants": [
+                {
+                    "role_id": "runner",
+                    "capability": "execute",
+                    "adapters": ["shell", "codex"],
+                    "model_policy_ref": "default",
+                    "write_scope": ["docs/**"],
+                }
+            ],
+        }
+
+        with self.assertRaises(OrroWorkflowError) as ctx:
+            compile_role_lane_plan(workflow_plan=workflow_plan, rolepack=rolepack)
+
+        self.assertEqual(ctx.exception.code, "ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION")
 
     def test_validate_role_lane_plan_rejects_review_only_vendor_in_execution_lane(
         self,

@@ -509,6 +509,103 @@ class TestAdapterRun(unittest.TestCase):
             )
             self.assertEqual(verdict["decision"], "pass")
 
+    def test_write_scope_declaration_is_signed_bundle_subject(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "write-scope-evidence")
+            _init_repo(sandbox)
+
+            out = run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="t-write-scope",
+                prompt="do X",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=_fake_codex_writes_env_and_code(bindir),
+                evidence_dir=evidence_dir,
+                allowed_touched_files=["codex-home.txt", "pkg/agent.py"],
+                write_scope=["pkg/**", "codex-home.txt"],
+                role_id="runner",
+                role_capability="execute",
+            )
+
+            subject_names = [
+                item["name"]
+                for item in out["bundle"]["statement"]["predicate"]["artifact_index"]
+            ]
+            self.assertIn("write-scope-declaration", subject_names)
+
+            declaration = json.loads(
+                (
+                    pathlib.Path(evidence_dir) / "write-scope-declaration.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(declaration["kind"], "moonweave-write-scope-declaration")
+            self.assertFalse(declaration["can_change_evidence_verdict"])
+            self.assertEqual(declaration["role_id"], "runner")
+            self.assertEqual(declaration["capability"], "execute")
+            self.assertEqual(declaration["declared_write_scope"], ["pkg/**", "codex-home.txt"])
+            self.assertEqual(declaration["allowed_touched_files"], ["codex-home.txt", "pkg/agent.py"])
+            self.assertEqual(declaration["touched_files"], ["codex-home.txt", "pkg/agent.py"])
+            self.assertEqual(declaration["verification_status"], "verified")
+            self.assertEqual(declaration["conformance"], "pass")
+
+            evidence_root = pathlib.Path(evidence_dir)
+            verdict = ingest_signed_evidence_bundle(
+                out["bundle"],
+                out["public_key_path"],
+                {
+                    "capture-manifest": str(evidence_root / "capture-manifest.json"),
+                    "observer-capture": str(evidence_root / "observer-capture.json"),
+                    "runner-receipt": str(evidence_root / "runner-receipt.json"),
+                    "run-intent": str(evidence_root / "run-intent.json"),
+                    "events.raw": str(evidence_root / "events.raw.jsonl"),
+                    "events.normalized": str(evidence_root / "events.normalized.jsonl"),
+                    "write-scope-declaration": str(
+                        evidence_root / "write-scope-declaration.json"
+                    ),
+                },
+                otel_spans=out["bundle"]["otel_spans"],
+            )
+            self.assertEqual(verdict["decision"], "pass")
+
+    def test_write_scope_blocks_allowed_touched_files_outside_scope(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            _init_repo(sandbox)
+
+            with self.assertRaises(LaneBlocked) as ctx:
+                run_adapter_lane(
+                    root=root,
+                    sandbox=sandbox,
+                    adapter="codex",
+                    task_id="t-write-scope-blocked",
+                    prompt="do X",
+                    arm="direct",
+                    tier="agentic",
+                    is_supported=lambda _model: True,
+                    budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                    codex_binary=_fake_codex_writes_env_and_code(bindir),
+                    allowed_touched_files=["pkg/agent.py"],
+                    write_scope=["docs/**"],
+                    role_id="runner",
+                    role_capability="execute",
+                )
+
+            self.assertEqual(
+                ctx.exception.reason, "ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION"
+            )
+
     def test_no_model_requested_emits_no_model_declaration_artifact(self):
         with (
             tempfile.TemporaryDirectory() as root,

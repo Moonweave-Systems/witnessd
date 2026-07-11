@@ -38,6 +38,10 @@ from witnessd.runintent import (
 from witnessd.signing import derive_public_key_id, gen_operator_keypair
 from witnessd.state import StateNamespace
 from witnessd.status import render_status
+from witnessd.write_scope_declaration import (
+    build_write_scope_declaration,
+    write_scope_allows_paths,
+)
 
 
 class LaneBlocked(RuntimeError):
@@ -214,6 +218,9 @@ def run_adapter_lane(
     capture_profile: str = CAPTURE_PROFILE_FULL,
     run_intent: dict[str, Any] | None = None,
     model: str | None = None,
+    write_scope: list[str] | None = None,
+    role_id: str | None = None,
+    role_capability: str | None = None,
 ) -> dict[str, Any]:
     capture_profile = validate_capture_profile(capture_profile)
     worktree = str(Path(sandbox or root).resolve(strict=False))
@@ -292,6 +299,13 @@ def run_adapter_lane(
             private_key, public_key = private_key_path, public_key_path
 
         allowed_for_manifest = list(allowed_touched_files or [])
+        if write_scope is not None and not write_scope_allows_paths(
+            allowed_for_manifest, list(write_scope)
+        ):
+            raise LaneBlocked(
+                "ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION",
+                "allowed_touched_files are outside declared write_scope",
+            )
         codex_env = namespace.codex_env() if adapter == "codex" else None
         redaction_context = None
         if capture_profile == CAPTURE_PROFILE_REDACTED:
@@ -372,6 +386,23 @@ def run_adapter_lane(
                 json.dumps(model_declaration, sort_keys=True), encoding="utf-8"
             )
             provider_artifacts["model-declaration"] = str(model_declaration_path)
+        if write_scope is not None:
+            write_scope_declaration = build_write_scope_declaration(
+                role_id=role_id or task_id,
+                lane_id=task_id,
+                capability=role_capability or "execute",
+                declared_write_scope=list(write_scope),
+                allowed_touched_files=allowed_for_manifest,
+                touched_files=adapter_result.touched_files,
+            )
+            write_scope_declaration_path = task_dir / "write-scope-declaration.json"
+            write_scope_declaration_path.write_text(
+                json.dumps(write_scope_declaration, sort_keys=True),
+                encoding="utf-8",
+            )
+            provider_artifacts["write-scope-declaration"] = str(
+                write_scope_declaration_path
+            )
         lane_result = {
             "command_receipts": adapter_result.command_receipts,
             "touched_files": adapter_result.touched_files,

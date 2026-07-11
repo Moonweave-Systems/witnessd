@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -98,6 +99,38 @@ class TestTeamFanin(unittest.TestCase):
         self.assertIn("team-ledger.json", artifacts)
         self.assertIn("lane-a/worktree-lane-receipt.json", artifacts)
         self.assertIn("lane-a/evidence-next-verdict.json", artifacts)
+
+    def test_shell_lane_emits_write_scope_declaration_when_supplied(self):
+        result = self._run(
+            [
+                {
+                    "lane_id": "lane-a",
+                    "region": ["pkg/a.py"],
+                    "write_scope": ["pkg/**"],
+                    "role_id": "runner",
+                    "role_capability": "execute",
+                    "commands": [["sh", "-c", "mkdir -p pkg && echo a > pkg/a.py"]],
+                },
+            ]
+        )
+
+        lane_dir = result["base_dir"] / "lane-a"
+        declaration = json.loads(
+            (lane_dir / "write-scope-declaration.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(declaration["kind"], "moonweave-write-scope-declaration")
+        self.assertEqual(declaration["declared_write_scope"], ["pkg/**"])
+        self.assertEqual(declaration["allowed_touched_files"], ["pkg/a.py"])
+        self.assertEqual(declaration["touched_files"], ["pkg/a.py"])
+        self.assertEqual(declaration["verification_status"], "verified")
+        self.assertEqual(declaration["conformance"], "pass")
+        subject_names = [
+            item["name"]
+            for item in json.loads((lane_dir / "bundle.json").read_text(encoding="utf-8"))[
+                "statement"
+            ]["predicate"]["artifact_index"]
+        ]
+        self.assertIn("write-scope-declaration", subject_names)
 
     def test_claim_conflict_is_audited_and_conflicting_lane_is_excluded(self):
         result = self._run(

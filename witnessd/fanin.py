@@ -36,6 +36,10 @@ from witnessd.team_ledger import (
     build_team_ledger,
 )
 from witnessd.worktree import build_worktree_lane_receipt, create_lane_worktree
+from witnessd.write_scope_declaration import (
+    build_write_scope_declaration,
+    write_scope_allows_paths,
+)
 
 
 DEFAULT_STOP_RULE = "all write lanes pass or block"
@@ -969,6 +973,9 @@ def run_lane_exec_from_spec(spec_json: str, result_json: str) -> int:
                 public_key_path=str(payload["public_key_path"]),
                 log=EventLog(str(Path(payload["base_dir"]) / "runlog.jsonl")),
                 run_id=str(payload["run_id"]),
+                write_scope=spec.get("write_scope"),
+                role_id=spec.get("role_id"),
+                role_capability=spec.get("role_capability"),
             )
         exit_code = 0 if not _lane_failed(lane) else 1
     except LaneBlocked as exc:
@@ -1573,7 +1580,17 @@ def _run_write_lane(
     public_key_path: str,
     log: EventLog,
     run_id: str,
+    write_scope: list[str] | None = None,
+    role_id: str | None = None,
+    role_capability: str | None = None,
 ) -> dict[str, Any]:
+    if write_scope is not None and not write_scope_allows_paths(
+        allowed_touched_files, list(write_scope)
+    ):
+        raise LaneBlocked(
+            "ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION",
+            "allowed_touched_files are outside declared write_scope",
+        )
     worktree = create_lane_worktree(
         repo_root=str(repo_root),
         lane_id=lane_id,
@@ -1593,6 +1610,15 @@ def _run_write_lane(
     _commit_lane(worktree, lane_id)
 
     fixture = build_reference_adapter_fixture(build_shell_invocation(lane_id))
+    provider_artifacts = _write_scope_provider_artifacts(
+        evidence_dir=evidence_dir,
+        lane_id=lane_id,
+        role_id=role_id,
+        role_capability=role_capability,
+        write_scope=write_scope,
+        allowed_touched_files=allowed_touched_files,
+        touched_files=list(lane_result.get("touched_files", [])),
+    )
     emitted = emit_supervised_lane(
         lane_result,
         str(evidence_dir),
@@ -1605,6 +1631,7 @@ def _run_write_lane(
         task_id=lane_id,
         invocation=commands[0] if commands else ["sh", "-c", "true"],
         runner_sandbox=worktree,
+        provider_artifacts=provider_artifacts,
     )
 
     receipt = build_worktree_lane_receipt(
@@ -1720,6 +1747,9 @@ def _run_adapter_lane(
         allowed_touched_files=list(allowed_touched_files),
         capture_profile=str(spec.get("capture_profile", "full")),
         model=spec.get("model"),
+        write_scope=spec.get("write_scope"),
+        role_id=spec.get("role_id"),
+        role_capability=spec.get("role_capability"),
     )
     _commit_lane(worktree, lane_id)
 
@@ -1771,6 +1801,31 @@ def _run_adapter_lane(
         "worktree_receipt": receipt,
         "evidence_next_verdict": verdict,
     }
+
+
+def _write_scope_provider_artifacts(
+    *,
+    evidence_dir: Path,
+    lane_id: str,
+    role_id: str | None,
+    role_capability: str | None,
+    write_scope: Any,
+    allowed_touched_files: list[str],
+    touched_files: list[str],
+) -> dict[str, str]:
+    if write_scope is None:
+        return {}
+    declaration = build_write_scope_declaration(
+        role_id=role_id or lane_id,
+        lane_id=lane_id,
+        capability=role_capability or "execute",
+        declared_write_scope=list(write_scope),
+        allowed_touched_files=allowed_touched_files,
+        touched_files=touched_files,
+    )
+    path = evidence_dir.parent / f"{lane_id}-write-scope-declaration.json"
+    path.write_text(json.dumps(declaration, sort_keys=True), encoding="utf-8")
+    return {"write-scope-declaration": str(path)}
 
 
 def _blocked_adapter_lane(
