@@ -118,10 +118,14 @@ class TestCodexLiveSmoke(unittest.TestCase):
                 receipt["exit_code"], 0, f"real codex lane failed: {receipt}"
             )
             self.assertTrue(result["normalized_events"], "expected raw codex events")
-            self.assertIn(
-                "calc.py",
+            # Exact equality, not just membership: with state_root properly
+            # separated from sandbox (above), touched_files must contain only
+            # the agent's real edit -- no .witnessd/codex-home noise from
+            # codex's own cache/plugin/config writes.
+            self.assertEqual(
                 receipt["touched_files"],
-                "expected codex to actually edit calc.py in the sandbox",
+                ["calc.py"],
+                "touched_files must be exactly the agent's edit, no state-dir noise",
             )
 
 
