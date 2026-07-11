@@ -16,7 +16,9 @@ from depone.agent_fabric.team_ledger import (
     validate_team_schedule_receipt,
 )
 
+from witnessd.eventlog import EventLog
 from witnessd.fanin import _read_lane_exec_result, run_team
+from witnessd.killswitch import active_targets_from_runlog
 from witnessd.__main__ import _codex_specs_are_isolated, main
 from witnessd.signing import gen_operator_keypair
 
@@ -71,17 +73,23 @@ class TestW15ParallelExecution(unittest.TestCase):
                 {
                     "lane_id": "lane-a",
                     "region": ["pkg/a.py"],
-                    "commands": [["sh", "-c", "sleep 0.35; mkdir -p pkg; echo a > pkg/a.py"]],
+                    "commands": [
+                        ["sh", "-c", "sleep 0.35; mkdir -p pkg; echo a > pkg/a.py"]
+                    ],
                 },
                 {
                     "lane_id": "lane-b",
                     "region": ["pkg/b.py"],
-                    "commands": [["sh", "-c", "sleep 0.35; mkdir -p pkg; echo b > pkg/b.py"]],
+                    "commands": [
+                        ["sh", "-c", "sleep 0.35; mkdir -p pkg; echo b > pkg/b.py"]
+                    ],
                 },
                 {
                     "lane_id": "lane-c",
                     "region": ["pkg/c.py"],
-                    "commands": [["sh", "-c", "sleep 0.35; mkdir -p pkg; echo c > pkg/c.py"]],
+                    "commands": [
+                        ["sh", "-c", "sleep 0.35; mkdir -p pkg; echo c > pkg/c.py"]
+                    ],
                 },
             ],
             max_parallel=3,
@@ -89,7 +97,9 @@ class TestW15ParallelExecution(unittest.TestCase):
 
         ledger = json.loads((result["base_dir"] / "team-ledger.json").read_text())
         self.assertEqual(ledger["schedule_receipt"], "team-schedule-receipt.json")
-        receipt = json.loads((result["base_dir"] / ledger["schedule_receipt"]).read_text())
+        receipt = json.loads(
+            (result["base_dir"] / ledger["schedule_receipt"]).read_text()
+        )
 
         self.assertEqual(validate_team_schedule_receipt(receipt), [])
         self.assertEqual(
@@ -98,7 +108,9 @@ class TestW15ParallelExecution(unittest.TestCase):
         )
         verdict = build_team_ledger_verdict(ledger, base_dir=result["base_dir"])
         self.assertEqual(verdict["decision"], "pass")
-        self.assertEqual(verdict["schedule_receipt"]["lane_ids"], ["lane-a", "lane-b", "lane-c"])
+        self.assertEqual(
+            verdict["schedule_receipt"]["lane_ids"], ["lane-a", "lane-b", "lane-c"]
+        )
         self.assertGreaterEqual(verdict["schedule_receipt"]["derived_max_overlap"], 2)
         self.assertEqual(
             {lane["touched_files"][0] for lane in ledger["lanes"]},
@@ -116,12 +128,16 @@ class TestW15ParallelExecution(unittest.TestCase):
                 {
                     "lane_id": "slow-a",
                     "region": ["pkg/slow_a.py"],
-                    "commands": [["sh", "-c", "sleep 5; mkdir -p pkg; echo a > pkg/slow_a.py"]],
+                    "commands": [
+                        ["sh", "-c", "sleep 5; mkdir -p pkg; echo a > pkg/slow_a.py"]
+                    ],
                 },
                 {
                     "lane_id": "slow-b",
                     "region": ["pkg/slow_b.py"],
-                    "commands": [["sh", "-c", "sleep 5; mkdir -p pkg; echo b > pkg/slow_b.py"]],
+                    "commands": [
+                        ["sh", "-c", "sleep 5; mkdir -p pkg; echo b > pkg/slow_b.py"]
+                    ],
                 },
             ],
             max_parallel=3,
@@ -140,7 +156,10 @@ class TestW15ParallelExecution(unittest.TestCase):
             )
 
         exit_events = [event for event in result["runlog"] if event["event"] == "exit"]
-        self.assertEqual({event["payload"]["lane_id"] for event in exit_events}, {"fail-lane", "slow-a", "slow-b"})
+        self.assertEqual(
+            {event["payload"]["lane_id"] for event in exit_events},
+            {"fail-lane", "slow-a", "slow-b"},
+        )
         self.assertEqual(len(result["supervisor_handles"]), 0)
 
     def test_fail_fast_kills_lane_grandchild_processes(self):
@@ -201,8 +220,12 @@ class TestW15ParallelExecution(unittest.TestCase):
             lane = _read_lane_exec_result(job, "base-commit", -9)
 
             self.assertEqual(lane["ledger_lane"]["verification_state"], "blocked")
-            self.assertEqual(lane["ledger_lane"]["blocked_reason"], "ERR_TEAM_LANE_EXEC_FAILED")
-            self.assertNotEqual(lane["ledger_lane"].get("evidence_dir"), "stale-evidence")
+            self.assertEqual(
+                lane["ledger_lane"]["blocked_reason"], "ERR_TEAM_LANE_EXEC_FAILED"
+            )
+            self.assertNotEqual(
+                lane["ledger_lane"].get("evidence_dir"), "stale-evidence"
+            )
 
     def test_forged_schedule_receipt_interval_is_rejected_by_depone(self):
         result = self._run(
@@ -219,7 +242,9 @@ class TestW15ParallelExecution(unittest.TestCase):
         ledger = json.loads(ledger_path.read_text())
         receipt_path = result["base_dir"] / ledger["schedule_receipt"]
         receipt = json.loads(receipt_path.read_text())
-        receipt["lanes"][0]["exited_monotonic_ns"] = receipt["lanes"][0]["spawned_monotonic_ns"] - 1
+        receipt["lanes"][0]["exited_monotonic_ns"] = (
+            receipt["lanes"][0]["spawned_monotonic_ns"] - 1
+        )
         receipt_path.write_text(json.dumps(receipt, sort_keys=True), encoding="utf-8")
 
         verdict = build_team_ledger_verdict(ledger, base_dir=result["base_dir"])
@@ -274,11 +299,16 @@ class TestW15ParallelExecution(unittest.TestCase):
             )
             try:
                 _wait_for(
-                    lambda: (state_root / "team-run.json").is_file()
-                    and bool(_marker_pids(marker)),
-                    timeout=5,
+                    lambda: (
+                        (state_root / "team-run.json").is_file()
+                        and bool(_marker_pids(marker))
+                        and _team_run_has_active_target(state_root)
+                    ),
+                    timeout=15,
                 )
-                self.assertEqual(main(["team", "kill", "--state-root", str(state_root)]), 0)
+                self.assertEqual(
+                    main(["team", "kill", "--state-root", str(state_root)]), 0
+                )
                 proc.wait(timeout=5)
                 self.addCleanup(_kill_marker_processes, marker)
                 self.assertEqual(_marker_pids(marker), [])
@@ -322,7 +352,7 @@ class TestW15ParallelExecution(unittest.TestCase):
                                 "verification_state": "pass",
                                 "evidence_dir": "done",
                             }
-                        }
+                        },
                     }
                 ),
                 encoding="utf-8",
@@ -332,7 +362,9 @@ class TestW15ParallelExecution(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            code = main(["team", "resume-audit", "--out", str(out_dir), "--run-id", "team-run"])
+            code = main(
+                ["team", "resume-audit", "--out", str(out_dir), "--run-id", "team-run"]
+            )
 
             self.assertEqual(code, 0)
             audit = json.loads((out_dir / "team-resume-audit.json").read_text())
@@ -356,11 +388,18 @@ class TestW15ParallelExecution(unittest.TestCase):
                 encoding="utf-8",
             )
             (control / "lane-a-result.json").write_text(
-                json.dumps({"run_id": "old-run", "lane": {"ledger_lane": {"verification_state": "pass"}}}),
+                json.dumps(
+                    {
+                        "run_id": "old-run",
+                        "lane": {"ledger_lane": {"verification_state": "pass"}},
+                    }
+                ),
                 encoding="utf-8",
             )
 
-            code = main(["team", "resume-audit", "--out", str(out_dir), "--run-id", "new-run"])
+            code = main(
+                ["team", "resume-audit", "--out", str(out_dir), "--run-id", "new-run"]
+            )
 
             self.assertEqual(code, 0)
             audit = json.loads((out_dir / "team-resume-audit.json").read_text())
@@ -384,7 +423,9 @@ class TestW15ParallelExecution(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            code = main(["team", "resume-audit", "--out", str(out_dir), "--run-id", "team-run"])
+            code = main(
+                ["team", "resume-audit", "--out", str(out_dir), "--run-id", "team-run"]
+            )
 
             self.assertEqual(code, 0)
             audit = json.loads((out_dir / "team-resume-audit.json").read_text())
@@ -408,7 +449,9 @@ class TestW15ParallelExecution(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            code = main(["team", "resume-audit", "--out", str(out_dir), "--run-id", "team-run"])
+            code = main(
+                ["team", "resume-audit", "--out", str(out_dir), "--run-id", "team-run"]
+            )
 
             self.assertEqual(code, 0)
             audit = json.loads((out_dir / "team-resume-audit.json").read_text())
@@ -428,7 +471,9 @@ class TestW15ParallelExecution(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            code = main(["team", "resume-audit", "--out", str(out_dir), "--run-id", "team-run"])
+            code = main(
+                ["team", "resume-audit", "--out", str(out_dir), "--run-id", "team-run"]
+            )
 
             self.assertEqual(code, 0)
             audit = json.loads((out_dir / "team-resume-audit.json").read_text())
@@ -467,6 +512,7 @@ class TestW15ParallelExecution(unittest.TestCase):
                 )
             )
 
+
 def _marker_pids(marker: str) -> list[int]:
     completed = subprocess.run(
         ["pgrep", "-f", marker],
@@ -491,6 +537,29 @@ def _kill_marker_processes(marker: str) -> None:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+
+
+def _team_run_has_active_target(state_root: Path) -> bool:
+    # The real race this closes: supervisor.spawn() forks the lane process
+    # (visible via pgrep almost immediately) and only appends its "spawn"
+    # runlog event afterward. `team kill` takes a one-shot snapshot read of
+    # that runlog, so if it runs in the gap before the spawn event is
+    # durably written, active_targets_from_runlog() sees nothing and kill_all
+    # returns ERR_WITNESSD_KILL_NO_TARGETS -- process visibility via pgrep is
+    # not sufficient proof that kill has something to act on. Wait on the
+    # exact condition team-run.json/kill itself will check, not a proxy for it.
+    manifest_path = state_root / "team-run.json"
+    if not manifest_path.is_file():
+        return False
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    runlog_path = manifest.get("runlog")
+    if not isinstance(runlog_path, str) or not os.path.isfile(runlog_path):
+        return False
+    records = EventLog(runlog_path).read()
+    return bool(active_targets_from_runlog(records))
 
 
 def _wait_for(predicate, *, timeout: float) -> None:
