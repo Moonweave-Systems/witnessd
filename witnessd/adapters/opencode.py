@@ -1,4 +1,16 @@
-"""OpenCode adapter for W4 runner lanes."""
+"""OpenCode adapter for W4 runner lanes.
+
+EXPERIMENTAL / UNVERIFIED: outside the codex/claude/agy set witnessd
+otherwise verifies against real CLIs. Live-verified against opencode
+1.17.10: `opencode run <prompt>` works when run interactively (a TTY
+attached), but silently no-ops through the actual adapter path -- plain
+`subprocess.run` with piped/captured stdout, no TTY, exactly what
+_run_cli_lane below does. Observed: exit 0, no file edits, zero normalized
+events, touched_files limited to opencode's own `.git/opencode` cache. This
+is a real gap (opencode apparently needs a TTY or a not-yet-wired headless
+flag), not fixed here -- flagging honestly rather than leaving this adapter
+looking equivalent to the verified ones.
+"""
 
 from __future__ import annotations
 
