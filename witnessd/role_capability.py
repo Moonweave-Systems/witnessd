@@ -1,9 +1,4 @@
-"""Role capability grants for ORRO role-lane planning.
-
-S1 intentionally models only role, capability, adapters, and model policy
-reference. Tool and write-scope grants are later slices and must not be
-accepted silently here.
-"""
+"""Role capability grants for ORRO role-lane planning."""
 
 from __future__ import annotations
 
@@ -23,6 +18,7 @@ _GRANT_FIELDS = {
     "capability",
     "adapters",
     "model_policy_ref",
+    "write_scope",
 }
 _ROLEPACK_FIELDS = {"kind", "schema_version", "name", "grants"}
 
@@ -33,6 +29,7 @@ class RoleCapabilityGrant:
     capability: str
     adapters: tuple[str, ...]
     model_policy_ref: str
+    write_scope: tuple[str, ...] | None = None
     schema_version: str = ROLE_CAPABILITY_SCHEMA_VERSION
 
     @classmethod
@@ -54,6 +51,7 @@ class RoleCapabilityGrant:
         capability = payload.get("capability")
         model_policy_ref = payload.get("model_policy_ref")
         adapters = payload.get("adapters")
+        write_scope = payload.get("write_scope")
         if not isinstance(role_id, str) or not role_id:
             raise ValueError("role capability grant role_id is invalid")
         if capability not in ROLE_CAPABILITY_CAPABILITIES:
@@ -74,22 +72,31 @@ class RoleCapabilityGrant:
                 "role capability grant adapters are unsupported: "
                 + ", ".join(sorted(unknown_adapters))
             )
+        if write_scope is not None and (
+            not isinstance(write_scope, list)
+            or not all(isinstance(item, str) and item for item in write_scope)
+        ):
+            raise ValueError("role capability grant write_scope must be a string list")
         return cls(
             role_id=role_id,
             capability=str(capability),
             adapters=tuple(adapters),
             model_policy_ref=model_policy_ref,
+            write_scope=tuple(write_scope) if write_scope is not None else None,
             schema_version=schema_version,
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "schema_version": self.schema_version,
             "role_id": self.role_id,
             "capability": self.capability,
             "adapters": list(self.adapters),
             "model_policy_ref": self.model_policy_ref,
         }
+        if self.write_scope is not None:
+            payload["write_scope"] = list(self.write_scope)
+        return payload
 
 
 DEFAULT_DEVELOPER_ROLEPACK: dict[str, Any] = {
@@ -103,6 +110,7 @@ DEFAULT_DEVELOPER_ROLEPACK: dict[str, Any] = {
             "capability": "execute",
             "adapters": ["shell", "codex", "claude", "opencode"],
             "model_policy_ref": "default",
+            "write_scope": ["orro/**", "docs/**"],
         },
         {
             "schema_version": ROLE_CAPABILITY_SCHEMA_VERSION,
@@ -110,6 +118,7 @@ DEFAULT_DEVELOPER_ROLEPACK: dict[str, Any] = {
             "capability": "review",
             "adapters": ["agy", "gemini"],
             "model_policy_ref": "default",
+            "write_scope": [],
         },
     ],
 }

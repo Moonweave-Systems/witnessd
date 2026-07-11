@@ -15,6 +15,7 @@ from typing import Any
 
 from witnessd.model_policy import resolve_policy_route
 from witnessd.role_capability import RoleCapabilityGrant, grant_for_role
+from witnessd.write_scope_declaration import write_scope_allows_paths
 
 
 ERR_ORRO_WORKFLOW_PROFILE_UNKNOWN = "ERR_ORRO_WORKFLOW_PROFILE_UNKNOWN"
@@ -34,6 +35,7 @@ ERR_ORRO_ROLE_LANE_PLAN_EXECUTION_FORBIDDEN = (
 ERR_ORRO_ROLE_LANE_PLAN_EMPTY = "ERR_ORRO_ROLE_LANE_PLAN_EMPTY"
 ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED = "ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED"
 ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED = "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED"
+ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION = "ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION"
 
 WORKFLOW_PLAN_KIND = "orro-workflow-plan"
 WORKFLOW_PLAN_SCHEMA_VERSION = "0.1"
@@ -672,6 +674,7 @@ def _role_capability_for_lane(
     role_id: str,
     phase: str,
     adapter: str,
+    region: list[str],
 ) -> dict[str, Any]:
     if rolepack is None:
         return {}
@@ -698,6 +701,15 @@ def _role_capability_for_lane(
                 f"capability={grant.capability!r}"
             ),
         )
+    if (
+        phase == "proofrun"
+        and grant.write_scope is not None
+        and not write_scope_allows_paths(region, list(grant.write_scope))
+    ):
+        raise OrroWorkflowError(
+            ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION,
+            f"role_id={role_id!r} lane region is outside declared write_scope",
+        )
     return _role_capability_lane_fields(grant)
 
 
@@ -705,6 +717,11 @@ def _role_capability_lane_fields(grant: RoleCapabilityGrant) -> dict[str, Any]:
     return {
         "granted_adapters": list(grant.adapters),
         "role_capability": grant.to_dict(),
+        **(
+            {"granted_write_scope": list(grant.write_scope)}
+            if grant.write_scope is not None
+            else {}
+        ),
     }
 
 
@@ -721,12 +738,6 @@ def _role_lane_from_role(
     resolved_adapter, extra = _resolve_lane_adapter_and_model(
         role_kind=role_id, tier=tier, lane_adapter=lane_adapter, policy=policy
     )
-    role_capability = _role_capability_for_lane(
-        rolepack=rolepack,
-        role_id=role_id,
-        phase="proofrun",
-        adapter=resolved_adapter,
-    )
     digest = hashlib.sha256(
         f"{workflow_plan['goal']}:{profile}:{role_id}:{resolved_adapter}".encode(
             "utf-8"
@@ -735,6 +746,13 @@ def _role_lane_from_role(
     region_root = "docs" if profile == "docs-change" else "orro"
     lane_id = f"{role_id}-{digest}"
     region = [f"{region_root}/{lane_id}.txt"]
+    role_capability = _role_capability_for_lane(
+        rolepack=rolepack,
+        role_id=role_id,
+        phase="proofrun",
+        adapter=resolved_adapter,
+        region=region,
+    )
     return {
         "lane_id": lane_id,
         "role_id": role_id,
@@ -772,6 +790,7 @@ def _review_lane_from_role(
         role_id=role_id,
         phase="review",
         adapter=resolved_adapter,
+        region=["."],
     )
     digest = hashlib.sha256(
         f"{workflow_plan['goal']}:{profile}:{role_id}:{resolved_adapter}".encode(
@@ -876,6 +895,15 @@ def _validate_role_lane(lane: Any) -> None:
             raise OrroWorkflowError(
                 ERR_ORRO_ROLE_LANE_PLAN_INVALID,
                 "role-lane role_capability capability is invalid",
+            )
+    if "granted_write_scope" in lane:
+        granted_write_scope = lane["granted_write_scope"]
+        if not isinstance(granted_write_scope, list) or not all(
+            isinstance(item, str) and item for item in granted_write_scope
+        ):
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+                "role-lane granted_write_scope is invalid",
             )
     region = lane.get("region")
     if (

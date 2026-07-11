@@ -25,10 +25,12 @@ class RoleCapabilityTests(unittest.TestCase):
         self.assertEqual(runner.capability, "execute")
         self.assertEqual(runner.adapters, ("shell", "codex", "claude", "opencode"))
         self.assertEqual(runner.model_policy_ref, "default")
+        self.assertEqual(runner.write_scope, ("orro/**", "docs/**"))
         self.assertEqual(reviewer.role_id, "reviewer")
         self.assertEqual(reviewer.capability, "review")
         self.assertEqual(reviewer.adapters, ("agy", "gemini"))
         self.assertEqual(reviewer.model_policy_ref, "default")
+        self.assertEqual(reviewer.write_scope, ())
 
     def test_rolepack_rejects_s1_unknown_fields(self) -> None:
         rolepack = {
@@ -41,6 +43,7 @@ class RoleCapabilityTests(unittest.TestCase):
                     "capability": "execute",
                     "adapters": ["codex"],
                     "model_policy_ref": "default",
+                    "write_scope": ["src/**"],
                     "tools": {"mcp": ["filesystem"]},
                 }
             ],
@@ -61,6 +64,7 @@ class RoleCapabilityTests(unittest.TestCase):
                     "capability": "execute",
                     "adapters": ["codex"],
                     "model_policy_ref": "default",
+                    "write_scope": ["src/**"],
                 }
             ],
         }
@@ -76,6 +80,19 @@ class RoleCapabilityTests(unittest.TestCase):
                     "capability": "admin",
                     "adapters": ["codex"],
                     "model_policy_ref": "default",
+                    "write_scope": ["src/**"],
+                }
+            )
+
+    def test_role_capability_grant_rejects_invalid_write_scope(self) -> None:
+        with self.assertRaises(ValueError):
+            RoleCapabilityGrant.from_dict(
+                {
+                    "role_id": "runner",
+                    "capability": "execute",
+                    "adapters": ["codex"],
+                    "model_policy_ref": "default",
+                    "write_scope": ["src/**", ""],
                 }
             )
 
