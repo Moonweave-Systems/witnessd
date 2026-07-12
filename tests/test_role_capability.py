@@ -4,10 +4,12 @@ import unittest
 
 from witnessd.role_capability import (
     DEFAULT_DEVELOPER_ROLEPACK,
+    PROFILE_DEFAULT_ROLEPACKS,
     ROLEPACK_KIND,
     ROLEPACK_SCHEMA_VERSION,
     RolepackError,
     RoleCapabilityGrant,
+    default_rolepack_for_profile,
     grant_for_role,
     resolve_rolepack,
     validate_rolepack,
@@ -45,6 +47,24 @@ class RoleCapabilityTests(unittest.TestCase):
             resolve_rolepack("designer")
 
         self.assertEqual(ctx.exception.code, "ERR_ORRO_ROLEPACK_UNKNOWN")
+
+    def test_profile_default_rolepack_mapping_is_deterministic_and_fail_closed(self) -> None:
+        self.assertEqual(
+            PROFILE_DEFAULT_ROLEPACKS,
+            {
+                "code-change": "developer",
+                "docs-change": "developer",
+                "review-only": "developer",
+                "verification-only": "developer",
+                "release-readiness": "developer",
+            },
+        )
+        self.assertEqual(default_rolepack_for_profile("docs-change"), "developer")
+
+        with self.assertRaises(RolepackError) as ctx:
+            default_rolepack_for_profile("unknown-profile")
+
+        self.assertEqual(ctx.exception.code, "ERR_ORRO_PROFILE_ROLEPACK_UNMAPPED")
 
     def test_rolepack_rejects_legacy_0_1_schema(self) -> None:
         rolepack = {
