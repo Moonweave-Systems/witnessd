@@ -429,6 +429,17 @@ def run_adapter_lane(
                 json.dumps(tool_declaration, sort_keys=True), encoding="utf-8"
             )
             provider_artifacts["tool-declaration"] = str(tool_declaration_path)
+        tool_decision_advisory = getattr(adapter_result, "tool_decision_advisory", None)
+        if tool_decision_advisory is not None:
+            tool_decision_advisory_path = (
+                task_dir / "tool-call-decision-advisory.json"
+            )
+            tool_decision_advisory_path.write_text(
+                json.dumps(tool_decision_advisory, sort_keys=True), encoding="utf-8"
+            )
+            provider_artifacts["tool-call-decision-advisory"] = str(
+                tool_decision_advisory_path
+            )
         lane_result = {
             "command_receipts": adapter_result.command_receipts,
             "touched_files": adapter_result.touched_files,

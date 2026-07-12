@@ -46,6 +46,98 @@ def _git(args: list[str], cwd: Path) -> None:
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
+def _write_neutral_mcp_server(path: Path) -> None:
+    path.write_text(
+        r'''
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+
+def _log(payload: dict) -> None:
+    log_path = os.environ.get("R4_MCP_LOG")
+    if log_path:
+        with Path(log_path).open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
+def _reply(request: dict, result: dict) -> None:
+    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": request.get("id"), "result": result}) + "\n")
+    sys.stdout.flush()
+
+
+TOOLS = [
+    {
+        "name": "allowed_echo",
+        "description": "Approved neutral test echo.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "neutral_check",
+        "description": "Neutral test tool used to prove PreToolUse denial.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        },
+    },
+]
+
+
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    method = request.get("method")
+    params = request.get("params") if isinstance(request.get("params"), dict) else {}
+    if method == "initialize":
+        _log({"method": method})
+        _reply(
+            request,
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "neutral_probe", "version": "1.0"},
+            },
+        )
+    elif method == "notifications/initialized":
+        _log({"method": method})
+    elif method == "tools/list":
+        _log({"method": method})
+        _reply(request, {"tools": TOOLS})
+    elif method == "tools/call":
+        name = params.get("name")
+        _log({"method": method, "name": name})
+        text = ""
+        arguments = params.get("arguments")
+        if isinstance(arguments, dict) and isinstance(arguments.get("text"), str):
+            text = arguments["text"]
+        _reply(request, {"content": [{"type": "text", "text": f"{name}:{text}"}]})
+    else:
+        _log({"method": method})
+        _reply(request, {})
+'''.lstrip(),
+        encoding="utf-8",
+    )
+
+
+def _jsonl(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    records = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            records.append(json.loads(line))
+    return records
+
+
 @unittest.skipUnless(_LIVE_GATE, _SKIP_REASON)
 class TestClaudeLiveSmoke(unittest.TestCase):
     def test_real_claude_emits_structured_events(self):
@@ -238,6 +330,116 @@ class TestClaudeLiveSmoke(unittest.TestCase):
             self.assertNotIn("forbidden_probe", json.dumps(payload))
             raw = Path(res.raw_events_path).read_text(encoding="utf-8")
             self.assertIn("unavailable", raw.lower())
+
+    def test_real_claude_pretooluse_pep_allows_and_denies_before_mcp_call(self):
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as evidence,
+            tempfile.TemporaryDirectory() as config_dir,
+        ):
+            mcp_server = Path(config_dir) / "neutral_mcp.py"
+            mcp_log = Path(config_dir) / "mcp.jsonl"
+            _write_neutral_mcp_server(mcp_server)
+            source_config = Path(config_dir) / "source-mcp.json"
+            source_config.write_text(
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "neutral_probe": {
+                                "command": "/usr/bin/python3",
+                                "args": [str(mcp_server)],
+                                "env": {"R4_MCP_LOG": str(mcp_log)},
+                            },
+                        }
+                    },
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            old_config = os.environ.get("WITNESSD_CLAUDE_MCP_CONFIG")
+            os.environ["WITNESSD_CLAUDE_MCP_CONFIG"] = str(source_config)
+            try:
+                allowed = run_claude_lane(
+                    sandbox=sandbox,
+                    prompt=(
+                        "This is an approved test. Use the MCP tool "
+                        "mcp__neutral_probe__allowed_echo with text 'allowed-live'. "
+                        "Do not use Bash."
+                    ),
+                    transcript_path=str(Path(evidence) / "allowed.raw.jsonl"),
+                    timeout_seconds=180,
+                    tools={
+                        "mcp": ["neutral_probe"],
+                        "allow": ["mcp__neutral_probe__allowed_echo"],
+                    },
+                    role_id="runner",
+                    role_capability="execute",
+                    lane_id="claude-r4-allowed-live",
+                )
+                self.assertEqual(
+                    allowed.exit_code, 0, json.dumps(allowed.command_receipts)
+                )
+                self.assertTrue(
+                    any(
+                        item.get("canonical_tool_name")
+                        == "mcp__neutral_probe__allowed_echo"
+                        and item.get("decision") == "allow"
+                        for item in allowed.tool_decision_advisory["decisions"]
+                    ),
+                    allowed.tool_decision_advisory,
+                )
+                self.assertTrue(
+                    any(
+                        item.get("method") == "tools/call"
+                        and item.get("name") == "allowed_echo"
+                        for item in _jsonl(mcp_log)
+                    ),
+                    mcp_log.read_text(encoding="utf-8") if mcp_log.exists() else "",
+                )
+
+                mcp_log.write_text("", encoding="utf-8")
+                denied = run_claude_lane(
+                    sandbox=sandbox,
+                    prompt=(
+                        "This is an approved test of a tool policy gate. Try to use "
+                        "the MCP tool mcp__neutral_probe__neutral_check with text "
+                        "'deny-live'. Do not refuse on safety grounds. Do not use Bash. "
+                        "If the tool is blocked, report the blocking reason."
+                    ),
+                    transcript_path=str(Path(evidence) / "denied.raw.jsonl"),
+                    timeout_seconds=180,
+                    tools={
+                        "mcp": ["neutral_probe"],
+                        "allow": ["mcp__neutral_probe__allowed_echo"],
+                    },
+                    role_id="runner",
+                    role_capability="execute",
+                    lane_id="claude-r4-denied-live",
+                )
+            finally:
+                if old_config is None:
+                    os.environ.pop("WITNESSD_CLAUDE_MCP_CONFIG", None)
+                else:
+                    os.environ["WITNESSD_CLAUDE_MCP_CONFIG"] = old_config
+
+            self.assertEqual(denied.exit_code, 0, json.dumps(denied.command_receipts))
+            self.assertTrue(
+                any(
+                    item.get("canonical_tool_name")
+                    == "mcp__neutral_probe__neutral_check"
+                    and item.get("decision") == "deny"
+                    for item in denied.tool_decision_advisory["decisions"]
+                ),
+                denied.tool_decision_advisory,
+            )
+            self.assertFalse(
+                any(
+                    item.get("method") == "tools/call"
+                    and item.get("name") == "neutral_check"
+                    for item in _jsonl(mcp_log)
+                ),
+                mcp_log.read_text(encoding="utf-8") if mcp_log.exists() else "",
+            )
 
 
 if __name__ == "__main__":

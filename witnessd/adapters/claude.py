@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -152,10 +153,12 @@ def run_claude_lane(
     transcript = str(Path(transcript_path).resolve(strict=False))
     task_dir = Path(transcript).parent
     normalized_transcript = str(Path(transcript).with_name("events.normalized.jsonl"))
+    pep_paths = _claude_pep_paths(task_dir) if tools is not None else {}
     evidence_paths = [
         transcript,
         normalized_transcript,
         *([log_path] if log_path is not None else []),
+        *[str(path) for path in pep_paths.values()],
     ]
     for evidence_path in evidence_paths:
         assert_evidence_path_separated(
@@ -168,6 +171,13 @@ def run_claude_lane(
         prompt,
         *(["--model", model] if model else []),
         *_claude_tool_args(tools, task_dir),
+        *_claude_pep_args(
+            tools=tools,
+            task_dir=task_dir,
+            role_id=role_id or lane_id or "claude",
+            role_capability=role_capability or "execute",
+            lane_id=lane_id or role_id or "claude",
+        ),
         "--output-format",
         "stream-json",
         "--verbose",
@@ -228,6 +238,7 @@ def run_claude_lane(
                 verification_status=VERIFICATION_CONFIRMED,
             )
     tool_declaration = None
+    tool_decision_advisory = None
     if tools is not None:
         observed_tool_uses = _claude_observed_tool_uses(raw_stdout)
         tool_declaration = build_tool_declaration(
@@ -240,6 +251,15 @@ def run_claude_lane(
             detail=None
             if observed_tool_uses
             else "claude stream-json did not include tool_use events for this run",
+        )
+        tool_decision_advisory = _build_claude_tool_decision_advisory(
+            tools=tools,
+            task_dir=task_dir,
+            role_id=role_id or lane_id or "claude",
+            role_capability=role_capability or "execute",
+            lane_id=lane_id or role_id or "claude",
+            raw_jsonl=raw_stdout,
+            observed_tool_uses=observed_tool_uses,
         )
 
     if log_path is not None:
@@ -284,6 +304,7 @@ def run_claude_lane(
         normalized_events_path=normalized_transcript,
         model_declaration=model_declaration,
         tool_declaration=tool_declaration,
+        tool_decision_advisory=tool_decision_advisory,
     )
 
 
@@ -297,11 +318,265 @@ def _claude_tool_args(tools: dict[str, Any] | None, task_dir: Path) -> list[str]
         encoding="utf-8",
     )
     args = ["--mcp-config", str(config_path), "--strict-mcp-config"]
-    if normalized["allow"]:
-        args.extend(["--allowedTools", ",".join(normalized["allow"])])
+    allowed_tools = _claude_allowed_tools_arg(normalized)
+    if allowed_tools:
+        args.extend(["--allowedTools", ",".join(allowed_tools)])
     else:
         args.extend(["--allowedTools", ""])
     return args
+
+
+def _claude_allowed_tools_arg(normalized: dict[str, list[str]]) -> list[str]:
+    values: list[str] = []
+    for name in normalized["allow"]:
+        if name not in values:
+            values.append(name)
+    for server_id in normalized["mcp"]:
+        pattern = f"mcp__{server_id}__.*"
+        if pattern not in values:
+            values.append(pattern)
+    return values
+
+
+def _claude_pep_paths(task_dir: Path) -> dict[str, Path]:
+    return {
+        "settings": task_dir / "claude-settings.json",
+        "policy": task_dir / "claude-tool-policy.json",
+        "hook": task_dir / "claude-pretooluse-pep.py",
+        "decisions": task_dir / "tool-call-decisions.jsonl",
+    }
+
+
+def _claude_pep_args(
+    *,
+    tools: dict[str, Any] | None,
+    task_dir: Path,
+    role_id: str,
+    role_capability: str,
+    lane_id: str,
+) -> list[str]:
+    if tools is None:
+        return []
+    normalized = normalize_tool_grant(tools)
+    paths = _claude_pep_paths(task_dir)
+    policy = {
+        "kind": "moonweave-claude-pretooluse-policy",
+        "schema_version": "1.0",
+        "adapter": "claude",
+        "role_id": role_id,
+        "lane_id": lane_id,
+        "capability": role_capability,
+        "mcp": normalized["mcp"],
+        "allow": normalized["allow"],
+        "deny_by_default": True,
+        "match": "exact",
+    }
+    paths["policy"].write_text(
+        json.dumps(policy, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    paths["decisions"].write_text("", encoding="utf-8")
+    paths["hook"].write_text(_CLAUDE_PRETOOLUSE_HOOK, encoding="utf-8")
+    paths["hook"].chmod(0o700)
+    command = " ".join(
+        [
+            shlex.quote("/usr/bin/python3"),
+            shlex.quote(str(paths["hook"])),
+            shlex.quote(str(paths["policy"])),
+            shlex.quote(str(paths["decisions"])),
+        ]
+    )
+    settings = {
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": ".*",
+                    "hooks": [{"type": "command", "command": command}],
+                }
+            ]
+        }
+    }
+    paths["settings"].write_text(
+        json.dumps(settings, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return ["--settings", str(paths["settings"]), "--include-hook-events"]
+
+
+_CLAUDE_PRETOOLUSE_HOOK = r'''from __future__ import annotations
+
+import hashlib
+import json
+import sys
+import time
+from pathlib import Path
+
+
+def _load_json(path: str) -> dict:
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _tool_name(payload: dict) -> str:
+    for key in ("tool_name", "toolName", "name"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            return value
+    tool = payload.get("tool")
+    if isinstance(tool, dict):
+        value = tool.get("name")
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def _next_sequence(path: Path) -> int:
+    try:
+        return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip()) + 1
+    except OSError:
+        return 1
+
+
+def main() -> int:
+    if len(sys.argv) != 3:
+        return 2
+    policy = _load_json(sys.argv[1])
+    decisions_path = Path(sys.argv[2])
+    raw_stdin = sys.stdin.read()
+    try:
+        payload = json.loads(raw_stdin) if raw_stdin.strip() else {}
+    except json.JSONDecodeError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    name = _tool_name(payload)
+    allowed = name in set(policy.get("allow", []))
+    decision = "allow" if allowed else "deny"
+    reason = "ROLE_CAPABILITY_TOOL_GRANTED" if allowed else "ERR_ROLE_CAPABILITY_TOOL_NOT_GRANTED"
+    sequence = _next_sequence(decisions_path)
+    record = {
+        "kind": "moonweave-tool-call-decision",
+        "schema_version": "1.0",
+        "can_change_evidence_verdict": False,
+        "adapter": "claude",
+        "role_id": policy.get("role_id"),
+        "lane_id": policy.get("lane_id"),
+        "capability": policy.get("capability"),
+        "sequence": sequence,
+        "canonical_tool_name": name,
+        "decision": decision,
+        "reason_code": reason,
+        "observed_at_unix_ms": int(time.time() * 1000),
+        "request_sha256": hashlib.sha256(raw_stdin.encode("utf-8")).hexdigest(),
+    }
+    decisions_path.parent.mkdir(parents=True, exist_ok=True)
+    with decisions_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, sort_keys=True) + "\n")
+
+    if allowed:
+        return 0
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": "R4_PEP_DENY ERR_ROLE_CAPABILITY_TOOL_NOT_GRANTED",
+        }
+    }, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+
+def _build_claude_tool_decision_advisory(
+    *,
+    tools: dict[str, Any],
+    task_dir: Path,
+    role_id: str,
+    role_capability: str,
+    lane_id: str,
+    raw_jsonl: bytes,
+    observed_tool_uses: list[dict[str, Any]],
+) -> dict[str, Any]:
+    normalized = normalize_tool_grant(tools)
+    paths = _claude_pep_paths(task_dir)
+    decisions = _read_jsonl_objects(paths["decisions"])
+    return {
+        "kind": "moonweave-tool-call-decision-advisory",
+        "schema_version": "1.0",
+        "can_change_evidence_verdict": False,
+        "adapter": "claude",
+        "role_id": role_id,
+        "lane_id": lane_id,
+        "capability": role_capability,
+        "policy": {
+            "mcp": normalized["mcp"],
+            "allow": normalized["allow"],
+            "deny_by_default": True,
+            "match": "exact",
+        },
+        "decisions": decisions,
+        "decision_log_path": str(paths["decisions"]),
+        "settings_path": str(paths["settings"]),
+        "hook_script_path": str(paths["hook"]),
+        "stream_reconciliation": {
+            "include_hook_events": True,
+            "observed_tool_uses": observed_tool_uses,
+            "hook_event_count": _claude_hook_event_count(raw_jsonl),
+            "source_of_decision": "pretooluse-hook-log",
+        },
+        "detail": "witnessd-local advisory only; Depone does not re-derive this artifact",
+    }
+
+
+def _read_jsonl_objects(path: Path) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return records
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            records.append(payload)
+    return records
+
+
+def _claude_hook_event_count(raw_jsonl: bytes) -> int:
+    count = 0
+    for line in raw_jsonl.splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if _contains_hook_event(payload):
+            count += 1
+    return count
+
+
+def _contains_hook_event(value: Any) -> bool:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if isinstance(key, str) and "hook" in key.lower():
+                return True
+            if isinstance(item, str) and "hook" in item.lower():
+                return True
+            if _contains_hook_event(item):
+                return True
+    elif isinstance(value, list):
+        return any(_contains_hook_event(item) for item in value)
+    return False
 
 
 def _filtered_claude_mcp_config(allowed_mcp: list[str]) -> dict[str, Any]:
