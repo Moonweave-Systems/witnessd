@@ -452,6 +452,11 @@ Depone owns:
 
 Depone does not spawn workers, mutate active worktrees, execute recipes, or call
 MCP servers.
+For role-capability write-scope checks, Depone's verdict is an offline
+re-derivation over persisted evidence bytes: the sealed declared scope is
+compared with the sealed touched-file observations. That is stronger than a
+mutable runtime log, but it is not ground-truth filesystem surveillance and must
+not be described as proof of every host-side write or write-then-delete event.
 
 ### 4.3 ORRO owns the user surface
 
@@ -745,7 +750,8 @@ Rules:
 - proofcheck-verdict records the explicit Depone proofcheck decision and ORRO
   evidence binding required before ORRO handoff,
 - pr-handoff and orro-handoff record review packages and are not approval,
-- Depone decides which artifacts can support assurance.
+- Depone decides which artifacts can support assurance, within the observation
+  boundaries of the persisted evidence contract.
 
 ---
 

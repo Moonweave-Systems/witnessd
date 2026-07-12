@@ -32,11 +32,14 @@ The 2026 industry is converging on a model this plan mirrors and then sharpens:
   verification) is a rising need with a regulatory tailwind (EU AI Act
   enforcement 2026-08, SOC2/GDPR scrutiny of agent access).
 
-**Our wedge over the field:** most players *log* (self-reported, mutable).
-witnessd emits evidence that a **third party (Depone) re-derives from the
-bytes** — "this role used only these tools / touched only this scope / ran this
-model" becomes **proof, not a trusted log**. This plan is the substrate that
-turns human-team RBAC into an evidenced contract.
+**Our wedge over the field:** most players *log* mutable runtime claims.
+witnessd emits sealed evidence bytes and Depone independently re-derives whether
+those sealed bytes are internally consistent with the contract. For write scope,
+that means checking sealed declarations against sealed observed touched files,
+not proving ground-truth filesystem history. This is stronger than a mutable
+SIEM-style log, but it must not be sold as omniscient proof of every file access.
+This plan is the substrate that turns human-team RBAC into an evidenced
+contract.
 
 ## 2. What already exists (do not rebuild)
 
@@ -70,28 +73,33 @@ RoleCapabilityGrant = {
   "role_id": "runner",
   "capability": "execute",                 // "execute" | "review"
   "adapters": ["codex", "claude"],         // allowed adapters (deny-by-default)
-  "model_policy_ref": "default",           // reuse model_policy; model must resolve within this role
+  "model": "gpt-5.5",                      // optional explicit model; absent = policy/tier path
   "tools": {                               // deny-by-default tool/MCP allowlist
     "mcp": ["filesystem"],
     "allow": ["fs.read", "fs.write", "git"]
   },
-  "write_scope": ["src/**", "tests/**"],   // globs the role may modify (touched ⊆ this)
-  "approval_policy": "on-request"
+  "write_scope": ["src/**", "tests/**"]    // globs the role may modify (touched ⊆ this)
 }
 ```
 
 Enforcement happens twice:
 
 - **① Pre-execution config gate (enforced).** witnessd wires the adapter using
-  only the grant: adapter ∈ `adapters`; model ∈ the referenced policy; the
-  isolated `CODEX_HOME`/adapter config exposes only `tools.mcp`; the sandbox /
-  `allowed_touched_files` is set from `write_scope`. Anything the grant does not
-  allow is not offered to the worker. Deny-by-default.
+  only the grant: adapter ∈ `adapters`; an explicit `model` overrides the
+  tier/policy model path for that role, otherwise the existing model policy
+  resolves the model; the isolated `CODEX_HOME`/adapter config exposes only
+  `tools.mcp`; the sandbox / `allowed_touched_files` is set from `write_scope`.
+  Anything the grant does not allow is not offered to the worker.
+  Deny-by-default.
 - **② Post-execution evidence re-derivation (verified).** From the emitted
   bytes: `touched_files ⊆ write_scope`, `tools_used ⊆ tools.allow`,
   `model = declared`. A violation fails closed. This starts as a witnessd-local
   advisory record and is promoted into Depone's verdict contract per dimension
-  (Slice 5). That promotion is the moat: the grant is *proven kept*, not logged.
+  (Slice 5). That promotion is the moat: Depone re-derives conformance from the
+  sealed evidence bytes rather than trusting witnessd's summary. It is still a
+  sealed-observation consistency check, not a claim that witnessd observed
+  writes outside its capture boundary, write-then-delete behavior, symlink
+  escape, or every possible host side effect.
 
 **Honesty rule (inherited from `model_declaration.py`).** Each dimension is
 labelled independently as `enforced` (the gate restricted it) and/or `verified`
@@ -188,8 +196,10 @@ a future **designer** rolepack plugs in (see §7).
 Promote grant conformance (`touched ⊆ write_scope`, `tools_used ⊆ allow`,
 `model = declared`) from witnessd-local advisory into Depone's verdict as a
 re-derived axis. **Depone-first**, per dimension, with contract version bump and
-conformance fixtures. This crystallises the wedge: the grant is *proven kept* by
-the independent verifier, not asserted by the runtime.
+conformance fixtures. The first strong candidate is write scope because Depone
+can compare the signed declared scope with the sealed capture-manifest touched
+files. The correct claim is sealed self-report consistency re-derived by an
+independent verifier, not ground-truth filesystem surveillance.
 
 ## 7. Non-code teams (designer, etc.) — the deferred fork
 
@@ -215,47 +225,47 @@ justifies leaving the code-evidence moat.
   write; read-scope may be a later dimension if a role must be blocked from
   reading paths, not just writing them).
 
-## 9. Future direction (post-S5) — team-identity rolepacks
+## 9. Future direction (post-S5) — team identity without rolepack field sprawl
 
-Decision (2026-07-11): the rolepack is not just a bundle of permission grants —
-it is the vehicle for a **team identity**. The direction beyond S5 is to let a
-rolepack carry, in addition to the capability grants (S1–S3), the rest of what
-makes a team a team:
+Decision (2026-07-12): rolepacks stay focused on **capability grants**:
+`adapters`, optional `model`, `write_scope`, and `tools`. Those are the
+authorization fields Moonweave owns because there is no stable external standard
+for this exact grant contract.
 
-- **flow** — which workflow profile the team runs (`code-change`, `review-only`,
-  … ; already a first-class primitive).
-- **domain knowledge** — an `orro skillpack` reference (knowledge-as-code,
-  progressive disclosure; primitive already exists).
-- **rules** — skillpack/rule bodies loaded on frontmatter/path match (primitive
-  already exists).
+Knowledge and rules should not become invented rolepack JSON fields. The
+ecosystem is converging on existing instruction files and agent descriptors
+(`AGENTS.md`, skillpacks, rule files, subagent frontmatter). witnessd already has
+a signed run-intent seam for `instruction_hashes`; that is the right binding
+point. A future team can bind "this run was governed by these instruction bytes"
+by hashing the relevant instruction/skillpack/rule files into the signed intent,
+instead of putting `skillpack_ref`, `rules`, or `domain_knowledge_ref` inside the
+rolepack schema.
 
-So a fully-realised rolepack becomes:
+Flow also stays outside the rolepack. It remains the ORRO workflow profile or
+compiled workflow plan (`code-change`, `review-only`, and so on). The rolepack
+answers "what is this role allowed to use or write?", not "which workflow did
+the operator choose?"
 
-```jsonc
-{
-  "kind": "moonweave-rolepack",
-  "schema_version": "0.2+",          // gated: new fields land with a version bump
-  "name": "designer",
-  "profile": "…",                    // flow
-  "skillpack_ref": "…",              // domain knowledge
-  "rules": [ … ],                    // rules
-  "grants": [ { role_id, capability, adapters, model_policy_ref, write_scope, tools }, … ]
-}
-```
+This is still **composition, not greenfield**: rolepack grants bind execution
+capability; `instruction_hashes` binds the exact knowledge/rule bytes; workflow
+profiles bind the flow. Each dimension can then be promoted only when the
+evidence contract can re-derive it honestly.
 
-This is **composition, not greenfield**: skillpack, profiles, and rule bodies are
-existing primitives; the work is binding them onto the rolepack and threading
-them through compilation/execution so the evidence still re-derives conformance
-(a role stayed within its granted tools/scope AND ran under the declared
-knowledge/rules/flow).
+**Current gap.** The `instruction_hashes` seam exists, but it is not yet a free
+team-identity proof:
+
+- population is not consistent across all paths (some emitter paths still write
+  an empty dict),
+- Depone does not yet re-derive instruction-hash conformance,
+- deciding which files count as the governing instruction set is a separate
+  policy problem.
+
+So the direction is to use `instruction_hashes` for knowledge/rules binding, but
+the work requires a later wave: consistent population first, then optional
+Depone promotion if the contract needs to make it verdict-affecting.
 
 **Extension mechanism — explicit, not silent.** S1 rejects unknown grant fields
-and S4 rejects unknown rolepack fields on purpose (silent-ignore prevention). New
-team-identity fields therefore arrive only with a `schema_version` bump and an
-extended validator — never by lax acceptance. `schema_version` is the seam.
-
-This is where a **designer team** (or any domain team) plugs in: a rolepack whose
-grants, skillpack, rules, and flow encode that domain — while non-code execution
-stays gated by §7 (advisory-first until the evidence substrate justifies
-generalising). Sequenced after S5 so the capability contract is proven-by-Depone
-before team identity is layered on top.
+and S4 rejects unknown rolepack fields on purpose (silent-ignore prevention).
+Future capability fields arrive only with a `schema_version` bump and an
+extended validator — never by lax acceptance. Knowledge/rules/flow should use
+their own existing seams instead of expanding rolepack by default.
