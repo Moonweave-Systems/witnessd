@@ -56,6 +56,9 @@ witnessd may emit self-declared runtime facts and `DELAYED_NOTARY` style
 post-hoc records, but those records do not upgrade trust. A2 requires a
 dedicated observer uid, a separate runner, and observer-owned evidence paths that
 are not writable by the runner. Depone decides what the persisted bytes support.
+For role-capability write scope, Depone can re-derive whether sealed touched-file
+observations fit the sealed declared scope. That is tamper-evident consistency of
+persisted evidence, not ground-truth proof of every host filesystem side effect.
 
 ## Source of truth
 
@@ -403,7 +406,9 @@ python3 -m depone team-ledger \
   --json
 ```
 
-Depone verifies from bytes. It does not run lanes.
+Depone verifies from persisted bytes. It does not run lanes. For scope-style
+checks, it re-derives consistency between sealed declarations and sealed
+observations; it does not observe the live filesystem directly.
 
 ## Phase 0 evidence limitations
 

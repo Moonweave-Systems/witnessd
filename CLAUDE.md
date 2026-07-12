@@ -245,6 +245,9 @@ scripts/quickstart_check.sh
   evidence that Depone later re-derives.
 - Skill text, MCP output, IDE/tmux views, and session transcripts are not
   verdicts by themselves.
+- Role-capability write-scope verdicts re-derive consistency between sealed
+  declarations and sealed touched-file observations; they are not ground-truth
+  proof of every host filesystem side effect.
 - witnessd does not grant A1/A2 final trust by itself.
 - Each wave's acceptance bar is a committed fixture plus a revalidator that
   Depone re-derives.
