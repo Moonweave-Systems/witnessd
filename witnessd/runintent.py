@@ -22,7 +22,9 @@ RUN_INTENT_SUBJECT_NAME = "run-intent"
 RUN_INTENT_ARTIFACT_KIND = "moonweave-run-intent-artifact"
 RUN_INTENT_SCHEMA_VERSION = "1.0"
 RUN_INTENT_ROLE_CAPABILITY_SCHEMA_VERSION = "1.1"
+RUN_INTENT_ROLE_CAPABILITY_TOOL_SCHEMA_VERSION = "1.2"
 ROLE_CAPABILITY_SCHEMA_VERSION = "1.0"
+ROLE_CAPABILITY_TOOL_SCHEMA_VERSION = "1.1"
 RUN_INTENT_PAYLOAD_TYPE = "application/vnd.moonweave.run-intent+json"
 DEFAULT_ADAPTER_VERSION = "witnessd.adapter_run/1"
 
@@ -71,11 +73,12 @@ def build_run_intent(
     adapter_version: str = DEFAULT_ADAPTER_VERSION,
     role_capability: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    schema_version = (
-        RUN_INTENT_ROLE_CAPABILITY_SCHEMA_VERSION
-        if role_capability is not None
-        else RUN_INTENT_SCHEMA_VERSION
-    )
+    if role_capability is None:
+        schema_version = RUN_INTENT_SCHEMA_VERSION
+    elif isinstance(role_capability.get("declared_tools"), dict):
+        schema_version = RUN_INTENT_ROLE_CAPABILITY_TOOL_SCHEMA_VERSION
+    else:
+        schema_version = RUN_INTENT_ROLE_CAPABILITY_SCHEMA_VERSION
     intent = {
         "schema_version": schema_version,
         "run_id": run_id,
@@ -118,13 +121,24 @@ def build_role_capability_intent(
     role_id: str,
     capability: str,
     declared_write_scope: list[str],
+    declared_tools: dict[str, list[str]] | None = None,
 ) -> dict[str, Any]:
-    return {
-        "schema_version": ROLE_CAPABILITY_SCHEMA_VERSION,
+    role_capability = {
+        "schema_version": (
+            ROLE_CAPABILITY_TOOL_SCHEMA_VERSION
+            if declared_tools is not None
+            else ROLE_CAPABILITY_SCHEMA_VERSION
+        ),
         "role_id": role_id,
         "capability": capability,
         "declared_write_scope": list(declared_write_scope),
     }
+    if declared_tools is not None:
+        role_capability["declared_tools"] = {
+            "mcp": list(declared_tools.get("mcp", [])),
+            "allow": list(declared_tools.get("allow", [])),
+        }
+    return role_capability
 
 
 def write_signed_run_intent(

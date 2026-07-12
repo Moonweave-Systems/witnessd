@@ -11,6 +11,7 @@ requires --verbose" (live-verified against claude-code 2.1.207).
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shlex
 import subprocess
@@ -239,6 +240,7 @@ def run_claude_lane(
             )
     tool_declaration = None
     tool_decision_advisory = None
+    tool_decision_receipts = None
     if tools is not None:
         observed_tool_uses = _claude_observed_tool_uses(raw_stdout)
         tool_declaration = build_tool_declaration(
@@ -259,6 +261,14 @@ def run_claude_lane(
             role_capability=role_capability or "execute",
             lane_id=lane_id or role_id or "claude",
             raw_jsonl=raw_stdout,
+            observed_tool_uses=observed_tool_uses,
+        )
+        tool_decision_receipts = _build_claude_tool_decision_receipts(
+            tools=tools,
+            task_dir=task_dir,
+            role_id=role_id or lane_id or "claude",
+            role_capability=role_capability or "execute",
+            lane_id=lane_id or role_id or "claude",
             observed_tool_uses=observed_tool_uses,
         )
 
@@ -305,6 +315,7 @@ def run_claude_lane(
         model_declaration=model_declaration,
         tool_declaration=tool_declaration,
         tool_decision_advisory=tool_decision_advisory,
+        tool_decision_receipts=tool_decision_receipts,
     )
 
 
@@ -534,6 +545,112 @@ def _build_claude_tool_decision_advisory(
             "source_of_decision": "pretooluse-hook-log",
         },
         "detail": "witnessd-local advisory only; Depone does not re-derive this artifact",
+    }
+
+
+def _canonical_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _canonical_decision_hash(decision: dict[str, Any]) -> str:
+    return hashlib.sha256(_canonical_json(decision).encode("utf-8")).hexdigest()
+
+
+def _observed_request_sha256(
+    observed: dict[str, Any],
+    decisions_by_name: dict[str, list[dict[str, Any]]],
+) -> str:
+    tool_name = observed.get("tool_name")
+    if isinstance(tool_name, str):
+        candidates = decisions_by_name.get(tool_name, [])
+        for candidate in candidates:
+            if candidate.get("decision") == "allow":
+                request_sha = candidate.get("canonical_request_sha256")
+                if isinstance(request_sha, str):
+                    return request_sha
+        if candidates:
+            request_sha = candidates[0].get("canonical_request_sha256")
+            if isinstance(request_sha, str):
+                return request_sha
+    return hashlib.sha256(_canonical_json(observed).encode("utf-8")).hexdigest()
+
+
+def _build_claude_tool_decision_receipts(
+    *,
+    tools: dict[str, Any],
+    task_dir: Path,
+    role_id: str,
+    role_capability: str,
+    lane_id: str,
+    observed_tool_uses: list[dict[str, Any]],
+) -> dict[str, Any]:
+    normalized = normalize_tool_grant(tools)
+    paths = _claude_pep_paths(task_dir)
+    source_decisions = _read_jsonl_objects(paths["decisions"])
+    decisions: list[dict[str, Any]] = []
+    previous_hash: str | None = None
+    decisions_by_name: dict[str, list[dict[str, Any]]] = {}
+    for source in source_decisions:
+        canonical_tool_name = source.get("canonical_tool_name")
+        if not isinstance(canonical_tool_name, str) or not canonical_tool_name.startswith(
+            "mcp__"
+        ):
+            continue
+        request_sha = source.get("canonical_request_sha256")
+        if not isinstance(request_sha, str):
+            request_sha = source.get("request_sha256")
+        if not isinstance(request_sha, str):
+            request_sha = hashlib.sha256(_canonical_json(source).encode("utf-8")).hexdigest()
+        receipt = {
+            "sequence": len(decisions) + 1,
+            "source_sequence": source.get("sequence"),
+            "canonical_tool_name": canonical_tool_name,
+            "canonical_request_sha256": request_sha,
+            "decision": source.get("decision"),
+            "reason_code": source.get("reason_code"),
+            "previous_decision_sha256": previous_hash,
+        }
+        decisions.append(receipt)
+        decisions_by_name.setdefault(canonical_tool_name, []).append(receipt)
+        previous_hash = _canonical_decision_hash(receipt)
+
+    observed_mcp_tool_calls: list[dict[str, Any]] = []
+    for observed in observed_tool_uses:
+        tool_name = observed.get("tool_name")
+        if not isinstance(tool_name, str) or not tool_name.startswith("mcp__"):
+            continue
+        observed_mcp_tool_calls.append(
+            {
+                "canonical_tool_name": tool_name,
+                "canonical_request_sha256": _observed_request_sha256(
+                    observed,
+                    decisions_by_name,
+                ),
+                "tool_use_id": observed.get("tool_use_id"),
+                "result_status": "observed",
+            }
+        )
+
+    return {
+        "kind": "moonweave-tool-call-decision-receipts",
+        "schema_version": "1.0",
+        "adapter": "claude",
+        "role_id": role_id,
+        "lane_id": lane_id,
+        "capability": role_capability,
+        "decisions": decisions,
+        "observed_mcp_tool_calls": observed_mcp_tool_calls,
+        "policy_ref": {
+            "mcp": normalized["mcp"],
+            "allow": normalized["allow"],
+            "deny_by_default": True,
+            "match": "exact",
+        },
+        "boundary": {
+            "can_change_evidence_verdict": True,
+            "non_mcp_tools_out_of_scope": True,
+            "source_of_decision": "pretooluse-hook-log",
+        },
     }
 
 

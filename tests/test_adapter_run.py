@@ -802,7 +802,7 @@ class TestAdapterRun(unittest.TestCase):
             self.assertEqual(declaration["enforcement_status"], "enforced")
             self.assertEqual(declaration["usage_verification_status"], "enforced-only")
 
-    def test_claude_tool_decision_advisory_is_signed_bundle_subject(self):
+    def test_claude_tool_decision_artifacts_are_signed_contract_subjects(self):
         with (
             tempfile.TemporaryDirectory() as root,
             tempfile.TemporaryDirectory() as bindir,
@@ -842,6 +842,7 @@ class TestAdapterRun(unittest.TestCase):
                     claude_binary=_fake_claude(bindir),
                     evidence_dir=evidence_dir,
                     allowed_touched_files=["noop.txt"],
+                    write_scope=["noop.txt"],
                     tools={
                         "mcp": ["neutral_probe"],
                         "allow": ["mcp__neutral_probe__allowed_echo"],
@@ -860,6 +861,7 @@ class TestAdapterRun(unittest.TestCase):
                 for item in out["bundle"]["statement"]["predicate"]["artifact_index"]
             ]
             self.assertIn("tool-call-decision-advisory", subject_names)
+            self.assertIn("tool-call-decision-receipts", subject_names)
 
             advisory = json.loads(
                 (
@@ -870,6 +872,60 @@ class TestAdapterRun(unittest.TestCase):
             self.assertFalse(advisory["can_change_evidence_verdict"])
             self.assertEqual(advisory["adapter"], "claude")
             self.assertEqual(advisory["policy"]["mcp"], ["neutral_probe"])
+
+            receipts = json.loads(
+                (
+                    pathlib.Path(evidence_dir) / "tool-call-decision-receipts.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                receipts["kind"], "moonweave-tool-call-decision-receipts"
+            )
+            self.assertEqual(receipts["adapter"], "claude")
+            self.assertEqual(receipts["decisions"], [])
+            self.assertEqual(receipts["observed_mcp_tool_calls"], [])
+
+            run_intent_artifact = json.loads(
+                (pathlib.Path(evidence_dir) / "run-intent.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            declared_tools = run_intent_artifact["intent"]["role_capability"][
+                "declared_tools"
+            ]
+            self.assertEqual(
+                declared_tools,
+                {
+                    "mcp": ["neutral_probe"],
+                    "allow": ["mcp__neutral_probe__allowed_echo"],
+                },
+            )
+
+            evidence_contract = json.loads(
+                (pathlib.Path(evidence_dir) / "evidence-contract.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                evidence_contract["schema_version"],
+                "v107.role_capability_tool_calls",
+            )
+            self.assertEqual(
+                evidence_contract["role_capability_tool_calls"][
+                    "decision_receipts_path"
+                ],
+                "tool-call-decision-receipts.json",
+            )
+            self.assertEqual(
+                evidence_contract["role_capability_write_scope"]["bundle_path"],
+                "bundle.json",
+            )
+            self.assertEqual(
+                validate_evidence_contract(
+                    _evidence_context_from_dir(pathlib.Path(evidence_dir))
+                ),
+                [],
+            )
 
     def test_no_model_requested_emits_no_model_declaration_artifact(self):
         with (

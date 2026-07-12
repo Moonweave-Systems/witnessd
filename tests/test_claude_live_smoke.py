@@ -413,6 +413,15 @@ class TestClaudeLiveSmoke(unittest.TestCase):
                     ),
                     allowed.tool_decision_advisory,
                 )
+                self.assertTrue(
+                    any(
+                        item.get("canonical_tool_name")
+                        == "mcp__neutral_probe__allowed_echo"
+                        and item.get("decision") == "allow"
+                        for item in allowed.tool_decision_receipts["decisions"]
+                    ),
+                    allowed.tool_decision_receipts,
+                )
                 self.assertFalse(
                     [
                         item
@@ -467,6 +476,15 @@ class TestClaudeLiveSmoke(unittest.TestCase):
                     for item in denied.tool_decision_advisory["decisions"]
                 ),
                 denied.tool_decision_advisory,
+            )
+            self.assertTrue(
+                any(
+                    item.get("canonical_tool_name")
+                    == "mcp__neutral_probe__neutral_check"
+                    and item.get("decision") == "deny"
+                    for item in denied.tool_decision_receipts["decisions"]
+                ),
+                denied.tool_decision_receipts,
             )
             self.assertFalse(
                 [

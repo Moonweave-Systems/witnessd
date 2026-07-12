@@ -298,6 +298,8 @@ def emit_lane_evidence(
                 if subject_name == "tool-declaration"
                 else "tool-call-decision-advisory.json"
                 if subject_name == "tool-call-decision-advisory"
+                else "tool-call-decision-receipts.json"
+                if subject_name == "tool-call-decision-receipts"
                 else f"{subject_name}.jsonl"
             )
             with open(source, "rb") as handle:
@@ -323,6 +325,10 @@ def emit_lane_evidence(
         exit_code=exit_code,
         diff_patch=diff_patch,
         write_scope=write_scope,
+        tool_call_decision_receipts=(
+            provider_artifacts is not None
+            and "tool-call-decision-receipts" in provider_artifacts
+        ),
     )
     for name, content in contract_files.items():
         _emit_artifact(name, content)
