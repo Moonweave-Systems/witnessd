@@ -155,6 +155,14 @@ ROLEPACK_REGISTRY: dict[str, dict[str, Any]] = {
     "developer": DEFAULT_DEVELOPER_ROLEPACK,
 }
 
+PROFILE_DEFAULT_ROLEPACKS: dict[str, str] = {
+    "code-change": "developer",
+    "docs-change": "developer",
+    "review-only": "developer",
+    "verification-only": "developer",
+    "release-readiness": "developer",
+}
+
 
 def _validate_tools(tools: Any) -> None:
     if not isinstance(tools, dict):
@@ -186,6 +194,16 @@ def resolve_rolepack(name: str | None) -> dict[str, Any] | None:
             "ERR_ORRO_ROLEPACK_UNKNOWN", f"unknown rolepack: {name}"
         )
     validate_rolepack(rolepack)
+    return rolepack
+
+
+def default_rolepack_for_profile(profile: str) -> str:
+    rolepack = PROFILE_DEFAULT_ROLEPACKS.get(profile)
+    if rolepack is None:
+        raise RolepackError(
+            "ERR_ORRO_PROFILE_ROLEPACK_UNMAPPED",
+            f"profile has no default rolepack: {profile}",
+        )
     return rolepack
 
 

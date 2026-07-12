@@ -42,8 +42,15 @@ work or Depone does not pass the evidence.
 
 ```bash
 python3 -m orro team init --role runner:codex:gpt-5.5 --write-scope orro/task-output.txt --yes
-python3 -m orro team go "Create orro/task-output.txt with the exact line: hello ORRO" --repo . --home .witnessd --team .orro/team.json --json
+python3 -m orro team go "Create orro/task-output.txt with the exact line: hello ORRO" --repo . --home .witnessd --json
 ```
+
+When `--profile` is omitted, `team go` calls `orro advise` and uses the
+recommended profile. When `--team` is omitted, it selects the deterministic
+default rolepack for that profile. Explicit `--profile` and `--team` always win.
+The run writes `moonweave-routing-decision.json` so the advisory routing choice,
+rule matches, selected profile, and selected rolepack are visible. That artifact
+cannot change the evidence verdict and is not proof, approval, or assurance.
 
 The `proofrun` command prints JSON. Use its `run_dir` field for the proofcheck
 and handoff steps. `proofcheck` must write an explicit `proofcheck-verdict.json`

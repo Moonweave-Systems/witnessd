@@ -2092,11 +2092,13 @@ def _fill_interactive_team_init_args(args: argparse.Namespace) -> None:
 
 
 def _cmd_team_go(args: argparse.Namespace) -> int:
+    from witnessd.orro_workstyle import advise_workstyle
     from witnessd.orro_team_surface import (
         apply_task_prompt_to_role_lane_plan,
         verdict_has_no_work_error,
     )
     from witnessd.orro_workflow import OrroWorkflowError, validate_role_lane_plan
+    from witnessd.role_capability import RolepackError, default_rolepack_for_profile
 
     repo = Path(args.repo).resolve(strict=False)
     home = Path(
@@ -2114,26 +2116,74 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
     role_lane_plan_path = run_dir / "role-lane-plan.json"
     report_path = run_dir / "orro-report.json"
     proofcheck_path = run_dir / "proofcheck-verdict.json"
+    routing_decision_path = run_dir / "moonweave-routing-decision.json"
     task = args.task or args.goal
 
-    flow_code, flow_stdout, flow_stderr = _invoke_cli_capture(
-        [
-            "flowplan",
-            args.goal,
-            "--root",
-            str(repo),
-            "--profile",
-            args.profile,
-            "--out",
-            str(workflow_plan_path),
-            "--role-lanes-out",
-            str(role_lane_plan_path),
-            "--team",
-            str(Path(args.team).resolve(strict=False)),
-            "--role-lane-tier",
-            args.role_lane_tier,
-        ]
+    advice = advise_workstyle(str(args.goal), repo=repo, home=home)
+    selected_profile = args.profile or str(advice["recommended_profile"])
+    profile_source = "manual" if args.profile else "advise"
+    selected_rolepack: str | None = None
+    rolepack_source = "manual-team" if args.team else "profile-default"
+    try:
+        if not args.team:
+            selected_rolepack = default_rolepack_for_profile(selected_profile)
+    except RolepackError as exc:
+        routing_decision = _team_go_routing_decision(
+            goal=str(args.goal),
+            advice=advice,
+            chosen_profile=selected_profile,
+            chosen_rolepack=None,
+            profile_source=profile_source,
+            rolepack_source=rolepack_source,
+            team_path=None,
+        )
+        _write_json_file(routing_decision_path, routing_decision)
+        return _emit_team_go_result(
+            args,
+            {
+                "kind": "orro-team-go-result",
+                "status": "blocked",
+                "stage": "routing",
+                "run_dir": str(run_dir),
+                "routing_decision": routing_decision,
+                "routing_decision_path": str(routing_decision_path),
+                "message": exc.message,
+                "can_change_evidence_verdict": False,
+            },
+            code=1,
+        )
+
+    routing_decision = _team_go_routing_decision(
+        goal=str(args.goal),
+        advice=advice,
+        chosen_profile=selected_profile,
+        chosen_rolepack=selected_rolepack or str(Path(args.team).resolve(strict=False)),
+        profile_source=profile_source,
+        rolepack_source=rolepack_source,
+        team_path=str(Path(args.team).resolve(strict=False)) if args.team else None,
     )
+    _write_json_file(routing_decision_path, routing_decision)
+
+    flow_argv = [
+        "flowplan",
+        args.goal,
+        "--root",
+        str(repo),
+        "--profile",
+        selected_profile,
+        "--out",
+        str(workflow_plan_path),
+        "--role-lanes-out",
+        str(role_lane_plan_path),
+        "--role-lane-tier",
+        args.role_lane_tier,
+    ]
+    if args.team:
+        flow_argv.extend(["--team", str(Path(args.team).resolve(strict=False))])
+    elif selected_rolepack:
+        flow_argv.extend(["--rolepack", selected_rolepack])
+
+    flow_code, flow_stdout, flow_stderr = _invoke_cli_capture(flow_argv)
     if flow_code != 0:
         return _emit_team_go_result(
             args,
@@ -2142,6 +2192,8 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
                 "status": "blocked",
                 "stage": "flowplan",
                 "run_dir": str(run_dir),
+                "routing_decision": routing_decision,
+                "routing_decision_path": str(routing_decision_path),
                 "message": "flowplan failed",
                 "stderr": flow_stderr,
                 "stdout": flow_stdout,
@@ -2163,6 +2215,8 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
                 "status": "blocked",
                 "stage": "role-lane-plan",
                 "run_dir": str(run_dir),
+                "routing_decision": routing_decision,
+                "routing_decision_path": str(routing_decision_path),
                 "message": str(exc),
                 "can_change_evidence_verdict": False,
             },
@@ -2222,6 +2276,8 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
                 "proofrun": proofrun_payload,
                 "report_payload": report_payload,
                 "prompt_patch": prompt_patch,
+                "routing_decision": routing_decision,
+                "routing_decision_path": str(routing_decision_path),
                 "no_work_detected": no_work,
                 "message": (
                     "proofrun lane did not touch files; execution evidence is blocked"
@@ -2265,6 +2321,8 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
             "proofcheck": proofcheck_payload,
             "report_payload": report_payload,
             "prompt_patch": prompt_patch,
+            "routing_decision": routing_decision,
+            "routing_decision_path": str(routing_decision_path),
             "no_work_detected": False,
             "message": (
                 "team run, proofcheck, and report completed"
@@ -2275,6 +2333,46 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
             "can_change_evidence_verdict": False,
         },
         code=0 if proofcheck_code == 0 else 1,
+    )
+
+
+def _team_go_routing_decision(
+    *,
+    goal: str,
+    advice: dict[str, object],
+    chosen_profile: str,
+    chosen_rolepack: str | None,
+    profile_source: str,
+    rolepack_source: str,
+    team_path: str | None,
+) -> dict[str, object]:
+    return {
+        "kind": "moonweave-routing-decision",
+        "schema_version": "0.1",
+        "goal": goal,
+        "judged_task_class": advice.get("task_class"),
+        "chosen_profile": chosen_profile,
+        "chosen_rolepack": chosen_rolepack,
+        "profile_source": profile_source,
+        "rolepack_source": rolepack_source,
+        "team_path": team_path,
+        "rule_matches": advice.get("rule_matches", []),
+        "reasons": advice.get("reasons", []),
+        "source": "advise",
+        "can_change_evidence_verdict": False,
+        "boundary": {
+            "advisory_only": True,
+            "raises_assurance": False,
+            "depone_verifies": True,
+        },
+    }
+
+
+def _write_json_file(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
 
 
@@ -3057,10 +3155,18 @@ def _build_parser() -> argparse.ArgumentParser:
     team_go.add_argument("--task", default=None)
     team_go.add_argument("--repo", required=True)
     team_go.add_argument("--home", default=None)
-    team_go.add_argument("--team", default=".orro/team.json")
+    team_go.add_argument("--team", default=None)
     team_go.add_argument("--run-dir", default=None)
     team_go.add_argument(
-        "--profile", choices=["code-change", "docs-change"], default="code-change"
+        "--profile",
+        choices=[
+            "code-change",
+            "docs-change",
+            "review-only",
+            "verification-only",
+            "release-readiness",
+        ],
+        default=None,
     )
     team_go.add_argument(
         "--role-lane-tier",

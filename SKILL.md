@@ -66,11 +66,16 @@ creates `.orro/team.json` rolepack readiness configuration. It validates the
 rolepack and keeps tool grants deny-by-default, but it is not execution,
 verification, proof, approval, or assurance.
 
-`python3 -m orro team go "<task>" --repo <repo> --home .witnessd --team .orro/team.json --json`
+`python3 -m orro team go "<task>" --repo <repo> --home .witnessd --json`
 is the one-command wrapper for `flowplan -> proofrun -> proofcheck -> report`.
-It automatically threads intermediate artifacts and uses the task text as the
-runner prompt. If a lane does not touch files, or Depone does not pass the
-evidence, report blocked/non-zero rather than upgrading a transcript to success.
+If `--profile` is omitted, it calls `orro advise` and uses the recommended
+profile. If `--team` is omitted, it selects the deterministic default rolepack
+for that profile. Explicit `--profile` and `--team` override automatic routing.
+It writes `moonweave-routing-decision.json` with the advisory rule matches,
+selected profile, and selected rolepack. That routing artifact cannot change the
+evidence verdict and is not proof, approval, or assurance. If a lane does not
+touch files, or Depone does not pass the evidence, report blocked/non-zero
+rather than upgrading a transcript to success.
 
 `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
 writes distribution metadata for the pinned witnessd and Depone commits.

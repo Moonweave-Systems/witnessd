@@ -216,14 +216,144 @@ class OrroTeamUsableSurfaceTests(unittest.TestCase):
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["status"], "complete")
             self.assertEqual(payload["proofcheck"]["decision"], "pass")
+            self.assertEqual(payload["routing_decision"]["chosen_profile"], "code-change")
+            self.assertEqual(payload["routing_decision"]["chosen_rolepack"], str(team_path.resolve(strict=False)))
+            self.assertEqual(payload["routing_decision"]["rolepack_source"], "manual-team")
             self.assertTrue((run_dir / "workflow-plan.json").is_file())
             self.assertTrue((run_dir / "role-lane-plan.json").is_file())
             self.assertTrue((run_dir / "proofcheck-verdict.json").is_file())
             self.assertTrue((run_dir / "orro-report.json").is_file())
+            self.assertTrue((run_dir / "moonweave-routing-decision.json").is_file())
             role_lane_plan = json.loads((run_dir / "role-lane-plan.json").read_text(encoding="utf-8"))
             self.assertEqual(role_lane_plan["lanes"][0]["prompt"], task)
             prompt_out = next((run_dir / "worktrees").glob("runner*/orro/task-output.txt"))
             self.assertEqual(prompt_out.read_text(encoding="utf-8"), task)
+
+    def test_orro_team_go_auto_routes_profile_and_rolepack_when_omitted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            run_dir = root / "run"
+            bindir = root / "bin"
+            repo.mkdir()
+            bindir.mkdir()
+            _seed_repo(repo)
+            _fake_codex_writes_prompt(bindir)
+
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main(["init", "--home", str(home), "--depone-root", str(_depone_root())]),
+                    0,
+                )
+
+            old_path = os.environ.get("PATH", "")
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            try:
+                os.environ["PATH"] = f"{bindir}{os.pathsep}{old_path}"
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    code = main(
+                        [
+                            "orro",
+                            "team",
+                            "go",
+                            "update README docs",
+                            "--task",
+                            "Create orro/task-output.txt with the exact line: auto routed",
+                            "--repo",
+                            str(repo),
+                            "--home",
+                            str(home),
+                            "--run-dir",
+                            str(run_dir),
+                            "--json",
+                        ]
+                    )
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(code, 0, f"stdout={stdout.getvalue()}\nstderr={stderr.getvalue()}")
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["status"], "complete")
+            self.assertEqual(payload["routing_decision"]["chosen_profile"], "docs-change")
+            self.assertEqual(payload["routing_decision"]["chosen_rolepack"], "developer")
+            self.assertEqual(payload["routing_decision"]["profile_source"], "advise")
+            self.assertEqual(payload["routing_decision"]["rolepack_source"], "profile-default")
+            self.assertFalse(payload["routing_decision"]["can_change_evidence_verdict"])
+
+            workflow_plan = json.loads((run_dir / "workflow-plan.json").read_text(encoding="utf-8"))
+            self.assertEqual(workflow_plan["profile"], "docs-change")
+            role_lane_plan = json.loads((run_dir / "role-lane-plan.json").read_text(encoding="utf-8"))
+            runner_lane = role_lane_plan["lanes"][0]
+            self.assertEqual(runner_lane["role_id"], "runner")
+            self.assertEqual(runner_lane["role_capability"]["role_id"], "runner")
+            self.assertEqual(runner_lane["role_capability"]["capability"], "execute")
+
+            routing_path = run_dir / "moonweave-routing-decision.json"
+            self.assertTrue(routing_path.is_file())
+            routing = json.loads(routing_path.read_text(encoding="utf-8"))
+            self.assertEqual(routing["kind"], "moonweave-routing-decision")
+            self.assertEqual(routing["judged_task_class"], "docs-change")
+            self.assertEqual(routing["chosen_profile"], "docs-change")
+            self.assertEqual(routing["chosen_rolepack"], "developer")
+            self.assertEqual(routing["source"], "advise")
+            self.assertFalse(routing["can_change_evidence_verdict"])
+            self.assertTrue(routing["boundary"]["advisory_only"])
+
+    def test_orro_team_go_manual_profile_overrides_advise(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            run_dir = root / "run"
+            bindir = root / "bin"
+            repo.mkdir()
+            bindir.mkdir()
+            _seed_repo(repo)
+            _fake_codex_writes_prompt(bindir)
+
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main(["init", "--home", str(home), "--depone-root", str(_depone_root())]),
+                    0,
+                )
+
+            old_path = os.environ.get("PATH", "")
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            try:
+                os.environ["PATH"] = f"{bindir}{os.pathsep}{old_path}"
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    code = main(
+                        [
+                            "orro",
+                            "team",
+                            "go",
+                            "update README docs",
+                            "--task",
+                            "Create orro/task-output.txt with the exact line: manual profile",
+                            "--repo",
+                            str(repo),
+                            "--home",
+                            str(home),
+                            "--run-dir",
+                            str(run_dir),
+                            "--profile",
+                            "code-change",
+                            "--json",
+                        ]
+                    )
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(code, 0, f"stdout={stdout.getvalue()}\nstderr={stderr.getvalue()}")
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["routing_decision"]["chosen_profile"], "code-change")
+            self.assertEqual(payload["routing_decision"]["profile_source"], "manual")
+            self.assertEqual(payload["routing_decision"]["judged_task_class"], "docs-change")
+            workflow_plan = json.loads((run_dir / "workflow-plan.json").read_text(encoding="utf-8"))
+            self.assertEqual(workflow_plan["profile"], "code-change")
 
     def test_orro_team_go_reports_no_work_without_fake_success(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
