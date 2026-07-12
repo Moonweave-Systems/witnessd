@@ -33,6 +33,18 @@ python3 -m orro report "$run_dir" --home .witnessd --json
 python3 -m orro next "$run_dir" --home .witnessd --json
 ```
 
+`orro team init` only writes readiness configuration (`.orro/team.json`). It is
+not execution, verification, proof, or assurance. `orro team go` is the ergonomic
+wrapper for the longer `flowplan -> proofrun -> proofcheck -> report` path: it
+threads the intermediate paths, passes the user's task text into the runner lane
+prompt, writes `proofcheck-verdict.json`, and exits non-zero when the lane did no
+work or Depone does not pass the evidence.
+
+```bash
+python3 -m orro team init --role runner:codex:gpt-5.5 --write-scope orro/task-output.txt --yes
+python3 -m orro team go "Create orro/task-output.txt with the exact line: hello ORRO" --repo . --home .witnessd --team .orro/team.json --json
+```
+
 The `proofrun` command prints JSON. Use its `run_dir` field for the proofcheck
 and handoff steps. `proofcheck` must write an explicit `proofcheck-verdict.json`
 before packaging the handoff:
@@ -94,6 +106,8 @@ witnessd runtime code or Depone verifier logic.
 | `orro auto --dry-run` | non-executing automation planner that recommends the next command |
 | `orro auto --once` | one-step executor for proofcheck or handoff only |
 | `orro auto --until-complete` | bounded post-run loop over proofcheck and handoff only |
+| `orro team init` | scaffold `.orro/team.json` rolepack readiness config; not proof or assurance |
+| `orro team go` | one-command flowplan/proofrun/proofcheck/report wrapper; reports Depone verdict |
 | `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
 | `orro auto` | future broader resume/continuation loop behind evidence gates |
