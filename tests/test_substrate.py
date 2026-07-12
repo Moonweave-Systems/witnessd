@@ -234,6 +234,40 @@ class TestEvidenceContract(unittest.TestCase):
             errors,
         )
 
+    def test_tool_call_contract_uses_v107_schema(self):
+        files = build_evidence_contract(
+            allowed_touched_files=["depone/example.py"],
+            touched_files=["depone/example.py"],
+            exit_code=0,
+            write_scope=["depone/**"],
+            tool_call_decision_receipts=True,
+        )
+
+        contract = json.loads(files["evidence-contract.json"])
+        self.assertEqual(
+            contract["schema_version"], "v107.role_capability_tool_calls"
+        )
+        self.assertEqual(
+            contract["role_capability_write_scope"],
+            {
+                "run_intent_path": "run-intent.json",
+                "bundle_path": "bundle.json",
+            },
+        )
+        self.assertEqual(
+            contract["role_capability_tool_calls"],
+            {
+                "run_intent_path": "run-intent.json",
+                "bundle_path": "bundle.json",
+                "decision_receipts_path": "tool-call-decision-receipts.json",
+            },
+        )
+        errors = validate_evidence_contract(self._context(files))
+        self.assertTrue(
+            any(e.code == "ERR_ROLE_CAPABILITY_RUN_INTENT_MISSING" for e in errors),
+            errors,
+        )
+
     def test_forbidden_touched_file_detected(self):
         files = build_evidence_contract(
             allowed_touched_files=["depone/example.py"],

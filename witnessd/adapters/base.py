@@ -104,6 +104,7 @@ class AdapterResult:
     model_declaration: dict[str, Any] | None = None
     tool_declaration: dict[str, Any] | None = None
     tool_decision_advisory: dict[str, Any] | None = None
+    tool_decision_receipts: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if not self.invocation:

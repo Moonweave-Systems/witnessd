@@ -342,6 +342,19 @@ def run_adapter_lane(
                 if redaction_context is not None
                 else list(write_scope)
             )
+        declared_tools = normalized_tools if adapter == "claude" else None
+        role_capability_intent = None
+        if redacted_write_scope is not None or declared_tools is not None:
+            role_capability_intent = build_role_capability_intent(
+                role_id=role_id or task_id,
+                capability=role_capability or "execute",
+                declared_write_scope=(
+                    redacted_write_scope
+                    if redacted_write_scope is not None
+                    else redacted_allowed_for_manifest
+                ),
+                declared_tools=declared_tools,
+            )
         if run_intent is None:
             run_intent = build_run_intent(
                 run_id=task_id,
@@ -363,15 +376,7 @@ def run_adapter_lane(
                     "timeout_seconds": int(timeout_seconds),
                 },
                 capture_profile=capture_profile,
-                role_capability=(
-                    build_role_capability_intent(
-                        role_id=role_id or task_id,
-                        capability=role_capability or "execute",
-                        declared_write_scope=redacted_write_scope,
-                    )
-                    if redacted_write_scope is not None
-                    else None
-                ),
+                role_capability=role_capability_intent,
             )
         run_intent_path = lane_evidence_dir / RUN_INTENT_ARTIFACT_NAME
         write_signed_run_intent(
@@ -439,6 +444,17 @@ def run_adapter_lane(
             )
             provider_artifacts["tool-call-decision-advisory"] = str(
                 tool_decision_advisory_path
+            )
+        tool_decision_receipts = getattr(adapter_result, "tool_decision_receipts", None)
+        if tool_decision_receipts is not None:
+            tool_decision_receipts_path = (
+                task_dir / "tool-call-decision-receipts.json"
+            )
+            tool_decision_receipts_path.write_text(
+                json.dumps(tool_decision_receipts, sort_keys=True), encoding="utf-8"
+            )
+            provider_artifacts["tool-call-decision-receipts"] = str(
+                tool_decision_receipts_path
             )
         lane_result = {
             "command_receipts": adapter_result.command_receipts,

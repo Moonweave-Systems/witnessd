@@ -9,7 +9,11 @@ import unittest
 
 from depone.agent_fabric.paired_run import validate_runner_receipt
 
-from witnessd.adapters.claude import ClaudeAdapterError, run_claude_lane
+from witnessd.adapters.claude import (
+    ClaudeAdapterError,
+    _build_claude_tool_decision_receipts,
+    run_claude_lane,
+)
 from witnessd.adapters.opencode import OpenCodeAdapterError, run_opencode_lane
 
 
@@ -305,6 +309,48 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
             )
             self.assertEqual(
                 decisions[-1]["reason_code"], "CLAUDE_BUILTIN_TOOL_OUT_OF_SCOPE"
+            )
+            receipts = _build_claude_tool_decision_receipts(
+                tools={
+                    "mcp": ["neutral_probe"],
+                    "allow": ["mcp__neutral_probe__allowed_echo"],
+                },
+                task_dir=pathlib.Path(res.transcript_path).parent,
+                role_id="runner",
+                role_capability="execute",
+                lane_id="lane-1",
+                observed_tool_uses=[
+                    {
+                        "tool_name": "mcp__neutral_probe__allowed_echo",
+                        "tool_use_id": "tool-use-1",
+                    }
+                ],
+            )
+            self.assertEqual(
+                receipts["kind"], "moonweave-tool-call-decision-receipts"
+            )
+            self.assertEqual(
+                [item["canonical_tool_name"] for item in receipts["decisions"]],
+                [
+                    "mcp__neutral_probe__allowed_echo",
+                    "mcp__neutral_probe__neutral_check",
+                ],
+            )
+            self.assertEqual(
+                [item["sequence"] for item in receipts["decisions"]],
+                [1, 2],
+            )
+            self.assertEqual(
+                receipts["observed_mcp_tool_calls"][0]["canonical_tool_name"],
+                "mcp__neutral_probe__allowed_echo",
+            )
+            self.assertEqual(
+                receipts["observed_mcp_tool_calls"][0]["result_status"],
+                "observed",
+            )
+            self.assertEqual(
+                receipts["observed_mcp_tool_calls"][0]["canonical_request_sha256"],
+                receipts["decisions"][0]["canonical_request_sha256"],
             )
 
     def test_opencode(self):

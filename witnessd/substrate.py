@@ -40,6 +40,9 @@ SIGNING_STATUS_UNSIGNED = "unsigned-content-addressed"
 SIGNING_STATUS_OPERATOR_KEY = "signed-ed25519-operator-key"
 EVIDENCE_CONTRACT_SCHEMA_VERSION = "v105.verify_wedge"
 ROLE_CAPABILITY_EVIDENCE_CONTRACT_SCHEMA_VERSION = "v106.role_capability_write_scope"
+ROLE_CAPABILITY_TOOL_CALLS_EVIDENCE_CONTRACT_SCHEMA_VERSION = (
+    "v107.role_capability_tool_calls"
+)
 EVIDENCE_MODE_CONTEMPORANEOUS = "contemporaneous"
 EVIDENCE_MODE_POST_HOC = "post_hoc"
 DEFAULT_EPOCH_SECONDS = 300
@@ -259,6 +262,7 @@ def build_evidence_contract(
     exit_code: int,
     diff_patch: str = "",
     write_scope: list[str] | None = None,
+    tool_call_decision_receipts: bool = False,
 ) -> dict[str, str]:
     """Build the evidence-contract plus its companion files.
 
@@ -270,9 +274,13 @@ def build_evidence_contract(
     stays in the signed run-intent artifact.
     """
     schema_version = (
-        ROLE_CAPABILITY_EVIDENCE_CONTRACT_SCHEMA_VERSION
-        if write_scope is not None
-        else EVIDENCE_CONTRACT_SCHEMA_VERSION
+        ROLE_CAPABILITY_TOOL_CALLS_EVIDENCE_CONTRACT_SCHEMA_VERSION
+        if tool_call_decision_receipts
+        else (
+            ROLE_CAPABILITY_EVIDENCE_CONTRACT_SCHEMA_VERSION
+            if write_scope is not None
+            else EVIDENCE_CONTRACT_SCHEMA_VERSION
+        )
     )
     contract = {
         "schema_version": schema_version,
@@ -283,6 +291,12 @@ def build_evidence_contract(
         contract["role_capability_write_scope"] = {
             "run_intent_path": "run-intent.json",
             "bundle_path": "bundle.json",
+        }
+    if tool_call_decision_receipts:
+        contract["role_capability_tool_calls"] = {
+            "run_intent_path": "run-intent.json",
+            "bundle_path": "bundle.json",
+            "decision_receipts_path": "tool-call-decision-receipts.json",
         }
     name_only = "".join(f"{name}\n" for name in touched_files)
     return {
