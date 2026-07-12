@@ -25,7 +25,7 @@ import shutil
 import shlex
 import sys
 import time
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from witnessd.observer import ObserverSeparationError, assert_separated
@@ -2047,6 +2047,300 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_team_init(args: argparse.Namespace) -> int:
+    from witnessd.orro_team_surface import (
+        OrroTeamSurfaceError,
+        build_rolepack_scaffold,
+        write_rolepack_scaffold,
+    )
+
+    try:
+        if args.interactive:
+            if not sys.stdin.isatty():
+                print("ERR_ORRO_TEAM_INIT_INTERACTIVE_REQUIRES_TTY", file=sys.stderr)
+                return 2
+            _fill_interactive_team_init_args(args)
+        rolepack = build_rolepack_scaffold(
+            template=args.template,
+            roles=args.role,
+            write_scope=args.write_scope if args.write_scope else None,
+            tool_mcp=args.tool_mcp,
+            tool_allow=args.tool_allow,
+        )
+        result = write_rolepack_scaffold(
+            Path(args.out).resolve(strict=False),
+            rolepack,
+            yes=args.yes,
+        )
+    except OrroTeamSurfaceError as exc:
+        print(exc.code, file=sys.stderr)
+        return 2
+    except ValueError as exc:
+        print(f"ERR_ORRO_TEAM_INIT_INVALID: {exc}", file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _fill_interactive_team_init_args(args: argparse.Namespace) -> None:
+    role = input("runner role (role_id:adapter[:model]) [runner:codex]: ").strip()
+    if not role:
+        role = "runner:codex"
+    scope = input("write scope [orro/**]: ").strip()
+    args.role = [role]
+    args.write_scope = [scope or "orro/**"]
+
+
+def _cmd_team_go(args: argparse.Namespace) -> int:
+    from witnessd.orro_team_surface import (
+        apply_task_prompt_to_role_lane_plan,
+        verdict_has_no_work_error,
+    )
+    from witnessd.orro_workflow import OrroWorkflowError, validate_role_lane_plan
+
+    repo = Path(args.repo).resolve(strict=False)
+    home = Path(
+        args.home or os.environ.get("WITNESSD_HOME") or (repo / ".witnessd")
+    ).resolve(strict=False)
+    run_dir = (
+        Path(args.run_dir).resolve(strict=False)
+        if args.run_dir
+        else home
+        / "runs"
+        / f"team-go-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{time.monotonic_ns()}"
+    )
+    run_dir.mkdir(parents=True, exist_ok=True)
+    workflow_plan_path = run_dir / "workflow-plan.json"
+    role_lane_plan_path = run_dir / "role-lane-plan.json"
+    report_path = run_dir / "orro-report.json"
+    proofcheck_path = run_dir / "proofcheck-verdict.json"
+    task = args.task or args.goal
+
+    flow_code, flow_stdout, flow_stderr = _invoke_cli_capture(
+        [
+            "flowplan",
+            args.goal,
+            "--root",
+            str(repo),
+            "--profile",
+            args.profile,
+            "--out",
+            str(workflow_plan_path),
+            "--role-lanes-out",
+            str(role_lane_plan_path),
+            "--team",
+            str(Path(args.team).resolve(strict=False)),
+            "--role-lane-tier",
+            args.role_lane_tier,
+        ]
+    )
+    if flow_code != 0:
+        return _emit_team_go_result(
+            args,
+            {
+                "kind": "orro-team-go-result",
+                "status": "blocked",
+                "stage": "flowplan",
+                "run_dir": str(run_dir),
+                "message": "flowplan failed",
+                "stderr": flow_stderr,
+                "stdout": flow_stdout,
+                "can_change_evidence_verdict": False,
+            },
+            code=flow_code,
+        )
+
+    role_lane_plan = json.loads(role_lane_plan_path.read_text(encoding="utf-8"))
+    patch_result = apply_task_prompt_to_role_lane_plan(role_lane_plan, task=task)
+    patched_role_lane_plan = patch_result["role_lane_plan"]
+    try:
+        validate_role_lane_plan(patched_role_lane_plan)
+    except OrroWorkflowError as exc:
+        return _emit_team_go_result(
+            args,
+            {
+                "kind": "orro-team-go-result",
+                "status": "blocked",
+                "stage": "role-lane-plan",
+                "run_dir": str(run_dir),
+                "message": str(exc),
+                "can_change_evidence_verdict": False,
+            },
+            code=2,
+        )
+    role_lane_plan_path.write_text(
+        json.dumps(patched_role_lane_plan, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    prompt_patch = {
+        key: value for key, value in patch_result.items() if key != "role_lane_plan"
+    }
+
+    proofrun_code, proofrun_stdout, proofrun_stderr = _invoke_cli_capture(
+        [
+            "proofrun",
+            args.goal,
+            "--repo",
+            str(repo),
+            "--home",
+            str(home),
+            "--workflow-plan",
+            str(workflow_plan_path),
+            "--role-lane-plan",
+            str(role_lane_plan_path),
+            "--run-dir",
+            str(run_dir),
+            "--max-parallel",
+            str(args.max_parallel),
+            "--codex-binary",
+            args.codex_binary,
+            "--claude-binary",
+            args.claude_binary,
+            "--agy-binary",
+            args.agy_binary,
+            "--gemini-binary",
+            args.gemini_binary,
+            "--opencode-binary",
+            args.opencode_binary,
+        ]
+        + (["--fail-fast"] if args.fail_fast else [])
+    )
+    proofrun_payload = _json_or_text(proofrun_stdout)
+    if proofrun_code != 0:
+        report_payload = _write_team_go_report(run_dir, home, report_path)
+        no_work = verdict_has_no_work_error(_load_json_if_exists(run_dir / "team-ledger-verdict.json"))
+        return _emit_team_go_result(
+            args,
+            {
+                "kind": "orro-team-go-result",
+                "status": "blocked",
+                "stage": "proofrun",
+                "run_dir": str(run_dir),
+                "workflow_plan": str(workflow_plan_path),
+                "role_lane_plan": str(role_lane_plan_path),
+                "report": str(report_path) if report_path.exists() else None,
+                "proofrun": proofrun_payload,
+                "report_payload": report_payload,
+                "prompt_patch": prompt_patch,
+                "no_work_detected": no_work,
+                "message": (
+                    "proofrun lane did not touch files; execution evidence is blocked"
+                    if no_work
+                    else "proofrun failed; proofcheck was not run"
+                ),
+                "stderr": proofrun_stderr,
+                "can_change_evidence_verdict": False,
+            },
+            code=1,
+        )
+
+    proofcheck_code, proofcheck_stdout, proofcheck_stderr = _invoke_cli_capture(
+        [
+            "proofcheck",
+            str(run_dir),
+            "--home",
+            str(home),
+            "--out",
+            str(proofcheck_path),
+            "--json",
+        ]
+    )
+    proofcheck_payload = _json_or_text(proofcheck_stdout)
+    report_payload = _write_team_go_report(run_dir, home, report_path)
+    status = "complete" if proofcheck_code == 0 else "blocked"
+    return _emit_team_go_result(
+        args,
+        {
+            "kind": "orro-team-go-result",
+            "status": status,
+            "stage": "complete" if proofcheck_code == 0 else "proofcheck",
+            "run_dir": str(run_dir),
+            "workflow_plan": str(workflow_plan_path),
+            "role_lane_plan": str(role_lane_plan_path),
+            "team_ledger": str(run_dir / "team-ledger.json"),
+            "team_ledger_verdict": str(run_dir / "team-ledger-verdict.json"),
+            "proofcheck_verdict": str(proofcheck_path),
+            "report": str(report_path),
+            "proofrun": proofrun_payload,
+            "proofcheck": proofcheck_payload,
+            "report_payload": report_payload,
+            "prompt_patch": prompt_patch,
+            "no_work_detected": False,
+            "message": (
+                "team run, proofcheck, and report completed"
+                if proofcheck_code == 0
+                else "proofcheck failed"
+            ),
+            "stderr": proofcheck_stderr,
+            "can_change_evidence_verdict": False,
+        },
+        code=0 if proofcheck_code == 0 else 1,
+    )
+
+
+def _invoke_cli_capture(argv: list[str]) -> tuple[int, str, str]:
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        try:
+            code = main(argv)
+        except SystemExit as exc:
+            code = int(exc.code) if isinstance(exc.code, int) else 1
+    return code, stdout.getvalue(), stderr.getvalue()
+
+
+def _json_or_text(text: str) -> object:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return {"text": text}
+
+
+def _load_json_if_exists(path: Path) -> object | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _write_team_go_report(run_dir: Path, home: Path, report_path: Path) -> object:
+    code, stdout, _stderr = _invoke_cli_capture(
+        [
+            "orro-report",
+            str(run_dir),
+            "--home",
+            str(home),
+            "--out",
+            str(report_path),
+            "--json",
+        ]
+    )
+    payload = _json_or_text(stdout)
+    if isinstance(payload, dict):
+        payload.setdefault("exit_code", code)
+    return payload
+
+
+def _emit_team_go_result(
+    args: argparse.Namespace,
+    payload: dict[str, object],
+    *,
+    code: int,
+) -> int:
+    if args.json:
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        print(f"ORRO team go: {payload.get('status')} ({payload.get('stage')})")
+        print(payload.get("message", ""))
+        if payload.get("run_dir"):
+            print(f"run_dir: {payload['run_dir']}")
+        if payload.get("proofcheck_verdict"):
+            print(f"proofcheck_verdict: {payload['proofcheck_verdict']}")
+        if payload.get("report"):
+            print(f"report: {payload['report']}")
+    return code
+
+
 def _team_run_state_root(args: argparse.Namespace, out_dir: Path) -> str | None:
     if args.state_root is not None:
         return str(Path(args.state_root).resolve(strict=False))
@@ -2737,6 +3031,52 @@ def _build_parser() -> argparse.ArgumentParser:
 
     team = sub.add_parser("team", help="run a local team fan-in")
     team_sub = team.add_subparsers(dest="team_cmd", required=True)
+    team_init = team_sub.add_parser(
+        "init",
+        help="scaffold .orro/team.json readiness configuration",
+        description=(
+            "Scaffold an ORRO rolepack. This writes readiness configuration only; "
+            "it does not execute, verify evidence, or raise assurance."
+        ),
+    )
+    team_init.add_argument("--out", default=".orro/team.json")
+    team_init.add_argument("--template", default="developer")
+    team_init.add_argument("--role", action="append", default=[])
+    team_init.add_argument("--write-scope", action="append", default=[])
+    team_init.add_argument("--tool-mcp", action="append", default=[])
+    team_init.add_argument("--tool-allow", action="append", default=[])
+    team_init.add_argument("--interactive", action="store_true")
+    team_init.add_argument("--yes", action="store_true")
+    team_init.set_defaults(func=_cmd_team_init)
+
+    team_go = team_sub.add_parser(
+        "go",
+        help="run flowplan, proofrun, proofcheck, and report for a team rolepack",
+    )
+    team_go.add_argument("goal")
+    team_go.add_argument("--task", default=None)
+    team_go.add_argument("--repo", required=True)
+    team_go.add_argument("--home", default=None)
+    team_go.add_argument("--team", default=".orro/team.json")
+    team_go.add_argument("--run-dir", default=None)
+    team_go.add_argument(
+        "--profile", choices=["code-change", "docs-change"], default="code-change"
+    )
+    team_go.add_argument(
+        "--role-lane-tier",
+        default="quick",
+        choices=["quick", "agentic", "frontier"],
+    )
+    team_go.add_argument("--max-parallel", type=int, default=1)
+    team_go.add_argument("--fail-fast", action="store_true")
+    team_go.add_argument("--codex-binary", default="codex")
+    team_go.add_argument("--claude-binary", default="claude")
+    team_go.add_argument("--agy-binary", default="agy")
+    team_go.add_argument("--gemini-binary", default="gemini")
+    team_go.add_argument("--opencode-binary", default="opencode")
+    team_go.add_argument("--json", action="store_true")
+    team_go.set_defaults(func=_cmd_team_go)
+
     team_run = team_sub.add_parser("run", help="emit team fan-in evidence")
     team_run.add_argument("--repo", required=True)
     team_run.add_argument("--out", required=True)
@@ -3120,6 +3460,8 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
         return ["orro-review", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "auto":
         return ["orro-auto", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "team":
+        return ["team", *argv[2:]]
     return argv
 
 

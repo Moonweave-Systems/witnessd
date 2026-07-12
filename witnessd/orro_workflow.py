@@ -786,7 +786,7 @@ def _role_lane_from_role(
     ).hexdigest()[:12]
     region_root = "docs" if profile == "docs-change" else "orro"
     lane_id = f"{role_id}-{digest}"
-    region = [f"{region_root}/{lane_id}.txt"]
+    region = _execution_region_from_grant(grant) or [f"{region_root}/{lane_id}.txt"]
     role_capability = _role_capability_for_lane(
         grant=grant,
         role_id=role_id,
@@ -811,6 +811,16 @@ def _role_lane_from_role(
         **role_capability,
         **extra,
     }
+
+
+def _execution_region_from_grant(grant: RoleCapabilityGrant | None) -> list[str]:
+    if grant is None or grant.write_scope is None:
+        return []
+    return [
+        item
+        for item in grant.write_scope
+        if item and not any(marker in item for marker in ("*", "?", "[", "]"))
+    ]
 
 
 def _review_lane_from_role(

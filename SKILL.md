@@ -32,6 +32,8 @@ The cross-engine artifact boundary is summarized in
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
 | `orro auto --until-complete` | bounded post-run proofcheck/handoff loop; orchestration metadata only |
+| `orro team init` | scaffold `.orro/team.json` rolepack readiness config; not proof or assurance |
+| `orro team go` | one-command flowplan/proofrun/proofcheck/report wrapper; reports Depone verdict |
 | `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
 | `orro auto` | future broader continuation loop behind evidence gates |
@@ -58,6 +60,17 @@ setup path. It delegates to existing witnessd initialization/provisioning and
 creates readiness metadata such as `.witnessd/provision.json`. It does not run
 ORRO Flow work, verify evidence, approve merge, or raise assurance. Use a local
 `--depone-root` for development and tests.
+
+`python3 -m orro team init --role runner:codex:gpt-5.5 --write-scope orro/task-output.txt --yes`
+creates `.orro/team.json` rolepack readiness configuration. It validates the
+rolepack and keeps tool grants deny-by-default, but it is not execution,
+verification, proof, approval, or assurance.
+
+`python3 -m orro team go "<task>" --repo <repo> --home .witnessd --team .orro/team.json --json`
+is the one-command wrapper for `flowplan -> proofrun -> proofcheck -> report`.
+It automatically threads intermediate artifacts and uses the task text as the
+runner prompt. If a lane does not touch files, or Depone does not pass the
+evidence, report blocked/non-zero rather than upgrading a transcript to success.
 
 `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
 writes distribution metadata for the pinned witnessd and Depone commits.
@@ -228,10 +241,17 @@ output as verifier truth.
 
    ```bash
    python3 -m orro init --home .witnessd --depone-root ../Depone
+   python3 -m orro team init --role runner:codex:gpt-5.5 --write-scope orro/task-output.txt --yes
    python3 -m orro doctor --home .witnessd --json
    ```
 
 4. Run the goal:
+
+   ```bash
+   python3 -m orro team go "Create orro/task-output.txt with the exact line: hello ORRO" --repo <repo> --home .witnessd --team .orro/team.json --json
+   ```
+
+   Or use the lower-level path when you need to inspect or modify each artifact:
 
    ```bash
    python3 -m witnessd run "<goal>" --repo <repo> --home .witnessd --workflow-plan workflow-plan.json

@@ -46,6 +46,8 @@ The cross-engine artifact boundary is summarized in
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
 | `orro auto --until-complete` | bounded post-run proofcheck/handoff loop; orchestration metadata only |
+| `orro team init` | scaffold `.orro/team.json` rolepack readiness config; not proof or assurance |
+| `orro team go` | one-command flowplan/proofrun/proofcheck/report wrapper; reports Depone verdict |
 | `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine/verifier/adapter/key/MCP/policy readiness check |
 | `orro auto` | future broader resume/continuation loop behind evidence gates |
@@ -67,6 +69,18 @@ setup path. It delegates to existing witnessd initialization/provisioning and
 creates readiness metadata such as `.witnessd/provision.json`. It does not run
 ORRO Flow work, verify evidence, approve merge, or raise assurance. Use a local
 `--depone-root` for development and tests.
+
+`python3 -m orro team init --role runner:codex:gpt-5.5 --write-scope orro/task-output.txt --yes`
+scaffolds `.orro/team.json` rolepack readiness configuration. It validates the
+rolepack schema and keeps tools deny-by-default, but it does not execute,
+verify evidence, approve merge, or raise assurance.
+
+`python3 -m orro team go "<task>" --repo <repo> --home .witnessd --team .orro/team.json --json`
+is the usable one-command wrapper over `flowplan -> proofrun -> proofcheck ->
+report`. It threads intermediate plan/run paths automatically and uses the task
+text as the runner lane prompt instead of the generic role placeholder. It must
+report no-work lanes and Depone failures as blocked/non-zero rather than treating
+them as success.
 
 `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
 writes distribution metadata for the pinned witnessd and Depone commits.
