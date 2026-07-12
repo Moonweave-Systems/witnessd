@@ -1,4 +1,5 @@
 import io
+import hashlib
 import json
 import os
 import stat
@@ -152,6 +153,59 @@ class DistributionInitTests(unittest.TestCase):
             payload = json.loads(out.getvalue())
             self.assertEqual(payload["config"], str(home / "config.json"))
             self.assertTrue((home / "provision.json").is_file())
+
+    def test_cli_init_records_validated_team_ref(self) -> None:
+        depone_root = self._depone_root()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / "home"
+            team_path = root / ".orro" / "team.json"
+            team_path.parent.mkdir()
+            team_payload = {
+                "kind": "moonweave-rolepack",
+                "schema_version": "0.2",
+                "name": "custom-team",
+                "grants": [
+                    {
+                        "role_id": "runner",
+                        "capability": "execute",
+                        "adapters": ["shell"],
+                        "model": "team-runner-model",
+                    }
+                ],
+            }
+            team_bytes = json.dumps(team_payload, sort_keys=True).encode("utf-8")
+            team_path.write_bytes(team_bytes)
+            out = io.StringIO()
+            err = io.StringIO()
+
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(
+                    [
+                        "init",
+                        "--home",
+                        str(home),
+                        "--depone-root",
+                        str(depone_root),
+                        "--team",
+                        str(team_path),
+                    ]
+                )
+
+            self.assertEqual(code, 0, err.getvalue())
+            provision = json.loads(
+                (home / "provision.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                provision["team_ref"],
+                {
+                    "path": str(team_path),
+                    "sha256": hashlib.sha256(team_bytes).hexdigest(),
+                    "kind": "moonweave-rolepack",
+                    "schema_version": "0.2",
+                    "name": "custom-team",
+                },
+            )
 
     def test_cli_init_auto_detects_sibling_depone_checkout(self) -> None:
         # Build a synthetic sibling layout so auto-detection is covered on

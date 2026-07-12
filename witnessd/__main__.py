@@ -659,14 +659,19 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                 resolve_rolepack,
             )
 
-            if args.rolepack and args.rolepack_file:
+            selected_rolepack_inputs = [
+                value
+                for value in (args.rolepack, args.rolepack_file, getattr(args, "team", None))
+                if value
+            ]
+            if len(selected_rolepack_inputs) > 1:
                 raise RolepackError(
                     "ERR_ORRO_ROLEPACK_CONFLICT",
-                    "--rolepack and --rolepack-file are mutually exclusive",
+                    "--rolepack, --rolepack-file, and --team are mutually exclusive",
                 )
             rolepack = (
-                load_rolepack_file(args.rolepack_file)
-                if args.rolepack_file
+                load_rolepack_file(args.team or args.rolepack_file)
+                if args.team or args.rolepack_file
                 else resolve_rolepack(args.rolepack)
             )
 
@@ -1907,6 +1912,7 @@ def _cmd_install(args: argparse.Namespace) -> int:
 
 def _cmd_init(args: argparse.Namespace) -> int:
     from witnessd.distribution import InitConfig, ProvisionError, init_witnessd_home
+    from witnessd.role_capability import RolepackError
 
     home = Path(
         args.home
@@ -1923,9 +1929,13 @@ def _cmd_init(args: argparse.Namespace) -> int:
                 network_allowed=args.allow_network,
                 depone_repository=args.depone_repository,
                 depone_ref=args.depone_ref,
+                team_path=Path(args.team).expanduser() if args.team else None,
             )
         )
     except ProvisionError as exc:
+        print(exc.code, file=sys.stderr)
+        return 2
+    except RolepackError as exc:
         print(exc.code, file=sys.stderr)
         return 2
     print(json.dumps(result, sort_keys=True))
@@ -2518,6 +2528,7 @@ def _build_parser() -> argparse.ArgumentParser:
     init.add_argument("--depone-root", default=None)
     init.add_argument("--depone-repository", default=None)
     init.add_argument("--depone-ref", default=None)
+    init.add_argument("--team", default=None)
     init.add_argument(
         "--allow-network",
         action="store_true",
@@ -3018,6 +3029,11 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
         "--rolepack-file",
         default=None,
         help="JSON rolepack file to apply when compiling --role-lanes-out",
+    )
+    flowplan.add_argument(
+        "--team",
+        default=None,
+        help="onboarding rolepack JSON file (usually .orro/team.json)",
     )
     flowplan.add_argument("--json", action="store_true")
     flowplan.set_defaults(

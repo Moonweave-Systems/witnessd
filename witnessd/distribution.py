@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -45,6 +46,7 @@ class InitConfig:
     network_allowed: bool = False
     depone_repository: str | None = None
     depone_ref: str | None = None
+    team_path: Path | None = None
 
 
 def init_witnessd_home(config: InitConfig) -> dict[str, str]:
@@ -71,6 +73,7 @@ def init_witnessd_home(config: InitConfig) -> dict[str, str]:
         depone_root=depone_root,
         network_used=network_used,
         depone_source=depone_source,
+        team_ref=_build_team_ref(config.team_path),
     )
     config_payload = {
         "kind": "witnessd-config",
@@ -324,9 +327,14 @@ def _provision_depone_checkout(config: InitConfig) -> Path:
 
 
 def _build_provision(
-    *, witnessd_root: Path, depone_root: Path, network_used: bool, depone_source: str
+    *,
+    witnessd_root: Path,
+    depone_root: Path,
+    network_used: bool,
+    depone_source: str,
+    team_ref: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    provision = {
         "kind": PROVISION_KIND,
         "schema_version": PROVISION_SCHEMA_VERSION,
         "witnessd": {
@@ -344,6 +352,25 @@ def _build_provision(
             "runtime_may_use_network": False,
             "verify_may_use_network": False,
         },
+    }
+    if team_ref is not None:
+        provision["team_ref"] = team_ref
+    return provision
+
+
+def _build_team_ref(team_path: Path | None) -> dict[str, Any] | None:
+    if team_path is None:
+        return None
+    from witnessd.role_capability import load_rolepack_file
+
+    payload = load_rolepack_file(str(team_path))
+    digest = hashlib.sha256(team_path.read_bytes()).hexdigest()
+    return {
+        "path": str(team_path),
+        "sha256": digest,
+        "kind": str(payload["kind"]),
+        "schema_version": str(payload["schema_version"]),
+        "name": str(payload["name"]),
     }
 
 

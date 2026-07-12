@@ -169,6 +169,12 @@ evidence.
   (Depone re-derivation deferred to S5.)
 - Acceptance: a lane touching outside `write_scope` fails closed with the
   grant-scoped error; the advisory record states scope conformance.
+- Current compile-time caveat: `flowplan` creates a placeholder lane `region`
+  such as `orro/<lane-id>.txt` before the real task diff exists. A rolepack
+  `write_scope` used at flowplan time must include that planned region root
+  (for example `orro/**` for code-change lanes), or compilation fails closed.
+  Narrow task scopes such as `src/**` are runtime write bounds only after the
+  planner can provide matching lane regions.
 
 ### S3 — tool/MCP allowlist grant (headline "역할별 도구")  ·  risk: high
 Deny-by-default tool grant. Enforce by writing only `tools.mcp` into the

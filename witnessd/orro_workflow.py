@@ -233,7 +233,7 @@ def compile_role_lane_plan(
                     )
                 )
     elif profile == "review-only" and (
-        policy is not None or lane_adapter in {"agy", "gemini"}
+        policy is not None or rolepack is not None or lane_adapter in {"agy", "gemini"}
     ):
         for role in workflow_plan["roles"]:
             if isinstance(role, dict) and role.get("role_id") == "reviewer":
@@ -642,7 +642,12 @@ def _canonical_hash(payload: dict[str, Any]) -> str:
 
 
 def _resolve_lane_adapter_and_model(
-    *, role_kind: str, tier: str, lane_adapter: str, policy: dict[str, Any] | None
+    *,
+    role_kind: str,
+    tier: str,
+    lane_adapter: str,
+    policy: dict[str, Any] | None,
+    grant: RoleCapabilityGrant | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Return (adapter, extra_lane_fields) for a role lane.
 
@@ -652,6 +657,16 @@ def _resolve_lane_adapter_and_model(
     rather than silently falling back to lane_adapter, matching the "no quiet
     degradation" rule the rest of this feature follows.
     """
+    if grant is not None and grant.model is not None:
+        if len(grant.adapters) != 1:
+            raise OrroWorkflowError(
+                ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED,
+                (
+                    f"role_id={role_kind!r} pins model {grant.model!r} but does "
+                    "not declare exactly one adapter"
+                ),
+            )
+        return grant.adapters[0], {"model": grant.model, "model_source": "rolepack"}
     if policy is None:
         return lane_adapter, {}
     route = resolve_policy_route(policy, role_kind=role_kind, tier=tier)
@@ -668,16 +683,14 @@ def _resolve_lane_adapter_and_model(
     }
 
 
-def _role_capability_for_lane(
+def _grant_for_lane(
     *,
     rolepack: dict[str, Any] | None,
     role_id: str,
     phase: str,
-    adapter: str,
-    region: list[str],
-) -> dict[str, Any]:
+) -> RoleCapabilityGrant | None:
     if rolepack is None:
-        return {}
+        return None
     grant = grant_for_role(rolepack, role_id)
     if grant is None:
         raise OrroWorkflowError(
@@ -693,6 +706,19 @@ def _role_capability_for_lane(
                 f"does not match phase {phase!r}"
             ),
         )
+    return grant
+
+
+def _role_capability_for_lane(
+    *,
+    grant: RoleCapabilityGrant | None,
+    role_id: str,
+    phase: str,
+    adapter: str,
+    region: list[str],
+) -> dict[str, Any]:
+    if grant is None:
+        return {}
     if adapter not in grant.adapters:
         raise OrroWorkflowError(
             ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED,
@@ -745,8 +771,13 @@ def _role_lane_from_role(
 ) -> dict[str, Any]:
     profile = str(workflow_plan["profile"])
     role_id = str(role["role_id"])
+    grant = _grant_for_lane(rolepack=rolepack, role_id=role_id, phase="proofrun")
     resolved_adapter, extra = _resolve_lane_adapter_and_model(
-        role_kind=role_id, tier=tier, lane_adapter=lane_adapter, policy=policy
+        role_kind=role_id,
+        tier=tier,
+        lane_adapter=lane_adapter,
+        policy=policy,
+        grant=grant,
     )
     digest = hashlib.sha256(
         f"{workflow_plan['goal']}:{profile}:{role_id}:{resolved_adapter}".encode(
@@ -757,7 +788,7 @@ def _role_lane_from_role(
     lane_id = f"{role_id}-{digest}"
     region = [f"{region_root}/{lane_id}.txt"]
     role_capability = _role_capability_for_lane(
-        rolepack=rolepack,
+        grant=grant,
         role_id=role_id,
         phase="proofrun",
         adapter=resolved_adapter,
@@ -792,11 +823,16 @@ def _review_lane_from_role(
 ) -> dict[str, Any]:
     profile = str(workflow_plan["profile"])
     role_id = str(role["role_id"])
+    grant = _grant_for_lane(rolepack=rolepack, role_id=role_id, phase="review")
     resolved_adapter, extra = _resolve_lane_adapter_and_model(
-        role_kind=role_id, tier=tier, lane_adapter=lane_adapter, policy=policy
+        role_kind=role_id,
+        tier=tier,
+        lane_adapter=lane_adapter,
+        policy=policy,
+        grant=grant,
     )
     role_capability = _role_capability_for_lane(
-        rolepack=rolepack,
+        grant=grant,
         role_id=role_id,
         phase="review",
         adapter=resolved_adapter,
