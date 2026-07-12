@@ -1632,6 +1632,9 @@ def _run_write_lane(
         invocation=commands[0] if commands else ["sh", "-c", "true"],
         runner_sandbox=worktree,
         provider_artifacts=provider_artifacts,
+        write_scope=write_scope,
+        role_id=role_id,
+        role_capability=role_capability,
     )
 
     receipt = build_worktree_lane_receipt(

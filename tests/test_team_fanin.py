@@ -8,10 +8,13 @@ from pathlib import Path
 
 from depone.agent_fabric.capture_bridge import validate_capture_manifest
 from depone.agent_fabric.team_ledger import build_team_ledger_verdict
+from depone.verify.adapters.base import EvidenceContext, EvidenceFile
+from depone.verify.evidence_contract import validate_evidence_contract
 
 from witnessd.fanin import run_team
 from witnessd.runlog import verify_runlog
 from witnessd.signing import gen_operator_keypair
+from witnessd.canonical import canonical_hash
 
 
 def _seed_repo(repo: Path) -> str:
@@ -28,6 +31,22 @@ def _seed_repo(repo: Path) -> str:
         text=True,
         check=True,
     ).stdout.strip()
+
+
+def _evidence_context_from_dir(root: Path) -> EvidenceContext:
+    files = []
+    for path in sorted(root.iterdir()):
+        if not path.is_file():
+            continue
+        content = path.read_text(encoding="utf-8")
+        files.append(
+            EvidenceFile(
+                path=path.name,
+                content=content,
+                sha256=canonical_hash(content),
+            )
+        )
+    return EvidenceContext(run_id=root.name, files=files, raw={})
 
 
 @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
@@ -77,6 +96,16 @@ class TestTeamFanin(unittest.TestCase):
         self.assertEqual([lane["lane_id"] for lane in result["ledger"]["lanes"]], ["lane-a", "lane-b"])
         for lane in result["lanes"]:
             self.assertEqual(validate_capture_manifest(lane["manifest"]), [])
+            lane_dir = result["base_dir"] / lane["lane_id"]
+            run_intent = json.loads(
+                (lane_dir / "run-intent.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(run_intent["schema_version"], "1.0")
+            contract = json.loads(
+                (lane_dir / "evidence-contract.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(contract["schema_version"], "v105.verify_wedge")
+            self.assertNotIn("role_capability_write_scope", contract)
         self.assertEqual(verify_runlog(result["runlog"])["ok"], True)
 
     def test_w3_companion_artifacts_are_audited_in_team_runlog(self):
@@ -131,6 +160,23 @@ class TestTeamFanin(unittest.TestCase):
             ]["predicate"]["artifact_index"]
         ]
         self.assertIn("write-scope-declaration", subject_names)
+
+        contract = json.loads(
+            (lane_dir / "evidence-contract.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            contract["schema_version"], "v106.role_capability_write_scope"
+        )
+        self.assertEqual(
+            contract["role_capability_write_scope"],
+            {
+                "run_intent_path": "run-intent.json",
+                "bundle_path": "bundle.json",
+            },
+        )
+        self.assertEqual(
+            validate_evidence_contract(_evidence_context_from_dir(lane_dir)), []
+        )
 
     def test_claim_conflict_is_audited_and_conflicting_lane_is_excluded(self):
         result = self._run(

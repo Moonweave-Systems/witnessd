@@ -38,6 +38,7 @@ from witnessd.provenance import build_signed_trusted_observer_provenance
 from witnessd.runintent import (
     RUN_INTENT_ARTIFACT_NAME,
     RUN_INTENT_SUBJECT_NAME,
+    build_role_capability_intent,
     build_run_intent,
     git_baseline,
     write_signed_run_intent,
@@ -121,6 +122,9 @@ def emit_lane_evidence(
     capture_profile: str = "full",
     redaction_manifest: dict[str, Any] | None = None,
     provider_artifacts: dict[str, str] | None = None,
+    write_scope: list[str] | None = None,
+    role_id: str | None = None,
+    role_capability: str | None = None,
 ) -> dict[str, Any]:
     """Assemble and emit a lane's full evidence set through the runlog SoT.
 
@@ -146,6 +150,15 @@ def emit_lane_evidence(
             instruction_hashes={},
             budgets={},
             capture_profile=capture_profile,
+            role_capability=(
+                build_role_capability_intent(
+                    role_id=role_id or task_id,
+                    capability=role_capability or "execute",
+                    declared_write_scope=list(write_scope),
+                )
+                if write_scope is not None
+                else None
+            ),
         )
         run_intent_path = os.path.join(evidence_dir, RUN_INTENT_ARTIFACT_NAME)
         write_signed_run_intent(
@@ -307,6 +320,7 @@ def emit_lane_evidence(
         touched_files=lane_result["touched_files"],
         exit_code=exit_code,
         diff_patch=diff_patch,
+        write_scope=write_scope,
     )
     for name, content in contract_files.items():
         _emit_artifact(name, content)
@@ -362,6 +376,9 @@ def emit_supervised_lane(
     capture_profile: str = "full",
     redaction_manifest: dict[str, Any] | None = None,
     provider_artifacts: dict[str, str] | None = None,
+    write_scope: list[str] | None = None,
+    role_id: str | None = None,
+    role_capability: str | None = None,
 ) -> dict[str, Any]:
     """Emit supervised-lane evidence with per-spawn isolation facts.
 
@@ -409,6 +426,9 @@ def emit_supervised_lane(
         capture_profile=capture_profile,
         redaction_manifest=redaction_manifest,
         provider_artifacts=provider_artifacts,
+        write_scope=write_scope,
+        role_id=role_id,
+        role_capability=role_capability,
     )
 
 
