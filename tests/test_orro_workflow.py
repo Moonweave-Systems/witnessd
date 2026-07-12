@@ -412,14 +412,14 @@ class OrroWorkflowTests(unittest.TestCase):
                 json.dumps(
                     {
                         "kind": "moonweave-rolepack",
-                        "schema_version": "0.1",
+                        "schema_version": "0.2",
                         "name": "custom",
                         "grants": [
                             {
                                 "role_id": "runner",
                                 "capability": "execute",
                                 "adapters": ["shell"],
-                                "model_policy_ref": "default",
+                                "model": "custom-runner-model",
                                 "write_scope": ["orro/**"],
                                 "tools": {"mcp": [], "allow": []},
                             }
@@ -446,6 +446,54 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertEqual(code, 0)
             lane = json.loads(out.read_text(encoding="utf-8"))["lanes"][0]
             self.assertEqual(lane["granted_adapters"], ["shell"])
+            self.assertEqual(lane["model"], "custom-runner-model")
+            self.assertEqual(lane["model_source"], "rolepack")
+
+    def test_flowplan_team_file_loads_custom_rolepack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            team_path = root / ".orro" / "team.json"
+            out = root / "role-lane-plan.json"
+            team_path.parent.mkdir()
+            team_path.write_text(
+                json.dumps(
+                    {
+                        "kind": "moonweave-rolepack",
+                        "schema_version": "0.2",
+                        "name": "custom-team",
+                        "grants": [
+                            {
+                                "role_id": "runner",
+                                "capability": "execute",
+                                "adapters": ["shell"],
+                                "model": "team-runner-model",
+                                "write_scope": ["orro/**"],
+                                "tools": {"mcp": [], "allow": []},
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            code, _payload = self._flowplan(
+                [
+                    "fix parser",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(out),
+                    "--team",
+                    str(team_path),
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            lane = json.loads(out.read_text(encoding="utf-8"))["lanes"][0]
+            self.assertEqual(lane["role_capability"]["model"], "team-runner-model")
+            self.assertEqual(lane["model"], "team-runner-model")
 
     def test_flowplan_rolepack_name_and_file_conflict_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -609,6 +657,42 @@ class OrroWorkflowTests(unittest.TestCase):
             )
         self.assertEqual(ctx.exception.code, "ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED")
 
+    def test_compile_role_lane_plan_rolepack_model_bypasses_policy_model_lookup(
+        self,
+    ) -> None:
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        incomplete_policy = {
+            "kind": DEFAULT_MODEL_POLICY["kind"],
+            "schema_version": DEFAULT_MODEL_POLICY["schema_version"],
+            "routes": [],
+        }
+        rolepack = {
+            "kind": "moonweave-rolepack",
+            "schema_version": "0.2",
+            "name": "developer",
+            "grants": [
+                {
+                    "role_id": "runner",
+                    "capability": "execute",
+                    "adapters": ["shell"],
+                    "model": "custom-runner-model",
+                    "write_scope": ["orro/**"],
+                }
+            ],
+        }
+
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan,
+            policy=incomplete_policy,
+            rolepack=rolepack,
+        )
+
+        lane = role_lane_plan["lanes"][0]
+        self.assertEqual(lane["adapter"], "shell")
+        self.assertEqual(lane["model"], "custom-runner-model")
+        self.assertEqual(lane["model_source"], "rolepack")
+        self.assertNotIn("resolved_via_policy", lane)
+
     def test_compile_role_lane_plan_policy_adapter_outside_role_grant_fails_closed(
         self,
     ) -> None:
@@ -626,14 +710,13 @@ class OrroWorkflowTests(unittest.TestCase):
         }
         rolepack = {
             "kind": "moonweave-rolepack",
-            "schema_version": "0.1",
+            "schema_version": "0.2",
             "name": "developer",
             "grants": [
                 {
                     "role_id": "runner",
                     "capability": "execute",
                     "adapters": ["codex"],
-                    "model_policy_ref": "default",
                 }
             ],
         }
@@ -668,7 +751,8 @@ class OrroWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(lane["role_capability"]["role_id"], "runner")
         self.assertEqual(lane["role_capability"]["capability"], "execute")
-        self.assertEqual(lane["role_capability"]["model_policy_ref"], "default")
+        self.assertNotIn("model_policy_ref", lane["role_capability"])
+        self.assertNotIn("model", lane["role_capability"])
         self.assertEqual(lane["role_capability"]["write_scope"], ["orro/**", "docs/**"])
         self.assertEqual(lane["role_capability"]["tools"], {"mcp": [], "allow": []})
         self.assertEqual(lane["granted_write_scope"], ["orro/**", "docs/**"])
@@ -679,14 +763,13 @@ class OrroWorkflowTests(unittest.TestCase):
         workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
         rolepack = {
             "kind": "moonweave-rolepack",
-            "schema_version": "0.1",
+            "schema_version": "0.2",
             "name": "developer",
             "grants": [
                 {
                     "role_id": "runner",
                     "capability": "execute",
                     "adapters": ["shell", "codex"],
-                    "model_policy_ref": "default",
                     "write_scope": ["docs/**"],
                 }
             ],

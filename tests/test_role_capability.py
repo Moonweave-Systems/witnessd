@@ -26,13 +26,13 @@ class RoleCapabilityTests(unittest.TestCase):
         self.assertEqual(runner.role_id, "runner")
         self.assertEqual(runner.capability, "execute")
         self.assertEqual(runner.adapters, ("shell", "codex", "claude", "opencode"))
-        self.assertEqual(runner.model_policy_ref, "default")
+        self.assertIsNone(runner.model)
         self.assertEqual(runner.write_scope, ("orro/**", "docs/**"))
         self.assertEqual(runner.tools, {"mcp": (), "allow": ()})
         self.assertEqual(reviewer.role_id, "reviewer")
         self.assertEqual(reviewer.capability, "review")
         self.assertEqual(reviewer.adapters, ("agy", "gemini"))
-        self.assertEqual(reviewer.model_policy_ref, "default")
+        self.assertIsNone(reviewer.model)
         self.assertEqual(reviewer.write_scope, ())
         self.assertEqual(reviewer.tools, {"mcp": (), "allow": ()})
 
@@ -46,6 +46,24 @@ class RoleCapabilityTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, "ERR_ORRO_ROLEPACK_UNKNOWN")
 
+    def test_rolepack_rejects_legacy_0_1_schema(self) -> None:
+        rolepack = {
+            "kind": ROLEPACK_KIND,
+            "schema_version": "0.1",
+            "name": "legacy",
+            "grants": [
+                {
+                    "role_id": "runner",
+                    "capability": "execute",
+                    "adapters": ["codex"],
+                    "model_policy_ref": "default",
+                }
+            ],
+        }
+
+        with self.assertRaises(ValueError):
+            validate_rolepack(rolepack)
+
     def test_rolepack_accepts_s3_tools_grant(self) -> None:
         rolepack = {
             "kind": ROLEPACK_KIND,
@@ -56,7 +74,7 @@ class RoleCapabilityTests(unittest.TestCase):
                     "role_id": "runner",
                     "capability": "execute",
                     "adapters": ["codex"],
-                    "model_policy_ref": "default",
+                    "model": "gpt-5.5",
                     "write_scope": ["src/**"],
                     "tools": {"mcp": ["filesystem"], "allow": ["read_file"]},
                 }
@@ -66,7 +84,20 @@ class RoleCapabilityTests(unittest.TestCase):
         validate_rolepack(rolepack)
         grant = grant_for_role(rolepack, "runner")
         self.assertIsNotNone(grant)
+        self.assertEqual(grant.model, "gpt-5.5")
         self.assertEqual(grant.tools, {"mcp": ("filesystem",), "allow": ("read_file",)})
+
+    def test_role_capability_grant_rejects_removed_model_policy_ref(self) -> None:
+        with self.assertRaises(ValueError):
+            RoleCapabilityGrant.from_dict(
+                {
+                    "role_id": "runner",
+                    "capability": "execute",
+                    "adapters": ["codex"],
+                    "model_policy_ref": "default",
+                    "write_scope": ["src/**"],
+                }
+            )
 
     def test_role_capability_grant_rejects_invalid_tools(self) -> None:
         with self.assertRaises(ValueError):
@@ -75,7 +106,6 @@ class RoleCapabilityTests(unittest.TestCase):
                     "role_id": "runner",
                     "capability": "execute",
                     "adapters": ["codex"],
-                    "model_policy_ref": "default",
                     "write_scope": ["src/**"],
                     "tools": {"mcp": ["filesystem"], "allow": [""]},
                 }
@@ -92,7 +122,6 @@ class RoleCapabilityTests(unittest.TestCase):
                     "role_id": "runner",
                     "capability": "execute",
                     "adapters": ["codex"],
-                    "model_policy_ref": "default",
                     "write_scope": ["src/**"],
                 }
             ],
@@ -108,7 +137,6 @@ class RoleCapabilityTests(unittest.TestCase):
                     "role_id": "runner",
                     "capability": "admin",
                     "adapters": ["codex"],
-                    "model_policy_ref": "default",
                     "write_scope": ["src/**"],
                 }
             )
@@ -120,7 +148,6 @@ class RoleCapabilityTests(unittest.TestCase):
                     "role_id": "runner",
                     "capability": "execute",
                     "adapters": ["codex"],
-                    "model_policy_ref": "default",
                     "write_scope": ["src/**", ""],
                 }
             )

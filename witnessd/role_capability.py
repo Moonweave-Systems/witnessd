@@ -9,8 +9,8 @@ from typing import Any
 
 
 ROLEPACK_KIND = "moonweave-rolepack"
-ROLEPACK_SCHEMA_VERSION = "0.1"
-ROLE_CAPABILITY_SCHEMA_VERSION = "0.1"
+ROLEPACK_SCHEMA_VERSION = "0.2"
+ROLE_CAPABILITY_SCHEMA_VERSION = "0.2"
 ROLE_CAPABILITY_CAPABILITIES = ("execute", "review")
 ROLE_CAPABILITY_ADAPTERS = ("shell", "codex", "claude", "agy", "gemini", "opencode")
 
@@ -19,7 +19,7 @@ _GRANT_FIELDS = {
     "role_id",
     "capability",
     "adapters",
-    "model_policy_ref",
+    "model",
     "write_scope",
     "tools",
 }
@@ -38,7 +38,7 @@ class RoleCapabilityGrant:
     role_id: str
     capability: str
     adapters: tuple[str, ...]
-    model_policy_ref: str
+    model: str | None = None
     write_scope: tuple[str, ...] | None = None
     tools: dict[str, tuple[str, ...]] | None = None
     schema_version: str = ROLE_CAPABILITY_SCHEMA_VERSION
@@ -60,7 +60,7 @@ class RoleCapabilityGrant:
             raise ValueError("role capability grant schema_version is invalid")
         role_id = payload.get("role_id")
         capability = payload.get("capability")
-        model_policy_ref = payload.get("model_policy_ref")
+        model = payload.get("model")
         adapters = payload.get("adapters")
         write_scope = payload.get("write_scope")
         tools = payload.get("tools")
@@ -68,8 +68,8 @@ class RoleCapabilityGrant:
             raise ValueError("role capability grant role_id is invalid")
         if capability not in ROLE_CAPABILITY_CAPABILITIES:
             raise ValueError("role capability grant capability is invalid")
-        if not isinstance(model_policy_ref, str) or not model_policy_ref:
-            raise ValueError("role capability grant model_policy_ref is invalid")
+        if model is not None and (not isinstance(model, str) or not model):
+            raise ValueError("role capability grant model is invalid")
         if (
             not isinstance(adapters, list)
             or not adapters
@@ -95,7 +95,7 @@ class RoleCapabilityGrant:
             role_id=role_id,
             capability=str(capability),
             adapters=tuple(adapters),
-            model_policy_ref=model_policy_ref,
+            model=model,
             write_scope=tuple(write_scope) if write_scope is not None else None,
             tools=(
                 {
@@ -114,8 +114,9 @@ class RoleCapabilityGrant:
             "role_id": self.role_id,
             "capability": self.capability,
             "adapters": list(self.adapters),
-            "model_policy_ref": self.model_policy_ref,
         }
+        if self.model is not None:
+            payload["model"] = self.model
         if self.write_scope is not None:
             payload["write_scope"] = list(self.write_scope)
         if self.tools is not None:
@@ -136,7 +137,6 @@ DEFAULT_DEVELOPER_ROLEPACK: dict[str, Any] = {
             "role_id": "runner",
             "capability": "execute",
             "adapters": ["shell", "codex", "claude", "opencode"],
-            "model_policy_ref": "default",
             "write_scope": ["orro/**", "docs/**"],
             "tools": {"mcp": [], "allow": []},
         },
@@ -145,7 +145,6 @@ DEFAULT_DEVELOPER_ROLEPACK: dict[str, Any] = {
             "role_id": "reviewer",
             "capability": "review",
             "adapters": ["agy", "gemini"],
-            "model_policy_ref": "default",
             "write_scope": [],
             "tools": {"mcp": [], "allow": []},
         },
