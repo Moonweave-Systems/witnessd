@@ -233,7 +233,7 @@ def compile_role_lane_plan(
                     )
                 )
     elif profile == "review-only" and (
-        policy is not None or lane_adapter in {"agy", "gemini"}
+        policy is not None or rolepack is not None or lane_adapter in {"agy", "gemini"}
     ):
         for role in workflow_plan["roles"]:
             if isinstance(role, dict) and role.get("role_id") == "reviewer":
@@ -658,7 +658,15 @@ def _resolve_lane_adapter_and_model(
     degradation" rule the rest of this feature follows.
     """
     if grant is not None and grant.model is not None:
-        return lane_adapter, {"model": grant.model, "model_source": "rolepack"}
+        if len(grant.adapters) != 1:
+            raise OrroWorkflowError(
+                ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED,
+                (
+                    f"role_id={role_kind!r} pins model {grant.model!r} but does "
+                    "not declare exactly one adapter"
+                ),
+            )
+        return grant.adapters[0], {"model": grant.model, "model_source": "rolepack"}
     if policy is None:
         return lane_adapter, {}
     route = resolve_policy_route(policy, role_kind=role_kind, tier=tier)
