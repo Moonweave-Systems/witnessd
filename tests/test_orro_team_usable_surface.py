@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -11,6 +12,12 @@ from pathlib import Path
 
 from witnessd.__main__ import main
 from witnessd.role_capability import validate_rolepack
+
+_LIVE_CODEX_GATE = (
+    shutil.which("codex") is not None
+    and os.environ.get("WITNESSD_LIVE_CODEX_SMOKE") == "1"
+)
+_LIVE_CODEX_SKIP = "set WITNESSD_LIVE_CODEX_SMOKE=1 with a real codex binary on PATH"
 
 
 def _depone_root() -> Path:
@@ -101,7 +108,12 @@ class OrroTeamUsableSurfaceTests(unittest.TestCase):
             self.assertEqual(rolepack["kind"], "moonweave-rolepack")
             self.assertEqual(rolepack["schema_version"], "0.2")
             runner = next(grant for grant in rolepack["grants"] if grant["role_id"] == "runner")
+            self.assertEqual(runner["adapters"], ["codex"])
+            self.assertEqual(runner["model"], "gpt-5.5")
             self.assertEqual(runner["tools"], {"mcp": [], "allow": []})
+            reviewer = next(grant for grant in rolepack["grants"] if grant["role_id"] == "reviewer")
+            self.assertEqual(reviewer["adapters"], ["agy"])
+            self.assertEqual(reviewer["model"], "gemini-3.1-pro")
 
     def test_orro_team_init_refuses_overwrite_without_yes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -354,6 +366,225 @@ class OrroTeamUsableSurfaceTests(unittest.TestCase):
             self.assertEqual(payload["routing_decision"]["judged_task_class"], "docs-change")
             workflow_plan = json.loads((run_dir / "workflow-plan.json").read_text(encoding="utf-8"))
             self.assertEqual(workflow_plan["profile"], "code-change")
+
+    def test_orro_team_go_blocks_shell_reference_runner_without_explicit_allow(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            run_dir = root / "run"
+            team_path = root / ".orro" / "team.json"
+            repo.mkdir()
+            _seed_repo(repo)
+
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main(["init", "--home", str(home), "--depone-root", str(_depone_root())]),
+                    0,
+                )
+                self.assertEqual(
+                    main(
+                        [
+                            "orro",
+                            "team",
+                            "init",
+                            "--out",
+                            str(team_path),
+                            "--role",
+                            "runner:shell",
+                            "--write-scope",
+                            "orro/task-output.txt",
+                            "--yes",
+                        ]
+                    ),
+                    0,
+                )
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(
+                    [
+                        "orro",
+                        "team",
+                        "go",
+                        "placeholder goal",
+                        "--task",
+                        "Create orro/task-output.txt with the exact line: should not hide shell",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--team",
+                        str(team_path),
+                        "--run-dir",
+                        str(run_dir),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2, f"stdout={stdout.getvalue()}\nstderr={stderr.getvalue()}")
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["status"], "blocked")
+            self.assertEqual(payload["stage"], "reference-adapter")
+            self.assertTrue(payload["reference_adapter"])
+            self.assertTrue(payload["not_real_ai_work"])
+            self.assertFalse(payload["can_change_evidence_verdict"])
+            self.assertIn("shell reference adapter", payload["message"])
+            self.assertEqual(payload["reference_adapter_lanes"][0]["adapter"], "shell")
+            self.assertFalse((run_dir / "team-ledger.json").exists())
+
+    def test_orro_team_go_allowed_shell_reference_runner_is_loudly_marked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            run_dir = root / "run"
+            team_path = root / ".orro" / "team.json"
+            repo.mkdir()
+            _seed_repo(repo)
+
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main(["init", "--home", str(home), "--depone-root", str(_depone_root())]),
+                    0,
+                )
+                self.assertEqual(
+                    main(
+                        [
+                            "orro",
+                            "team",
+                            "init",
+                            "--out",
+                            str(team_path),
+                            "--role",
+                            "runner:shell",
+                            "--write-scope",
+                            "orro/task-output.txt",
+                            "--yes",
+                        ]
+                    ),
+                    0,
+                )
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(
+                    [
+                        "orro",
+                        "team",
+                        "go",
+                        "placeholder goal",
+                        "--task",
+                        "Create orro/task-output.txt with the exact line: explicitly reference",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--team",
+                        str(team_path),
+                        "--run-dir",
+                        str(run_dir),
+                        "--allow-reference-adapter",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0, f"stdout={stdout.getvalue()}\nstderr={stderr.getvalue()}")
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["status"], "complete")
+            self.assertTrue(payload["reference_adapter"])
+            self.assertTrue(payload["not_real_ai_work"])
+            self.assertTrue(payload["reference_adapter_warning"]["reference_adapter"])
+            self.assertFalse(payload["reference_adapter_warning"]["can_change_evidence_verdict"])
+            report_payload = payload["report_payload"]
+            self.assertTrue(report_payload["reference_adapter"]["reference_adapter"])
+            self.assertTrue(report_payload["reference_adapter"]["not_real_ai_work"])
+            self.assertIn("not real AI work", report_payload["summary"]["headline"])
+            warning_path = run_dir / "moonweave-reference-adapter-warning.json"
+            self.assertTrue(warning_path.is_file())
+
+    @unittest.skipUnless(_LIVE_CODEX_GATE, _LIVE_CODEX_SKIP)
+    def test_orro_team_go_default_developer_template_invokes_real_codex(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            run_dir = root / "run"
+            team_path = root / ".orro" / "team.json"
+            repo.mkdir()
+            _seed_repo(repo)
+
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main(["init", "--home", str(home), "--depone-root", str(_depone_root())]),
+                    0,
+                )
+                self.assertEqual(
+                    main(
+                        [
+                            "orro",
+                            "team",
+                            "init",
+                            "--template",
+                            "developer",
+                            "--out",
+                            str(team_path),
+                            "--yes",
+                        ]
+                    ),
+                    0,
+                )
+
+            task = (
+                "Create exactly one file in the existing repo. The file path must be "
+                "orro/<lane-id>.txt, where <lane-id> is the current directory name "
+                "before the final dash-separated worktree suffix. Write exactly this "
+                "single line into that file: live codex team go smoke"
+            )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(
+                    [
+                        "orro",
+                        "team",
+                        "go",
+                        "live codex default developer smoke",
+                        "--task",
+                        task,
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--team",
+                        str(team_path),
+                        "--run-dir",
+                        str(run_dir),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0, f"stdout={stdout.getvalue()}\nstderr={stderr.getvalue()}")
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["status"], "complete")
+            self.assertFalse(payload["reference_adapter"])
+            self.assertFalse(payload["not_real_ai_work"])
+            ledger = json.loads((run_dir / "team-ledger.json").read_text(encoding="utf-8"))
+            lane_id = ledger["lanes"][0]["lane_id"]
+            self.assertEqual(ledger["lanes"][0]["runner_adapter_kind"], "codex")
+            self.assertEqual(ledger["lanes"][0]["team_adapter_kind"], "codex")
+            self.assertEqual(ledger["lanes"][0]["touched_files"], [f"orro/{lane_id}.txt"])
+
+            receipt = json.loads((run_dir / lane_id / "runner-receipt.json").read_text(encoding="utf-8"))
+            self.assertEqual(receipt["runner_kind"], "codex-cli")
+            invocation = receipt["invocation"]
+            self.assertIsInstance(invocation, list)
+            self.assertIn("codex", Path(str(invocation[0])).name)
+            self.assertFalse(invocation[:3] == ["sh", "-c", "printf"])
+            output = next((run_dir / "worktrees").glob(f"{lane_id}-*/orro/{lane_id}.txt"))
+            self.assertEqual(output.read_text(encoding="utf-8").strip(), "live codex team go smoke")
 
     def test_orro_team_go_reports_no_work_without_fake_success(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

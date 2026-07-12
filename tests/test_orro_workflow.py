@@ -373,9 +373,10 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertEqual(code, 0)
             role_lanes = json.loads(out.read_text(encoding="utf-8"))
             lane = role_lanes["lanes"][0]
-            self.assertEqual(
-                lane["granted_adapters"], ["shell", "codex", "claude", "opencode"]
-            )
+            self.assertEqual(lane["adapter"], "codex")
+            self.assertEqual(lane["model"], "gpt-5.5")
+            self.assertEqual(lane["model_source"], "rolepack")
+            self.assertEqual(lane["granted_adapters"], ["codex"])
             self.assertEqual(lane["granted_write_scope"], ["orro/**", "docs/**"])
             self.assertEqual(lane["granted_tools"], {"mcp": [], "allow": []})
             self.assertEqual(lane["role_capability"]["role_id"], "runner")
@@ -848,13 +849,13 @@ class OrroWorkflowTests(unittest.TestCase):
         validate_role_lane_plan(role_lane_plan)
         lane = role_lane_plan["lanes"][0]
         self.assertEqual(lane["adapter"], "codex")
-        self.assertEqual(
-            lane["granted_adapters"], ["shell", "codex", "claude", "opencode"]
-        )
+        self.assertEqual(lane["model"], "gpt-5.5")
+        self.assertEqual(lane["model_source"], "rolepack")
+        self.assertEqual(lane["granted_adapters"], ["codex"])
         self.assertEqual(lane["role_capability"]["role_id"], "runner")
         self.assertEqual(lane["role_capability"]["capability"], "execute")
         self.assertNotIn("model_policy_ref", lane["role_capability"])
-        self.assertNotIn("model", lane["role_capability"])
+        self.assertEqual(lane["role_capability"]["model"], "gpt-5.5")
         self.assertEqual(lane["role_capability"]["write_scope"], ["orro/**", "docs/**"])
         self.assertEqual(lane["role_capability"]["tools"], {"mcp": [], "allow": []})
         self.assertEqual(lane["granted_write_scope"], ["orro/**", "docs/**"])
