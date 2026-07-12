@@ -389,7 +389,7 @@ def _claude_pep_args(
         "hooks": {
             "PreToolUse": [
                 {
-                    "matcher": ".*",
+                    "matcher": "mcp__.*",
                     "hooks": [{"type": "command", "command": command}],
                 }
             ]
@@ -452,9 +452,13 @@ def main() -> int:
         payload = {}
 
     name = _tool_name(payload)
-    allowed = name in set(policy.get("allow", []))
+    if not name.startswith("mcp__"):
+        allowed = True
+        reason = "CLAUDE_BUILTIN_TOOL_OUT_OF_SCOPE"
+    else:
+        allowed = name in set(policy.get("allow", []))
+        reason = "ROLE_CAPABILITY_TOOL_GRANTED" if allowed else "ERR_ROLE_CAPABILITY_TOOL_NOT_GRANTED"
     decision = "allow" if allowed else "deny"
-    reason = "ROLE_CAPABILITY_TOOL_GRANTED" if allowed else "ERR_ROLE_CAPABILITY_TOOL_NOT_GRANTED"
     sequence = _next_sequence(decisions_path)
     record = {
         "kind": "moonweave-tool-call-decision",

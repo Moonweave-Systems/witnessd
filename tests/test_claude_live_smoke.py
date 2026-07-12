@@ -34,11 +34,36 @@ from witnessd.adapters.claude import run_claude_lane
 from witnessd.signing import gen_operator_keypair
 
 _SKIP_REASON = (
-    "set WITNESSD_LIVE_CLAUDE_SMOKE=1 with a real claude binary on PATH to run"
+    "set WITNESSD_LIVE_CLAUDE_SMOKE=1 with a real authenticated claude binary on PATH to run"
 )
+
+
+def _claude_auth_ready() -> bool:
+    if shutil.which("claude") is None:
+        return False
+    if os.environ.get("WITNESSD_LIVE_CLAUDE_SMOKE") != "1":
+        return False
+    try:
+        completed = subprocess.run(
+            ["claude", "auth", "status"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if completed.returncode != 0:
+        return False
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return False
+    return payload.get("loggedIn") is True
+
+
 _LIVE_GATE = (
-    shutil.which("claude") is not None
-    and os.environ.get("WITNESSD_LIVE_CLAUDE_SMOKE") == "1"
+    _claude_auth_ready()
 )
 
 
@@ -388,6 +413,17 @@ class TestClaudeLiveSmoke(unittest.TestCase):
                     ),
                     allowed.tool_decision_advisory,
                 )
+                self.assertFalse(
+                    [
+                        item
+                        for item in allowed.tool_decision_advisory["decisions"]
+                        if not str(item.get("canonical_tool_name", "")).startswith(
+                            "mcp__"
+                        )
+                        and item.get("decision") == "deny"
+                    ],
+                    allowed.tool_decision_advisory,
+                )
                 self.assertTrue(
                     any(
                         item.get("method") == "tools/call"
@@ -430,6 +466,15 @@ class TestClaudeLiveSmoke(unittest.TestCase):
                     and item.get("decision") == "deny"
                     for item in denied.tool_decision_advisory["decisions"]
                 ),
+                denied.tool_decision_advisory,
+            )
+            self.assertFalse(
+                [
+                    item
+                    for item in denied.tool_decision_advisory["decisions"]
+                    if not str(item.get("canonical_tool_name", "")).startswith("mcp__")
+                    and item.get("decision") == "deny"
+                ],
                 denied.tool_decision_advisory,
             )
             self.assertFalse(

@@ -240,6 +240,7 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
                 res.invocation[res.invocation.index("--settings") + 1]
             )
             settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertEqual(settings["hooks"]["PreToolUse"][0]["matcher"], "mcp__.*")
             hook_command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
             self.assertTrue(
                 hook_command.startswith("/usr/bin/python3 "),
@@ -278,6 +279,15 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
             self.assertEqual(
                 deny_payload["hookSpecificOutput"]["permissionDecision"], "deny"
             )
+            builtin = subprocess.run(
+                shlex.split(hook_command),
+                input=json.dumps({"tool_name": "Read"}),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(builtin.returncode, 0, builtin.stderr)
+            self.assertEqual(builtin.stdout, "")
             decisions = [
                 json.loads(line)
                 for line in pathlib.Path(
@@ -290,7 +300,11 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
                 [
                     ("mcp__neutral_probe__allowed_echo", "allow"),
                     ("mcp__neutral_probe__neutral_check", "deny"),
+                    ("Read", "allow"),
                 ],
+            )
+            self.assertEqual(
+                decisions[-1]["reason_code"], "CLAUDE_BUILTIN_TOOL_OUT_OF_SCOPE"
             )
 
     def test_opencode(self):
