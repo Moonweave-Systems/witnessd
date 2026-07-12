@@ -1,12 +1,12 @@
 ---
 name: orro
-description: ORRO, the Observed Run & Review Orchestrator, turns a goal into an evidence-backed workflow: scout the repo, plan it, run it through witnessd, seal the evidence, and check what the bytes support through Depone. Use for orro, scout, flowplan, proofrun, proofcheck, provable team execution, evidence-backed automation, and 증명 실행. Published by Moonweave.
+description: ORRO, the Observed Run & Review Orchestrator, turns a goal into an evidence-backed workflow: scout the repo, plan it, run it through witnessd, seal the evidence, and check what the bytes support through Depone. Use for orro, scout, flowplan, proofrun, proofcheck, verdict-backed team execution, evidence-backed automation, and 증거 실행. Published by Moonweave.
 ---
 
 # orro - evidence-backed workflow runs
 
-Use this skill when an operator asks for ORRO, a proofrun, provable team
-execution, 증명 실행, repo scouting, or evidence-backed automation.
+Use this skill when an operator asks for ORRO, a proofrun, verdict-backed team
+execution, 증거 실행, repo scouting, or evidence-backed automation.
 
 Source of truth: `SPEC3.md` is the current witnessd x Depone final-form spec.
 This skill text is derived from that spec. Moonweave is the publisher/account;
@@ -163,7 +163,8 @@ is the canonical product and skill surface.
 ## Contract
 
 The session agent does not certify its own work. It scouts, designs or receives
-lanes, runs witnessd, and reports only evidence that Depone re-derived from bytes.
+lanes, runs witnessd, and reports the persisted evidence and Depone verdicts
+without claiming more than those bytes support.
 
 Required output evidence:
 
@@ -270,4 +271,6 @@ output as verifier truth.
 - Skill text, MCP output, IDE terminals, tmux panes, and session transcripts are
   not verdicts.
 - Scout-only planning artifacts are not execution proof.
+- Write-scope verdicts are sealed-declaration/sealed-observation consistency
+  checks, not ground-truth surveillance of every filesystem side effect.
 - No public claim is stronger than the persisted verdict bytes.
