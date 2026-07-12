@@ -802,6 +802,75 @@ class TestAdapterRun(unittest.TestCase):
             self.assertEqual(declaration["enforcement_status"], "enforced")
             self.assertEqual(declaration["usage_verification_status"], "enforced-only")
 
+    def test_claude_tool_decision_advisory_is_signed_bundle_subject(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+            tempfile.TemporaryDirectory() as config_dir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "tool-evidence")
+            _init_repo(sandbox)
+            source_config = pathlib.Path(config_dir) / "source-mcp.json"
+            source_config.write_text(
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "neutral_probe": {
+                                "command": "/bin/echo",
+                                "args": ["neutral"],
+                            },
+                        }
+                    },
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            old_config = os.environ.get("WITNESSD_CLAUDE_MCP_CONFIG")
+            os.environ["WITNESSD_CLAUDE_MCP_CONFIG"] = str(source_config)
+            try:
+                out = run_adapter_lane(
+                    root=root,
+                    sandbox=sandbox,
+                    adapter="claude",
+                    task_id="t-claude-tools",
+                    prompt="do X",
+                    arm="direct",
+                    tier="agentic",
+                    is_supported=lambda _model: True,
+                    budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                    claude_binary=_fake_claude(bindir),
+                    evidence_dir=evidence_dir,
+                    allowed_touched_files=["noop.txt"],
+                    tools={
+                        "mcp": ["neutral_probe"],
+                        "allow": ["mcp__neutral_probe__allowed_echo"],
+                    },
+                    role_id="runner",
+                    role_capability="execute",
+                )
+            finally:
+                if old_config is None:
+                    os.environ.pop("WITNESSD_CLAUDE_MCP_CONFIG", None)
+                else:
+                    os.environ["WITNESSD_CLAUDE_MCP_CONFIG"] = old_config
+
+            subject_names = [
+                item["name"]
+                for item in out["bundle"]["statement"]["predicate"]["artifact_index"]
+            ]
+            self.assertIn("tool-call-decision-advisory", subject_names)
+
+            advisory = json.loads(
+                (
+                    pathlib.Path(evidence_dir) / "tool-call-decision-advisory.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(advisory["kind"], "moonweave-tool-call-decision-advisory")
+            self.assertFalse(advisory["can_change_evidence_verdict"])
+            self.assertEqual(advisory["adapter"], "claude")
+            self.assertEqual(advisory["policy"]["mcp"], ["neutral_probe"])
+
     def test_no_model_requested_emits_no_model_declaration_artifact(self):
         with (
             tempfile.TemporaryDirectory() as root,

@@ -1,7 +1,9 @@
 import json
 import os
 import pathlib
+import shlex
 import stat
+import subprocess
 import tempfile
 import unittest
 
@@ -176,13 +178,134 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
             self.assertIn("--mcp-config", res.invocation)
             self.assertIn("--strict-mcp-config", res.invocation)
             self.assertIn("--allowedTools", res.invocation)
-            self.assertIn("mcp__allowed__allowed_echo", res.invocation)
+            allowed_tools_arg = res.invocation[
+                res.invocation.index("--allowedTools") + 1
+            ]
+            self.assertIn("mcp__allowed__allowed_echo", allowed_tools_arg)
+            self.assertIn("mcp__allowed__.*", allowed_tools_arg)
             generated = pathlib.Path(
                 res.invocation[res.invocation.index("--mcp-config") + 1]
             )
             payload = json.loads(generated.read_text(encoding="utf-8"))
             self.assertEqual(list(payload["mcpServers"]), ["allowed"])
             self.assertEqual(res.tool_declaration["adapter"], "claude")
+
+    def test_claude_tools_grant_installs_pretooluse_pep_advisory(self):
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+            tempfile.TemporaryDirectory() as config_dir,
+        ):
+            source_config = pathlib.Path(config_dir) / "source-mcp.json"
+            source_config.write_text(
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "neutral_probe": {
+                                "command": "/bin/echo",
+                                "args": ["neutral"],
+                            },
+                        }
+                    },
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            old_config = os.environ.get("WITNESSD_CLAUDE_MCP_CONFIG")
+            os.environ["WITNESSD_CLAUDE_MCP_CONFIG"] = str(source_config)
+            try:
+                transcript = pathlib.Path(bindir) / "claude.raw.jsonl"
+                res = run_claude_lane(
+                    sandbox=sandbox,
+                    prompt="x",
+                    claude_binary=_fake_claude_jsonl(bindir),
+                    transcript_path=str(transcript),
+                    tools={
+                        "mcp": ["neutral_probe"],
+                        "allow": ["mcp__neutral_probe__allowed_echo"],
+                    },
+                    role_id="runner",
+                    role_capability="execute",
+                    lane_id="t-tools",
+                )
+            finally:
+                if old_config is None:
+                    os.environ.pop("WITNESSD_CLAUDE_MCP_CONFIG", None)
+                else:
+                    os.environ["WITNESSD_CLAUDE_MCP_CONFIG"] = old_config
+
+            self.assertIn("--settings", res.invocation)
+            self.assertIn("--include-hook-events", res.invocation)
+            settings_path = pathlib.Path(
+                res.invocation[res.invocation.index("--settings") + 1]
+            )
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertEqual(settings["hooks"]["PreToolUse"][0]["matcher"], "mcp__.*")
+            hook_command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+            self.assertTrue(
+                hook_command.startswith("/usr/bin/python3 "),
+                f"hook command must avoid python3 shim: {hook_command}",
+            )
+            self.assertEqual(
+                res.tool_decision_advisory["kind"],
+                "moonweave-tool-call-decision-advisory",
+            )
+            self.assertFalse(
+                res.tool_decision_advisory["can_change_evidence_verdict"]
+            )
+            self.assertEqual(res.tool_decision_advisory["adapter"], "claude")
+            self.assertEqual(
+                res.tool_decision_advisory["policy"]["allow"],
+                ["mcp__neutral_probe__allowed_echo"],
+            )
+            allow = subprocess.run(
+                shlex.split(hook_command),
+                input=json.dumps({"tool_name": "mcp__neutral_probe__allowed_echo"}),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(allow.returncode, 0, allow.stderr)
+            self.assertEqual(allow.stdout, "")
+            deny = subprocess.run(
+                shlex.split(hook_command),
+                input=json.dumps({"tool_name": "mcp__neutral_probe__neutral_check"}),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(deny.returncode, 0, deny.stderr)
+            deny_payload = json.loads(deny.stdout)
+            self.assertEqual(
+                deny_payload["hookSpecificOutput"]["permissionDecision"], "deny"
+            )
+            builtin = subprocess.run(
+                shlex.split(hook_command),
+                input=json.dumps({"tool_name": "Read"}),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(builtin.returncode, 0, builtin.stderr)
+            self.assertEqual(builtin.stdout, "")
+            decisions = [
+                json.loads(line)
+                for line in pathlib.Path(
+                    res.tool_decision_advisory["decision_log_path"]
+                ).read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            self.assertEqual(
+                [(item["canonical_tool_name"], item["decision"]) for item in decisions],
+                [
+                    ("mcp__neutral_probe__allowed_echo", "allow"),
+                    ("mcp__neutral_probe__neutral_check", "deny"),
+                    ("Read", "allow"),
+                ],
+            )
+            self.assertEqual(
+                decisions[-1]["reason_code"], "CLAUDE_BUILTIN_TOOL_OUT_OF_SCOPE"
+            )
 
     def test_opencode(self):
         with (
