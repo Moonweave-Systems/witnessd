@@ -41,9 +41,14 @@ prompt, writes `proofcheck-verdict.json`, and exits non-zero when the lane did n
 work or Depone does not pass the evidence.
 
 ```bash
-python3 -m orro team init --role runner:codex:gpt-5.5 --write-scope orro/task-output.txt --yes
+python3 -m orro team init --template developer --yes
 python3 -m orro team go "Create orro/task-output.txt with the exact line: hello ORRO" --repo . --home .witnessd --json
 ```
+
+The default `developer` template uses a real Codex runner model. Shell reference
+lanes are allowed only for intentional script/test runs: `team go` blocks them
+unless `--allow-reference-adapter` is passed, and even then the result and report
+mark the run as reference/script work, not real AI work.
 
 When `--profile` is omitted, `team go` calls `orro advise` and uses the
 recommended profile. When `--team` is omitted, it selects the deterministic

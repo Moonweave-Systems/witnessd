@@ -2222,6 +2222,35 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
             },
             code=2,
         )
+    reference_adapter_lanes = _team_go_reference_adapter_lanes(patched_role_lane_plan)
+    reference_adapter = bool(reference_adapter_lanes)
+    reference_warning = _team_go_reference_adapter_warning(reference_adapter_lanes)
+    if reference_warning is not None:
+        _write_json_file(run_dir / "moonweave-reference-adapter-warning.json", reference_warning)
+    if reference_adapter and not args.allow_reference_adapter:
+        return _emit_team_go_result(
+            args,
+            {
+                "kind": "orro-team-go-result",
+                "status": "blocked",
+                "stage": "reference-adapter",
+                "run_dir": str(run_dir),
+                "workflow_plan": str(workflow_plan_path),
+                "role_lane_plan": str(role_lane_plan_path),
+                "routing_decision": routing_decision,
+                "routing_decision_path": str(routing_decision_path),
+                "reference_adapter": True,
+                "not_real_ai_work": True,
+                "reference_adapter_lanes": reference_adapter_lanes,
+                "reference_adapter_warning": reference_warning,
+                "message": (
+                    "shell reference adapter runner lane is not real AI work; "
+                    "pass --allow-reference-adapter only for intentional script/test runs"
+                ),
+                "can_change_evidence_verdict": False,
+            },
+            code=2,
+        )
     role_lane_plan_path.write_text(
         json.dumps(patched_role_lane_plan, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -2278,6 +2307,10 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
                 "prompt_patch": prompt_patch,
                 "routing_decision": routing_decision,
                 "routing_decision_path": str(routing_decision_path),
+                "reference_adapter": reference_adapter,
+                "not_real_ai_work": reference_adapter,
+                "reference_adapter_lanes": reference_adapter_lanes,
+                "reference_adapter_warning": reference_warning,
                 "no_work_detected": no_work,
                 "message": (
                     "proofrun lane did not touch files; execution evidence is blocked"
@@ -2323,17 +2356,79 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
             "prompt_patch": prompt_patch,
             "routing_decision": routing_decision,
             "routing_decision_path": str(routing_decision_path),
+            "reference_adapter": reference_adapter,
+            "not_real_ai_work": reference_adapter,
+            "reference_adapter_lanes": reference_adapter_lanes,
+            "reference_adapter_warning": reference_warning,
             "no_work_detected": False,
             "message": (
-                "team run, proofcheck, and report completed"
-                if proofcheck_code == 0
-                else "proofcheck failed"
+                (
+                    "reference shell adapter run, proofcheck, and report completed; "
+                    "this is not real AI work"
+                )
+                if proofcheck_code == 0 and reference_adapter
+                else (
+                    "team run, proofcheck, and report completed"
+                    if proofcheck_code == 0
+                    else "proofcheck failed"
+                )
             ),
             "stderr": proofcheck_stderr,
             "can_change_evidence_verdict": False,
         },
         code=0 if proofcheck_code == 0 else 1,
     )
+
+
+def _team_go_reference_adapter_lanes(role_lane_plan: dict[str, object]) -> list[dict[str, object]]:
+    lanes = role_lane_plan.get("lanes")
+    if not isinstance(lanes, list):
+        return []
+    reference_lanes: list[dict[str, object]] = []
+    for lane in lanes:
+        if not isinstance(lane, dict):
+            continue
+        if (
+            lane.get("phase") == "proofrun"
+            and lane.get("may_execute") is True
+            and lane.get("adapter") == "shell"
+        ):
+            reference_lanes.append(
+                {
+                    "lane_id": lane.get("lane_id"),
+                    "role_id": lane.get("role_id"),
+                    "adapter": "shell",
+                    "phase": "proofrun",
+                    "runner_kind": "manual",
+                    "reference_adapter": True,
+                    "not_real_ai_work": True,
+                }
+            )
+    return reference_lanes
+
+
+def _team_go_reference_adapter_warning(
+    reference_lanes: list[dict[str, object]],
+) -> dict[str, object] | None:
+    if not reference_lanes:
+        return None
+    return {
+        "kind": "moonweave-reference-adapter-warning",
+        "schema_version": "0.1",
+        "reference_adapter": True,
+        "not_real_ai_work": True,
+        "reference_adapter_lanes": reference_lanes,
+        "message": (
+            "shell proofrun lanes are reference/script lanes with manual runner receipts; "
+            "they are not AI model execution"
+        ),
+        "can_change_evidence_verdict": False,
+        "boundary": {
+            "advisory_only": True,
+            "raises_assurance": False,
+            "depone_verifies": True,
+        },
+    }
 
 
 def _team_go_routing_decision(
@@ -3175,6 +3270,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     team_go.add_argument("--max-parallel", type=int, default=1)
     team_go.add_argument("--fail-fast", action="store_true")
+    team_go.add_argument(
+        "--allow-reference-adapter",
+        action="store_true",
+        help="allow shell reference/script proofrun lanes; flagged as not real AI work",
+    )
     team_go.add_argument("--codex-binary", default="codex")
     team_go.add_argument("--claude-binary", default="claude")
     team_go.add_argument("--agy-binary", default="agy")

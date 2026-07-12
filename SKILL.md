@@ -61,10 +61,12 @@ creates readiness metadata such as `.witnessd/provision.json`. It does not run
 ORRO Flow work, verify evidence, approve merge, or raise assurance. Use a local
 `--depone-root` for development and tests.
 
-`python3 -m orro team init --role runner:codex:gpt-5.5 --write-scope orro/task-output.txt --yes`
+`python3 -m orro team init --template developer --yes`
 creates `.orro/team.json` rolepack readiness configuration. It validates the
-rolepack and keeps tool grants deny-by-default, but it is not execution,
-verification, proof, approval, or assurance.
+rolepack and keeps tool grants deny-by-default. The default `developer`
+template pins a real Codex runner adapter/model rather than a shell reference
+lane, but team initialization itself is still not execution, verification,
+proof, approval, or assurance.
 
 `python3 -m orro team go "<task>" --repo <repo> --home .witnessd --json`
 is the one-command wrapper for `flowplan -> proofrun -> proofcheck -> report`.
@@ -75,7 +77,9 @@ It writes `moonweave-routing-decision.json` with the advisory rule matches,
 selected profile, and selected rolepack. That routing artifact cannot change the
 evidence verdict and is not proof, approval, or assurance. If a lane does not
 touch files, or Depone does not pass the evidence, report blocked/non-zero
-rather than upgrading a transcript to success.
+rather than upgrading a transcript to success. Shell reference lanes are blocked
+unless `--allow-reference-adapter` is passed; allowed reference runs are marked
+as not real AI work in the result and report.
 
 `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
 writes distribution metadata for the pinned witnessd and Depone commits.
@@ -233,7 +237,8 @@ output as verifier truth.
 
 2. Choose explicit lanes for the goal. If a Depone design artifact is already
    available, use its lane/region shape. If not, use explicit witnessd lanes or
-   the default shell-lane quickstart path.
+   the default developer team path. Shell lanes are reference/script lanes and
+   must be explicitly allowed when used through `team go`.
 
    ```bash
    python3 -m orro flowplan "<goal>" --root <repo> --profile code-change
@@ -246,7 +251,7 @@ output as verifier truth.
 
    ```bash
    python3 -m orro init --home .witnessd --depone-root ../Depone
-   python3 -m orro team init --role runner:codex:gpt-5.5 --write-scope orro/task-output.txt --yes
+   python3 -m orro team init --template developer --yes
    python3 -m orro doctor --home .witnessd --json
    ```
 

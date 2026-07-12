@@ -61,7 +61,8 @@ def build_report(
     execution = _execution_summary(run_dir, continuation, observed)
     verification = _verification_summary(run_dir, continuation, observed)
     handoff = _handoff_summary(run_dir, continuation, observed)
-    summary = _summary(continuation, verification, handoff)
+    reference_adapter = _reference_adapter_summary(run_dir)
+    summary = _summary(continuation, verification, handoff, reference_adapter)
     report = {
         "kind": REPORT_KIND,
         "schema_version": REPORT_SCHEMA_VERSION,
@@ -74,6 +75,7 @@ def build_report(
         "execution": execution,
         "verification": verification,
         "handoff": handoff,
+        "reference_adapter": reference_adapter,
         "next": {
             "decision": continuation.get("decision", "blocked"),
             "next_allowed": list(continuation.get("next_allowed", [])),
@@ -151,20 +153,31 @@ def _summary(
     continuation: dict[str, Any],
     verification: dict[str, Any],
     handoff: dict[str, Any],
+    reference_adapter: dict[str, Any],
 ) -> dict[str, Any]:
     state = str(continuation.get("decision", "blocked"))
     next_allowed = continuation.get("next_allowed")
     next_action = next_allowed[0] if isinstance(next_allowed, list) and next_allowed else None
     return {
         "state": state,
-        "headline": _headline(state, verification, handoff),
+        "headline": _headline(state, verification, handoff, reference_adapter),
         "recommended_next_action": next_action,
         "complete": state == "complete",
         "blocked": bool(continuation.get("blocked", False)),
     }
 
 
-def _headline(state: str, verification: dict[str, Any], handoff: dict[str, Any]) -> str:
+def _headline(
+    state: str,
+    verification: dict[str, Any],
+    handoff: dict[str, Any],
+    reference_adapter: dict[str, Any],
+) -> str:
+    if reference_adapter.get("reference_adapter"):
+        return (
+            "Reference shell adapter evidence exists and proofcheck may pass, "
+            "but this is not real AI work."
+        )
     if state == "needs-proofcheck":
         return "Execution evidence exists; run proofcheck before handoff."
     if state == "ready-for-handoff":
@@ -292,6 +305,23 @@ def _auto_summary(run_dir: Path) -> dict[str, Any]:
         "plan": _load_json_object(run_dir / "orro-auto-plan.json"),
         "receipt": _load_json_object(run_dir / "orro-auto-receipt.json"),
         "session": _load_json_object(run_dir / "orro-auto-session.json"),
+    }
+
+
+def _reference_adapter_summary(run_dir: Path) -> dict[str, Any]:
+    warning = _load_json_object(run_dir / "moonweave-reference-adapter-warning.json")
+    if warning is None:
+        return {
+            "reference_adapter": False,
+            "not_real_ai_work": False,
+            "reference_adapter_lanes": [],
+        }
+    return {
+        "reference_adapter": bool(warning.get("reference_adapter")),
+        "not_real_ai_work": bool(warning.get("not_real_ai_work")),
+        "reference_adapter_lanes": warning.get("reference_adapter_lanes", []),
+        "warning": warning,
+        "can_change_evidence_verdict": False,
     }
 
 
