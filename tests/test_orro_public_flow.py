@@ -1064,7 +1064,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertFalse((run_dir / "proofcheck-verdict.json").exists())
 
     def test_proofrun_role_lane_plan_forbidden_profiles_fail_before_run_dir(self) -> None:
-        for profile in ("review-only", "verification-only"):
+        for profile in ("critic-only", "review-only", "verification-only"):
             with self.subTest(profile=profile), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 repo, home = self._init_home(root)
@@ -1230,7 +1230,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertFalse((home / "runs").exists())
 
     def test_proofrun_workflow_plan_phase_forbidden_fails_before_execution(self) -> None:
-        for profile in ("review-only", "verification-only"):
+        for profile in ("critic-only", "review-only", "verification-only"):
             with self.subTest(profile=profile), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 repo, home = self._init_home(root)

@@ -1409,6 +1409,7 @@ def _cmd_orro_review(args: argparse.Namespace) -> int:
             home=home,
             role_lane_plan_path=Path(args.role_lane_plan).resolve(strict=False),
             run_dir=run_dir,
+            claude_binary=args.claude_binary,
             agy_binary=args.agy_binary,
             gemini_binary=args.gemini_binary,
             timeout_seconds=args.timeout_seconds,
@@ -3285,6 +3286,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_review.add_argument("--home", default=None)
     orro_review.add_argument("--run-dir", default=None)
     orro_review.add_argument("--role-lane-plan", required=True)
+    orro_review.add_argument("--claude-binary", default="claude")
     orro_review.add_argument("--agy-binary", default="agy")
     orro_review.add_argument("--gemini-binary", default="gemini")
     orro_review.add_argument("--timeout-seconds", type=int, default=120)
