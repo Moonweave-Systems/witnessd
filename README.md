@@ -181,6 +181,13 @@ for ORRO usefulness: smallest safe workflow, waste avoidance, proofcheck/handoff
 gate integrity, artifact fatigue reduction, and clear next action. It is not
 proof, verification, telemetry, a benchmark claim, approval, or assurance.
 
+`python scripts/model_routing_benchmark.py` emits measurement JSON for the static
+model-routing table. By default it is offline and deterministic: it loads the
+task suite and computes route/budget decisions without calling live models.
+`--live` is an explicit opt-in measurement path that records declared-vs-actual
+model evidence, degraded flags, and budget compliance for selected tasks. Its
+output is not proof, verifier truth, a benchmark claim, approval, or assurance.
+
 `orro flowplan --profile <profile>` compiles a deterministic rolepack/workflow
 plan for `code-change`, `review-only`, `verification-only`, `docs-change`, or
 `release-readiness`. The plan is an `orro-workflow-plan` intent artifact, not

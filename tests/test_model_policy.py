@@ -20,19 +20,25 @@ class ModelPolicyTests(unittest.TestCase):
 
     def test_resolves_exact_builtin_route_matrix(self) -> None:
         expected = {
-            ("runner", "quick"): {"adapter": "codex", "model": "gpt-5.6-luna"},
-            ("runner", "agentic"): {"adapter": "codex", "model": "gpt-5.6-sol"},
-            ("runner", "frontier"): {"adapter": "codex", "model": "gpt-5.6-sol"},
-            ("reviewer", "quick"): {"adapter": "agy", "model": "gemini-3.5-flash"},
-            ("reviewer", "agentic"): {"adapter": "agy", "model": "gemini-3.5-flash"},
-            ("reviewer", "frontier"): {"adapter": "agy", "model": "gemini-3.5-flash"},
+            ("runner", "quick"): ("codex", "gpt-5.6-luna"),
+            ("runner", "agentic"): ("codex", "gpt-5.6-sol"),
+            ("runner", "frontier"): ("codex", "gpt-5.6-sol"),
+            ("reviewer", "quick"): ("agy", "gemini-3.5-flash"),
+            ("reviewer", "agentic"): ("agy", "gemini-3.5-flash"),
+            ("reviewer", "frontier"): ("agy", "gemini-3.5-flash"),
         }
         actual = {
-            (role_kind, tier): resolve_policy_route(
-                DEFAULT_MODEL_POLICY, role_kind=role_kind, tier=tier
+            (role_kind, tier): (
+                route["adapter"],
+                route["model"],
             )
             for role_kind in ("runner", "reviewer")
             for tier in ("quick", "agentic", "frontier")
+            for route in [
+                resolve_policy_route(
+                    DEFAULT_MODEL_POLICY, role_kind=role_kind, tier=tier
+                )
+            ]
         }
         self.assertEqual(actual, expected)
 
@@ -40,7 +46,45 @@ class ModelPolicyTests(unittest.TestCase):
         route = resolve_policy_route(
             DEFAULT_MODEL_POLICY, role_kind="reviewer", tier="quick"
         )
-        self.assertEqual(route, {"adapter": "agy", "model": "gemini-3.5-flash"})
+        self.assertIsNotNone(route)
+        self.assertEqual(route["adapter"], "agy")
+        self.assertEqual(route["model"], "gemini-3.5-flash")
+
+    def test_resolves_tier_budget_and_caps_caller_budget(self) -> None:
+        quick = resolve_policy_route(
+            DEFAULT_MODEL_POLICY, role_kind="runner", tier="quick"
+        )
+        agentic = resolve_policy_route(
+            DEFAULT_MODEL_POLICY, role_kind="runner", tier="agentic"
+        )
+        frontier = resolve_policy_route(
+            DEFAULT_MODEL_POLICY, role_kind="runner", tier="frontier"
+        )
+        self.assertIsNotNone(quick)
+        self.assertIsNotNone(agentic)
+        self.assertIsNotNone(frontier)
+        self.assertLess(quick["budget"]["max_tokens"], agentic["budget"]["max_tokens"])
+        self.assertLess(
+            agentic["budget"]["max_tokens"], frontier["budget"]["max_tokens"]
+        )
+        self.assertLess(quick["budget"]["max_usd"], agentic["budget"]["max_usd"])
+        self.assertLess(agentic["budget"]["max_usd"], frontier["budget"]["max_usd"])
+
+        capped = resolve_policy_route(
+            DEFAULT_MODEL_POLICY,
+            role_kind="runner",
+            tier="frontier",
+            caller_budget={"max_tokens": 123, "max_usd": 0.5, "max_depth": 9},
+        )
+        self.assertIsNotNone(capped)
+        self.assertEqual(
+            capped["budget"],
+            {
+                "max_tokens": 123,
+                "max_usd": 0.5,
+                "max_depth": frontier["budget"]["max_depth"],
+            },
+        )
 
     def test_unmapped_combo_resolves_to_none(self) -> None:
         route = resolve_policy_route(
@@ -56,6 +100,7 @@ class ModelPolicyTests(unittest.TestCase):
                 {
                     "role_kind": "runner",
                     "tier": "quick",
+                    "budget": {"max_tokens": 1, "max_usd": 1.0, "max_depth": 1},
                     "candidates": [
                         {"adapter": "codex", "model": "first"},
                         {"adapter": "claude", "model": "second"},
@@ -64,7 +109,9 @@ class ModelPolicyTests(unittest.TestCase):
             ],
         }
         route = resolve_policy_route(policy, role_kind="runner", tier="quick")
-        self.assertEqual(route, {"adapter": "codex", "model": "first"})
+        self.assertIsNotNone(route)
+        self.assertEqual(route["adapter"], "codex")
+        self.assertEqual(route["model"], "first")
 
     def test_route_with_empty_candidates_resolves_to_none(self) -> None:
         policy = {

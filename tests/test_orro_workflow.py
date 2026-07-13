@@ -402,6 +402,10 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertEqual(lane["model"], "gpt-5.6-sol")
             self.assertEqual(lane["model_source"], "model-policy")
             self.assertEqual(lane["granted_adapters"], ["codex"])
+            self.assertEqual(
+                lane["budget"],
+                {"max_tokens": 1000000, "max_usd": 6.0, "max_depth": 1},
+            )
             self.assertEqual(lane["granted_write_scope"], ["orro/**", "docs/**"])
             self.assertEqual(lane["region"], ["orro/**", "docs/**"])
             self.assertEqual(lane["granted_tools"], {"mcp": [], "allow": []})
@@ -847,6 +851,7 @@ class OrroWorkflowTests(unittest.TestCase):
                 {
                     "role_kind": "runner",
                     "tier": "quick",
+                    "budget": {"max_tokens": 1, "max_usd": 1.0, "max_depth": 1},
                     "candidates": [{"adapter": "agy", "model": "review-model"}],
                 }
             ],
