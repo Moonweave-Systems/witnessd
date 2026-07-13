@@ -31,6 +31,7 @@ from witnessd.events import encode_agent_event_jsonl, normalize_claude_jsonl_eve
 from witnessd.model_declaration import (
     VERIFICATION_CONFIRMED,
     VERIFICATION_REJECTED,
+    VERIFICATION_REQUESTED_UNCONFIRMED,
     build_model_declaration,
 )
 from witnessd.tool_declaration import build_tool_declaration, normalize_tool_grant
@@ -38,6 +39,9 @@ from witnessd.tool_declaration import build_tool_declaration, normalize_tool_gra
 
 class ClaudeAdapterError(AdapterExecutionError):
     pass
+
+
+CLAUDE_CRITIC_BUILTIN_TOOLS = ("Read", "Glob", "Grep")
 
 
 class ClaudeCLIAdapter:
@@ -130,6 +134,271 @@ def _claude_model_rejection(raw_jsonl: bytes) -> str | None:
                         return item["text"]
             return "model_not_found"
     return None
+
+
+def _claude_observed_model(raw_jsonl: bytes) -> str | None:
+    for line in raw_jsonl.splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        model = payload.get("model")
+        if isinstance(model, str) and model:
+            return model
+        message = payload.get("message")
+        if isinstance(message, dict):
+            model = message.get("model")
+            if isinstance(model, str) and model:
+                return model
+    return None
+
+
+def run_claude_critic_lane(
+    *,
+    sandbox: str,
+    prompt: str,
+    claude_binary: str = "claude",
+    transcript_path: str,
+    review_receipt_path: str | None = None,
+    log_path: str | None = None,
+    timeout_seconds: int = 120,
+    model: str | None = None,
+    role_id: str = "critic",
+    lane_id: str = "critic",
+) -> AdapterResult:
+    """Run one Claude critic under a dedicated fail-closed read-only contract."""
+    if not prompt.strip():
+        raise ClaudeAdapterError(
+            "ERR_CLAUDE_PROMPT_MISSING", "claude critic prompt must not be empty"
+        )
+    repo = str(Path(sandbox).resolve(strict=False))
+    transcript = str(Path(transcript_path).resolve(strict=False))
+    task_dir = Path(transcript).parent
+    normalized_transcript = str(Path(transcript).with_name("events.normalized.jsonl"))
+    review_receipt = str(
+        Path(review_receipt_path).resolve(strict=False)
+        if review_receipt_path is not None
+        else Path(transcript).with_name("review-receipt.json")
+    )
+    critic_tools = {
+        "mcp": [],
+        "allow": list(CLAUDE_CRITIC_BUILTIN_TOOLS),
+    }
+    pep_paths = _claude_pep_paths(task_dir)
+    evidence_paths = [
+        transcript,
+        normalized_transcript,
+        review_receipt,
+        str(task_dir / "claude-mcp-config.json"),
+        *([log_path] if log_path is not None else []),
+        *[str(path) for path in pep_paths.values()],
+    ]
+    for evidence_path in evidence_paths:
+        assert_evidence_path_separated(
+            repo, evidence_path, error_cls=ClaudeAdapterError
+        )
+    task_dir.mkdir(parents=True, exist_ok=True)
+    invocation = [
+        _claude_binary(claude_binary),
+        "-p",
+        prompt,
+        *(["--model", model] if model else []),
+        *_claude_tool_args(critic_tools, task_dir),
+        *_claude_pep_args(
+            tools=critic_tools,
+            task_dir=task_dir,
+            role_id=role_id,
+            role_capability="review",
+            lane_id=lane_id,
+            critic_only=True,
+        ),
+        "--output-format",
+        "stream-json",
+        "--verbose",
+    ]
+
+    before = _snapshot(repo)
+    try:
+        completed = subprocess.run(
+            invocation,
+            cwd=repo,
+            capture_output=True,
+            check=False,
+            timeout=timeout_seconds,
+        )
+        exit_code = completed.returncode
+        raw_stdout = completed.stdout or b""
+        stdout = raw_stdout.decode("utf-8", errors="replace")
+        stderr = (completed.stderr or b"").decode("utf-8", errors="replace")
+    except subprocess.TimeoutExpired as exc:
+        exit_code = 124
+        raw_stdout = exc.stdout if isinstance(exc.stdout, bytes) else b""
+        stdout = raw_stdout.decode("utf-8", errors="replace")
+        stderr = (
+            exc.stderr.decode("utf-8", errors="replace")
+            if isinstance(exc.stderr, bytes)
+            else "process timed out"
+        )
+    except OSError as exc:
+        exit_code = 127
+        raw_stdout = b""
+        stdout = ""
+        stderr = str(exc)
+    Path(transcript).write_bytes(raw_stdout)
+    normalized_events = normalize_claude_jsonl_events(raw_stdout)
+    Path(normalized_transcript).write_bytes(encode_agent_event_jsonl(normalized_events))
+
+    after = _snapshot(repo)
+    touched_files = _diff_touched(
+        before, after, sandbox=repo, evidence_paths=evidence_paths
+    )
+    requested_model_rejection = _claude_model_rejection(raw_stdout)
+    observed_model = _claude_observed_model(raw_stdout)
+    model_declaration = None
+    model_failure: dict[str, Any] | None = None
+    if model is not None:
+        if requested_model_rejection is not None:
+            model_declaration = build_model_declaration(
+                adapter="claude",
+                requested_model=model,
+                verification_status=VERIFICATION_REJECTED,
+                detail=requested_model_rejection,
+            )
+            model_failure = {
+                "kind": "model_rejected",
+                "error_code": "ERR_WITNESSD_MODEL_REJECTED",
+                "detail": requested_model_rejection,
+            }
+        elif observed_model is not None and observed_model != model:
+            detail = f"requested model {model} but observed {observed_model}"
+            model_declaration = build_model_declaration(
+                adapter="claude",
+                requested_model=model,
+                verification_status=VERIFICATION_REJECTED,
+                detail=detail,
+            )
+            model_failure = {
+                "kind": "model_rejected",
+                "error_code": "ERR_WITNESSD_MODEL_REJECTED",
+                "detail": detail,
+                "observed_model": observed_model,
+            }
+        elif observed_model == model:
+            model_declaration = build_model_declaration(
+                adapter="claude",
+                requested_model=model,
+                verification_status=VERIFICATION_CONFIRMED,
+            )
+        else:
+            model_declaration = build_model_declaration(
+                adapter="claude",
+                requested_model=model,
+                verification_status=VERIFICATION_REQUESTED_UNCONFIRMED,
+                detail="claude critic stream did not identify the observed model",
+            )
+
+    failure: dict[str, Any] | None = None
+    test_output: dict[str, Any] = {"status": TEST_STATUS_NOT_RUN}
+    if touched_files:
+        failure = {
+            "kind": "mutation-violation",
+            "error_code": "ERR_CLAUDE_CRITIC_MUTATION",
+            "touched_files": touched_files,
+        }
+        exit_code = 125
+        test_output = {
+            "status": "failed",
+            "summary": "read-only Claude critic changed sandbox files",
+        }
+    elif model_failure is not None:
+        failure = model_failure
+        exit_code = 125
+        test_output = {"status": "failed", "summary": model_failure["detail"]}
+    elif exit_code != 0:
+        failure = {
+            "kind": "critic_process_failed",
+            "error_code": "ERR_CLAUDE_CRITIC_PROCESS_FAILED",
+            "detail": stderr or f"Claude critic exited {exit_code}",
+        }
+        test_output = {"status": "failed", "summary": failure["detail"]}
+
+    tool_decisions = _read_jsonl_objects(pep_paths["decisions"])
+    receipt_payload: dict[str, Any] = {
+        "kind": "moonweave-review-receipt",
+        "schema_version": "1.0",
+        "provider": "anthropic-claude-code",
+        "axis": "critic",
+        "decision": "pass" if failure is None else "blocked",
+        "can_change_evidence_verdict": False,
+        "raises_assurance": False,
+        "verifies_evidence": False,
+        "invocation": invocation,
+        "raw_output_sha256": hashlib.sha256(raw_stdout).hexdigest(),
+        "raw_output_text": stdout,
+        "findings": [],
+        "tool_decisions": tool_decisions,
+        "requested_model": model,
+        "observed_model": observed_model,
+        "failure": failure,
+    }
+    Path(review_receipt).write_text(
+        json.dumps(receipt_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    if log_path is not None:
+        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(log_path).write_text(
+            json.dumps(
+                {
+                    "command": invocation,
+                    "cwd": repo,
+                    "exit_code": exit_code,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    tool_decision_advisory = _build_claude_tool_decision_advisory(
+        tools=critic_tools,
+        task_dir=task_dir,
+        role_id=role_id,
+        role_capability="review",
+        lane_id=lane_id,
+        raw_jsonl=raw_stdout,
+        observed_tool_uses=_claude_observed_tool_uses(raw_stdout),
+    )
+    return AdapterResult(
+        adapter="claude",
+        runner_kind="manual",
+        invocation=invocation,
+        exit_code=exit_code,
+        transcript_path=transcript,
+        command_receipts=[
+            {
+                "command": invocation,
+                "cwd": repo,
+                "exit_code": exit_code,
+                "stdout": stdout[:4096],
+                "stderr": stderr[:4096],
+            }
+        ],
+        touched_files=touched_files,
+        test_output=test_output,
+        normalized_events=normalized_events,
+        raw_events_path=transcript,
+        normalized_events_path=normalized_transcript,
+        review_receipt_path=review_receipt,
+        model_declaration=model_declaration,
+        tool_decision_advisory=tool_decision_advisory,
+    )
 
 
 def run_claude_lane(
@@ -365,6 +634,7 @@ def _claude_pep_args(
     role_id: str,
     role_capability: str,
     lane_id: str,
+    critic_only: bool = False,
 ) -> list[str]:
     if tools is None:
         return []
@@ -379,6 +649,8 @@ def _claude_pep_args(
         "capability": role_capability,
         "mcp": normalized["mcp"],
         "allow": normalized["allow"],
+        "builtin_allow": list(CLAUDE_CRITIC_BUILTIN_TOOLS) if critic_only else [],
+        "critic_only": critic_only,
         "deny_by_default": True,
         "match": "exact",
     }
@@ -400,7 +672,7 @@ def _claude_pep_args(
         "hooks": {
             "PreToolUse": [
                 {
-                    "matcher": "mcp__.*",
+                    "matcher": ".*" if critic_only else "mcp__.*",
                     "hooks": [{"type": "command", "command": command}],
                 }
             ]
@@ -463,12 +735,20 @@ def main() -> int:
         payload = {}
 
     name = _tool_name(payload)
-    if not name.startswith("mcp__"):
-        allowed = True
-        reason = "CLAUDE_BUILTIN_TOOL_OUT_OF_SCOPE"
-    else:
+    if name.startswith("mcp__"):
         allowed = name in set(policy.get("allow", []))
         reason = "ROLE_CAPABILITY_TOOL_GRANTED" if allowed else "ERR_ROLE_CAPABILITY_TOOL_NOT_GRANTED"
+    elif policy.get("critic_only") is True:
+        allowed = name in set(policy.get("builtin_allow", []))
+        if allowed:
+            reason = "CLAUDE_CRITIC_READ_TOOL_GRANTED"
+        elif name in {"Edit", "Write", "NotebookEdit", "Bash"}:
+            reason = "ERR_CLAUDE_CRITIC_WRITE_TOOL_DENIED"
+        else:
+            reason = "ERR_CLAUDE_CRITIC_TOOL_NOT_READ_ONLY"
+    else:
+        allowed = True
+        reason = "CLAUDE_BUILTIN_TOOL_OUT_OF_SCOPE"
     decision = "allow" if allowed else "deny"
     sequence = _next_sequence(decisions_path)
     record = {
@@ -496,7 +776,7 @@ def main() -> int:
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
-            "permissionDecisionReason": "R4_PEP_DENY ERR_ROLE_CAPABILITY_TOOL_NOT_GRANTED",
+            "permissionDecisionReason": f"R4_PEP_DENY {reason}",
         }
     }, sort_keys=True))
     return 0

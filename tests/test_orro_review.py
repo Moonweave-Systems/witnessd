@@ -54,7 +54,109 @@ def _fake_agy(directory: Path) -> str:
     return str(path)
 
 
+def _fake_claude_critic(directory: Path) -> str:
+    path = directory / "claude"
+    path.write_text(
+        "#!/usr/bin/python3\n"
+        "import json\n"
+        "import pathlib\n"
+        "import shlex\n"
+        "import subprocess\n"
+        "import sys\n"
+        "args = sys.argv[1:]\n"
+        "settings_path = pathlib.Path(args[args.index('--settings') + 1])\n"
+        "settings = json.loads(settings_path.read_text(encoding='utf-8'))\n"
+        "command = settings['hooks']['PreToolUse'][0]['hooks'][0]['command']\n"
+        "denied = subprocess.run(\n"
+        "    shlex.split(command),\n"
+        "    input=json.dumps({'tool_name': 'Edit'}),\n"
+        "    text=True,\n"
+        "    capture_output=True,\n"
+        "    check=False,\n"
+        ")\n"
+        "if not denied.stdout.strip():\n"
+        "    pathlib.Path('EDITED.md').write_text('edit escaped hook\\n', encoding='utf-8')\n"
+        "print(json.dumps({'type': 'result', 'subtype': 'success', 'is_error': False, 'result': 'no findings'}))\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
 class OrroReviewTests(unittest.TestCase):
+    def test_orro_review_runs_exactly_one_dedicated_claude_critic_lane(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            repo.mkdir()
+            _seed_repo(repo)
+            role_lanes_out = root / "role-lane-plan.json"
+            with redirect_stdout(io.StringIO()) as flow_stdout:
+                flow_code = main(
+                    [
+                        "orro",
+                        "flowplan",
+                        "criticize the readme",
+                        "--root",
+                        str(repo),
+                        "--profile",
+                        "critic-only",
+                        "--role-lanes-out",
+                        str(role_lanes_out),
+                    ]
+                )
+            self.assertEqual(flow_code, 0, flow_stdout.getvalue())
+            role_lanes = json.loads(role_lanes_out.read_text(encoding="utf-8"))
+            self.assertEqual(len(role_lanes["lanes"]), 1)
+            self.assertEqual(role_lanes["lanes"][0]["adapter"], "claude")
+
+            bindir = root / "bin"
+            bindir.mkdir()
+            agy_marker = root / "agy-ran"
+            fake_agy = bindir / "agy"
+            fake_agy.write_text(
+                f"#!/bin/sh\ntouch {agy_marker}\nexit 99\n",
+                encoding="utf-8",
+            )
+            fake_agy.chmod(fake_agy.stat().st_mode | stat.S_IEXEC)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "review",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--role-lane-plan",
+                        str(role_lanes_out),
+                        "--claude-binary",
+                        _fake_claude_critic(bindir),
+                        "--agy-binary",
+                        str(fake_agy),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0, stdout.getvalue())
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["workflow_profile"], "critic-only")
+            self.assertEqual(len(payload["lanes"]), 1)
+            lane = payload["lanes"][0]
+            self.assertEqual(lane["adapter"], "claude")
+            self.assertFalse((repo / "EDITED.md").exists())
+            self.assertFalse(agy_marker.exists())
+            self.assertFalse(lane["review_receipt"]["raises_assurance"])
+            self.assertFalse(lane["review_receipt"]["verifies_evidence"])
+            self.assertFalse(
+                lane["review_receipt"]["can_change_evidence_verdict"]
+            )
+            self.assertNotIn(
+                repo.resolve(), Path(lane["review_receipt_path"]).resolve().parents
+            )
+
     def test_orro_review_keeps_adapter_evidence_outside_repo_with_internal_home(
         self,
     ) -> None:

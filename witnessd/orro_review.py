@@ -15,6 +15,10 @@ from typing import Any
 
 from witnessd.adapters.agy import AgyAdapterError, run_agy_review_lane
 from witnessd.adapters.base import AdapterExecutionError, AdapterResult
+from witnessd.adapters.claude import (
+    ClaudeAdapterError,
+    run_claude_critic_lane,
+)
 from witnessd.adapters.gemini import GeminiAdapterError, run_gemini_review_lane
 from witnessd.model_declaration import (
     VERIFICATION_REQUESTED_UNCONFIRMED,
@@ -45,6 +49,7 @@ def run_review_role_lane_plan(
     home: Path,
     role_lane_plan_path: Path,
     run_dir: Path | None = None,
+    claude_binary: str = "claude",
     agy_binary: str = "agy",
     gemini_binary: str = "gemini",
     timeout_seconds: int = 120,
@@ -85,6 +90,7 @@ def run_review_role_lane_plan(
                 repo=repo,
                 run_dir=out_dir,
                 evidence_root=evidence_root,
+                claude_binary=claude_binary,
                 agy_binary=agy_binary,
                 gemini_binary=gemini_binary,
                 timeout_seconds=timeout_seconds,
@@ -135,10 +141,10 @@ def _load_review_role_lane_plan(path: Path) -> dict[str, Any]:
         validate_role_lane_plan(payload)
     except OrroWorkflowError as exc:
         raise OrroReviewError(exc.code, str(exc)) from exc
-    if payload.get("workflow_profile") != "review-only":
+    if payload.get("workflow_profile") not in {"review-only", "critic-only"}:
         raise OrroReviewError(
             ERR_ORRO_REVIEW_PLAN_INVALID,
-            "orro review requires a review-only role-lane plan",
+            "orro review requires a review-only or critic-only role-lane plan",
         )
     if payload.get("execution_allowed") is not False:
         raise OrroReviewError(
@@ -150,6 +156,11 @@ def _load_review_role_lane_plan(path: Path) -> dict[str, Any]:
         raise OrroReviewError(
             ERR_ORRO_REVIEW_PLAN_INVALID,
             "review-only role-lane plan has no reviewer lanes",
+        )
+    if payload.get("workflow_profile") == "critic-only" and len(lanes) != 1:
+        raise OrroReviewError(
+            ERR_ORRO_REVIEW_PLAN_INVALID,
+            "critic-only role-lane plan must contain exactly one lane",
         )
     for lane in lanes:
         if not isinstance(lane, dict) or lane.get("phase") != "review":
@@ -188,6 +199,7 @@ def _run_review_lane(
     repo: Path,
     run_dir: Path,
     evidence_root: Path,
+    claude_binary: str,
     agy_binary: str,
     gemini_binary: str,
     timeout_seconds: int,
@@ -201,7 +213,20 @@ def _run_review_lane(
     model = lane.get("model")
     model_arg = str(model) if isinstance(model, str) and model else None
     try:
-        if adapter == "agy":
+        if adapter == "claude":
+            result = run_claude_critic_lane(
+                sandbox=str(repo),
+                prompt=str(lane["prompt"]),
+                claude_binary=claude_binary,
+                transcript_path=str(adapter_evidence_dir / "events.raw.jsonl"),
+                review_receipt_path=str(adapter_evidence_dir / "review-receipt.json"),
+                log_path=str(adapter_evidence_dir / "command-log.json"),
+                timeout_seconds=timeout_seconds,
+                model=model_arg,
+                role_id=str(lane["role_id"]),
+                lane_id=lane_id,
+            )
+        elif adapter == "agy":
             result = run_agy_review_lane(
                 sandbox=str(repo),
                 prompt=str(lane["prompt"]),
@@ -237,7 +262,12 @@ def _run_review_lane(
                 ERR_ORRO_REVIEW_LANE_UNSUPPORTED,
                 f"unsupported review adapter: {adapter}",
             )
-    except (AgyAdapterError, GeminiAdapterError, AdapterExecutionError) as exc:
+    except (
+        AgyAdapterError,
+        ClaudeAdapterError,
+        GeminiAdapterError,
+        AdapterExecutionError,
+    ) as exc:
         code = getattr(exc, "code", ERR_ORRO_REVIEW_LANE_UNSUPPORTED)
         message = getattr(exc, "message", str(exc))
         raise OrroReviewError(code, message) from exc
@@ -267,6 +297,7 @@ def _run_review_lane(
         "model_declaration": result.model_declaration,
         "can_change_evidence_verdict": False,
         "raises_assurance": False,
+        "verifies_evidence": False,
     }
 
 

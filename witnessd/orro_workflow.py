@@ -53,6 +53,7 @@ ROLE_LANE_ADAPTERS = ("shell", "codex", "claude", "agy", "gemini", "opencode")
 # lane, policy-resolved or not -- they have no execution role in this design,
 # only a read-only review one (enforced in _validate_role_lane).
 REVIEW_ONLY_ADAPTERS = ("agy", "gemini")
+CLAUDE_CRITIC_CONTRACT = "claude-critic-v2.1"
 EXECUTION_LANE_ADAPTERS = tuple(
     adapter for adapter in ROLE_LANE_ADAPTERS if adapter not in REVIEW_ONLY_ADAPTERS
 )
@@ -76,6 +77,7 @@ BOUNDARY = {
 
 PROFILE_NAMES = (
     "code-change",
+    "critic-only",
     "review-only",
     "verification-only",
     "docs-change",
@@ -243,6 +245,12 @@ def compile_role_lane_plan(
                         role, workflow_plan, lane_adapter, tier, policy, rolepack
                     )
                 )
+    elif profile == "critic-only":
+        for role in workflow_plan["roles"]:
+            if isinstance(role, dict) and role.get("role_id") == "critic":
+                lanes.append(
+                    _critic_lane_from_role(role, workflow_plan, tier, rolepack)
+                )
     return {
         "kind": ROLE_LANE_PLAN_KIND,
         "schema_version": ROLE_LANE_PLAN_SCHEMA_VERSION,
@@ -365,7 +373,7 @@ def validate_role_lane_plan(plan: dict[str, Any]) -> None:
             ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan boundary is invalid"
         )
     for lane in lanes:
-        _validate_role_lane(lane)
+        _validate_role_lane(lane, workflow_profile=str(plan["workflow_profile"]))
 
 
 def write_role_lane_plan_binding(
@@ -878,7 +886,60 @@ def _review_lane_from_role(
     }
 
 
-def _validate_role_lane(lane: Any) -> None:
+def _critic_lane_from_role(
+    role: dict[str, Any],
+    workflow_plan: dict[str, Any],
+    tier: str,
+    rolepack: dict[str, Any] | None,
+) -> dict[str, Any]:
+    role_id = str(role["role_id"])
+    grant = _grant_for_lane(rolepack=rolepack, role_id=role_id, phase="review")
+    resolved_adapter, extra = _resolve_lane_adapter_and_model(
+        role_kind=role_id,
+        tier=tier,
+        lane_adapter="claude",
+        policy=None,
+        grant=grant,
+    )
+    if resolved_adapter != "claude":
+        raise OrroWorkflowError(
+            ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED,
+            "critic-only role must use the dedicated Claude critic adapter",
+        )
+    role_capability = _role_capability_for_lane(
+        grant=grant,
+        role_id=role_id,
+        phase="review",
+        adapter=resolved_adapter,
+        region=["."],
+    )
+    digest = hashlib.sha256(
+        f"{workflow_plan['goal']}:critic-only:{role_id}:claude".encode("utf-8")
+    ).hexdigest()[:12]
+    return {
+        "lane_id": f"{role_id}-{digest}",
+        "role_id": role_id,
+        "role_purpose": role.get("purpose", ""),
+        "phase": "review",
+        "engine": "witnessd",
+        "adapter": "claude",
+        "critic_contract": CLAUDE_CRITIC_CONTRACT,
+        "tier": tier,
+        "region": ["."],
+        "prompt": (
+            "Critique the ORRO goal without editing files or changing evidence "
+            f"verdicts: {workflow_plan['goal']}"
+        ),
+        "budget": {"max_tokens": 0, "max_usd": 0.0, "max_depth": 1},
+        "may_execute": False,
+        "may_verify": False,
+        "raises_assurance": False,
+        **role_capability,
+        **extra,
+    }
+
+
+def _validate_role_lane(lane: Any, *, workflow_profile: str) -> None:
     if not isinstance(lane, dict):
         raise OrroWorkflowError(
             ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan lane must be a JSON object"
@@ -908,6 +969,18 @@ def _validate_role_lane(lane: Any) -> None:
             raise OrroWorkflowError(
                 ERR_ORRO_ROLE_LANE_PLAN_INVALID,
                 "role-lane execution boundary is invalid",
+            )
+    elif workflow_profile == "critic-only":
+        if (
+            lane.get("adapter") != "claude"
+            or lane.get("role_id") != "critic"
+            or lane.get("critic_contract") != CLAUDE_CRITIC_CONTRACT
+            or lane.get("may_execute") is not False
+            or lane.get("may_verify") is not False
+        ):
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+                "dedicated Claude critic lane boundary is invalid",
             )
     else:
         if (
@@ -1099,6 +1172,32 @@ def _profile_spec(profile: str) -> dict[str, Any]:
                 "review-only plan does not claim execution happened",
                 "review-only handoff is intent; formal ORRO handoff still requires proofcheck",
                 "handoff prose does not approve merge or raise assurance",
+            ],
+        },
+        "critic-only": {
+            "roles": [
+                _role(
+                    "scout",
+                    "collect critic context without execution",
+                    "ORRO/witnessd",
+                    "scout",
+                ),
+                _role(
+                    "critic",
+                    "critique existing changes under a dedicated read-only contract",
+                    "witnessd",
+                    "flowplan",
+                ),
+            ],
+            "flow": ["scout", "flowplan"],
+            "engine_calls": [
+                _call("scout", "orro scout", "witnessd"),
+                _call("flowplan", "orro flowplan", "ORRO"),
+            ],
+            "required_gates": [
+                "critic-only plan compiles exactly one dedicated Claude lane",
+                "critic output is advisory and cannot change evidence verdicts",
+                "critic sandbox mutation blocks the lane",
             ],
         },
         "verification-only": {

@@ -10,6 +10,7 @@ from pathlib import Path
 from witnessd.__main__ import main
 from witnessd.model_policy import DEFAULT_MODEL_POLICY
 from witnessd.orro_workflow import (
+    REVIEW_ONLY_ADAPTERS,
     OrroWorkflowError,
     assert_workflow_phase_allowed,
     compile_role_lane_plan,
@@ -99,6 +100,39 @@ class OrroWorkflowTests(unittest.TestCase):
             plan["required_gates"],
         )
         self.assertIn("model confidence", plan["forbidden_assurance_sources"])
+
+    def test_critic_only_profile_compiles_one_dedicated_claude_lane(self) -> None:
+        plan = compile_workflow_plan(
+            goal="criticize the current changes", profile="critic-only"
+        )
+        role_lanes = compile_role_lane_plan(
+            workflow_plan=plan,
+            lane_adapter="agy",
+        )
+
+        self.assertEqual(REVIEW_ONLY_ADAPTERS, ("agy", "gemini"))
+        self.assertEqual(plan["profile"], "critic-only")
+        self.assertNotIn("proofrun", plan["flow"])
+        self.assertFalse(role_lanes["execution_allowed"])
+        self.assertEqual(len(role_lanes["lanes"]), 1)
+        lane = role_lanes["lanes"][0]
+        self.assertEqual(lane["role_id"], "critic")
+        self.assertEqual(lane["adapter"], "claude")
+        self.assertEqual(lane["phase"], "review")
+        self.assertEqual(lane["critic_contract"], "claude-critic-v2.1")
+        self.assertFalse(lane["may_execute"])
+        self.assertFalse(lane["may_verify"])
+        self.assertFalse(lane["raises_assurance"])
+
+    def test_critic_only_profile_forbids_proofrun(self) -> None:
+        plan = compile_workflow_plan(
+            goal="criticize the current changes", profile="critic-only"
+        )
+
+        with self.assertRaises(OrroWorkflowError) as cm:
+            assert_workflow_phase_allowed(plan, "proofrun")
+
+        self.assertEqual(cm.exception.code, "ERR_ORRO_WORKFLOW_PLAN_PHASE_FORBIDDEN")
 
     def test_verification_only_profile_delegates_verification_without_execution(
         self,
