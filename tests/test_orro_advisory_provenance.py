@@ -99,11 +99,16 @@ def _sketch_decision(*, chosen_direction: str = "validate-agent-record") -> dict
             "confidence": "high",
             "what_would_change_it": "A verifier contract that cannot seal authored JSON.",
         },
+        # Reject exactly the candidates that were NOT chosen, so the record is
+        # never internally inconsistent (chosen must not also appear in rejected)
+        # regardless of which candidate `chosen_direction` selects.
         "rejected": [
             {
-                "option": "keep-template-authoring",
+                "option": axis,
                 "why_lost": "It replaces and misattributes the agent's reasoning.",
             }
+            for axis in ("validate-agent-record", "keep-template-authoring")
+            if axis != chosen_direction
         ],
         "no_gos": ["claim that sealing establishes correctness"],
         "rabbit_holes": ["enforce a mandatory ideation ceremony"],

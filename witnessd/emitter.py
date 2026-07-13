@@ -44,7 +44,12 @@ from witnessd.runintent import (
     write_signed_run_intent,
 )
 from witnessd.signing import DEFAULT_OPERATOR_KEY_ID, derive_public_key_id
-from witnessd.substrate import build_bundle, build_evidence_contract, build_otel_spans
+from witnessd.substrate import (
+    GIT_DIFF_NAME_ONLY_SUBJECT_NAME,
+    build_bundle,
+    build_evidence_contract,
+    build_otel_spans,
+)
 
 TRUSTED_PUBLIC_KEY_ENV = "DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"
 RUNLOG_NAME = "runlog.jsonl"
@@ -309,16 +314,6 @@ def emit_lane_evidence(
     otel_spans = None
     if runner_kind is not None:
         otel_spans = build_otel_spans(manifest, runner_receipt=receipt)
-    bundle = build_bundle(
-        manifest,
-        artifacts,
-        private_key_path,
-        public_key_path,
-        key_id=key_id,
-        otel_spans=otel_spans,
-    )
-    _emit_artifact("bundle.json", json.dumps(bundle))
-
     contract_files = build_evidence_contract(
         allowed_touched_files=allowed_touched_files,
         touched_files=lane_result["touched_files"],
@@ -330,6 +325,21 @@ def emit_lane_evidence(
             and "tool-call-decision-receipts" in provider_artifacts
         ),
     )
+    if write_scope is not None:
+        artifacts[GIT_DIFF_NAME_ONLY_SUBJECT_NAME] = _emit_artifact(
+            GIT_DIFF_NAME_ONLY_SUBJECT_NAME,
+            contract_files.pop(GIT_DIFF_NAME_ONLY_SUBJECT_NAME),
+        )
+    bundle = build_bundle(
+        manifest,
+        artifacts,
+        private_key_path,
+        public_key_path,
+        key_id=key_id,
+        otel_spans=otel_spans,
+    )
+    _emit_artifact("bundle.json", json.dumps(bundle))
+
     for name, content in contract_files.items():
         _emit_artifact(name, content)
 

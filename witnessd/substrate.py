@@ -39,10 +39,11 @@ BUNDLE_SCHEMA_VERSION = "1.0"
 SIGNING_STATUS_UNSIGNED = "unsigned-content-addressed"
 SIGNING_STATUS_OPERATOR_KEY = "signed-ed25519-operator-key"
 EVIDENCE_CONTRACT_SCHEMA_VERSION = "v105.verify_wedge"
-ROLE_CAPABILITY_EVIDENCE_CONTRACT_SCHEMA_VERSION = "v106.role_capability_write_scope"
+ROLE_CAPABILITY_EVIDENCE_CONTRACT_SCHEMA_VERSION = "v109.role_capability_write_scope"
 ROLE_CAPABILITY_TOOL_CALLS_EVIDENCE_CONTRACT_SCHEMA_VERSION = (
     "v107.role_capability_tool_calls"
 )
+GIT_DIFF_NAME_ONLY_SUBJECT_NAME = "git-diff-name-only.txt"
 EVIDENCE_MODE_CONTEMPORANEOUS = "contemporaneous"
 EVIDENCE_MODE_POST_HOC = "post_hoc"
 DEFAULT_EPOCH_SECONDS = 300
@@ -269,9 +270,10 @@ def build_evidence_contract(
     Returns a name -> content map ready to write at the evidence root. The
     contract declares `allowed_touched_files` and `expected_exit_code` as
     enforcement directives that Depone's `validate_evidence_contract` checks.
-    When `write_scope` is supplied, the contract also activates Depone's v106
-    role-capability write-scope conformance axis; the declared scope itself
-    stays in the signed run-intent artifact.
+    When `write_scope` is supplied, the contract also activates Depone's v109
+    role-capability write-scope conformance axis and binds the observed touched
+    paths to the signed bundle; the declared scope itself stays in the signed
+    run-intent artifact.
     """
     schema_version = (
         ROLE_CAPABILITY_TOOL_CALLS_EVIDENCE_CONTRACT_SCHEMA_VERSION
@@ -301,7 +303,7 @@ def build_evidence_contract(
     name_only = "".join(f"{name}\n" for name in touched_files)
     return {
         "evidence-contract.json": json.dumps(contract, indent=2),
-        "git-diff-name-only.txt": name_only,
+        GIT_DIFF_NAME_ONLY_SUBJECT_NAME: name_only,
         "git-diff.patch": diff_patch,
         "exit-code.txt": f"{exit_code}\n",
     }

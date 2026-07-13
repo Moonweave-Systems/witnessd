@@ -219,7 +219,7 @@ class TestEvidenceContract(unittest.TestCase):
 
         contract = json.loads(files["evidence-contract.json"])
         self.assertEqual(
-            contract["schema_version"], "v106.role_capability_write_scope"
+            contract["schema_version"], "v109.role_capability_write_scope"
         )
         self.assertEqual(
             contract["role_capability_write_scope"],
