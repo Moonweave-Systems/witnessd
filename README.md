@@ -179,14 +179,19 @@ review for risky changes. Its `orro-workstyle-decision` is advice only: not
 proof, verifier truth, merge approval, or assurance.
 
 `orro sketch "<goal>" --repo . --home .witnessd --json` performs advisory
-front-end ideation and emits one chosen, flowplan-ready direction after
-comparing distinct approaches and resolving each remaining branch with one
-recommended answer. `orro trace "<symptom>" --repo . --home .witnessd --json`
-records ordered root-cause investigation and blocks fix scope while root cause
-is unconfirmed. Both are read-only advisory context, not evidence, verifier
-truth, approval, or assurance; neither can change an evidence verdict or launch
-proofrun. Their methods are ORRO skillpacks, while the external `superpowers`
-plugin remains untouched for dual-path evaluation.
+controlled convergence: repo-derived criteria precede independently generated
+structural options, per-criterion scores, a devil's-advocate pass, explicit
+rejections, and an ADR-shaped flowplan handoff. `orro trace "<symptom>" --repo .
+--home .witnessd --json` applies a reproduce-first hard gate, consumes a
+symptom-bound `orro-trace-reproduction.json` from a prior actual run, then records
+localization, competing hypotheses, falsification probes, and an evidence-typed
+confidence tier. Without observed red it emits no hypothesis or root cause.
+Both are read-only advisory context, not evidence, verifier truth, approval, or
+assurance; neither can mutate the inspected repo, change an evidence verdict,
+or launch proofrun. An agent's stated confidence is not evidence; sketch cites
+external repo signals and trace treats the recorded actual run as its oracle. Their
+methods are ORRO skillpacks, while the external `superpowers` plugin remains
+untouched for dual-path evaluation.
 
 `python scripts/check_orro_product_reality.py` validates local dogfood scenarios
 for ORRO usefulness: smallest safe workflow, waste avoidance, proofcheck/handoff

@@ -40,7 +40,8 @@ public commands:
 
 boundary:
   Depone verifies; witnessd executes; ORRO exposes the workflow.
-  advise, sketch, trace, next, and report read status/intent only; auto --dry-run recommends
+  advise, sketch, trace, next, and report read status/intent only; trace consumes a
+  symptom-bound prior-run receipt without executing repo code; auto --dry-run recommends
   commands only; auto --once executes at most one proofcheck or handoff step;
   auto --until-complete loops over those post-run steps with --max-steps. None
   is proof or assurance.
