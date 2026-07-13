@@ -108,8 +108,9 @@ witnessd runtime code or Depone verifier logic.
 | `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo exploration, repo profile, context pack, and discovery notes |
-| `orro sketch` | advisory ideation that converges on one flowplan-ready direction |
-| `orro trace` | advisory root-cause investigation before a fix flowplan |
+| `orro sketch` | validates and seals an agent-authored advisory direction |
+| `orro trace` | validates, gates, and seals an agent-authored root-cause record |
+| `orro advisory-provenance-check` | offline Depone v108 re-derivation of sealed sketch/trace provenance; not correctness |
 | `flowplan` | plan-only workflow design and ORRO workflow compiler surface |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
@@ -177,21 +178,39 @@ smallest safe ORRO path. It helps non-developers avoid wasteful or risky AI
 workflows, but it does not replace proofrun, proofcheck, handoff, or human
 review for risky changes. Its `orro-workstyle-decision` is advice only: not
 proof, verifier truth, merge approval, or assurance.
+When sketch or trace output is sealed, that record is auditable provenance only;
+it does not establish that the recommended workflow or diagnosis is correct.
 
-`orro sketch "<goal>" --repo . --home .witnessd --json` performs advisory
-controlled convergence: repo-derived criteria precede independently generated
-structural options, per-criterion scores, a devil's-advocate pass, explicit
-rejections, and an ADR-shaped flowplan handoff. `orro trace "<symptom>" --repo .
---home .witnessd --json` applies a reproduce-first hard gate, consumes a
-symptom-bound `orro-trace-reproduction.json` from a prior actual run, then records
-localization, competing hypotheses, falsification probes, and an evidence-typed
-confidence tier. Without observed red it emits no hypothesis or root cause.
-Both are read-only advisory context, not evidence, verifier truth, approval, or
-assurance; neither can mutate the inspected repo, change an evidence verdict,
-or launch proofrun. An agent's stated confidence is not evidence; sketch cites
-external repo signals and trace treats the recorded actual run as its oracle. Their
-methods are ORRO skillpacks, while the external `superpowers` plugin remains
-untouched for dual-path evaluation.
+`orro sketch "<goal>" --decision sketch.json --repo . --home .witnessd --json`
+validates and seals the calling agent's own frame, candidates, choice, rejection
+reasons, no-gos, and rabbit holes. `orro trace "<symptom>" --decision trace.json
+--repo . --home .witnessd --json` validates the agent's hypotheses and claimed
+tier against the symptom-bound `orro-trace-reproduction.json` from a prior actual
+run. The decision may bind either the source-file SHA-256 or the canonical sealed
+receipt SHA-256; emission records the canonical v108 hash. A claimed `confirmed`
+tier is refused unless the receipt binds the symptom
+and authored discriminating probe and records a ruled-out rival plus red-to-green
+confirmation. Suspected, speculative, and unconfirmed records impose no minimum
+hypothesis count beyond shape consistency. Without `--decision`, each command
+emits only a non-authoritative scaffold stamped `agent_authored=false` and
+`degraded=true`; the harness-authored fallback is intended for headless/CI use.
+Both surfaces are read-only advisory context, not evidence, verifier truth,
+approval, or assurance; neither can mutate the inspected repo, change an evidence
+verdict, or launch proofrun. Their skillpacks are reference knowledge for the
+agent, not CLI-enforced ceremonies or CLI-generated reasoning.
+
+With `--out`, sketch and trace also write `advisory-provenance-bundle.json` and
+the Depone `v108.advisory_provenance` `evidence-contract.json`; trace additionally
+copies the prior run receipt into the sealed subject set and records its canonical
+hash in the decision. Re-derive the separate provenance track with:
+
+```bash
+python3 -m orro advisory-provenance-check <artifact-dir> --home .witnessd --json
+```
+
+`PASS` means the record is tamper-evident and the chosen direction or confirmed
+tier is backed by the sealed bytes. It is not proof, execution-evidence truth,
+approval, assurance, or a claim that the direction/root cause is correct.
 
 `python scripts/check_orro_product_reality.py` validates local dogfood scenarios
 for ORRO usefulness: smallest safe workflow, waste avoidance, proofcheck/handoff

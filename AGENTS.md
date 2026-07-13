@@ -17,8 +17,8 @@ The cross-engine artifact boundary is summarized in
 - `orro init`: setup readiness/provision metadata; not proof or assurance
 - `orro advise`: non-executing workstyle router for the smallest safe workflow
 - `orro scout`: read-only repo profile, context pack, and discovery notes
-- `orro sketch`: advisory ideation that converges on one flowplan-ready direction
-- `orro trace`: advisory root-cause investigation before a fix flowplan/proofrun
+- `orro sketch`: validates and seals an agent-authored advisory direction
+- `orro trace`: validates, gates, and seals an agent-authored root-cause record
 - `flowplan`: plan-only workflow design and rolepack/workflow compiler surface
 - `proofrun`: precise evidence-backed execution alias
 - `proofcheck`: offline evidence verification alias

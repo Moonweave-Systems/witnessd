@@ -12,6 +12,14 @@ not explicit. It is advisory planning context only: not proof, verifier truth,
 approval, evidence, or assurance. It cannot change an evidence verdict or launch
 `proofrun`.
 
+This is reference knowledge for the calling agent, not a mandatory ceremony.
+The agent applies the useful parts while authoring its own JSON decision and
+passes that record to `orro sketch "<goal>" --decision <path.json>`.
+The CLI does not author the agent's candidates, criteria, choice, or rationale.
+It validates consistency, gates claims, and seals the supplied record.
+Without `--decision`, the CLI emits only a labeled, non-authoritative degraded
+scaffold for headless compatibility.
+
 ## Governing rule
 
 An AI agent's stated confidence is not evidence; only an external signal is.
@@ -22,7 +30,9 @@ and name an independent sample/branch, isolated verification question, or actual
 run that could overturn it. Report that external check verbatim. Never promote
 the model's agreement with itself into evidence.
 
-## Ordered method
+## Reference method
+
+The sequence below is a reasoning aid, not CLI-enforced step or order policy.
 
 1. **Frame the bet.** Write one Working-Backwards sentence containing the
    observable target outcome and why it matters. Record hard constraints,
@@ -75,11 +85,11 @@ the model's agreement with itself into evidence.
    [Architecture Decision Record](https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions)
    shape and feeds `orro flowplan` as intent.
 
-## Gate into the evidence pipeline
+## Handoff into the evidence pipeline
 
-`sketch -> flowplan` is allowed only when the frame, predeclared criteria,
-structurally distinct candidates, scores, devil's-advocate pass, winner,
-why-losers-lose record, de-risking step, closed decisions, and ADR handoff are
-present. The sketch artifact remains advisory. Execution begins only at
+The agent may use these reference checks to shape a useful `sketch -> flowplan`
+handoff. The CLI enforces only the decision contract, including that the chosen
+direction exists among the authored candidates and rejected options explain why
+they lost. The sketch artifact remains advisory. Execution begins only at
 `proofrun`; Depone can determine evidence truth only from persisted run artifacts
 through `proofcheck`.

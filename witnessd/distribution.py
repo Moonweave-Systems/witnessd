@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -29,7 +30,7 @@ PROVISION_SCHEMA_VERSION = "0.1"
 ORRO_ENGINE_LOCK_KIND = "orro-engine-lock"
 ORRO_ENGINE_LOCK_SCHEMA_VERSION = "1.0"
 DEFAULT_DEPONE_REPOSITORY = "https://github.com/Moonweave-Systems/Depone.git"
-DEFAULT_DEPONE_REF = "main"
+DEFAULT_DEPONE_REF = "64d215add7e18f56d07db4567502d9fdc8482930"
 
 
 class ProvisionError(Exception):
@@ -309,18 +310,27 @@ def _provision_depone_checkout(config: InitConfig) -> Path:
         or os.environ.get("WITNESSD_DEPONE_REF")
         or DEFAULT_DEPONE_REF
     )
-    command = ["git", "clone", "--depth=1"]
-    if ref:
-        command.extend(["--branch", ref])
-    command.extend([repository, str(target)])
-    completed = subprocess.run(
-        command,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        raise ProvisionError(ERR_WITNESSD_DEPONE_PROVISION_FAILED)
+    if ref and re.fullmatch(r"[0-9a-f]{40}", ref):
+        commands = (
+            ["git", "clone", "--no-checkout", "--filter=blob:none", repository, str(target)],
+            ["git", "-C", str(target), "fetch", "--depth=1", "origin", ref],
+            ["git", "-C", str(target), "checkout", "--detach", "FETCH_HEAD"],
+        )
+    else:
+        command = ["git", "clone", "--depth=1"]
+        if ref:
+            command.extend(["--branch", ref])
+        command.extend([repository, str(target)])
+        commands = (command,)
+    for command in commands:
+        completed = subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise ProvisionError(ERR_WITNESSD_DEPONE_PROVISION_FAILED)
     if not (target / "depone").is_dir():
         raise ProvisionError(ERR_WITNESSD_DEPONE_ROOT_INVALID)
     return target

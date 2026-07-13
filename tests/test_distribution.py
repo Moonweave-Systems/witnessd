@@ -13,6 +13,7 @@ from unittest.mock import patch
 import witnessd.__main__ as witnessd_cli
 from witnessd.__main__ import main
 from witnessd.distribution import (
+    DEFAULT_DEPONE_REF,
     ERR_WITNESSD_DEPONE_PIN_MISMATCH,
     InitConfig,
     ProvisionError,
@@ -22,6 +23,12 @@ from witnessd.distribution import (
 
 
 class DistributionInitTests(unittest.TestCase):
+    def test_default_depone_ref_pins_v108_advisory_provenance(self) -> None:
+        self.assertEqual(
+            DEFAULT_DEPONE_REF,
+            "64d215add7e18f56d07db4567502d9fdc8482930",
+        )
+
     def _depone_root(self) -> Path:
         env_root = os.environ.get("WITNESSD_DEPONE_ROOT")
         if env_root:

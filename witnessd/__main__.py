@@ -991,6 +991,58 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
     return 0 if code == 0 and result["decision"] == "pass" else 1
 
 
+def _cmd_advisory_provenance_check(args: argparse.Namespace) -> int:
+    evidence_dir = Path(args.evidence_dir).resolve(strict=False)
+    home = Path(args.home).resolve(strict=False) if args.home else None
+    if home is None:
+        _emit_orro_error(
+            args,
+            code="ERR_ADVISORY_PROVENANCE_CHECK_HOME_REQUIRED",
+            message="--home is required to locate the pinned Depone verifier and operator key",
+        )
+        return 2
+    try:
+        env = _depone_subprocess_env(home)
+    except Exception as exc:  # noqa: BLE001 - readiness is reported as blocked
+        _emit_orro_error(
+            args,
+            code=str(exc),
+            message="Depone verifier readiness is blocked",
+        )
+        return 2
+    public_key = home / "keys" / "operator-ed25519.pub.pem"
+    if not public_key.is_file():
+        _emit_orro_error(
+            args,
+            code="ERR_ADVISORY_PROVENANCE_PUBLIC_KEY_MISSING",
+            message="operator public key is required outside the advisory artifact directory",
+        )
+        return 2
+    env["DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"] = str(public_key)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "witnessd.advisory_provenance_verify",
+            str(evidence_dir),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    if completed.stdout.strip():
+        print(completed.stdout.strip())
+    else:
+        _emit_orro_error(
+            args,
+            code="ERR_ADVISORY_PROVENANCE_CHECK_FAILED",
+            message=completed.stderr.strip()
+            or "Depone advisory validator produced no output",
+        )
+    return completed.returncode
+
+
 def _hash_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -1353,11 +1405,14 @@ def _cmd_orro_advise(args: argparse.Namespace) -> int:
 
 
 def _cmd_orro_sketch(args: argparse.Namespace) -> int:
+    from witnessd.advisory_provenance import emit_advisory_provenance
     from witnessd.orro_advisory import (
         OrroAdvisoryError,
         build_sketch_decision,
+        read_agent_decision,
         write_advisory_decision,
     )
+    from witnessd.signing import DsseSigningError
 
     if not args.goal or not str(args.goal).strip():
         _emit_orro_error(
@@ -1368,23 +1423,46 @@ def _cmd_orro_sketch(args: argparse.Namespace) -> int:
         return 2
     repo = Path(args.repo).resolve(strict=False)
     home = Path(args.home).resolve(strict=False) if args.home else None
-    payload = build_sketch_decision(str(args.goal), repo=repo, home=home)
-    if args.out:
-        try:
-            write_advisory_decision(Path(args.out).resolve(strict=False), payload)
-        except OrroAdvisoryError as exc:
-            _emit_orro_error(args, code=exc.code, message=str(exc))
-            return 1
+    try:
+        decision = (
+            read_agent_decision(Path(args.decision)) if args.decision else None
+        )
+        payload = build_sketch_decision(
+            str(args.goal), repo=repo, home=home, decision=decision
+        )
+        if args.out:
+            out_path = Path(args.out).resolve(strict=False)
+            write_advisory_decision(out_path, payload)
+            seal_home = home or (out_path.parent.parent / ".witnessd")
+            payload = emit_advisory_provenance(
+                payload,
+                decision_path=out_path,
+                home=seal_home,
+                repo=repo,
+            )
+    except OrroAdvisoryError as exc:
+        _emit_orro_error(args, code=exc.code, message=str(exc))
+        return 1
+    except (DsseSigningError, OSError) as exc:
+        _emit_orro_error(
+            args,
+            code=getattr(exc, "code", "ERR_ORRO_ADVISORY_WRITE_FAILED"),
+            message=str(exc),
+        )
+        return 1
     print(json.dumps(payload, sort_keys=True))
     return 0
 
 
 def _cmd_orro_trace(args: argparse.Namespace) -> int:
+    from witnessd.advisory_provenance import emit_advisory_provenance
     from witnessd.orro_advisory import (
         OrroAdvisoryError,
         build_trace_decision,
+        read_agent_decision,
         write_advisory_decision,
     )
+    from witnessd.signing import DsseSigningError
 
     if not args.goal or not str(args.goal).strip():
         _emit_orro_error(
@@ -1395,13 +1473,33 @@ def _cmd_orro_trace(args: argparse.Namespace) -> int:
         return 2
     repo = Path(args.repo).resolve(strict=False)
     home = Path(args.home).resolve(strict=False) if args.home else None
-    payload = build_trace_decision(str(args.goal), repo=repo, home=home)
-    if args.out:
-        try:
-            write_advisory_decision(Path(args.out).resolve(strict=False), payload)
-        except OrroAdvisoryError as exc:
-            _emit_orro_error(args, code=exc.code, message=str(exc))
-            return 1
+    try:
+        decision = (
+            read_agent_decision(Path(args.decision)) if args.decision else None
+        )
+        payload = build_trace_decision(
+            str(args.goal), repo=repo, home=home, decision=decision
+        )
+        if args.out:
+            out_path = Path(args.out).resolve(strict=False)
+            write_advisory_decision(out_path, payload)
+            seal_home = home or (out_path.parent.parent / ".witnessd")
+            payload = emit_advisory_provenance(
+                payload,
+                decision_path=out_path,
+                home=seal_home,
+                repo=repo,
+            )
+    except OrroAdvisoryError as exc:
+        _emit_orro_error(args, code=exc.code, message=str(exc))
+        return 1
+    except (DsseSigningError, OSError) as exc:
+        _emit_orro_error(
+            args,
+            code=getattr(exc, "code", "ERR_ORRO_ADVISORY_WRITE_FAILED"),
+            message=str(exc),
+        )
+        return 1
     print(json.dumps(payload, sort_keys=True))
     return 0
 
@@ -3257,6 +3355,15 @@ def _build_parser() -> argparse.ArgumentParser:
     proofcheck.add_argument("--json", action="store_true")
     proofcheck.set_defaults(func=_cmd_proofcheck)
 
+    advisory_provenance_check = sub.add_parser(
+        "advisory-provenance-check",
+        help="offline Depone v108 check for sealed advisory provenance only",
+    )
+    advisory_provenance_check.add_argument("evidence_dir")
+    advisory_provenance_check.add_argument("--home", required=True)
+    advisory_provenance_check.add_argument("--json", action="store_true")
+    advisory_provenance_check.set_defaults(func=_cmd_advisory_provenance_check)
+
     handoff = sub.add_parser(
         "handoff",
         help="package ORRO evidence hashes and verifier decision references",
@@ -3324,13 +3431,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "orro-sketch",
         help=argparse.SUPPRESS,
         description=(
-            "Advisory front-end ideation: frame, diverge, converge, and hand the "
-            "chosen direction to flowplan. Not proof or assurance."
+            "Validate and seal an agent-authored advisory sketch decision. Without "
+            "--decision, emits a degraded heuristic scaffold. Not proof or assurance."
         ),
     )
     orro_sketch.add_argument("goal", nargs="?")
     orro_sketch.add_argument("--repo", default=".")
     orro_sketch.add_argument("--home", default=None)
+    orro_sketch.add_argument("--decision", default=None)
     orro_sketch.add_argument("--out", default=None)
     orro_sketch.add_argument("--json", action="store_true")
     orro_sketch.set_defaults(func=_cmd_orro_sketch)
@@ -3339,13 +3447,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "orro-trace",
         help=argparse.SUPPRESS,
         description=(
-            "Advisory root cause investigation: observe, reproduce/localize, "
-            "hypothesize, then confirm before any fix. Not proof or assurance."
+            "Validate, gate, and seal an agent-authored root cause decision. Without "
+            "--decision, emits a degraded heuristic scaffold. Not proof or assurance."
         ),
     )
     orro_trace.add_argument("goal", nargs="?")
     orro_trace.add_argument("--repo", default=".")
     orro_trace.add_argument("--home", default=None)
+    orro_trace.add_argument("--decision", default=None)
     orro_trace.add_argument("--out", default=None)
     orro_trace.add_argument("--json", action="store_true")
     orro_trace.set_defaults(func=_cmd_orro_trace)
@@ -3845,6 +3954,8 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
         return ["proofrun", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "proofcheck":
         return ["proofcheck", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "advisory-provenance-check":
+        return ["advisory-provenance-check", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "handoff":
         return ["handoff", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "doctor":

@@ -276,7 +276,9 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
                         for item in hypotheses
                     ),
                     set(payload.get("confirmation", {}))
-                    >= {"falsification_ran", "ruled_out_rival"},
+                    >= {"lint_ran", "lint_only", "can_confirm"},
+                    payload.get("confirmation", {}).get("lint_only") is True,
+                    payload.get("confirmation", {}).get("can_confirm") is False,
                     isinstance(payload.get("logbook"), list),
                     "root_cause" in payload,
                     set(payload.get("fix_scope", {}))
@@ -349,7 +351,7 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
                 (
                     before == after,
                     payload.get("reproduction", {}).get("red_observed") is True,
-                    payload.get("confirmation", {}).get("falsification_ran") is True,
+                    payload.get("confirmation", {}).get("lint_ran") is True,
                     any(item.get("result") for item in payload.get("logbook", [])),
                     payload.get("root_cause", {}).get("tier")
                     in {"confirmed", "suspected", "speculative"},
@@ -444,7 +446,7 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
             )
             self.assertTrue(probe_drives_verdict)
 
-    def test_trace_confirms_only_with_external_red_to_green_signal(self) -> None:
+    def test_degraded_trace_does_not_promote_heuristic_hypotheses_to_confirmed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             (repo / "calculator.py").write_text(
@@ -466,9 +468,12 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
 
             payload = build_trace_decision(symptom, repo=repo)
 
-            self.assertEqual(payload["root_cause"]["tier"], "confirmed")
-            self.assertEqual(payload["flowplan_handoff"]["status"], "ready")
-            self.assertTrue(payload["recommended_fix_scope"]["fix_proposal_allowed"])
+            self.assertEqual(payload["root_cause"]["tier"], "suspected")
+            self.assertEqual(
+                payload["flowplan_handoff"]["status"],
+                "blocked-root-cause-unconfirmed",
+            )
+            self.assertFalse(payload["recommended_fix_scope"]["fix_proposal_allowed"])
 
     def test_skillpacks_cite_researched_methods_and_external_signal_rule(self) -> None:
         root = Path(__file__).resolve().parents[1]
@@ -503,6 +508,12 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
                 "stated confidence is not evidence" in trace.lower(),
                 "arxiv.org/abs/2310.01798" in sketch,
                 "arxiv.org/abs/2310.01798" in trace,
+                "reference knowledge" in sketch.lower(),
+                "reference knowledge" in trace.lower(),
+                "--decision" in sketch,
+                "--decision" in trace,
+                "does not author" in sketch.lower(),
+                "does not author" in trace.lower(),
             )
         )
         self.assertTrue(researched_skillpacks_present)
