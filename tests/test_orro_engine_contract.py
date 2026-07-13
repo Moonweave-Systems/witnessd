@@ -10,6 +10,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from witnessd.__main__ import main
+from witnessd.orro_team_surface import apply_task_prompt_to_role_lane_plan
 
 
 def _seed_repo(repo: Path) -> None:
@@ -93,6 +94,13 @@ class OrroEngineContractTests(unittest.TestCase):
         code, _payload = self._json_command(args)
         self.assertEqual(code, 0)
         self.assertTrue(out.is_file())
+        if role_lanes:
+            payload = json.loads(out.read_text(encoding="utf-8"))
+            patched = apply_task_prompt_to_role_lane_plan(
+                payload,
+                task=f"Perform the declared {goal} task",
+            )["role_lane_plan"]
+            out.write_text(json.dumps(patched), encoding="utf-8")
         return out
 
     def _proofrun(self, root: Path, *, with_contract_artifacts: bool = False) -> tuple[Path, Path, dict]:

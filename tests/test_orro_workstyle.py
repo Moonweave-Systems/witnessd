@@ -47,6 +47,7 @@ class OrroWorkstyleTests(unittest.TestCase):
             ("fix parser bug", "code-change", "code-change", "bounded", True),
             ("rotate secret auth token", "risky-change", "code-change", "guarded", True),
             ("fix trivial typo", "trivial-change", "docs-change", "minimal", False),
+            ("fix typo in README", "trivial-change", "docs-change", "minimal", False),
         ]
         for goal, task_class, profile, effort, human_review in cases:
             with self.subTest(goal=goal):
@@ -64,6 +65,24 @@ class OrroWorkstyleTests(unittest.TestCase):
         skipped = {item["action"] for item in payload["actions_to_skip"]}
         self.assertIn("role-lane team execution", skipped)
         self.assertIn("unbounded auto", skipped)
+
+    def test_trivial_change_recommends_direct_edit_without_scout_or_flowplan(self) -> None:
+        code, payload = self._advise("fix typo in README")
+
+        self.assertEqual(code, 0)
+        phases = [step["phase"] for step in payload["recommended_path"]]
+        self.assertLess(len(payload["recommended_path"]), 2)
+        self.assertNotIn("scout", phases)
+        self.assertNotIn("flowplan", phases)
+
+    def test_non_trivial_code_change_keeps_full_evidence_path(self) -> None:
+        code, payload = self._advise("fix parser bug")
+
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            [step["phase"] for step in payload["recommended_path"]],
+            ["scout", "flowplan", "proofrun", "proofcheck", "handoff"],
+        )
 
     def test_boundary_is_non_executing_non_verifying_non_assurance(self) -> None:
         code, payload = self._advise("fix parser bug")

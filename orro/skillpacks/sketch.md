@@ -12,6 +12,14 @@ not explicit. It is advisory planning context only: not proof, verifier truth,
 approval, evidence, or assurance. It cannot change an evidence verdict or launch
 `proofrun`.
 
+Scale this reference method to the stakes and width of the decision. If one
+approach is clearly best and the change is low-stakes, the agent may author a
+minimal decision with that one direction and a one-line reason, skipping the
+full diverge, score, and devil's-advocate ceremony. Use the full method only
+when the solution space is genuinely wide or the decision is consequential.
+This off-ramp does not change the advisory-only boundary or turn model judgment
+into evidence.
+
 This is reference knowledge for the calling agent, not a mandatory ceremony.
 The agent applies the useful parts while authoring its own JSON decision and
 passes that record to `orro sketch "<goal>" --decision <path.json>`.

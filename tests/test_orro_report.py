@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.__main__ import main
+from witnessd.orro_team_surface import apply_task_prompt_to_role_lane_plan
 
 
 def _seed_repo(repo: Path) -> None:
@@ -106,6 +107,12 @@ class OrroReportTests(unittest.TestCase):
                 ]
             )
         self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        patched = apply_task_prompt_to_role_lane_plan(
+            payload,
+            task=f"Perform the declared {goal} task",
+        )["role_lane_plan"]
+        out.write_text(json.dumps(patched), encoding="utf-8")
         return out
 
     def _proofrun(

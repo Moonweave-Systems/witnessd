@@ -48,14 +48,14 @@ _RULES: list[tuple[str, str, tuple[str, ...]]] = [
         ("release", "changelog", "version", "package", "ship"),
     ),
     (
-        "docs-change",
-        "documentation keywords should use the docs-change profile",
-        ("docs", "readme", "spec", "guide", "markdown"),
-    ),
-    (
         "trivial-change",
         "trivial wording keywords should keep effort minimal",
         ("typo", "comment", "format", "simple wording"),
+    ),
+    (
+        "docs-change",
+        "documentation keywords should use the docs-change profile",
+        ("docs", "readme", "spec", "guide", "markdown"),
     ),
 ]
 
@@ -183,18 +183,7 @@ def _recommended_path(
             _step("next", ["orro", "next", "<run-dir>", *home_args, "--json"], "inspect continuation state before automation"),
         ]
     if task_class == "trivial-change":
-        return [
-            _step(
-                "scout",
-                ["orro", "scout", goal, "--repo", str(repo)],
-                "minimal discovery is enough before a trivial edit",
-            ),
-            _step(
-                "flowplan",
-                ["orro", "flowplan", goal, "--root", str(repo), "--profile", profile],
-                "keep workflow intent plan-only unless evidence is explicitly required",
-            ),
-        ]
+        return []
     return [
         _step(
             "scout",
@@ -291,7 +280,9 @@ def _required_gates(task_class: str) -> list[str]:
 
 def _reasons(task_class: str) -> list[str]:
     return {
-        "trivial-change": ["goal appears small; keep discovery and planning minimal"],
+        "trivial-change": [
+            "goal appears small; make the edit directly without mandatory scout or flowplan"
+        ],
         "docs-change": ["goal appears documentation-focused"],
         "code-change": ["goal appears to require source modification", "formal handoff requires proofcheck"],
         "review-only": ["goal appears review-only; execution evidence is not implied"],

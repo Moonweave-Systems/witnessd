@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -98,6 +99,7 @@ class OrroProductRealityTests(unittest.TestCase):
 
         self.assertEqual(decision["task_class"], "trivial-change")
         self.assertEqual(decision["recommended_effort"], "minimal")
+        self.assertLess(len(decision["recommended_path"]), 2)
         self.assertNotIn("proofrun", self._phases(decision))
         self.assertIn("role-lane team execution", self._skipped_actions(decision))
 
@@ -120,7 +122,7 @@ class OrroProductRealityTests(unittest.TestCase):
 
     def test_checker_script_passes_current_manifest(self) -> None:
         result = subprocess.run(
-            ["python3", "scripts/check_orro_product_reality.py"],
+            [sys.executable, "scripts/check_orro_product_reality.py"],
             cwd=self.ROOT,
             check=False,
             text=True,

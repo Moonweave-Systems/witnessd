@@ -33,6 +33,7 @@ ERR_ORRO_ROLE_LANE_PLAN_EXECUTION_FORBIDDEN = (
     "ERR_ORRO_ROLE_LANE_PLAN_EXECUTION_FORBIDDEN"
 )
 ERR_ORRO_ROLE_LANE_PLAN_EMPTY = "ERR_ORRO_ROLE_LANE_PLAN_EMPTY"
+ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT = "ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT"
 ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED = "ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED"
 ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED = "ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED"
 ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED = "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED"
@@ -48,6 +49,7 @@ ROLE_LANE_PLAN_BINDING_KIND = "orro-role-lane-plan-binding"
 ROLE_LANE_PLAN_BINDING_SCHEMA_VERSION = "0.1"
 ROLE_DISPATCH_KIND = "orro-role-dispatch"
 ROLE_DISPATCH_SCHEMA_VERSION = "0.1"
+ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX = "Execute ORRO role "
 ROLE_LANE_ADAPTERS = ("shell", "codex", "claude", "agy", "gemini", "opencode")
 # Review-only vendors (agy/gemini) must never land in an execution/proofrun
 # lane, policy-resolved or not -- they have no execution role in this design,
@@ -323,6 +325,7 @@ def load_role_lane_plan(path: Path, *, workflow_plan: dict[str, Any]) -> dict[st
             ERR_ORRO_ROLE_LANE_PLAN_EMPTY,
             "role-lane plan has no executable lanes",
         )
+    assert_role_lane_prompts_explicit(payload)
     return deepcopy(payload)
 
 
@@ -374,6 +377,23 @@ def validate_role_lane_plan(plan: dict[str, Any]) -> None:
         )
     for lane in lanes:
         _validate_role_lane(lane, workflow_profile=str(plan["workflow_profile"]))
+
+
+def assert_role_lane_prompts_explicit(plan: dict[str, Any]) -> None:
+    lanes = plan.get("lanes")
+    if not isinstance(lanes, list):
+        return
+    for lane in lanes:
+        if not isinstance(lane, dict):
+            continue
+        prompt = lane.get("prompt")
+        if isinstance(prompt, str) and prompt.startswith(
+            ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX
+        ):
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT,
+                f"role-lane {lane.get('lane_id')!r} still has a placeholder prompt",
+            )
 
 
 def write_role_lane_plan_binding(
