@@ -13,6 +13,7 @@ The cross-engine artifact boundary is summarized in
 ## Public modes
 
 - `orro`: goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff
+- `orro setup`: provision pinned Depone, initialize home, and write engine lock
 - `orro init`: setup readiness/provision metadata; not proof or assurance
 - `orro advise`: non-executing workstyle router for the smallest safe workflow
 - `orro scout`: read-only repo profile, context pack, and discovery notes
@@ -36,14 +37,15 @@ The cross-engine artifact boundary is summarized in
 the witnessd repo and delegates to the existing `witnessd orro ...` surface. It
 is not a standalone ORRO repository and not a third engine.
 `python3 -m orro --help` is product-facing and lists only public ORRO commands:
-`init`, `advise`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`,
+`setup`, `init`, `advise`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`,
 `next`, `report`, `auto`, `doctor`, and `engine-lock`.
 
-Use `python3 -m orro init --home .witnessd --depone-root ../Depone` as the
-public setup path. It delegates to existing witnessd initialization/provisioning
-and creates readiness metadata such as `.witnessd/provision.json`. It does not
-run ORRO Flow work, verify evidence, approve merge, or raise assurance. Use a
-local `--depone-root` for development and tests.
+Use `python3 -m orro setup --home .witnessd` as the public setup path. It
+provisions pinned Depone when needed, delegates to existing witnessd
+initialization/provisioning, and writes `.witnessd/provision.json` plus
+`.witnessd/orro-engine-lock.json`. It does not run ORRO Flow work, verify
+evidence, approve merge, or raise assurance. Use `--depone-root` for development
+and tests when you want an explicit local Depone checkout.
 
 Use `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
 to write distribution metadata for the pinned witnessd and Depone commits. Use
@@ -154,7 +156,7 @@ witnessd-hosted ORRO surface.
 5. Set up ORRO, then run witnessd from the repository being worked on:
 
    ```bash
-   python3 -m orro init --home .witnessd --depone-root ../Depone
+   python3 -m orro setup --home .witnessd --json
    python3 -m orro doctor --home .witnessd --json
    python3 -m witnessd run "<goal>" --repo <repo> --home .witnessd
    python3 -m witnessd verify <run-dir> --home .witnessd

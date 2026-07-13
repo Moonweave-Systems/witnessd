@@ -286,6 +286,126 @@ class DistributionInitTests(unittest.TestCase):
             self.assertTrue(provision["depone"]["network_used"])
             self.assertRegex(provision["depone"]["commit"], r"^[0-9a-f]{40}$")
 
+    def test_orro_setup_provisions_depone_and_writes_engine_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_witnessd = root / "isolated" / "witnessd"
+            fake_depone_remote = root / "remote-depone"
+            fake_witnessd.mkdir(parents=True)
+            fake_depone_remote.mkdir()
+            self._seed_git_repo(fake_witnessd, {"README.md": "witnessd\n"})
+            self._seed_git_repo(
+                fake_depone_remote,
+                {
+                    "depone/__init__.py": "",
+                    "README.md": "depone\n",
+                },
+            )
+            home = root / "home"
+            out = io.StringIO()
+            err = io.StringIO()
+
+            with patch.dict(os.environ, {"WITNESSD_DEPONE_ROOT": ""}), patch.object(
+                witnessd_cli,
+                "__file__",
+                str(fake_witnessd / "witnessd" / "__main__.py"),
+            ):
+                os.environ.pop("WITNESSD_DEPONE_ROOT", None)
+                with redirect_stdout(out), redirect_stderr(err):
+                    code = main(
+                        [
+                            "orro",
+                            "setup",
+                            "--home",
+                            str(home),
+                            "--depone-repository",
+                            str(fake_depone_remote),
+                            "--depone-ref",
+                            "main",
+                            "--json",
+                            "--yes",
+                        ]
+                    )
+
+            self.assertEqual(code, 0, err.getvalue())
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload["kind"], "orro-setup-result")
+            self.assertEqual(payload["command"], "orro setup")
+            self.assertEqual(payload["home"], str(home.resolve(strict=False)))
+            self.assertTrue((home / "provision.json").is_file())
+            self.assertTrue((home / "orro-engine-lock.json").is_file())
+            self.assertEqual(payload["engine_lock"], str(home / "orro-engine-lock.json"))
+            self.assertEqual(payload["depone_source"], "setup-clone")
+            self.assertTrue(payload["depone_network_used"])
+            self.assertRegex(payload["depone_commit"], r"^[0-9a-f]{40}$")
+            self.assertIn("python3 -m orro doctor", payload["next_steps"][0])
+
+    def test_orro_setup_with_depone_root_uses_local_checkout_without_network(
+        self,
+    ) -> None:
+        depone_root = self._depone_root()
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            out = io.StringIO()
+            err = io.StringIO()
+
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(
+                    [
+                        "orro",
+                        "setup",
+                        "--home",
+                        str(home),
+                        "--depone-root",
+                        str(depone_root),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0, err.getvalue())
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload["depone_root"], str(depone_root.resolve()))
+            self.assertEqual(payload["depone_source"], "local-checkout")
+            self.assertFalse(payload["depone_network_used"])
+            self.assertTrue((home / "provision.json").is_file())
+            self.assertTrue((home / "orro-engine-lock.json").is_file())
+
+    def test_orro_setup_provision_failure_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_witnessd = root / "isolated" / "witnessd"
+            fake_witnessd.mkdir(parents=True)
+            self._seed_git_repo(fake_witnessd, {"README.md": "witnessd\n"})
+            home = root / "home"
+            out = io.StringIO()
+            err = io.StringIO()
+
+            with patch.dict(os.environ, {"WITNESSD_DEPONE_ROOT": ""}), patch.object(
+                witnessd_cli,
+                "__file__",
+                str(fake_witnessd / "witnessd" / "__main__.py"),
+            ):
+                os.environ.pop("WITNESSD_DEPONE_ROOT", None)
+                with redirect_stdout(out), redirect_stderr(err):
+                    code = main(
+                        [
+                            "orro",
+                            "setup",
+                            "--home",
+                            str(home),
+                            "--depone-repository",
+                            str(root / "missing-depone"),
+                            "--json",
+                        ]
+                    )
+
+            self.assertEqual(code, 2)
+            payload = json.loads(out.getvalue())
+            self.assertEqual(
+                payload["error"]["code"], "ERR_WITNESSD_DEPONE_PROVISION_FAILED"
+            )
+            self.assertFalse((home / "orro-engine-lock.json").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

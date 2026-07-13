@@ -42,6 +42,7 @@ Use these names in new user-facing docs:
 | Observed Run & Review Orchestrator | ORRO full name |
 | ORRO Flow | scout -> flowplan -> proofrun -> proofcheck -> handoff |
 | `orro` | primary command/skill surface |
+| `orro setup` | one-command setup that provisions pinned Depone, initializes home, and writes engine lock |
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo exploration and context packaging |
@@ -71,8 +72,9 @@ verifier logic. The product `orro` command is owned by the ORRO package. The
 witnessd-provided `python3 -m orro` and console-script entrypoint are deprecated
 compatibility shims: they warn on stderr, delegate to the witnessd ORRO parser,
 and will be removed in the next major witnessd release. Public setup starts with
-`orro init`, which delegates to witnessd initialization/provisioning
-and creates readiness metadata such as `.witnessd/provision.json`; it is not
+`orro setup`, which provisions pinned Depone when needed, delegates to witnessd
+initialization/provisioning, and creates readiness metadata such as
+`.witnessd/provision.json` plus `.witnessd/orro-engine-lock.json`; it is not
 proof or assurance. `orro doctor` checks readiness, not evidence truth. The
 engine lock is distribution metadata only. `--out` writes the pinned commit
 metadata; `--check` detects local environment drift against it. A matching lock

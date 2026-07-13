@@ -12,7 +12,7 @@ DEPRECATION_WARNING = (
     "the orro command. This shim will be removed in the next major witnessd release."
 )
 
-ORRO_HELP = """usage: orro [-h] {init,advise,scout,flowplan,proofrun,proofcheck,handoff,next,report,review,auto,team,doctor,engine-lock} ...
+ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,flowplan,proofrun,proofcheck,handoff,next,report,review,auto,team,doctor,engine-lock} ...
 
 ORRO - Observed Run & Review Orchestrator
 
@@ -20,6 +20,7 @@ ORRO Flow:
   scout -> flowplan -> proofrun -> proofcheck -> handoff
 
 public commands:
+  setup       provision pinned Depone, initialize home, and write engine lock
   init         setup readiness/provision metadata; does not verify evidence
   advise       non-executing workstyle router for the smallest safe workflow
   scout        read-only repository exploration and context packaging
