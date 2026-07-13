@@ -17,9 +17,8 @@ as compatibility aliases during migration.
 
 ```bash
 cd witnessd
-python3 -m orro init --home .witnessd --depone-root ../depone
+python3 -m orro setup --home .witnessd --json
 python3 -m orro doctor --home .witnessd --json
-python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 python3 -m orro advise "write two independent files" --repo . --home .witnessd --json
 python3 -m orro scout "map the repo before planning" --repo . --home .witnessd
@@ -147,16 +146,16 @@ product/distribution/wrapper repo, but engine code remains in Depone and
 witnessd. It must not duplicate witnessd runtime behavior, Depone proofcheck
 logic, or become a third engine. Depone remains a pinned verifier dependency.
 
-Public ORRO setup starts with `orro init`, which delegates to existing witnessd
-initialization/provisioning and creates readiness metadata such as
-`.witnessd/provision.json`. It does not run ORRO Flow work, verify evidence,
-approve merge, or raise assurance. For local development, provide an explicit
-Depone checkout:
+Public ORRO setup starts with `orro setup`, which provisions a pinned Depone
+verifier when needed, delegates to existing witnessd initialization/provisioning,
+and creates readiness metadata such as `.witnessd/provision.json` plus
+`.witnessd/orro-engine-lock.json`. It does not run ORRO Flow work, verify
+evidence, approve merge, or raise assurance. For local development, an explicit
+Depone checkout remains available:
 
 ```bash
-python3 -m orro init --home .witnessd --depone-root ../Depone
+python3 -m orro setup --home .witnessd --depone-root ../Depone --json
 python3 -m orro doctor --home .witnessd --json
-python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 ```
 
@@ -331,7 +330,7 @@ From a checkout with Depone next to witnessd:
 
 ```bash
 cd witnessd
-python3 -m orro init --home .witnessd --depone-root ../depone
+python3 -m orro setup --home .witnessd --depone-root ../depone --json
 python3 -m orro doctor --home .witnessd --json
 python3 -m witnessd run "write two independent files" --repo . --home .witnessd
 python3 -m witnessd verify .witnessd/runs/<run-dir> --home .witnessd
@@ -345,12 +344,12 @@ run_dir="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["run_dir"]
 python3 -m witnessd verify "$run_dir" --home .witnessd
 ```
 
-On a runner machine without a local Depone checkout, setup can provision the
-pinned verifier into `.witnessd/depone-pinned` and record that setup-time network
-use:
+On a runner machine without a local Depone checkout, `orro setup` provisions the
+pinned verifier into `.witnessd/depone-pinned` and records that setup-time
+network use:
 
 ```bash
-python3 -m orro init --home .witnessd --allow-network
+python3 -m orro setup --home .witnessd --json
 ```
 
 For the same path as CI:
@@ -401,9 +400,9 @@ blocks handoff and does not write `orro-handoff.json`.
 
 `python3 -m orro <subcommand>` and the witnessd-provided `orro` console script
 are deprecated compatibility shims. They warn on stderr, delegate to the same
-ORRO parser used by `python3 -m witnessd orro ...`, and will be removed in the
-next major witnessd release. The standalone `Moonweave-Systems/ORRO` package now
-owns the product `orro` command and distribution docs.
+ORRO parser, and will be removed in the next major witnessd release. The
+standalone `Moonweave-Systems/ORRO` package now owns the product `orro` command
+and distribution docs.
 
 ## Session skill
 

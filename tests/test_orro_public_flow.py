@@ -1309,12 +1309,15 @@ class OrroPublicFlowTests(unittest.TestCase):
                     str(out),
                     "--rolepack",
                     "developer",
+                    "--model-policy",
+                    "default",
                 ]
             )
 
             self.assertEqual(flowplan.returncode, 0, flowplan.stderr)
             lane = json.loads(out.read_text(encoding="utf-8"))["lanes"][0]
             self.assertEqual(lane["role_capability"]["role_id"], "runner")
+            self.assertEqual(lane["model_source"], "model-policy")
 
     def test_orro_module_doctor_json_works(self) -> None:
         doctor = self._orro_module_run(["doctor", "--json"])

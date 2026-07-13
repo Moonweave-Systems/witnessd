@@ -36,9 +36,8 @@ Depone verifies; witnessd executes; ORRO exposes the workflow.
 The current entrypoint strategy is `python3 -m orro`, hosted inside witnessd:
 
 ```bash
-python3 -m orro init --home .witnessd --depone-root ../Depone
+python3 -m orro setup --home .witnessd --json
 python3 -m orro doctor --home .witnessd --json
-python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 python3 -m orro advise "goal" --repo . --home .witnessd --json
 python3 -m orro scout "inspect repo" --repo .
@@ -56,19 +55,20 @@ python3 -m orro handoff .witnessd/runs/<run-dir> \
   --out .witnessd/runs/<run-dir>/orro-handoff.json
 ```
 
-The module entrypoint delegates to the same wrapper surface as
-`python3 -m witnessd orro ...`. The standalone ORRO repo now exists, but it
-does not host engine code and is not a third engine. It must not replace or
-break existing `witnessd` commands.
+The module entrypoint delegates to the same ORRO wrapper surface exposed by
+`python3 -m orro`. The standalone ORRO repo now exists, but it does not host
+engine code and is not a third engine. It must not replace or break existing
+`witnessd` commands.
 
-`orro init` delegates to existing witnessd initialization/provisioning and
-creates readiness metadata such as `.witnessd/provision.json`. It does not run
-ORRO Flow work, verify evidence, approve merge, or raise assurance. Use a local
-`--depone-root` for development and tests. If no local Depone root is supplied,
-preserve the existing witnessd initialization behavior.
+`orro setup` delegates to existing witnessd initialization/provisioning,
+provisions pinned Depone when needed, and creates readiness metadata such as
+`.witnessd/provision.json` plus `.witnessd/orro-engine-lock.json`. It does not
+run ORRO Flow work, verify evidence, approve merge, or raise assurance. Use
+`--depone-root` for development and tests when you want an explicit local Depone
+checkout.
 
 `python3 -m orro --help` is product-facing and lists only public ORRO commands:
-`init`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `next`,
+`setup`, `init`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`, `next`,
 `auto`, `doctor`, and `engine-lock`. It must not promote witnessd engine-internal
 commands.
 
@@ -260,8 +260,6 @@ The current v0 command is:
 ```bash
 python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
-python3 -m witnessd orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json
-python3 -m witnessd orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 ```
 
 `engine-lock --out` validates the Depone pin recorded in

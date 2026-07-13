@@ -20,6 +20,7 @@ The cross-engine artifact boundary is summarized in
 | Mode | Meaning |
 | --- | --- |
 | `orro` | goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
+| `orro setup` | one-command setup: provision pinned Depone, initialize home, and write engine lock |
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo exploration and context-pack creation |
@@ -55,11 +56,14 @@ engine-internal commands stay behind the witnessd CLI. The packaged `orro`
 console script points at the same module entrypoint and must remain an alias
 layer, not a separate parser or engine.
 
-`python3 -m orro init --home .witnessd --depone-root ../Depone` is the public
-setup path. It delegates to existing witnessd initialization/provisioning and
-creates readiness metadata such as `.witnessd/provision.json`. It does not run
-ORRO Flow work, verify evidence, approve merge, or raise assurance. Use a local
-`--depone-root` for development and tests.
+`python3 -m orro setup --home .witnessd` is the public setup path. It provisions
+the pinned Depone verifier when needed, delegates to existing witnessd
+initialization/provisioning, and writes `.witnessd/provision.json` plus
+`.witnessd/orro-engine-lock.json`. It may use network during setup only. Runtime
+and verification remain offline. It does not run ORRO Flow work, verify
+evidence, approve merge, or raise assurance. Use
+`python3 -m orro setup --home .witnessd --depone-root ../Depone` for
+development and tests when you want an explicit local Depone checkout.
 
 `python3 -m orro team init --template developer --yes`
 creates `.orro/team.json` rolepack readiness configuration. It validates the
@@ -250,7 +254,7 @@ output as verifier truth.
 3. Initialize once per repo or session:
 
    ```bash
-   python3 -m orro init --home .witnessd --depone-root ../Depone
+   python3 -m orro setup --home .witnessd --json
    python3 -m orro team init --template developer --yes
    python3 -m orro doctor --home .witnessd --json
    ```
