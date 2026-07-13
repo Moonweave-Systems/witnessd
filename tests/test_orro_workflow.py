@@ -18,6 +18,29 @@ from witnessd.orro_workflow import (
 )
 
 
+def _runner_rolepack(
+    *,
+    adapters: list[str],
+    write_scope: list[str],
+    model: str | None = None,
+    name: str = "developer",
+) -> dict:
+    grant = {
+        "role_id": "runner",
+        "capability": "execute",
+        "adapters": adapters,
+        "write_scope": write_scope,
+    }
+    if model is not None:
+        grant["model"] = model
+    return {
+        "kind": "moonweave-rolepack",
+        "schema_version": "0.2",
+        "name": name,
+        "grants": [grant],
+    }
+
+
 class OrroWorkflowTests(unittest.TestCase):
     def _flowplan(self, args: list[str]) -> tuple[int, dict]:
         stdout = io.StringIO()
@@ -175,6 +198,9 @@ class OrroWorkflowTests(unittest.TestCase):
                     "code-change",
                     "--role-lanes-out",
                     str(out),
+                    "--rolepack",
+                    "developer",
+                    "--json",
                 ]
             )
 
@@ -200,7 +226,8 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertFalse(role_lanes["boundary"]["approves_merge"])
             self.assertGreaterEqual(len(role_lanes["lanes"]), 1)
             for lane in role_lanes["lanes"]:
-                self.assertEqual(lane["adapter"], "shell")
+                self.assertEqual(lane["adapter"], "codex")
+                self.assertEqual(lane["region"], ["orro/**", "docs/**"])
                 self.assertTrue(lane["may_execute"])
                 self.assertFalse(lane["may_verify"])
                 self.assertFalse(lane["raises_assurance"])
@@ -324,10 +351,10 @@ class OrroWorkflowTests(unittest.TestCase):
                 ]
             )
 
-    def test_flowplan_role_lanes_default_policy_off_is_unchanged(self) -> None:
+    def test_flowplan_role_lanes_without_write_scope_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "role-lane-plan.json"
-            code, _payload = self._flowplan(
+            code, text = self._flowplan_raw(
                 [
                     "fix parser",
                     "--root",
@@ -336,18 +363,14 @@ class OrroWorkflowTests(unittest.TestCase):
                     "code-change",
                     "--role-lanes-out",
                     str(out),
+                    "--json",
                 ]
             )
 
-            self.assertEqual(code, 0)
-            role_lanes = json.loads(out.read_text(encoding="utf-8"))
-            for lane in role_lanes["lanes"]:
-                self.assertEqual(lane["tier"], "quick")
-                self.assertNotIn("model", lane)
-                self.assertNotIn("resolved_via_policy", lane)
-                self.assertNotIn("granted_adapters", lane)
-                self.assertNotIn("granted_write_scope", lane)
-                self.assertNotIn("granted_tools", lane)
+            self.assertEqual(code, 1)
+            self.assertFalse(out.exists())
+            payload = json.loads(text)
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED")
 
     def test_flowplan_rolepack_developer_inlines_grants(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -378,6 +401,7 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertEqual(lane["model_source"], "rolepack")
             self.assertEqual(lane["granted_adapters"], ["codex"])
             self.assertEqual(lane["granted_write_scope"], ["orro/**", "docs/**"])
+            self.assertEqual(lane["region"], ["orro/**", "docs/**"])
             self.assertEqual(lane["granted_tools"], {"mcp": [], "allow": []})
             self.assertEqual(lane["role_capability"]["role_id"], "runner")
 
@@ -663,7 +687,17 @@ class OrroWorkflowTests(unittest.TestCase):
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "role-lane-plan.json"
+            root = Path(tmp)
+            out = root / "role-lane-plan.json"
+            rolepack_path = root / "rolepack.json"
+            rolepack_path.write_text(
+                json.dumps(
+                    _runner_rolepack(
+                        adapters=["shell", "codex"], write_scope=["orro/**"]
+                    )
+                ),
+                encoding="utf-8",
+            )
             code, _payload = self._flowplan(
                 [
                     "fix parser",
@@ -677,6 +711,8 @@ class OrroWorkflowTests(unittest.TestCase):
                     "default",
                     "--role-lane-tier",
                     "frontier",
+                    "--rolepack-file",
+                    str(rolepack_path),
                 ]
             )
 
@@ -820,6 +856,7 @@ class OrroWorkflowTests(unittest.TestCase):
                     "role_id": "runner",
                     "capability": "execute",
                     "adapters": ["codex"],
+                    "write_scope": ["orro/**"],
                 }
             ],
         }
@@ -860,20 +897,20 @@ class OrroWorkflowTests(unittest.TestCase):
         self.assertEqual(lane["role_capability"]["tools"], {"mcp": [], "allow": []})
         self.assertEqual(lane["granted_write_scope"], ["orro/**", "docs/**"])
         self.assertEqual(lane["granted_tools"], {"mcp": [], "allow": []})
-        self.assertEqual(lane["region"], [f"orro/{lane['lane_id']}.txt"])
+        self.assertEqual(lane["region"], ["orro/**", "docs/**"])
 
-    def test_compile_role_lane_plan_rejects_region_outside_write_scope(self) -> None:
+    def test_compile_role_lane_plan_requires_code_change_write_scope(self) -> None:
         workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
         rolepack = {
             "kind": "moonweave-rolepack",
             "schema_version": "0.2",
-            "name": "developer",
+            "name": "scope-missing",
             "grants": [
                 {
                     "role_id": "runner",
                     "capability": "execute",
-                    "adapters": ["shell", "codex"],
-                    "write_scope": ["docs/**"],
+                    "adapters": ["codex"],
+                    "model": "gpt-5.5",
                 }
             ],
         }
@@ -881,13 +918,71 @@ class OrroWorkflowTests(unittest.TestCase):
         with self.assertRaises(OrroWorkflowError) as ctx:
             compile_role_lane_plan(workflow_plan=workflow_plan, rolepack=rolepack)
 
-        self.assertEqual(ctx.exception.code, "ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION")
+        self.assertEqual(ctx.exception.code, "ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED")
+
+    def test_role_lane_plan_team_specs_preserves_glob_write_scope_region(self) -> None:
+        import argparse
+
+        from witnessd.__main__ import _role_lane_plan_team_specs
+
+        workflow_plan = compile_workflow_plan(goal="fix frontend", profile="code-change")
+        rolepack = {
+            "kind": "moonweave-rolepack",
+            "schema_version": "0.2",
+            "name": "frontend",
+            "grants": [
+                {
+                    "role_id": "runner",
+                    "capability": "execute",
+                    "adapters": ["codex"],
+                    "model": "gpt-5.5",
+                    "write_scope": ["frontend/**", "src/**"],
+                }
+            ],
+        }
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan,
+            tier="frontier",
+            rolepack=rolepack,
+        )
+        args = argparse.Namespace(
+            codex_binary="codex",
+            claude_binary="claude",
+            agy_binary="agy",
+            gemini_binary="gemini",
+            opencode_binary="opencode",
+        )
+
+        lane = role_lane_plan["lanes"][0]
+        self.assertEqual(lane["region"], ["frontend/**", "src/**"])
+        self.assertEqual(lane["granted_write_scope"], ["frontend/**", "src/**"])
+        self.assertNotEqual(lane["region"], [f"orro/{lane['lane_id']}.txt"])
+
+        specs = _role_lane_plan_team_specs(role_lane_plan, args)
+
+        self.assertEqual(specs[0]["region"], ["frontend/**", "src/**"])
+        self.assertEqual(specs[0]["allowed_touched_files"], ["frontend/**", "src/**"])
+        self.assertEqual(specs[0]["write_scope"], ["frontend/**", "src/**"])
+
+    def test_compile_role_lane_plan_preserves_docs_only_code_change_write_scope(self) -> None:
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        rolepack = _runner_rolepack(adapters=["shell", "codex"], write_scope=["docs/**"])
+
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan, rolepack=rolepack
+        )
+
+        self.assertEqual(role_lane_plan["lanes"][0]["region"], ["docs/**"])
 
     def test_validate_role_lane_plan_rejects_review_only_vendor_in_execution_lane(
         self,
     ) -> None:
         workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
-        role_lane_plan = compile_role_lane_plan(workflow_plan=workflow_plan)
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan,
+            lane_adapter="codex",
+            rolepack=_runner_rolepack(adapters=["codex"], write_scope=["orro/**"]),
+        )
         role_lane_plan["lanes"][0]["adapter"] = "agy"
 
         with self.assertRaises(OrroWorkflowError):
@@ -903,6 +998,9 @@ class OrroWorkflowTests(unittest.TestCase):
             workflow_plan=workflow_plan,
             tier="frontier",
             policy=DEFAULT_MODEL_POLICY,
+            rolepack=_runner_rolepack(
+                adapters=["shell", "codex"], write_scope=["orro/**"]
+            ),
         )
         args = argparse.Namespace(
             codex_binary="codex",
@@ -952,7 +1050,9 @@ class OrroWorkflowTests(unittest.TestCase):
 
         workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
         role_lane_plan = compile_role_lane_plan(
-            workflow_plan=workflow_plan, lane_adapter="codex"
+            workflow_plan=workflow_plan,
+            lane_adapter="codex",
+            rolepack=_runner_rolepack(adapters=["codex"], write_scope=["orro/**"]),
         )
         args = argparse.Namespace(
             codex_binary="codex",
