@@ -107,11 +107,11 @@ class OrroTeamUsableSurfaceTests(unittest.TestCase):
             self.assertEqual(rolepack["schema_version"], "0.2")
             runner = next(grant for grant in rolepack["grants"] if grant["role_id"] == "runner")
             self.assertEqual(runner["adapters"], ["codex"])
-            self.assertEqual(runner["model"], "gpt-5.5")
+            self.assertNotIn("model", runner)
             self.assertEqual(runner["tools"], {"mcp": [], "allow": []})
             reviewer = next(grant for grant in rolepack["grants"] if grant["role_id"] == "reviewer")
             self.assertEqual(reviewer["adapters"], ["agy"])
-            self.assertEqual(reviewer["model"], "gemini-3.1-pro")
+            self.assertNotIn("model", reviewer)
 
     def test_orro_team_init_refuses_overwrite_without_yes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -297,6 +297,10 @@ class OrroTeamUsableSurfaceTests(unittest.TestCase):
             role_lane_plan = json.loads((run_dir / "role-lane-plan.json").read_text(encoding="utf-8"))
             runner_lane = role_lane_plan["lanes"][0]
             self.assertEqual(runner_lane["role_id"], "runner")
+            self.assertEqual(runner_lane["tier"], "quick")
+            self.assertEqual(runner_lane["adapter"], "codex")
+            self.assertEqual(runner_lane["model"], "gpt-5.6-luna")
+            self.assertEqual(runner_lane["model_source"], "model-policy")
             self.assertEqual(runner_lane["role_capability"]["role_id"], "runner")
             self.assertEqual(runner_lane["role_capability"]["capability"], "execute")
 

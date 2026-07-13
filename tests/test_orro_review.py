@@ -102,7 +102,7 @@ class OrroReviewTests(unittest.TestCase):
             reviewer_lane = role_lanes["lanes"][0]
             self.assertEqual(reviewer_lane["phase"], "review")
             self.assertEqual(reviewer_lane["adapter"], "agy")
-            self.assertEqual(reviewer_lane["model"], "gemini-3.1-pro")
+            self.assertEqual(reviewer_lane["model"], "gemini-3.5-flash")
             self.assertEqual(reviewer_lane["region"], ["."])
 
             bindir = root / "bin"
@@ -143,7 +143,7 @@ class OrroReviewTests(unittest.TestCase):
             lane = payload["lanes"][0]
             self.assertEqual(lane["lane_id"], reviewer_lane["lane_id"])
             self.assertEqual(lane["adapter"], "agy")
-            self.assertEqual(lane["model"], "gemini-3.1-pro")
+            self.assertEqual(lane["model"], "gemini-3.5-flash")
             self.assertEqual(lane["touched_files"], [])
             self.assertEqual(lane["review_receipt"]["kind"], "moonweave-review-receipt")
             self.assertEqual(lane["review_receipt"]["can_change_evidence_verdict"], False)
@@ -154,7 +154,7 @@ class OrroReviewTests(unittest.TestCase):
 
             argv = argv_capture.read_text(encoding="utf-8")
             self.assertIn("--model\n", argv)
-            self.assertIn("gemini-3.1-pro\n", argv)
+            self.assertIn("gemini-3.5-flash\n", argv)
             run_dir = Path(payload["run_dir"])
             self.assertTrue((run_dir / "orro-review-summary.json").is_file())
             self.assertTrue((run_dir / reviewer_lane["lane_id"] / "review-receipt.json").is_file())

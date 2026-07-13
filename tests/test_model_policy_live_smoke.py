@@ -127,7 +127,7 @@ class TestModelPolicyLiveSmokeRunnerLane(unittest.TestCase):
             role_lanes = json.loads(role_lanes_out.read_text(encoding="utf-8"))
             runner_lane = role_lanes["lanes"][0]
             self.assertEqual(runner_lane["adapter"], "codex")
-            self.assertEqual(runner_lane["model"], "gpt-5.5")
+            self.assertEqual(runner_lane["model"], "gpt-5.6-sol")
 
             # The heuristic flowplan compiler's auto-generated prompt never
             # names the placeholder region file it allows the lane to touch
@@ -182,17 +182,17 @@ class TestModelPolicyLiveSmokeRunnerLane(unittest.TestCase):
                 (run_dir / lane_id / "runner-receipt.json").read_text()
             )
             self.assertIn("-m", receipt["invocation"])
-            self.assertIn("gpt-5.5", receipt["invocation"])
+            self.assertIn("gpt-5.6-sol", receipt["invocation"])
             declaration = json.loads(
                 (run_dir / lane_id / "model-declaration.json").read_text()
             )
             self.assertEqual(declaration["adapter"], "codex")
-            self.assertEqual(declaration["requested_model"], "gpt-5.5")
+            self.assertEqual(declaration["requested_model"], "gpt-5.6-sol")
             self.assertEqual(declaration["verification_status"], "verified")
 
 
 # There is deliberately no reviewer/agy live run here. compile_role_lane_plan
-# resolving a reviewer role to agy/gemini-3.1-pro is covered by a fake-only
+# resolving a reviewer role to agy/gemini-3.5-flash is covered by a fake-only
 # unit test (test_orro_workflow.py::
 # test_flowplan_role_lanes_model_policy_default_resolves_reviewer_to_agy),
 # and agy's --model wiring itself is already live-verified independently in

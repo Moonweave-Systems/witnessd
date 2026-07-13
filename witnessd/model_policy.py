@@ -28,32 +28,32 @@ DEFAULT_MODEL_POLICY: dict[str, Any] = {
         {
             "role_kind": "runner",
             "tier": "quick",
-            "candidates": [{"adapter": "codex", "model": "gpt-5.4-mini"}],
+            "candidates": [{"adapter": "codex", "model": "gpt-5.6-luna"}],
         },
         {
             "role_kind": "runner",
             "tier": "agentic",
-            "candidates": [{"adapter": "codex", "model": "gpt-5.5"}],
+            "candidates": [{"adapter": "codex", "model": "gpt-5.6-sol"}],
         },
         {
             "role_kind": "runner",
             "tier": "frontier",
-            "candidates": [{"adapter": "codex", "model": "gpt-5.5"}],
+            "candidates": [{"adapter": "codex", "model": "gpt-5.6-sol"}],
         },
         {
             "role_kind": "reviewer",
             "tier": "quick",
-            "candidates": [{"adapter": "agy", "model": "gemini-3.1-pro"}],
+            "candidates": [{"adapter": "agy", "model": "gemini-3.5-flash"}],
         },
         {
             "role_kind": "reviewer",
             "tier": "agentic",
-            "candidates": [{"adapter": "agy", "model": "gemini-3.1-pro"}],
+            "candidates": [{"adapter": "agy", "model": "gemini-3.5-flash"}],
         },
         {
             "role_kind": "reviewer",
             "tier": "frontier",
-            "candidates": [{"adapter": "agy", "model": "gemini-3.1-pro"}],
+            "candidates": [{"adapter": "agy", "model": "gemini-3.5-flash"}],
         },
     ],
 }

@@ -200,6 +200,8 @@ class OrroWorkflowTests(unittest.TestCase):
                     str(out),
                     "--rolepack",
                     "developer",
+                    "--model-policy",
+                    "default",
                     "--json",
                 ]
             )
@@ -397,8 +399,8 @@ class OrroWorkflowTests(unittest.TestCase):
             role_lanes = json.loads(out.read_text(encoding="utf-8"))
             lane = role_lanes["lanes"][0]
             self.assertEqual(lane["adapter"], "codex")
-            self.assertEqual(lane["model"], "gpt-5.5")
-            self.assertEqual(lane["model_source"], "rolepack")
+            self.assertEqual(lane["model"], "gpt-5.6-sol")
+            self.assertEqual(lane["model_source"], "model-policy")
             self.assertEqual(lane["granted_adapters"], ["codex"])
             self.assertEqual(lane["granted_write_scope"], ["orro/**", "docs/**"])
             self.assertEqual(lane["region"], ["orro/**", "docs/**"])
@@ -676,6 +678,8 @@ class OrroWorkflowTests(unittest.TestCase):
                         str(out),
                         "--rolepack",
                         "developer",
+                        "--model-policy",
+                        "default",
                     ]
                 )
 
@@ -725,7 +729,7 @@ class OrroWorkflowTests(unittest.TestCase):
             lane = runner_lanes[0]
             self.assertEqual(lane["tier"], "frontier")
             self.assertEqual(lane["adapter"], "codex")
-            self.assertEqual(lane["model"], "gpt-5.5")
+            self.assertEqual(lane["model"], "gpt-5.6-sol")
             self.assertTrue(lane["resolved_via_policy"])
             self.assertEqual(lane["policy_role_kind"], "runner")
             self.assertEqual(lane["policy_tier"], "frontier")
@@ -756,7 +760,7 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertEqual(lane["role_id"], "reviewer")
             self.assertEqual(lane["tier"], "quick")
             self.assertEqual(lane["adapter"], "agy")
-            self.assertEqual(lane["model"], "gemini-3.1-pro")
+            self.assertEqual(lane["model"], "gemini-3.5-flash")
             self.assertTrue(lane["resolved_via_policy"])
 
     def test_compile_role_lane_plan_policy_unresolved_combo_fails_closed(self) -> None:
@@ -886,13 +890,12 @@ class OrroWorkflowTests(unittest.TestCase):
         validate_role_lane_plan(role_lane_plan)
         lane = role_lane_plan["lanes"][0]
         self.assertEqual(lane["adapter"], "codex")
-        self.assertEqual(lane["model"], "gpt-5.5")
-        self.assertEqual(lane["model_source"], "rolepack")
+        self.assertEqual(lane["model"], "gpt-5.6-sol")
+        self.assertEqual(lane["model_source"], "model-policy")
         self.assertEqual(lane["granted_adapters"], ["codex"])
         self.assertEqual(lane["role_capability"]["role_id"], "runner")
         self.assertEqual(lane["role_capability"]["capability"], "execute")
-        self.assertNotIn("model_policy_ref", lane["role_capability"])
-        self.assertEqual(lane["role_capability"]["model"], "gpt-5.5")
+        self.assertNotIn("model", lane["role_capability"])
         self.assertEqual(lane["role_capability"]["write_scope"], ["orro/**", "docs/**"])
         self.assertEqual(lane["role_capability"]["tools"], {"mcp": [], "allow": []})
         self.assertEqual(lane["granted_write_scope"], ["orro/**", "docs/**"])
@@ -1014,7 +1017,7 @@ class OrroWorkflowTests(unittest.TestCase):
 
         self.assertEqual(len(specs), 1)
         self.assertEqual(specs[0]["adapter"], "codex")
-        self.assertEqual(specs[0]["model"], "gpt-5.5")
+        self.assertEqual(specs[0]["model"], "gpt-5.6-sol")
 
     def test_role_lane_plan_team_specs_carries_granted_tools(self) -> None:
         import argparse

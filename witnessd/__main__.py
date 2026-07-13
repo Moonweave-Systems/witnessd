@@ -2181,7 +2181,9 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
     if args.team:
         flow_argv.extend(["--team", str(Path(args.team).resolve(strict=False))])
     elif selected_rolepack:
-        flow_argv.extend(["--rolepack", selected_rolepack])
+        flow_argv.extend(
+            ["--rolepack", selected_rolepack, "--model-policy", "default"]
+        )
 
     flow_code, flow_stdout, flow_stderr = _invoke_cli_capture(flow_argv)
     if flow_code != 0:
