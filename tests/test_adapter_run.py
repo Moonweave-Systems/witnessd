@@ -616,6 +616,56 @@ class TestAdapterRun(unittest.TestCase):
             )
             self.assertEqual(verdict["decision"], "pass")
 
+    def test_requested_unverified_model_emits_degraded_event(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "agy-model-evidence")
+            _init_repo(sandbox)
+
+            run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="agy",
+                task_id="t-agy-model",
+                prompt="review only",
+                arm="direct",
+                tier="quick",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                agy_binary=_fake_agy(bindir),
+                evidence_dir=evidence_dir,
+                allowed_touched_files=[],
+                model="gemini-3.5-flash",
+            )
+
+            declaration = json.loads(
+                (pathlib.Path(evidence_dir) / "model-declaration.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                declaration["verification_status"], "requested-unverified"
+            )
+            runlog_path = pathlib.Path(root, ".witnessd", "runlog.jsonl")
+            events = [
+                json.loads(line)
+                for line in runlog_path.read_text(encoding="utf-8").splitlines()
+            ]
+            degraded_events = [
+                event
+                for event in events
+                if event.get("event") == "model_route_degraded"
+            ]
+            self.assertEqual(len(degraded_events), 1)
+            self.assertTrue(degraded_events[0]["payload"]["degraded"])
+            self.assertEqual(
+                degraded_events[0]["payload"]["verification_status"],
+                "requested-unverified",
+            )
+
     def test_write_scope_declaration_is_signed_bundle_subject(self):
         with (
             tempfile.TemporaryDirectory() as root,

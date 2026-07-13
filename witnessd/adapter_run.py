@@ -19,6 +19,10 @@ from witnessd.budget import BudgetExceededError, CostBreaker
 from witnessd.emitter import emit_lane_evidence
 from witnessd.eventlog import EventLog
 from witnessd.fixture import build_reference_adapter_fixture, build_shell_invocation
+from witnessd.model_declaration import (
+    VERIFICATION_REJECTED,
+    VERIFICATION_REQUESTED_UNCONFIRMED,
+)
 from witnessd.observer import assert_separated
 from witnessd.preflight import PreflightError, probe_adapter_capability
 from witnessd.privacy import (
@@ -29,6 +33,7 @@ from witnessd.privacy import (
     validate_capture_profile,
 )
 from witnessd.router import RouteExhaustedError, route_model
+from witnessd.runlog import append_runlog
 from witnessd.runintent import (
     RUN_INTENT_ARTIFACT_NAME,
     build_role_capability_intent,
@@ -427,6 +432,36 @@ def run_adapter_lane(
                 json.dumps(model_declaration, sort_keys=True), encoding="utf-8"
             )
             provider_artifacts["model-declaration"] = str(model_declaration_path)
+            verification_status = model_declaration.get("verification_status")
+            if verification_status == VERIFICATION_REQUESTED_UNCONFIRMED:
+                append_runlog(
+                    log,
+                    run_id=task_id,
+                    event="model_route_degraded",
+                    payload={
+                        "adapter": adapter,
+                        "requested_model": model_declaration.get("requested_model"),
+                        "verification_status": verification_status,
+                        "degraded": True,
+                    },
+                )
+            elif verification_status == VERIFICATION_REJECTED:
+                append_runlog(
+                    log,
+                    run_id=task_id,
+                    event="model_route_blocked",
+                    error_code="ERR_WITNESSD_MODEL_REJECTED",
+                    payload={
+                        "adapter": adapter,
+                        "requested_model": model_declaration.get("requested_model"),
+                        "verification_status": verification_status,
+                        "degraded": True,
+                    },
+                )
+                raise LaneBlocked(
+                    "model_rejected",
+                    str(model_declaration.get("detail") or "requested model rejected"),
+                )
         tool_declaration = getattr(adapter_result, "tool_declaration", None)
         if tool_declaration is not None:
             tool_declaration_path = task_dir / "tool-declaration.json"

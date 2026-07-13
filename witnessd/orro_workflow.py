@@ -679,6 +679,7 @@ def _resolve_lane_adapter_and_model(
     return route["adapter"], {
         "model": route["model"],
         "model_source": "model-policy",
+        "budget": dict(route["budget"]),
         "resolved_via_policy": True,
         "policy_role_kind": role_kind,
         "policy_tier": tier,
