@@ -31,6 +31,29 @@ def _depone_root() -> Path:
     return Path(__file__).resolve().parents[1].parent / "depone"
 
 
+def _write_shell_rolepack(root: Path) -> Path:
+    path = root / "shell-rolepack.json"
+    path.write_text(
+        json.dumps(
+            {
+                "kind": "moonweave-rolepack",
+                "schema_version": "0.2",
+                "name": "shell-test",
+                "grants": [
+                    {
+                        "role_id": "runner",
+                        "capability": "execute",
+                        "adapters": ["shell"],
+                        "write_scope": ["orro/proof.txt"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 class OrroPublicFlowTests(unittest.TestCase):
     def _module_run(self, args: list[str]) -> subprocess.CompletedProcess[str]:
         root = Path(__file__).resolve().parents[1]
@@ -101,6 +124,10 @@ class OrroPublicFlowTests(unittest.TestCase):
 
     def _role_lane_plan_out(self, root: Path, goal: str, *, profile: str = "code-change") -> Path:
         out = root / "role-lane-plan.json"
+        rolepack = _write_shell_rolepack(root) if profile == "code-change" else None
+        rolepack_args = (
+            ["--rolepack-file", str(rolepack)] if rolepack is not None else []
+        )
         stdout = io.StringIO()
         with redirect_stdout(stdout):
             code = main(
@@ -114,6 +141,7 @@ class OrroPublicFlowTests(unittest.TestCase):
                     profile,
                     "--role-lanes-out",
                     str(out),
+                    *rolepack_args,
                 ]
             )
         self.assertEqual(code, 0, stdout.getvalue())

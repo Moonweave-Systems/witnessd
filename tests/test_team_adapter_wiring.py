@@ -138,6 +138,53 @@ class TestTeamAdapterFanin(unittest.TestCase):
             result["ledger"]["lanes"][0]["touched_files"], ["pkg/agent.py"]
         )
 
+    def test_glob_write_scope_region_reaches_claim_manifest_receipt_and_ledger(self):
+        with tempfile.TemporaryDirectory() as bindir:
+            result = self._run(
+                [
+                    {
+                        "lane_id": "frontend-lane",
+                        "adapter": "codex",
+                        "tier": "agentic",
+                        "region": ["frontend/**"],
+                        "prompt": "write frontend",
+                        "codex_binary": _fake_codex_frontend(bindir),
+                        "write_scope": ["frontend/**"],
+                        "role_id": "runner",
+                        "role_capability": "execute",
+                    }
+                ]
+            )
+
+        claim_events = [
+            event
+            for event in result["runlog"]
+            if event["event"] == "region-claim"
+            and event["payload"].get("lane_id") == "frontend-lane"
+        ]
+        self.assertEqual(claim_events[0]["payload"]["region"], ["frontend/**"])
+
+        lane_dir = result["base_dir"] / "frontend-lane"
+        manifest = json.loads((lane_dir / "capture-manifest.json").read_text())
+        self.assertEqual(manifest["allowed_touched_files"], ["frontend/**"])
+
+        worktree_receipt = json.loads(
+            (lane_dir / "worktree-lane-receipt.json").read_text()
+        )
+        self.assertEqual(worktree_receipt["changed_files"], ["frontend/src/App.tsx"])
+
+        ledger_lane = result["ledger"]["lanes"][0]
+        self.assertEqual(ledger_lane["verification_state"], "pass")
+        self.assertEqual(ledger_lane["touched_files"], ["frontend/src/App.tsx"])
+
+        declaration = json.loads(
+            (result["base_dir"] / "write-scope-declaration.json").read_text()
+        )
+        self.assertEqual(declaration["declared_write_scope"], ["frontend/**"])
+        self.assertEqual(declaration["allowed_touched_files"], ["frontend/**"])
+        self.assertEqual(declaration["touched_files"], ["frontend/src/App.tsx"])
+        self.assertEqual(declaration["conformance"], "pass")
+
     def test_blocked_adapter_lane_is_fail_closed_and_other_lanes_continue(self):
         with tempfile.TemporaryDirectory() as bindir:
             result = self._run(
@@ -250,6 +297,29 @@ def _fake_codex_timeout(directory: str) -> str:
         "cat >/dev/null\n"
         'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T-timeout"}\'\n'
         "exit 124\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | 0o111)
+    return str(path)
+
+
+def _fake_codex_frontend(directory: str) -> str:
+    path = Path(directory) / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
+        "mkdir -p frontend/src\n"
+        "echo app > frontend/src/App.tsx\n"
+        "saw_json=0\n"
+        "while [ $# -gt 0 ]; do\n"
+        '  if [ "$1" = "--json" ]; then saw_json=1; fi\n'
+        "  shift\n"
+        "done\n"
+        'if [ "$saw_json" -ne 1 ]; then echo "missing --json" >&2; exit 9; fi\n'
+        "cat >/dev/null\n"
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T-frontend"}\'\n'
+        'printf \'%s\\n\' \'{"type":"item.completed","item":{"type":"message","text":"done"}}\'\n'
+        "exit 0\n",
         encoding="utf-8",
     )
     path.chmod(path.stat().st_mode | 0o111)

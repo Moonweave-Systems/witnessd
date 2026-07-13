@@ -34,6 +34,7 @@ ERR_ORRO_ROLE_LANE_PLAN_EXECUTION_FORBIDDEN = (
 )
 ERR_ORRO_ROLE_LANE_PLAN_EMPTY = "ERR_ORRO_ROLE_LANE_PLAN_EMPTY"
 ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED = "ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED"
+ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED = "ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED"
 ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED = "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED"
 ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION = "ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION"
 
@@ -784,9 +785,15 @@ def _role_lane_from_role(
             "utf-8"
         )
     ).hexdigest()[:12]
-    region_root = "docs" if profile == "docs-change" else "orro"
     lane_id = f"{role_id}-{digest}"
-    region = _execution_region_from_grant(grant) or [f"{region_root}/{lane_id}.txt"]
+    region = _execution_region_from_grant(grant)
+    if profile == "code-change" and not region:
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED,
+            "code-change proofrun lane requires a concrete rolepack write_scope",
+        )
+    if profile == "docs-change" and not region:
+        region = [f"docs/{lane_id}.txt"]
     role_capability = _role_capability_for_lane(
         grant=grant,
         role_id=role_id,
@@ -816,11 +823,7 @@ def _role_lane_from_role(
 def _execution_region_from_grant(grant: RoleCapabilityGrant | None) -> list[str]:
     if grant is None or grant.write_scope is None:
         return []
-    return [
-        item
-        for item in grant.write_scope
-        if item and not any(marker in item for marker in ("*", "?", "[", "]"))
-    ]
+    return [item for item in grant.write_scope if item]
 
 
 def _review_lane_from_role(

@@ -160,6 +160,25 @@ class OrroPackagingTests(unittest.TestCase):
             self.assertEqual(json.loads(flowplan.stdout)["sealed_plan"]["goal"], "package smoke")
 
             role_lanes = tmp_path / "role-lane-plan.json"
+            rolepack = tmp_path / "shell-rolepack.json"
+            rolepack.write_text(
+                json.dumps(
+                    {
+                        "kind": "moonweave-rolepack",
+                        "schema_version": "0.2",
+                        "name": "shell-test",
+                        "grants": [
+                            {
+                                "role_id": "runner",
+                                "capability": "execute",
+                                "adapters": ["shell"],
+                                "write_scope": ["orro/proof.txt"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
             flowplan_role_lanes = subprocess.run(
                 [
                     str(orro),
@@ -171,6 +190,8 @@ class OrroPackagingTests(unittest.TestCase):
                     "code-change",
                     "--role-lanes-out",
                     str(role_lanes),
+                    "--rolepack-file",
+                    str(rolepack),
                 ],
                 cwd=tmp_path,
                 text=True,

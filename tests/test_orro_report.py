@@ -31,6 +31,29 @@ def _depone_root() -> Path:
     return Path(__file__).resolve().parents[1].parent / "depone"
 
 
+def _write_shell_rolepack(root: Path) -> Path:
+    path = root / "shell-rolepack.json"
+    path.write_text(
+        json.dumps(
+            {
+                "kind": "moonweave-rolepack",
+                "schema_version": "0.2",
+                "name": "shell-test",
+                "grants": [
+                    {
+                        "role_id": "runner",
+                        "capability": "execute",
+                        "adapters": ["shell"],
+                        "write_scope": ["orro/proof.txt"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 class OrroReportTests(unittest.TestCase):
     def _init_home(self, root: Path) -> tuple[Path, Path]:
         repo = root / "repo"
@@ -65,6 +88,7 @@ class OrroReportTests(unittest.TestCase):
 
     def _role_lane_plan_out(self, root: Path, goal: str) -> Path:
         out = root / "role-lane-plan.json"
+        rolepack = _write_shell_rolepack(root)
         with redirect_stdout(io.StringIO()):
             code = main(
                 [
@@ -77,6 +101,8 @@ class OrroReportTests(unittest.TestCase):
                     "code-change",
                     "--role-lanes-out",
                     str(out),
+                    "--rolepack-file",
+                    str(rolepack),
                 ]
             )
         self.assertEqual(code, 0)

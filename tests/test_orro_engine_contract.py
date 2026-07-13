@@ -29,6 +29,29 @@ def _depone_root() -> Path:
     return Path(__file__).resolve().parents[1].parent / "depone"
 
 
+def _write_shell_rolepack(root: Path) -> Path:
+    path = root / "shell-rolepack.json"
+    path.write_text(
+        json.dumps(
+            {
+                "kind": "moonweave-rolepack",
+                "schema_version": "0.2",
+                "name": "shell-test",
+                "grants": [
+                    {
+                        "role_id": "runner",
+                        "capability": "execute",
+                        "adapters": ["shell"],
+                        "write_scope": ["orro/proof.txt"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 class OrroEngineContractTests(unittest.TestCase):
     ROOT = Path(__file__).resolve().parents[1]
 
@@ -62,7 +85,9 @@ class OrroEngineContractTests(unittest.TestCase):
             "code-change",
         ]
         if role_lanes:
+            rolepack = _write_shell_rolepack(root)
             args.extend(["--role-lanes-out", str(out)])
+            args.extend(["--rolepack-file", str(rolepack)])
         else:
             args.extend(["--out", str(out)])
         code, _payload = self._json_command(args)
