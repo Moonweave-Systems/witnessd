@@ -8,6 +8,11 @@ description: ORRO, the Observed Run & Review Orchestrator, turns a goal into an 
 Use this skill when an operator asks for ORRO, a proofrun, verdict-backed team
 execution, 증거 실행, repo scouting, or evidence-backed automation.
 
+This is distinct from the in-session `team` skill (ephemeral subagent team, no
+evidence): ORRO wraps external CLI adapters in signed evidence and re-derives the
+verdict through Depone. Reach for ORRO when you need evidence or a verdict; use
+`team` for lightweight in-session orchestration.
+
 Source of truth: `SPEC3.md` is the current witnessd x Depone final-form spec.
 This skill text is derived from that spec. Moonweave is the publisher/account;
 ORRO is the product/tool name. `Superflow` is historical/compatibility naming and
