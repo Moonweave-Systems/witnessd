@@ -839,6 +839,25 @@ def _lane_failed(lane: dict[str, Any]) -> bool:
     return ledger_lane.get("verification_state") != "pass"
 
 
+def _has_failed_command_receipt(command_receipts: object) -> bool:
+    if isinstance(command_receipts, dict):
+        try:
+            return int(command_receipts.get("exit_code", 0)) != 0
+        except (TypeError, ValueError):
+            return True
+    if not isinstance(command_receipts, list):
+        return False
+    for command in command_receipts:
+        if not isinstance(command, dict):
+            continue
+        try:
+            if int(command.get("exit_code", 0)) != 0:
+                return True
+        except (TypeError, ValueError):
+            return True
+    return False
+
+
 def _cancelled_lane(
     lane_id: str, spec: dict[str, Any], base_commit: str
 ) -> dict[str, Any]:
@@ -1758,11 +1777,15 @@ def _run_adapter_lane(
     _commit_lane(worktree, lane_id)
 
     runner_receipt = result.get("runner_receipt", {})
+    command_receipts = runner_receipt.get("command_receipts", [])
+    adapter_command_failed = _has_failed_command_receipt(
+        runner_receipt
+    ) or _has_failed_command_receipt(command_receipts)
     receipt = build_worktree_lane_receipt(
         worktree=worktree,
         base_commit=base_commit,
         evidence_dir=lane_id,
-        commands=runner_receipt.get("command_receipts", []),
+        commands=command_receipts,
     )
     _write_json_artifact(
         log,
@@ -1770,14 +1793,6 @@ def _run_adapter_lane(
         evidence_dir / "worktree-lane-receipt.json",
         receipt,
         artifact_name=f"{lane_id}/worktree-lane-receipt.json",
-    )
-    verdict = build_evidence_next_verdict()
-    _write_json_artifact(
-        log,
-        run_id,
-        evidence_dir / "evidence-next-verdict.json",
-        verdict,
-        artifact_name=f"{lane_id}/evidence-next-verdict.json",
     )
 
     adapter = str(spec["adapter"])
@@ -1793,8 +1808,21 @@ def _run_adapter_lane(
         "verification_state": "pass",
         "touched_files": receipt["changed_files"],
         "worktree_receipt": f"{lane_id}/worktree-lane-receipt.json",
-        "evidence_next_verdict": f"{lane_id}/evidence-next-verdict.json",
     }
+    verdict = None
+    if adapter_command_failed:
+        ledger_lane["verification_state"] = "blocked"
+        ledger_lane["blocked_reason"] = ERR_TEAM_LANE_FAILED
+    else:
+        verdict = build_evidence_next_verdict()
+        _write_json_artifact(
+            log,
+            run_id,
+            evidence_dir / "evidence-next-verdict.json",
+            verdict,
+            artifact_name=f"{lane_id}/evidence-next-verdict.json",
+        )
+        ledger_lane["evidence_next_verdict"] = f"{lane_id}/evidence-next-verdict.json"
     return {
         "lane_id": lane_id,
         "worktree": worktree,

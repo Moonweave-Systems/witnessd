@@ -48,8 +48,7 @@ def _fake_codex_writes_prompt(directory: Path) -> str:
         "done\n"
         "mkdir -p orro\n"
         "cat > orro/task-output.txt\n"
-        ": > \"$out\"\n"
-        "echo done >> \"$out\"\n"
+        "if [ -n \"$out\" ]; then : > \"$out\"; echo done >> \"$out\"; fi\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -68,8 +67,7 @@ def _fake_codex_noops(directory: Path) -> str:
         "  shift\n"
         "done\n"
         "cat >/dev/null\n"
-        ": > \"$out\"\n"
-        "echo done >> \"$out\"\n"
+        "if [ -n \"$out\" ]; then : > \"$out\"; echo done >> \"$out\"; fi\n"
         "exit 0\n",
         encoding="utf-8",
     )
