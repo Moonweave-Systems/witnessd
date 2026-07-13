@@ -42,8 +42,8 @@ def emit_advisory_provenance(
     subjects: list[dict[str, Any]] = []
     receipt = _sealed_trace_receipt(sealed_decision, repo=repo)
     if receipt is not None:
-        sealed_decision.setdefault("reproduction", {})["receipt_sha256"] = canonical_hash(
-            receipt
+        sealed_decision.setdefault("reproduction", {})["receipt_sha256"] = (
+            canonical_hash(receipt)
         )
         _bind_trace_confirmation(sealed_decision, receipt)
 
@@ -98,6 +98,11 @@ def _bind_sketch_direction(decision: dict[str, Any]) -> None:
     if not isinstance(chosen, dict) or not isinstance(candidates, list):
         return
     chosen_id = chosen.get("option")
+    if chosen_id is None:
+        # Agent-authored decisions state chosen.direction directly and carry no
+        # heuristic-only "option" id; never rebind their direction (a None id
+        # would otherwise match the first candidate and overwrite the choice).
+        return
     candidate = next(
         (
             item
@@ -155,11 +160,11 @@ def load_trace_reproduction_subject(repo: Path) -> dict[str, Any] | None:
     }
 
 
-def _bind_trace_confirmation(
-    decision: dict[str, Any], receipt: dict[str, Any]
-) -> None:
+def _bind_trace_confirmation(decision: dict[str, Any], receipt: dict[str, Any]) -> None:
     reproduction = decision.get("reproduction")
-    if isinstance(reproduction, dict) and not isinstance(reproduction.get("symptom"), str):
+    if isinstance(reproduction, dict) and not isinstance(
+        reproduction.get("symptom"), str
+    ):
         symptom = decision.get("symptom") or decision.get("goal_or_symptom")
         if isinstance(symptom, str):
             reproduction["symptom"] = symptom
@@ -197,9 +202,7 @@ def _bind_trace_confirmation(
     if isinstance(mechanism, str):
         root_cause.setdefault("finding", mechanism)
         root_cause.setdefault("summary", mechanism)
-    ruled_out_ids = {
-        str(item) for item in confirmation.get("ruled_out_hypotheses", [])
-    }
+    ruled_out_ids = {str(item) for item in confirmation.get("ruled_out_hypotheses", [])}
     existing_ruled_out = confirmation.get("rival_hypotheses_ruled_out")
     if not isinstance(existing_ruled_out, list):
         confirmation["rival_hypotheses_ruled_out"] = [
@@ -249,9 +252,7 @@ def _bind_trace_confirmation(
         hypothesis["discriminating_probe"] = observed_probe
 
 
-def _observed_trace_probe(
-    hypothesis: dict[str, Any], output: Any
-) -> str | None:
+def _observed_trace_probe(hypothesis: dict[str, Any], output: Any) -> str | None:
     if not isinstance(output, str):
         return None
     mechanism = hypothesis.get("distinct_mechanism")

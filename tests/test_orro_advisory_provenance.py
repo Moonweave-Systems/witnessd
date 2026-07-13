@@ -12,7 +12,9 @@ from pathlib import Path
 
 
 DEPONE_ROOT = Path(
-    os.environ.get("WITNESSD_DEPONE_ROOT", Path(__file__).resolve().parents[2] / "depone")
+    os.environ.get(
+        "WITNESSD_DEPONE_ROOT", Path(__file__).resolve().parents[2] / "depone"
+    )
 ).resolve(strict=False)
 _modules_before_depone_import = set(sys.modules)
 _added_depone_path = str(DEPONE_ROOT) not in sys.path
@@ -339,12 +341,45 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
             self.assertFalse((out_dir / "orro-sketch.json").exists())
             self.assertFalse((out_dir / "advisory-provenance-bundle.json").exists())
 
-    def test_trace_confirmed_emission_seals_receipt_and_preserves_execution_verdict(self) -> None:
+    def test_agent_authored_sketch_preserves_non_first_candidate_choice(self) -> None:
+        # Regression: sealing must not rebind chosen.direction to candidates[0].
+        # An agent that picks the second candidate must have that choice sealed.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo = root / "repo"
             repo.mkdir()
-            (repo / "widget.py").write_text("def total() -> int:\n    return 7\n", encoding="utf-8")
+            home = root / ".witnessd"
+            out_dir = root / "sketch-artifacts"
+
+            decision = _run_advisory(
+                "sketch",
+                "preserve the agent's second-candidate choice",
+                repo=repo,
+                home=home,
+                out_dir=out_dir,
+                decision=_sketch_decision(chosen_direction="keep-template-authoring"),
+            )
+
+            self.assertEqual(decision["chosen"]["direction"], "keep-template-authoring")
+            sealed = json.loads(
+                (out_dir / "orro-sketch.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(sealed["chosen"]["direction"], "keep-template-authoring")
+            self.assertEqual(
+                _validate(out_dir, home / "keys" / "operator-ed25519.pub.pem"),
+                [],
+            )
+
+    def test_trace_confirmed_emission_seals_receipt_and_preserves_execution_verdict(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            (repo / "widget.py").write_text(
+                "def total() -> int:\n    return 7\n", encoding="utf-8"
+            )
             symptom = "widget total was 7 expected 9"
             receipt_sha256 = _write_trace_receipt(repo, symptom)
             home = root / ".witnessd"
@@ -367,7 +402,9 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
             self.assertTrue(receipt_path.is_file(), "trace receipt was not emitted")
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
             self.assertEqual(decision["root_cause"]["tier"], "confirmed")
-            self.assertEqual(decision["reproduction"]["receipt_sha256"], canonical_hash(receipt))
+            self.assertEqual(
+                decision["reproduction"]["receipt_sha256"], canonical_hash(receipt)
+            )
             self._assert_boundary(decision)
             self.assertEqual(verdict_path.read_bytes(), verdict_before)
             self.assertEqual(
@@ -472,14 +509,18 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
 
             errors = _validate(out_dir, home / "keys" / "operator-ed25519.pub.pem")
 
-            self.assertIn("ERR_ADVISORY_SKETCH_TAMPER", [error.code for error in errors])
+            self.assertIn(
+                "ERR_ADVISORY_SKETCH_TAMPER", [error.code for error in errors]
+            )
 
     def test_confirmed_trace_without_sealed_receipt_refutes_as_unbacked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo = root / "repo"
             repo.mkdir()
-            (repo / "widget.py").write_text("def total() -> int:\n    return 7\n", encoding="utf-8")
+            (repo / "widget.py").write_text(
+                "def total() -> int:\n    return 7\n", encoding="utf-8"
+            )
             symptom = "widget total was 7 expected 9"
             receipt_sha256 = _write_trace_receipt(repo, symptom)
             home = root / ".witnessd"
