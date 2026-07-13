@@ -1,13 +1,18 @@
-"""Deterministic ORRO ideation and root-cause advisory surfaces.
+"""Validate and seal ORRO ideation and root-cause advisory records.
 
 Sketch and trace are planning context only. Trace consumes a symptom-bound
 prior-run receipt as its external oracle and performs read-only inspection.
 Neither surface executes repository code, mutates the inspected repository,
 runs workers or proofrun, calls Depone, or changes an evidence verdict.
+
+Calling agents author decisions. The deterministic heuristic path remains only
+as an explicitly degraded scaffold for headless compatibility.
 """
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import os
 import re
@@ -16,10 +21,23 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from witnessd.canonical import canonical_hash
+
 
 ADVISORY_SCHEMA_VERSION = "0.2"
 ERR_ORRO_ADVISORY_WRITE_FAILED = "ERR_ORRO_ADVISORY_WRITE_FAILED"
 ERR_ORRO_ADVISORY_OUTPUT_INSIDE_REPO = "ERR_ORRO_ADVISORY_OUTPUT_INSIDE_REPO"
+ERR_ORRO_ADVISORY_DECISION_INVALID = "ERR_ORRO_ADVISORY_DECISION_INVALID"
+ERR_ORRO_ADVISORY_DECISION_READ_FAILED = "ERR_ORRO_ADVISORY_DECISION_READ_FAILED"
+ERR_ORRO_SKETCH_CHOSEN_NOT_IN_CANDIDATES = (
+    "ERR_ORRO_SKETCH_CHOSEN_NOT_IN_CANDIDATES"
+)
+ERR_ORRO_SKETCH_REJECTED_REASON_MISSING = (
+    "ERR_ORRO_SKETCH_REJECTED_REASON_MISSING"
+)
+ERR_ORRO_TRACE_CONFIRMED_UNBACKED = "ERR_ORRO_TRACE_CONFIRMED_UNBACKED"
+ERR_ORRO_TRACE_RECEIPT_INVALID = "ERR_ORRO_TRACE_RECEIPT_INVALID"
+ERR_ORRO_TRACE_RECEIPT_HASH_MISMATCH = "ERR_ORRO_TRACE_RECEIPT_HASH_MISMATCH"
 
 _IGNORED_DIRS = {".git", ".witnessd", ".omx", "__pycache__", "build", "dist"}
 _LANGUAGE_SUFFIXES = {
@@ -43,12 +61,407 @@ class OrroAdvisoryError(ValueError):
         super().__init__(message)
 
 
-def build_sketch_decision(goal: str, *, repo: Path, home: Path | None = None) -> dict[str, Any]:
-    """Run controlled convergence without claiming implementation evidence."""
+def read_agent_decision(path: Path) -> dict[str, Any]:
+    """Read a bounded agent-authored decision object without repairing it."""
+
+    resolved_path = path.resolve(strict=False)
+    try:
+        if resolved_path.stat().st_size > 262_144:
+            raise OrroAdvisoryError(
+                ERR_ORRO_ADVISORY_DECISION_INVALID,
+                "agent-authored decision exceeds the 256 KiB read limit",
+            )
+        value = json.loads(resolved_path.read_text(encoding="utf-8"))
+    except OrroAdvisoryError:
+        raise
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise OrroAdvisoryError(
+            ERR_ORRO_ADVISORY_DECISION_READ_FAILED,
+            f"cannot read agent-authored decision {resolved_path}: {exc}",
+        ) from exc
+    if not isinstance(value, dict):
+        raise OrroAdvisoryError(
+            ERR_ORRO_ADVISORY_DECISION_INVALID,
+            "agent-authored decision must be a JSON object",
+        )
+    return value
+
+
+def _agent_sketch_decision(
+    goal: str,
+    *,
+    repo: Path,
+    home: Path | None,
+    decision: dict[str, Any],
+) -> dict[str, Any]:
+    _require_present_frame(decision.get("frame"), field="frame")
+    criteria = decision.get("criteria")
+    if criteria is not None and not isinstance(criteria, list):
+        _invalid_decision("criteria must be a JSON array when supplied")
+
+    candidates = decision.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        _invalid_decision("candidates must be a non-empty JSON array")
+    candidate_axes: set[str] = set()
+    for index, candidate in enumerate(candidates):
+        if not isinstance(candidate, dict):
+            _invalid_decision(f"candidates[{index}] must be a JSON object")
+        axis = _require_text(candidate.get("axis"), field=f"candidates[{index}].axis")
+        _require_text(candidate.get("summary"), field=f"candidates[{index}].summary")
+        _require_text_list(
+            candidate.get("benefits"), field=f"candidates[{index}].benefits"
+        )
+        _require_text_list(candidate.get("risks"), field=f"candidates[{index}].risks")
+        tradeoff = candidate.get("tradeoff")
+        tradeoffs = candidate.get("tradeoffs")
+        if tradeoff is None and tradeoffs is None:
+            _invalid_decision(
+                f"candidates[{index}] requires non-empty tradeoff or tradeoffs"
+            )
+        if tradeoff is not None:
+            _require_text(tradeoff, field=f"candidates[{index}].tradeoff")
+        if tradeoffs is not None:
+            _require_text_list(tradeoffs, field=f"candidates[{index}].tradeoffs")
+        if axis in candidate_axes:
+            _invalid_decision(f"candidates[{index}].axis duplicates {axis!r}")
+        candidate_axes.add(axis)
+
+    chosen = decision.get("chosen")
+    if not isinstance(chosen, dict):
+        _invalid_decision("chosen must be a JSON object")
+    chosen_direction = _require_text(chosen.get("direction"), field="chosen.direction")
+    for field in ("reason", "confidence", "what_would_change_it"):
+        _require_text(chosen.get(field), field=f"chosen.{field}")
+    if chosen_direction not in candidate_axes:
+        raise OrroAdvisoryError(
+            ERR_ORRO_SKETCH_CHOSEN_NOT_IN_CANDIDATES,
+            "chosen.direction must exactly match one candidates[].axis value",
+        )
+
+    rejected = decision.get("rejected")
+    if not isinstance(rejected, list):
+        _invalid_decision("rejected must be a JSON array")
+    for index, item in enumerate(rejected):
+        if not isinstance(item, dict):
+            _invalid_decision(f"rejected[{index}] must be a JSON object")
+        _require_text(item.get("option"), field=f"rejected[{index}].option")
+        try:
+            _require_text(item.get("why_lost"), field=f"rejected[{index}].why_lost")
+        except OrroAdvisoryError as exc:
+            raise OrroAdvisoryError(
+                ERR_ORRO_SKETCH_REJECTED_REASON_MISSING,
+                str(exc),
+            ) from exc
+    _require_text_list(decision.get("no_gos"), field="no_gos", allow_empty=True)
+    _require_text_list(
+        decision.get("rabbit_holes"), field="rabbit_holes", allow_empty=True
+    )
+
+    payload = copy.deepcopy(decision)
+    payload.update(
+        {
+            "kind": "orro-sketch",
+            "schema_version": ADVISORY_SCHEMA_VERSION,
+            "goal": goal,
+            "repo": str(repo),
+            "home": str(home) if home is not None else None,
+            "authored_by": "agent",
+            "agent_authored": True,
+            "degraded": False,
+            "boundary": _advisory_boundary(),
+            "status_note": _status_note(),
+        }
+    )
+    return payload
+
+
+def _agent_trace_decision(
+    symptom: str,
+    *,
+    repo: Path,
+    home: Path | None,
+    decision: dict[str, Any],
+) -> dict[str, Any]:
+    from witnessd.advisory_provenance import (
+        TRACE_RECEIPT,
+        load_trace_reproduction_subject,
+    )
+
+    if not isinstance(decision.get("check_the_plug"), dict):
+        _invalid_decision("check_the_plug must be a JSON object")
+    reproduction_reference = decision.get("reproduction")
+    if not isinstance(reproduction_reference, dict):
+        _invalid_decision("reproduction must be a JSON object")
+    receipt_path = reproduction_reference.get(
+        "path",
+        reproduction_reference.get(
+            "receipt_path", reproduction_reference.get("source")
+        ),
+    )
+    receipt_sha256 = reproduction_reference.get(
+        "sha256", reproduction_reference.get("receipt_sha256")
+    )
+    if receipt_path != TRACE_RECEIPT:
+        raise OrroAdvisoryError(
+            ERR_ORRO_TRACE_RECEIPT_INVALID,
+            f"reproduction must reference {TRACE_RECEIPT!r} inside the inspected repository",
+        )
+    if not isinstance(receipt_sha256, str) or not re.fullmatch(
+        r"[0-9a-f]{64}", receipt_sha256
+    ):
+        raise OrroAdvisoryError(
+            ERR_ORRO_TRACE_RECEIPT_INVALID,
+            "reproduction requires a lowercase canonical receipt sha256",
+        )
+
+    hypotheses = decision.get("hypotheses")
+    if not isinstance(hypotheses, list):
+        _invalid_decision("hypotheses must be a JSON array")
+    for index, hypothesis in enumerate(hypotheses):
+        if not isinstance(hypothesis, dict):
+            _invalid_decision(f"hypotheses[{index}] must be a JSON object")
+        for field in ("mechanism", "prediction", "discriminating_probe", "confidence"):
+            _require_text(hypothesis.get(field), field=f"hypotheses[{index}].{field}")
+    if not isinstance(decision.get("confirmation"), dict):
+        _invalid_decision("confirmation must be a JSON object")
+    if not isinstance(decision.get("fix_scope"), dict):
+        _invalid_decision("fix_scope must be a JSON object")
+    if not isinstance(decision.get("localization"), (dict, list, str)):
+        _invalid_decision(
+            "localization must be a JSON object, array, or non-empty string"
+        )
+    if isinstance(decision.get("localization"), str):
+        _require_text(decision["localization"], field="localization")
+
+    root_cause = decision.get("root_cause")
+    unconfirmed = decision.get("unconfirmed")
+    if (root_cause is None) == (unconfirmed is None):
+        _invalid_decision("trace requires exactly one of root_cause or unconfirmed")
+    claimed_tier: str | None = None
+    if root_cause is not None:
+        if not isinstance(root_cause, dict):
+            _invalid_decision("root_cause must be a JSON object")
+        claimed_tier = _require_text(root_cause.get("tier"), field="root_cause.tier")
+        if claimed_tier not in {"confirmed", "suspected", "speculative"}:
+            _invalid_decision(
+                "root_cause.tier must be confirmed, suspected, or speculative"
+            )
+        if not hypotheses:
+            _invalid_decision("root_cause requires at least one agent-authored hypothesis")
+    elif isinstance(unconfirmed, str):
+        _require_text(unconfirmed, field="unconfirmed")
+    elif not isinstance(unconfirmed, dict):
+        _invalid_decision("unconfirmed must be a JSON object or non-empty string")
+
+    sealed_receipt = load_trace_reproduction_subject(repo)
+    if sealed_receipt is None:
+        code = (
+            ERR_ORRO_TRACE_CONFIRMED_UNBACKED
+            if claimed_tier == "confirmed"
+            else ERR_ORRO_TRACE_RECEIPT_INVALID
+        )
+        raise OrroAdvisoryError(
+            code,
+            f"cannot validate the agent-authored trace: {TRACE_RECEIPT} is missing or malformed",
+        )
+    actual_receipt_sha256 = canonical_hash(sealed_receipt)
+    try:
+        source_receipt_sha256 = hashlib.sha256(
+            (repo / TRACE_RECEIPT).read_bytes()
+        ).hexdigest()
+    except OSError as exc:
+        raise OrroAdvisoryError(
+            ERR_ORRO_TRACE_RECEIPT_INVALID,
+            f"cannot hash {TRACE_RECEIPT}: {exc}",
+        ) from exc
+    if receipt_sha256 not in {actual_receipt_sha256, source_receipt_sha256}:
+        code = (
+            ERR_ORRO_TRACE_CONFIRMED_UNBACKED
+            if claimed_tier == "confirmed"
+            else ERR_ORRO_TRACE_RECEIPT_HASH_MISMATCH
+        )
+        raise OrroAdvisoryError(
+            code,
+            "agent-authored reproduction hash does not match the receipt that would be sealed",
+        )
+
+    observed_reproduction = _observed_reproduction(repo, symptom)
+    observed_reproduction["symptom"] = symptom
+    observed_reproduction["receipt_path"] = TRACE_RECEIPT
+    observed_reproduction["receipt_sha256"] = actual_receipt_sha256
+    if claimed_tier == "confirmed":
+        _gate_agent_confirmed_trace(
+            symptom,
+            hypotheses=hypotheses,
+            localization=decision["localization"],
+            confirmation=decision["confirmation"],
+            root_cause=root_cause,
+            reproduction=observed_reproduction,
+            receipt=sealed_receipt,
+        )
+
+    payload = copy.deepcopy(decision)
+    payload.update(
+        {
+            "kind": "orro-trace",
+            "schema_version": ADVISORY_SCHEMA_VERSION,
+            "goal_or_symptom": symptom,
+            "symptom": symptom,
+            "repo": str(repo),
+            "home": str(home) if home is not None else None,
+            "authored_by": "agent",
+            "agent_authored": True,
+            "degraded": False,
+            "reproduction": observed_reproduction,
+            "boundary": _advisory_boundary(),
+            "status_note": _status_note(),
+        }
+    )
+    return payload
+
+
+def _gate_agent_confirmed_trace(
+    symptom: str,
+    *,
+    hypotheses: list[dict[str, Any]],
+    localization: Any,
+    confirmation: dict[str, Any],
+    root_cause: dict[str, Any],
+    reproduction: dict[str, Any],
+    receipt: dict[str, Any],
+) -> None:
+    hypothesis_index = root_cause.get("hypothesis_index")
+    if not (
+        isinstance(hypothesis_index, int)
+        and not isinstance(hypothesis_index, bool)
+        and 0 <= hypothesis_index < len(hypotheses)
+    ):
+        finding = root_cause.get("finding", root_cause.get("summary"))
+        hypothesis_index = next(
+            (
+                index
+                for index, hypothesis in enumerate(hypotheses)
+                if hypothesis.get("mechanism") == finding
+            ),
+            None,
+        )
+    ruled_out = confirmation.get("rival_hypotheses_ruled_out")
+    valid_rivals = (
+        [
+            index
+            for index in ruled_out
+            if isinstance(index, int)
+            and not isinstance(index, bool)
+            and 0 <= index < len(hypotheses)
+            and index != hypothesis_index
+        ]
+        if isinstance(ruled_out, list)
+        else []
+    )
+    if hypothesis_index is None or not valid_rivals:
+        raise OrroAdvisoryError(
+            ERR_ORRO_TRACE_CONFIRMED_UNBACKED,
+            "confirmed trace requires an agent-selected hypothesis and an actively ruled-out rival",
+        )
+
+    hypothesis = hypotheses[hypothesis_index]
+    probe = hypothesis["discriminating_probe"]
+    output = receipt.get("output")
+    if (
+        reproduction.get("red_observed") is not True
+        or not isinstance(output, str)
+        or symptom not in output
+        or probe not in output
+    ):
+        raise OrroAdvisoryError(
+            ERR_ORRO_TRACE_CONFIRMED_UNBACKED,
+            "confirmed trace requires a symptom-bound red receipt containing the selected discriminating probe",
+        )
+
+    gate_hypotheses = [
+        {**copy.deepcopy(item), "id": f"H{index}"}
+        for index, item in enumerate(hypotheses)
+    ]
+    gate_confirmation = {
+        "supported_hypotheses": [f"H{hypothesis_index}"],
+        "ruled_out_hypotheses": [f"H{index}" for index in valid_rivals],
+        "ruled_out_rival": True,
+    }
+    suspect_regions = (
+        localization.get("suspect_region_cited", [])
+        if isinstance(localization, dict)
+        else []
+    )
+    verdict = _trace_verdict(
+        symptom,
+        reproduction,
+        {"suspect_region_cited": suspect_regions},
+        gate_hypotheses,
+        gate_confirmation,
+    )
+    if verdict.get("root_cause", {}).get("tier") != "confirmed":
+        raise OrroAdvisoryError(
+            ERR_ORRO_TRACE_CONFIRMED_UNBACKED,
+            "confirmed trace did not pass the external receipt and rival-rejection gate",
+        )
+
+
+def _require_present_frame(value: Any, *, field: str) -> None:
+    if isinstance(value, str):
+        _require_text(value, field=field)
+        return
+    if isinstance(value, dict) and value:
+        return
+    _invalid_decision(f"{field} must be a non-empty string or JSON object")
+
+
+def _require_text(value: Any, *, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        _invalid_decision(f"{field} must be a non-empty string")
+    return value
+
+
+def _require_text_list(
+    value: Any,
+    *,
+    field: str,
+    allow_empty: bool = False,
+) -> list[str]:
+    if (
+        not isinstance(value, list)
+        or (not allow_empty and not value)
+        or any(not isinstance(item, str) or not item.strip() for item in value)
+    ):
+        qualifier = (
+            "an array of strings" if allow_empty else "a non-empty array of strings"
+        )
+        _invalid_decision(f"{field} must be {qualifier}")
+    return value
+
+
+def _invalid_decision(message: str) -> None:
+    raise OrroAdvisoryError(ERR_ORRO_ADVISORY_DECISION_INVALID, message)
+
+
+def build_sketch_decision(
+    goal: str,
+    *,
+    repo: Path,
+    home: Path | None = None,
+    decision: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate an agent-authored sketch or emit a degraded scaffold."""
 
     normalized_goal = _normalize_text(goal)
     repo = repo.resolve(strict=False)
     resolved_home = home.resolve(strict=False) if home is not None else None
+    if decision is not None:
+        return _agent_sketch_decision(
+            normalized_goal,
+            repo=repo,
+            home=resolved_home,
+            decision=decision,
+        )
     signals = _repo_signals(repo, normalized_goal)
     constraints = _extract_constraints(normalized_goal)
     criteria = _sketch_criteria(signals)
@@ -105,6 +518,9 @@ def build_sketch_decision(goal: str, *, repo: Path, home: Path | None = None) ->
     return {
         "kind": "orro-sketch",
         "schema_version": ADVISORY_SCHEMA_VERSION,
+        "authored_by": "heuristic-scaffold",
+        "agent_authored": False,
+        "degraded": True,
         "goal": normalized_goal,
         "repo": str(repo),
         "home": str(resolved_home) if resolved_home is not None else None,
@@ -213,12 +629,20 @@ def build_trace_decision(
     *,
     repo: Path,
     home: Path | None = None,
+    decision: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Run a read-only scientific-debugging advisory over prior-run observations."""
+    """Validate an agent-authored trace or emit a degraded scaffold."""
 
     normalized_symptom = _normalize_text(symptom)
     repo = repo.resolve(strict=False)
     resolved_home = home.resolve(strict=False) if home is not None else None
+    if decision is not None:
+        return _agent_trace_decision(
+            normalized_symptom,
+            repo=repo,
+            home=resolved_home,
+            decision=decision,
+        )
     signals = _repo_signals(repo, normalized_symptom)
     check_the_plug = _check_the_plug(repo, signals)
     reproduction = _observed_reproduction(repo, normalized_symptom)
@@ -235,7 +659,13 @@ def build_trace_decision(
         confirmation,
     )
     root_cause = root_cause_or_unconfirmed.get("root_cause")
-    unconfirmed = root_cause_or_unconfirmed.get("unconfirmed")
+    if isinstance(root_cause, dict) and root_cause.get("tier") == "confirmed":
+        root_cause["tier"] = "suspected"
+        root_cause["status"] = "unconfirmed"
+        root_cause["stop_reason"] = (
+            "stop at suspected: degraded heuristic scaffolds cannot author or "
+            "confirm a root-cause claim"
+        )
     confirmed = bool(root_cause and root_cause["tier"] == "confirmed")
     fix_scope = _trace_fix_scope(normalized_symptom, localization, reproduction)
     evidence = _trace_evidence(repo, signals, reproduction)
@@ -255,6 +685,9 @@ def build_trace_decision(
     return {
         "kind": "orro-trace",
         "schema_version": ADVISORY_SCHEMA_VERSION,
+        "authored_by": "heuristic-scaffold",
+        "agent_authored": False,
+        "degraded": True,
         "goal_or_symptom": normalized_symptom,
         "symptom": normalized_symptom,
         "repo": str(repo),
@@ -573,8 +1006,6 @@ def _sketch_candidates(
             int(item["weight"]) * int(scores[str(item["name"])])
             for item in criteria
         )
-        candidate["generated_independently"] = True
-        candidate["critique_deferred_until_all_existed"] = True
         candidate["score_basis"] = {
             "existing_seam": has_existing_seam,
             "repo_file_count": signals["file_count"],
@@ -861,7 +1292,9 @@ def _falsify_hypotheses(
     if not hypotheses:
         return (
             {
-                "falsification_ran": False,
+                "lint_ran": False,
+                "lint_only": True,
+                "can_confirm": False,
                 "ruled_out_rival": False,
                 "verification_questions": [],
             },
@@ -902,7 +1335,9 @@ def _falsify_hypotheses(
     logbook.sort(key=lambda item: item["outcome"] != "survives")
     ruled_out = any(not result for result in results.values())
     confirmation = {
-        "falsification_ran": True,
+        "lint_ran": True,
+        "lint_only": True,
+        "can_confirm": False,
         "ruled_out_rival": ruled_out,
         "verification_questions": [
             {
@@ -918,7 +1353,6 @@ def _falsify_hypotheses(
                 "answer": str(results["H2"]),
             },
         ],
-        "answers_generated_without_re_reading_hypotheses": True,
         "supported_hypotheses": [
             hypothesis_id for hypothesis_id, supported in results.items() if supported
         ],
@@ -980,7 +1414,6 @@ def _trace_verdict(
         and external_confirmation.get("discriminating_probe_ran") is True
         and external_confirmation.get("ruled_out_rival") is True
         and external_confirmation.get("red_to_green_observed") is True
-        and confirmation.get("ruled_out_rival") is True
     )
     tier = "confirmed" if confirmed else "suspected"
     return {

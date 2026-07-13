@@ -14,6 +14,15 @@ prior actual run and performs read-only probes over the recorded output, but it
 must not execute repository code, edit the inspected repository, launch workers
 or `proofrun`, or change an evidence verdict.
 
+This is reference knowledge for the calling agent, not a mandatory ceremony.
+The agent applies the useful parts while authoring its own JSON decision and
+passes that record to `orro trace "<symptom>" --decision <path.json>`. The CLI
+validates the shape, gates the claimed tier against the external receipt, and
+seals the supplied record. It does not author or substitute the agent's
+hypotheses, localization, confirmation, or root-cause reasoning. Without
+`--decision`, the CLI emits only a labeled, non-authoritative degraded scaffold
+for headless compatibility.
+
 ## Governing rule
 
 An AI agent's stated confidence is not evidence; only an external signal is.
@@ -25,7 +34,9 @@ command. An isolated verification answer must be produced without re-reading the
 hypothesis it checks. Narration, consistency, and model confidence never confirm
 a cause.
 
-## Ordered phases
+## Reference phases
+
+The sequence below is a reasoning aid, not CLI-enforced step or order policy.
 
 0. **Frame and check the plug.** State expected versus actual behavior, when it
    was first observed, and whether it worked before. Capture environment,
@@ -92,9 +103,12 @@ This uses the feedback-memory idea from
 oracle. [Self-Debugging](https://arxiv.org/abs/2304.05128) motivates explanation
 and execution feedback, but does not override the no-external-oracle warning.
 
-## Gate into the evidence pipeline
+## Handoff into the evidence pipeline
 
-No hypothesis is emitted before observed red, and no fix flowplan is ready while
-the cause is unconfirmed. A confirmed cause may shape a later fix `flowplan` whose
-execution starts at `proofrun`. Trace remains advisory and read-only; its record
-does not become Depone-re-derivable evidence and never replaces `proofcheck`.
+The agent may use these reference checks before shaping a later fix `flowplan`.
+The CLI does not impose a minimum hypothesis count for suspected, speculative,
+or unconfirmed records. A claimed `confirmed` tier is sealed only when the
+symptom-bound receipt records the discriminating probe, red-to-green observation,
+and a ruled-out rival. Execution starts at `proofrun`. Trace remains advisory and
+read-only; provenance re-derivation does not make the diagnosis execution
+evidence and never replaces `proofcheck`.

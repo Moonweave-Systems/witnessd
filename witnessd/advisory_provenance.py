@@ -115,6 +115,12 @@ def _sealed_trace_receipt(
 ) -> dict[str, Any] | None:
     if decision.get("kind") != "orro-trace":
         return None
+    return load_trace_reproduction_subject(repo)
+
+
+def load_trace_reproduction_subject(repo: Path) -> dict[str, Any] | None:
+    """Normalize the external trace receipt exactly as it will be sealed."""
+
     source_path = repo.resolve(strict=False) / TRACE_RECEIPT
     if not source_path.is_file():
         return None
@@ -166,34 +172,57 @@ def _bind_trace_confirmation(
         or not isinstance(confirmation, dict)
     ):
         return
-    finding = root_cause.get("finding")
-    hypothesis_index = next(
-        (
-            index
-            for index, hypothesis in enumerate(hypotheses)
-            if isinstance(hypothesis, dict) and hypothesis.get("mechanism") == finding
-        ),
-        None,
-    )
+    hypothesis_index = root_cause.get("hypothesis_index")
+    if not (
+        isinstance(hypothesis_index, int)
+        and not isinstance(hypothesis_index, bool)
+        and 0 <= hypothesis_index < len(hypotheses)
+        and isinstance(hypotheses[hypothesis_index], dict)
+    ):
+        finding = root_cause.get("finding", root_cause.get("summary"))
+        hypothesis_index = next(
+            (
+                index
+                for index, hypothesis in enumerate(hypotheses)
+                if isinstance(hypothesis, dict)
+                and hypothesis.get("mechanism") == finding
+            ),
+            None,
+        )
     if hypothesis_index is None:
         return
     root_cause["hypothesis_index"] = hypothesis_index
-    root_cause["summary"] = finding
+    hypothesis = hypotheses[hypothesis_index]
+    mechanism = hypothesis.get("mechanism")
+    if isinstance(mechanism, str):
+        root_cause.setdefault("finding", mechanism)
+        root_cause.setdefault("summary", mechanism)
     ruled_out_ids = {
         str(item) for item in confirmation.get("ruled_out_hypotheses", [])
     }
-    confirmation["rival_hypotheses_ruled_out"] = [
-        index
-        for index, hypothesis in enumerate(hypotheses)
-        if index != hypothesis_index
-        and isinstance(hypothesis, dict)
-        and str(hypothesis.get("id")) in ruled_out_ids
-    ]
+    existing_ruled_out = confirmation.get("rival_hypotheses_ruled_out")
+    if not isinstance(existing_ruled_out, list):
+        confirmation["rival_hypotheses_ruled_out"] = [
+            index
+            for index, candidate in enumerate(hypotheses)
+            if index != hypothesis_index
+            and isinstance(candidate, dict)
+            and str(candidate.get("id")) in ruled_out_ids
+        ]
     if root_cause.get("tier") != "confirmed":
         return
-    hypothesis = hypotheses[hypothesis_index]
     output = receipt.get("output")
-    observed_probe = _observed_trace_probe(hypothesis, output)
+    if decision.get("agent_authored") is True:
+        planned_probe = hypothesis.get("discriminating_probe")
+        observed_probe = (
+            planned_probe
+            if isinstance(planned_probe, str)
+            and isinstance(output, str)
+            and planned_probe in output
+            else None
+        )
+    else:
+        observed_probe = _observed_trace_probe(hypothesis, output)
     reproduction_is_backed = (
         isinstance(reproduction, dict)
         and reproduction.get("red_observed") is True
@@ -213,10 +242,11 @@ def _bind_trace_confirmation(
             "required to re-derive a confirmed advisory provenance claim"
         )
         return
-    planned_probe = hypothesis.get("discriminating_probe")
-    if isinstance(planned_probe, str):
-        hypothesis["planned_discriminating_probe"] = planned_probe
-    hypothesis["discriminating_probe"] = observed_probe
+    if decision.get("agent_authored") is not True:
+        planned_probe = hypothesis.get("discriminating_probe")
+        if isinstance(planned_probe, str):
+            hypothesis["planned_discriminating_probe"] = planned_probe
+        hypothesis["discriminating_probe"] = observed_probe
 
 
 def _observed_trace_probe(

@@ -24,8 +24,8 @@ public commands:
   init         setup readiness/provision metadata; does not verify evidence
   advise       non-executing workstyle router for the smallest safe workflow
   scout        read-only repository exploration and context packaging
-  sketch       advisory ideation that converges on flowplan input
-  trace        advisory root-cause investigation before a fix flowplan
+  sketch       validate and seal an agent-authored advisory direction
+  trace        validate, gate, and seal an agent-authored root-cause record
   flowplan     plan-only workflow design; does not run workers
   proofrun     evidence-backed execution through witnessd
   proofcheck   offline evidence verification delegated to Depone

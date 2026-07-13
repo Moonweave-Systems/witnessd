@@ -7,7 +7,7 @@ import os
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 
@@ -40,16 +40,18 @@ BOUNDARY_FLAGS = (
 )
 
 
-def _write_trace_receipt(repo: Path, symptom: str) -> None:
-    (repo / "orro-trace-reproduction.json").write_text(
+def _write_trace_receipt(repo: Path, symptom: str) -> str:
+    command = ["python3", "-m", "unittest", "tests.test_widget"]
+    output = f"{symptom}\nAssertionError: 7 != 9"
+    receipt_text = (
         json.dumps(
             {
                 "kind": "orro-trace-reproduction",
                 "symptom": symptom,
-                "command": ["python3", "-m", "unittest", "tests.test_widget"],
+                "command": command,
                 "exit_code": 1,
                 "stdout": "",
-                "stderr": f"{symptom}\nAssertionError: 7 != 9",
+                "stderr": output,
                 "minimized": True,
                 "external_confirmation": {
                     "discriminating_probe_ran": True,
@@ -60,9 +62,89 @@ def _write_trace_receipt(repo: Path, symptom: str) -> None:
             },
             sort_keys=True,
         )
-        + "\n",
+        + "\n"
+    )
+    (repo / "orro-trace-reproduction.json").write_text(
+        receipt_text,
         encoding="utf-8",
     )
+    return hashlib.sha256(receipt_text.encode("utf-8")).hexdigest()
+
+
+def _sketch_decision(*, chosen_direction: str = "validate-agent-record") -> dict:
+    return {
+        "frame": "Preserve agent reasoning and seal only validated claims.",
+        "criteria": ["honest provenance", "thin harness"],
+        "candidates": [
+            {
+                "axis": "validate-agent-record",
+                "summary": "Validate and seal the calling agent's authored decision.",
+                "benefits": ["preserves real reasoning"],
+                "risks": ["requires a decision file"],
+                "tradeoff": "More explicit input for honest provenance.",
+            },
+            {
+                "axis": "keep-template-authoring",
+                "summary": "Keep deterministic template authoring.",
+                "benefits": ["works without input"],
+                "risks": ["fabricates reasoning provenance"],
+                "tradeoff": "Convenience at the cost of honesty.",
+            },
+        ],
+        "chosen": {
+            "direction": chosen_direction,
+            "reason": "The seal must cover reasoning the agent actually authored.",
+            "confidence": "high",
+            "what_would_change_it": "A verifier contract that cannot seal authored JSON.",
+        },
+        "rejected": [
+            {
+                "option": "keep-template-authoring",
+                "why_lost": "It replaces and misattributes the agent's reasoning.",
+            }
+        ],
+        "no_gos": ["claim that sealing establishes correctness"],
+        "rabbit_holes": ["enforce a mandatory ideation ceremony"],
+    }
+
+
+def _trace_decision(receipt_sha256: str, *, tier: str) -> dict:
+    hypotheses = [
+        {
+            "mechanism": "The total path returns the stale value seven.",
+            "prediction": "The observed output contains the seven-versus-nine mismatch.",
+            "discriminating_probe": "AssertionError: 7 != 9",
+            "confidence": "moderate",
+        }
+    ]
+    decision = {
+        "check_the_plug": {"repo_exists": True},
+        "reproduction": {
+            "path": "orro-trace-reproduction.json",
+            "sha256": receipt_sha256,
+        },
+        "localization": {"suspect_region_cited": ["widget.py:2"]},
+        "hypotheses": hypotheses,
+        "confirmation": {},
+        "root_cause": {
+            "tier": tier,
+            "hypothesis_index": 0,
+            "summary": hypotheses[0]["mechanism"],
+            "finding": hypotheses[0]["mechanism"],
+        },
+        "fix_scope": {"cause_site": "widget.py:2"},
+    }
+    if tier == "confirmed":
+        decision["hypotheses"].append(
+            {
+                "mechanism": "The runtime imports a different widget module.",
+                "prediction": "The module path differs from the repository path.",
+                "discriminating_probe": "module path mismatch",
+                "confidence": "low",
+            }
+        )
+        decision["confirmation"] = {"rival_hypotheses_ruled_out": [1]}
+    return decision
 
 
 def _run_advisory(
@@ -72,27 +154,79 @@ def _run_advisory(
     repo: Path,
     home: Path,
     out_dir: Path,
+    decision: dict | None = None,
 ) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
-    stdout = io.StringIO()
-    with redirect_stdout(stdout):
-        code = main(
-            [
-                "orro",
-                mode,
-                goal,
-                "--repo",
-                str(repo),
-                "--home",
-                str(home),
-                "--out",
-                str(out_dir / f"orro-{mode}.json"),
-                "--json",
-            ]
+    decision_path = out_dir.parent / f"{mode}-agent-decision.json"
+    if decision is not None:
+        decision_path.write_text(
+            json.dumps(decision, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
         )
+    argv = [
+        "orro",
+        mode,
+        goal,
+        "--repo",
+        str(repo),
+        "--home",
+        str(home),
+        "--out",
+        str(out_dir / f"orro-{mode}.json"),
+        "--json",
+    ]
+    if decision is not None:
+        argv.extend(["--decision", str(decision_path)])
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    try:
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = main(argv)
+    except SystemExit as exc:
+        code = int(exc.code)
     if code != 0:
-        raise AssertionError(stdout.getvalue())
+        raise AssertionError(stdout.getvalue() or stderr.getvalue())
     return json.loads(stdout.getvalue())
+
+
+def _run_advisory_result(
+    mode: str,
+    goal: str,
+    *,
+    repo: Path,
+    home: Path,
+    out_dir: Path,
+    decision: dict,
+) -> tuple[int, dict]:
+    decision_path = out_dir.parent / f"{mode}-agent-decision.json"
+    decision_path.write_text(
+        json.dumps(decision, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    try:
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = main(
+                [
+                    "orro",
+                    mode,
+                    goal,
+                    "--repo",
+                    str(repo),
+                    "--home",
+                    str(home),
+                    "--decision",
+                    str(decision_path),
+                    "--out",
+                    str(out_dir / f"orro-{mode}.json"),
+                    "--json",
+                ]
+            )
+    except SystemExit as exc:
+        code = int(exc.code)
+    output = stdout.getvalue()
+    return code, json.loads(output) if output else {"stderr": stderr.getvalue()}
 
 
 def _validate(out_dir: Path, public_key: Path) -> list:
@@ -150,6 +284,61 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
                 [],
             )
 
+    def test_agent_authored_sketch_is_validated_and_sealed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            home = root / ".witnessd"
+            out_dir = root / "sketch-artifacts"
+
+            decision = _run_advisory(
+                "sketch",
+                "seal the agent-authored direction",
+                repo=repo,
+                home=home,
+                out_dir=out_dir,
+                decision=_sketch_decision(),
+            )
+
+            self.assertTrue(decision["agent_authored"])
+            self.assertEqual(decision["authored_by"], "agent")
+            self.assertEqual(
+                decision["chosen"]["reason"],
+                "The seal must cover reasoning the agent actually authored.",
+            )
+            self.assertNotIn("generated_independently", json.dumps(decision))
+            self.assertNotIn("critique_deferred", json.dumps(decision))
+            self.assertEqual(
+                _validate(out_dir, home / "keys" / "operator-ed25519.pub.pem"),
+                [],
+            )
+
+    def test_agent_authored_sketch_refuses_choice_outside_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            home = root / ".witnessd"
+            out_dir = root / "sketch-artifacts"
+
+            code, result = _run_advisory_result(
+                "sketch",
+                "refuse an invented direction",
+                repo=repo,
+                home=home,
+                out_dir=out_dir,
+                decision=_sketch_decision(chosen_direction="invented-direction"),
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(
+                result["error"]["code"],
+                "ERR_ORRO_SKETCH_CHOSEN_NOT_IN_CANDIDATES",
+            )
+            self.assertFalse((out_dir / "orro-sketch.json").exists())
+            self.assertFalse((out_dir / "advisory-provenance-bundle.json").exists())
+
     def test_trace_confirmed_emission_seals_receipt_and_preserves_execution_verdict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -157,7 +346,7 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
             repo.mkdir()
             (repo / "widget.py").write_text("def total() -> int:\n    return 7\n", encoding="utf-8")
             symptom = "widget total was 7 expected 9"
-            _write_trace_receipt(repo, symptom)
+            receipt_sha256 = _write_trace_receipt(repo, symptom)
             home = root / ".witnessd"
             out_dir = root / "trace-artifacts"
             out_dir.mkdir()
@@ -171,6 +360,7 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
                 repo=repo,
                 home=home,
                 out_dir=out_dir,
+                decision=_trace_decision(receipt_sha256, tier="confirmed"),
             )
 
             receipt_path = out_dir / "orro-trace-reproduction.json"
@@ -184,6 +374,78 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
                 _validate(out_dir, home / "keys" / "operator-ed25519.pub.pem"),
                 [],
             )
+
+    def test_agent_authored_suspected_trace_accepts_one_hypothesis(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            symptom = "widget total was 7 expected 9"
+            receipt_sha256 = _write_trace_receipt(repo, symptom)
+            home = root / ".witnessd"
+            out_dir = root / "trace-artifacts"
+
+            decision = _run_advisory(
+                "trace",
+                symptom,
+                repo=repo,
+                home=home,
+                out_dir=out_dir,
+                decision=_trace_decision(receipt_sha256, tier="suspected"),
+            )
+
+            self.assertTrue(decision["agent_authored"])
+            self.assertEqual(decision["root_cause"]["tier"], "suspected")
+            self.assertEqual(len(decision["hypotheses"]), 1)
+            self.assertEqual(
+                _validate(out_dir, home / "keys" / "operator-ed25519.pub.pem"),
+                [],
+            )
+
+    def test_agent_authored_confirmed_trace_without_backing_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            symptom = "widget total was 7 expected 9"
+            home = root / ".witnessd"
+            out_dir = root / "trace-artifacts"
+
+            code, result = _run_advisory_result(
+                "trace",
+                symptom,
+                repo=repo,
+                home=home,
+                out_dir=out_dir,
+                decision=_trace_decision("0" * 64, tier="confirmed"),
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(
+                result["error"]["code"],
+                "ERR_ORRO_TRACE_CONFIRMED_UNBACKED",
+            )
+            self.assertFalse((out_dir / "orro-trace.json").exists())
+            self.assertFalse((out_dir / "advisory-provenance-bundle.json").exists())
+
+    def test_bare_goal_fallback_is_explicitly_degraded(self) -> None:
+        for mode in ("sketch", "trace"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "repo"
+                repo.mkdir()
+                decision = _run_advisory(
+                    mode,
+                    "headless fallback record",
+                    repo=repo,
+                    home=root / ".witnessd",
+                    out_dir=root / f"{mode}-artifacts",
+                )
+
+                self.assertFalse(decision["agent_authored"])
+                self.assertTrue(decision["degraded"])
+                self.assertNotIn("generated_independently", json.dumps(decision))
+                self.assertNotIn("critique_deferred", json.dumps(decision))
 
     def test_tampered_sketch_refutes_with_tamper_code(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -219,7 +481,7 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
             repo.mkdir()
             (repo / "widget.py").write_text("def total() -> int:\n    return 7\n", encoding="utf-8")
             symptom = "widget total was 7 expected 9"
-            _write_trace_receipt(repo, symptom)
+            receipt_sha256 = _write_trace_receipt(repo, symptom)
             home = root / ".witnessd"
             out_dir = root / "trace-artifacts"
             _run_advisory(
@@ -228,6 +490,7 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
                 repo=repo,
                 home=home,
                 out_dir=out_dir,
+                decision=_trace_decision(receipt_sha256, tier="confirmed"),
             )
             receipt_path = out_dir / "orro-trace-reproduction.json"
             self.assertTrue(receipt_path.is_file(), "trace receipt was not emitted")

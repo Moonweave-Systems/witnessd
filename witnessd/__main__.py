@@ -1409,6 +1409,7 @@ def _cmd_orro_sketch(args: argparse.Namespace) -> int:
     from witnessd.orro_advisory import (
         OrroAdvisoryError,
         build_sketch_decision,
+        read_agent_decision,
         write_advisory_decision,
     )
     from witnessd.signing import DsseSigningError
@@ -1422,10 +1423,15 @@ def _cmd_orro_sketch(args: argparse.Namespace) -> int:
         return 2
     repo = Path(args.repo).resolve(strict=False)
     home = Path(args.home).resolve(strict=False) if args.home else None
-    payload = build_sketch_decision(str(args.goal), repo=repo, home=home)
-    if args.out:
-        out_path = Path(args.out).resolve(strict=False)
-        try:
+    try:
+        decision = (
+            read_agent_decision(Path(args.decision)) if args.decision else None
+        )
+        payload = build_sketch_decision(
+            str(args.goal), repo=repo, home=home, decision=decision
+        )
+        if args.out:
+            out_path = Path(args.out).resolve(strict=False)
             write_advisory_decision(out_path, payload)
             seal_home = home or (out_path.parent.parent / ".witnessd")
             payload = emit_advisory_provenance(
@@ -1434,16 +1440,16 @@ def _cmd_orro_sketch(args: argparse.Namespace) -> int:
                 home=seal_home,
                 repo=repo,
             )
-        except OrroAdvisoryError as exc:
-            _emit_orro_error(args, code=exc.code, message=str(exc))
-            return 1
-        except (DsseSigningError, OSError) as exc:
-            _emit_orro_error(
-                args,
-                code=getattr(exc, "code", "ERR_ORRO_ADVISORY_WRITE_FAILED"),
-                message=str(exc),
-            )
-            return 1
+    except OrroAdvisoryError as exc:
+        _emit_orro_error(args, code=exc.code, message=str(exc))
+        return 1
+    except (DsseSigningError, OSError) as exc:
+        _emit_orro_error(
+            args,
+            code=getattr(exc, "code", "ERR_ORRO_ADVISORY_WRITE_FAILED"),
+            message=str(exc),
+        )
+        return 1
     print(json.dumps(payload, sort_keys=True))
     return 0
 
@@ -1453,6 +1459,7 @@ def _cmd_orro_trace(args: argparse.Namespace) -> int:
     from witnessd.orro_advisory import (
         OrroAdvisoryError,
         build_trace_decision,
+        read_agent_decision,
         write_advisory_decision,
     )
     from witnessd.signing import DsseSigningError
@@ -1466,10 +1473,15 @@ def _cmd_orro_trace(args: argparse.Namespace) -> int:
         return 2
     repo = Path(args.repo).resolve(strict=False)
     home = Path(args.home).resolve(strict=False) if args.home else None
-    payload = build_trace_decision(str(args.goal), repo=repo, home=home)
-    if args.out:
-        out_path = Path(args.out).resolve(strict=False)
-        try:
+    try:
+        decision = (
+            read_agent_decision(Path(args.decision)) if args.decision else None
+        )
+        payload = build_trace_decision(
+            str(args.goal), repo=repo, home=home, decision=decision
+        )
+        if args.out:
+            out_path = Path(args.out).resolve(strict=False)
             write_advisory_decision(out_path, payload)
             seal_home = home or (out_path.parent.parent / ".witnessd")
             payload = emit_advisory_provenance(
@@ -1478,16 +1490,16 @@ def _cmd_orro_trace(args: argparse.Namespace) -> int:
                 home=seal_home,
                 repo=repo,
             )
-        except OrroAdvisoryError as exc:
-            _emit_orro_error(args, code=exc.code, message=str(exc))
-            return 1
-        except (DsseSigningError, OSError) as exc:
-            _emit_orro_error(
-                args,
-                code=getattr(exc, "code", "ERR_ORRO_ADVISORY_WRITE_FAILED"),
-                message=str(exc),
-            )
-            return 1
+    except OrroAdvisoryError as exc:
+        _emit_orro_error(args, code=exc.code, message=str(exc))
+        return 1
+    except (DsseSigningError, OSError) as exc:
+        _emit_orro_error(
+            args,
+            code=getattr(exc, "code", "ERR_ORRO_ADVISORY_WRITE_FAILED"),
+            message=str(exc),
+        )
+        return 1
     print(json.dumps(payload, sort_keys=True))
     return 0
 
@@ -3419,13 +3431,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "orro-sketch",
         help=argparse.SUPPRESS,
         description=(
-            "Advisory front-end ideation: frame, diverge, converge, and hand the "
-            "chosen direction to flowplan. Not proof or assurance."
+            "Validate and seal an agent-authored advisory sketch decision. Without "
+            "--decision, emits a degraded heuristic scaffold. Not proof or assurance."
         ),
     )
     orro_sketch.add_argument("goal", nargs="?")
     orro_sketch.add_argument("--repo", default=".")
     orro_sketch.add_argument("--home", default=None)
+    orro_sketch.add_argument("--decision", default=None)
     orro_sketch.add_argument("--out", default=None)
     orro_sketch.add_argument("--json", action="store_true")
     orro_sketch.set_defaults(func=_cmd_orro_sketch)
@@ -3434,13 +3447,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "orro-trace",
         help=argparse.SUPPRESS,
         description=(
-            "Advisory root cause investigation: observe, reproduce/localize, "
-            "hypothesize, then confirm before any fix. Not proof or assurance."
+            "Validate, gate, and seal an agent-authored root cause decision. Without "
+            "--decision, emits a degraded heuristic scaffold. Not proof or assurance."
         ),
     )
     orro_trace.add_argument("goal", nargs="?")
     orro_trace.add_argument("--repo", default=".")
     orro_trace.add_argument("--home", default=None)
+    orro_trace.add_argument("--decision", default=None)
     orro_trace.add_argument("--out", default=None)
     orro_trace.add_argument("--json", action="store_true")
     orro_trace.set_defaults(func=_cmd_orro_trace)
