@@ -175,6 +175,49 @@ class TestTeamAdapterFanin(unittest.TestCase):
         ledger = json.loads((result["base_dir"] / "team-ledger.json").read_text())
         self.assertEqual(len(ledger["lanes"]), 2)
 
+    def test_failed_adapter_command_blocks_lane_before_proofcheck(self):
+        with tempfile.TemporaryDirectory() as bindir:
+            result = self._run(
+                [
+                    {
+                        "lane_id": "timeout-lane",
+                        "adapter": "codex",
+                        "tier": "agentic",
+                        "region": ["pkg/timeout.py"],
+                        "prompt": "write timeout",
+                        "codex_binary": _fake_codex_timeout(bindir),
+                    }
+                ]
+            )
+
+        lane = result["ledger"]["lanes"][0]
+        self.assertEqual(lane["lane_id"], "timeout-lane")
+        self.assertEqual(lane["runner_adapter_kind"], "codex")
+        self.assertEqual(lane["verification_state"], "blocked")
+        self.assertEqual(lane["blocked_reason"], "ERR_TEAM_LANE_FAILED")
+        self.assertNotIn("evidence_next_verdict", lane)
+        self.assertFalse(
+            (result["base_dir"] / "timeout-lane" / "evidence-next-verdict.json").exists()
+        )
+
+        receipt = json.loads(
+            (result["base_dir"] / "timeout-lane" / "runner-receipt.json").read_text()
+        )
+        self.assertEqual(receipt["exit_code"], 124)
+        command_log = json.loads(
+            (result["base_dir"] / "adapter-command.json").read_text()
+        )
+        self.assertEqual(command_log["exit_code"], 124)
+
+        exit_events = [
+            event
+            for event in result["runlog"]
+            if event["event"] == "exit"
+            and event["payload"].get("lane_id") == "timeout-lane"
+        ]
+        self.assertEqual(len(exit_events), 1)
+        self.assertNotEqual(exit_events[0]["payload"]["exit_code"], 0)
+
 
 def _fake_codex(directory: str) -> str:
     path = Path(directory) / "codex"
@@ -193,6 +236,20 @@ def _fake_codex(directory: str) -> str:
         'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T1"}\'\n'
         'printf \'%s\\n\' \'{"type":"item.completed","item":{"type":"message","text":"done"}}\'\n'
         "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | 0o111)
+    return str(path)
+
+
+def _fake_codex_timeout(directory: str) -> str:
+    path = Path(directory) / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
+        "cat >/dev/null\n"
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T-timeout"}\'\n'
+        "exit 124\n",
         encoding="utf-8",
     )
     path.chmod(path.stat().st_mode | 0o111)
