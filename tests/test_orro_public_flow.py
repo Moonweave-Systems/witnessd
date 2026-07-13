@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.__main__ import main
+from witnessd.orro_team_surface import apply_task_prompt_to_role_lane_plan
 
 
 def _seed_repo(repo: Path) -> None:
@@ -122,7 +123,14 @@ class OrroPublicFlowTests(unittest.TestCase):
         self.assertTrue(out.is_file())
         return out
 
-    def _role_lane_plan_out(self, root: Path, goal: str, *, profile: str = "code-change") -> Path:
+    def _role_lane_plan_out(
+        self,
+        root: Path,
+        goal: str,
+        *,
+        profile: str = "code-change",
+        explicit_prompt: bool = True,
+    ) -> Path:
         out = root / "role-lane-plan.json"
         rolepack = _write_shell_rolepack(root) if profile == "code-change" else None
         rolepack_args = (
@@ -146,6 +154,13 @@ class OrroPublicFlowTests(unittest.TestCase):
             )
         self.assertEqual(code, 0, stdout.getvalue())
         self.assertTrue(out.is_file())
+        if explicit_prompt:
+            payload = json.loads(out.read_text(encoding="utf-8"))
+            patched = apply_task_prompt_to_role_lane_plan(
+                payload,
+                task=f"Perform the declared {goal} task",
+            )["role_lane_plan"]
+            out.write_text(json.dumps(patched), encoding="utf-8")
         return out
 
     def _proofrun(
@@ -334,6 +349,44 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertFalse(dispatch["boundary"]["role_dispatch_is_proof"])
             self.assertFalse(dispatch["boundary"]["raises_assurance"])
             self.assertFalse(dispatch["boundary"]["approves_merge"])
+
+    def test_proofrun_refuses_placeholder_role_lane_prompt_before_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            plan_path = self._flowplan_out(root, "write two proof files")
+            role_lane_path = self._role_lane_plan_out(
+                root,
+                "write two proof files",
+                explicit_prompt=False,
+            )
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "write two proof files",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--workflow-plan",
+                        str(plan_path),
+                        "--role-lane-plan",
+                        str(role_lane_path),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(
+                payload["error"]["code"],
+                "ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT",
+            )
+            self.assertFalse((home / "runs").exists())
 
     def test_orro_next_after_proofrun_needs_proofcheck_without_execution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

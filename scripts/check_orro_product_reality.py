@@ -154,6 +154,8 @@ def _validate_against_advise(scenario: dict[str, Any], errors: list[str]) -> Non
 
     if name == "trivial-doc-fix" and "role-lane team execution" not in skipped:
         errors.append("trivial-doc-fix must skip unnecessary role-lane team execution")
+    if name == "trivial-doc-fix" and len(decision["recommended_path"]) >= 2:
+        errors.append("trivial-doc-fix must recommend fewer than two workflow steps")
     if name == "risky-change" and "auto proofrun" not in skipped:
         errors.append("risky-change must skip auto proofrun")
 

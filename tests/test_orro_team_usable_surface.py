@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from witnessd.__main__ import main
 from witnessd.role_capability import validate_rolepack
@@ -314,6 +315,70 @@ class OrroTeamUsableSurfaceTests(unittest.TestCase):
             self.assertEqual(routing["source"], "advise")
             self.assertFalse(routing["can_change_evidence_verdict"])
             self.assertTrue(routing["boundary"]["advisory_only"])
+
+    def test_orro_team_go_refuses_when_placeholder_prompt_rewrite_does_not_land(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            run_dir = root / "run"
+            bindir = root / "bin"
+            repo.mkdir()
+            bindir.mkdir()
+            _seed_repo(repo)
+            _fake_codex_noops(bindir)
+
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main(["init", "--home", str(home), "--depone-root", str(_depone_root())]),
+                    0,
+                )
+
+            def leave_placeholder(role_lane_plan: dict, *, task: str) -> dict:
+                return {
+                    "role_lane_plan": role_lane_plan,
+                    "patched_count": 0,
+                    "placeholder_count": 1,
+                    "region_patched_count": 0,
+                }
+
+            old_path = os.environ.get("PATH", "")
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            try:
+                os.environ["PATH"] = f"{bindir}{os.pathsep}{old_path}"
+                with patch(
+                    "witnessd.orro_team_surface.apply_task_prompt_to_role_lane_plan",
+                    side_effect=leave_placeholder,
+                ), redirect_stdout(stdout), redirect_stderr(stderr):
+                    code = main(
+                        [
+                            "orro",
+                            "team",
+                            "go",
+                            "fix parser bug",
+                            "--task",
+                            "Apply the explicit parser fix",
+                            "--repo",
+                            str(repo),
+                            "--home",
+                            str(home),
+                            "--run-dir",
+                            str(run_dir),
+                            "--json",
+                        ]
+                    )
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(code, 2)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["status"], "blocked")
+            self.assertEqual(payload["stage"], "role-lane-plan")
+            self.assertEqual(
+                payload["error"]["code"],
+                "ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT",
+            )
 
     def test_orro_team_go_manual_profile_overrides_advise(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

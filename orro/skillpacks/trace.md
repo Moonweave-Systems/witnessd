@@ -14,6 +14,14 @@ prior actual run and performs read-only probes over the recorded output, but it
 must not execute repository code, edit the inspected repository, launch workers
 or `proofrun`, or change an evidence verdict.
 
+Scale this reference method to the difficulty of the diagnosis. If the cause is
+directly evident, such as a stack trace naming the failing line or an obvious
+null or type error, the agent may go straight to a confirmed or suspected
+verdict with its backing evidence, skipping delta minimization, bisection, and
+multi-hypothesis phases. Use the full method only for genuinely hard or
+non-obvious bugs. The confirmed tier still requires the real external evidence
+defined below, and trace remains advisory-only.
+
 This is reference knowledge for the calling agent, not a mandatory ceremony.
 The agent applies the useful parts while authoring its own JSON decision and
 passes that record to `orro trace "<symptom>" --decision <path.json>`. The CLI

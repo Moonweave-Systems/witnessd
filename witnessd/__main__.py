@@ -2341,7 +2341,12 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
         apply_task_prompt_to_role_lane_plan,
         verdict_has_no_work_error,
     )
-    from witnessd.orro_workflow import OrroWorkflowError, validate_role_lane_plan
+    from witnessd.orro_workflow import (
+        ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT,
+        OrroWorkflowError,
+        assert_role_lane_prompts_explicit,
+        validate_role_lane_plan,
+    )
     from witnessd.role_capability import RolepackError, default_rolepack_for_profile
 
     repo = Path(args.repo).resolve(strict=False)
@@ -2452,7 +2457,13 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
     patch_result = apply_task_prompt_to_role_lane_plan(role_lane_plan, task=task)
     patched_role_lane_plan = patch_result["role_lane_plan"]
     try:
+        if patch_result["placeholder_count"] > patch_result["patched_count"]:
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT,
+                "one or more role-lane placeholder prompts were not replaced",
+            )
         validate_role_lane_plan(patched_role_lane_plan)
+        assert_role_lane_prompts_explicit(patched_role_lane_plan)
     except OrroWorkflowError as exc:
         return _emit_team_go_result(
             args,
@@ -2464,6 +2475,7 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
                 "routing_decision": routing_decision,
                 "routing_decision_path": str(routing_decision_path),
                 "message": str(exc),
+                "error": {"code": exc.code, "message": str(exc)},
                 "can_change_evidence_verdict": False,
             },
             code=2,
