@@ -12,7 +12,7 @@ DEPRECATION_WARNING = (
     "the orro command. This shim will be removed in the next major witnessd release."
 )
 
-ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,sketch,trace,flowplan,proofrun,proofcheck,handoff,next,report,review,auto,team,doctor,engine-lock} ...
+ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,sketch,trace,flowplan,proofrun,proofcheck,advisory-provenance-check,handoff,next,report,review,auto,team,doctor,engine-lock} ...
 
 ORRO - Observed Run & Review Orchestrator
 
@@ -29,6 +29,8 @@ public commands:
   flowplan     plan-only workflow design; does not run workers
   proofrun     evidence-backed execution through witnessd
   proofcheck   offline evidence verification delegated to Depone
+  advisory-provenance-check
+               offline Depone v108 re-derivation of sealed advisory provenance
   handoff      maintainer review package gated by proofcheck-verdict.json
   next         non-executing continuation gate over persisted run artifacts
   report       human-facing summary of observed ORRO artifacts and next action
@@ -44,7 +46,8 @@ boundary:
   symptom-bound prior-run receipt without executing repo code; auto --dry-run recommends
   commands only; auto --once executes at most one proofcheck or handoff step;
   auto --until-complete loops over those post-run steps with --max-steps. None
-  is proof or assurance.
+  is proof or assurance. A provenance PASS means sealed bytes are internally
+  re-derivable; it does not establish that a direction or root cause is correct.
 
 options:
   -h, --help   show this help message and exit

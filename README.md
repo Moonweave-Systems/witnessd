@@ -110,6 +110,7 @@ witnessd runtime code or Depone verifier logic.
 | `orro scout` | read-only repo exploration, repo profile, context pack, and discovery notes |
 | `orro sketch` | advisory ideation that converges on one flowplan-ready direction |
 | `orro trace` | advisory root-cause investigation before a fix flowplan |
+| `orro advisory-provenance-check` | offline Depone v108 re-derivation of sealed sketch/trace provenance; not correctness |
 | `flowplan` | plan-only workflow design and ORRO workflow compiler surface |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
@@ -177,6 +178,8 @@ smallest safe ORRO path. It helps non-developers avoid wasteful or risky AI
 workflows, but it does not replace proofrun, proofcheck, handoff, or human
 review for risky changes. Its `orro-workstyle-decision` is advice only: not
 proof, verifier truth, merge approval, or assurance.
+When sketch or trace output is sealed, that record is auditable provenance only;
+it does not establish that the recommended workflow or diagnosis is correct.
 
 `orro sketch "<goal>" --repo . --home .witnessd --json` performs advisory
 controlled convergence: repo-derived criteria precede independently generated
@@ -192,6 +195,19 @@ or launch proofrun. An agent's stated confidence is not evidence; sketch cites
 external repo signals and trace treats the recorded actual run as its oracle. Their
 methods are ORRO skillpacks, while the external `superpowers` plugin remains
 untouched for dual-path evaluation.
+
+With `--out`, sketch and trace also write `advisory-provenance-bundle.json` and
+the Depone `v108.advisory_provenance` `evidence-contract.json`; trace additionally
+copies the prior run receipt into the sealed subject set and records its canonical
+hash in the decision. Re-derive the separate provenance track with:
+
+```bash
+python3 -m orro advisory-provenance-check <artifact-dir> --home .witnessd --json
+```
+
+`PASS` means the record is tamper-evident and the chosen direction or confirmed
+tier is backed by the sealed bytes. It is not proof, execution-evidence truth,
+approval, assurance, or a claim that the direction/root cause is correct.
 
 `python scripts/check_orro_product_reality.py` validates local dogfood scenarios
 for ORRO usefulness: smallest safe workflow, waste avoidance, proofcheck/handoff

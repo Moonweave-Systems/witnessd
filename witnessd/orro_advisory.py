@@ -1075,5 +1075,6 @@ def _advisory_boundary(*, executes_commands: bool = False) -> dict[str, bool]:
 def _status_note() -> str:
     return (
         "Advisory only: not proof, verifier truth, approval, or assurance; "
-        "cannot change an evidence verdict."
+        "cannot change an evidence verdict. A sealed record provides auditable "
+        "provenance, not correctness of the chosen direction or root cause."
     )
