@@ -115,12 +115,18 @@ verification, telemetry, a benchmark claim, approval, or assurance.
 
 `python scripts/model_routing_benchmark.py` emits model-routing measurement JSON
 for the static `(role_kind, tier) -> (adapter, model, budget)` table. Without
-`--live`, it only loads the deterministic task suite and calculates routing and
-budget decisions; it does not call models. With `--live`, it runs explicit
-opt-in measurement tasks and records declared-vs-actual model evidence,
-degraded flags, and budget compliance. The artifact is still measurement only:
-not proof, not verifier truth, not a benchmark claim, not approval, and not
-assurance.
+`--live`, it loads the deterministic 24-task repository-fixture suite and
+calculates routing and budget decisions; it does not call models. With `--live`,
+it runs explicit opt-in runner or reviewer tasks and records task success,
+Depone signed-bundle verification, elapsed time, turns, available token usage,
+estimated cost, and model declaration status. A fallback receipt is recorded
+only when the adapter exposes an observed model; otherwise the task carries an
+explicit unavailable-model receipt. Live output includes advisory per-role/tier budgets
+that cannot exceed the existing model-policy token, cost, or depth ceilings.
+Fallback observation is not complete, so multi-candidate fallback remains
+disabled. The artifact and advisory are still
+measurement only: not proof, not verifier truth, not a benchmark claim, not
+approval, and not assurance.
 
 `python3 -m orro flowplan "<goal>" --root <repo> --profile code-change --out workflow-plan.json`
 emits a deterministic `orro-workflow-plan` intent artifact. Supported profiles

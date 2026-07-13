@@ -182,11 +182,19 @@ gate integrity, artifact fatigue reduction, and clear next action. It is not
 proof, verification, telemetry, a benchmark claim, approval, or assurance.
 
 `python scripts/model_routing_benchmark.py` emits measurement JSON for the static
-model-routing table. By default it is offline and deterministic: it loads the
-task suite and computes route/budget decisions without calling live models.
-`--live` is an explicit opt-in measurement path that records declared-vs-actual
-model evidence, degraded flags, and budget compliance for selected tasks. Its
-output is not proof, verifier truth, a benchmark claim, approval, or assurance.
+model-routing table. By default it is offline and deterministic: it loads a
+24-task suite with seeded repository state and expected local verification,
+then computes route/budget decisions without calling live models. `--live` is
+an explicit opt-in runner or reviewer path that records task success, Depone
+signed-bundle verification, elapsed time, turns, available token usage,
+estimated cost, and model declaration status. A fallback receipt is recorded
+only when the adapter exposes an observed model; otherwise the task carries an
+explicit unavailable-model receipt. Live output includes advisory per-role/tier budgets
+capped by the existing model-policy token, cost, and depth ceilings.
+Fallback observation is not complete, so multi-candidate fallback remains
+disabled. The measurement and budget advisory
+are not proof, verifier truth, a benchmark claim, approval, or assurance, and
+cannot change an evidence verdict.
 
 `orro flowplan --profile <profile>` compiles a deterministic rolepack/workflow
 plan for `code-change`, `review-only`, `verification-only`, `docs-change`, or
