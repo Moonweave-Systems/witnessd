@@ -1,8 +1,9 @@
 """Deterministic ORRO ideation and root-cause advisory surfaces.
 
-Sketch and trace are planning context only. They inspect repository shape but
-do not execute commands, mutate the repository, run workers, call Depone, or
-change an evidence verdict.
+Sketch and trace are planning context only. Trace consumes a symptom-bound
+prior-run receipt as its external oracle and performs read-only inspection.
+Neither surface executes repository code, mutates the inspected repository,
+runs workers or proofrun, calls Depone, or changes an evidence verdict.
 """
 
 from __future__ import annotations
@@ -10,12 +11,13 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
 
-ADVISORY_SCHEMA_VERSION = "0.1"
+ADVISORY_SCHEMA_VERSION = "0.2"
 ERR_ORRO_ADVISORY_WRITE_FAILED = "ERR_ORRO_ADVISORY_WRITE_FAILED"
 ERR_ORRO_ADVISORY_OUTPUT_INSIDE_REPO = "ERR_ORRO_ADVISORY_OUTPUT_INSIDE_REPO"
 
@@ -42,17 +44,63 @@ class OrroAdvisoryError(ValueError):
 
 
 def build_sketch_decision(goal: str, *, repo: Path, home: Path | None = None) -> dict[str, Any]:
-    """Frame, diverge, and converge without claiming implementation evidence."""
+    """Run controlled convergence without claiming implementation evidence."""
 
     normalized_goal = _normalize_text(goal)
     repo = repo.resolve(strict=False)
     resolved_home = home.resolve(strict=False) if home is not None else None
     signals = _repo_signals(repo, normalized_goal)
     constraints = _extract_constraints(normalized_goal)
-    candidates = _sketch_candidates(signals)
-    chosen = candidates[0]
+    criteria = _sketch_criteria(signals)
+    candidates = _sketch_candidates(signals, criteria, normalized_goal)
+    chosen = max(candidates, key=lambda item: int(item["weighted_score"]))
+    rejected = [
+        {
+            "option": item["id"],
+            "why_lost": _rejection_reason(item, chosen),
+        }
+        for item in candidates
+        if item["id"] != chosen["id"]
+    ]
     branches = _decision_branches(signals)
     flowplan_input = _flowplan_input(normalized_goal, chosen, constraints, branches)
+    cited_signal = _repo_signal_summary(signals)
+    no_gos = [
+        "do not treat this sketch or its confidence as evidence, approval, or assurance",
+        "do not launch proofrun, workers, or repository mutations from sketch",
+        "do not replace an existing public path without explicit flowplan scope",
+    ]
+    rabbit_holes = [
+        "a new orchestration lifecycle when an existing seam can carry the change",
+        "speculative follow-on features not required by the observable outcome",
+    ]
+    riskiest_assumption = {
+        "assumption": (
+            "the selected existing seam can carry the behavior without hidden coupling"
+            if chosen["id"] == "bounded-existing-seam"
+            else "the selected isolated boundary reduces coupling without duplicating lifecycle ownership"
+        ),
+        "spike_or_tracer": (
+            "Run a throwaway spike that answers only whether the nearest seam can expose the "
+            "success signal while preserving existing boundary flags."
+            if chosen["id"] == "bounded-existing-seam"
+            else "Run a tracer bullet through the proposed isolated boundary to prove one end-to-end "
+            "success signal without creating a parallel lifecycle."
+        ),
+        "already_safe": False,
+    }
+    decision_record = {
+        "context": (
+            f"Outcome: {normalized_goal}. Constraints: {'; '.join(constraints)}. "
+            f"Observed repository signal: {cited_signal}"
+        ),
+        "decision": f"Use {chosen['id']}: {chosen['summary']}",
+        "consequences": [
+            chosen["selection_rationale"],
+            riskiest_assumption["spike_or_tracer"],
+            *[f"No-go: {item}" for item in no_gos],
+        ],
+    }
 
     return {
         "kind": "orro-sketch",
@@ -61,8 +109,65 @@ def build_sketch_decision(goal: str, *, repo: Path, home: Path | None = None) ->
         "repo": str(repo),
         "home": str(resolved_home) if resolved_home is not None else None,
         "method": {
-            "sequence": ["frame", "diverge", "converge", "resolve-branches", "handoff"],
-            "rule": "compare distinct approaches before selecting one direction",
+            "sequence": [
+                "frame",
+                "criteria-first",
+                "independent-divergence",
+                "per-criterion-scoring",
+                "kill-the-frontrunner",
+                "converge",
+                "de-risk",
+                "resolve-without-open-menus",
+                "adr-handoff",
+            ],
+            "rule": "derive criteria before independently generating structurally distinct options",
+            "meta_principle": (
+                "An AI agent's stated confidence is not evidence; only an external signal is."
+            ),
+        },
+        "frame": {
+            "outcome": normalized_goal,
+            "why": f"Deliver {normalized_goal} because the observable repository behavior matters more than a proposed implementation shape.",
+            "success_signal": (
+                "an operator-observed focused check demonstrates the requested outcome while the "
+                "existing public and advisory boundaries remain unchanged"
+            ),
+        },
+        "criteria": criteria,
+        "candidates": candidates,
+        "devils_advocate": {
+            "leading_option": chosen["id"],
+            "case_against": (
+                "The leading bounded seam may conceal coupling and make a locally small diff harder "
+                "to observe or test than its score implies."
+            ),
+            "weakest_option": min(candidates, key=lambda item: int(item["weighted_score"]))["id"],
+            "case_for": (
+                "A separate subsystem becomes preferable if an isolated spike proves the current "
+                "lifecycle cannot carry the success signal safely."
+            ),
+            "external_check": cited_signal,
+        },
+        "chosen": {
+            "option": chosen["id"],
+            "reason": chosen["selection_rationale"],
+            "confidence": "moderate",
+            "what_would_change_it": (
+                "an isolated spike showing that the selected seam cannot expose the success signal "
+                "without widening the blast radius"
+            ),
+            "backing_external_signal": cited_signal,
+        },
+        "rejected": rejected,
+        "riskiest_assumption": riskiest_assumption,
+        "no_gos": no_gos,
+        "rabbit_holes": rabbit_holes,
+        "decision_record": decision_record,
+        "external_signal_check": {
+            "type": "isolated-verification-question",
+            "question": "What concrete repository observation supports this direction?",
+            "observed_answer": cited_signal,
+            "reported_verbatim": True,
         },
         "problem_frame": {
             "desired_outcome": normalized_goal,
@@ -109,16 +214,43 @@ def build_trace_decision(
     repo: Path,
     home: Path | None = None,
 ) -> dict[str, Any]:
-    """Build a root-cause-first investigation record without proposing an ungrounded fix."""
+    """Run a read-only scientific-debugging advisory over prior-run observations."""
 
     normalized_symptom = _normalize_text(symptom)
     repo = repo.resolve(strict=False)
     resolved_home = home.resolve(strict=False) if home is not None else None
     signals = _repo_signals(repo, normalized_symptom)
-    evidence = _trace_evidence(repo, signals)
-    hypotheses = _ranked_hypotheses(signals)
-    localized = bool(signals["matching_paths"])
-    reproduction_status = "localized-not-reproduced" if localized else "not-reproduced"
+    check_the_plug = _check_the_plug(repo, signals)
+    reproduction = _observed_reproduction(repo, normalized_symptom)
+    red_observed = reproduction.get("red_observed") is True
+    localization = _localize_trace(normalized_symptom, signals, reproduction)
+    hypotheses = _trace_hypotheses(normalized_symptom, localization, reproduction) if red_observed else []
+    confirmation, logbook = _falsify_hypotheses(hypotheses, reproduction)
+    hypotheses = _rank_hypotheses_by_confirmation(hypotheses, confirmation)
+    root_cause_or_unconfirmed = _trace_verdict(
+        normalized_symptom,
+        reproduction,
+        localization,
+        hypotheses,
+        confirmation,
+    )
+    root_cause = root_cause_or_unconfirmed.get("root_cause")
+    unconfirmed = root_cause_or_unconfirmed.get("unconfirmed")
+    confirmed = bool(root_cause and root_cause["tier"] == "confirmed")
+    fix_scope = _trace_fix_scope(normalized_symptom, localization, reproduction)
+    evidence = _trace_evidence(repo, signals, reproduction)
+    ranked_hypotheses = [
+        {
+            "rank": rank,
+            "hypothesis": item["mechanism"],
+            "basis": item["prediction"],
+            "evidence_for": [],
+            "evidence_against": [],
+            "confirmation_test": item["discriminating_probe"],
+            "status": "unconfirmed",
+        }
+        for rank, item in enumerate(hypotheses, start=1)
+    ]
 
     return {
         "kind": "orro-trace",
@@ -128,32 +260,30 @@ def build_trace_decision(
         "repo": str(repo),
         "home": str(resolved_home) if resolved_home is not None else None,
         "method": {
-            "sequence": ["observe", "reproduce-localize", "hypothesize", "confirm-root-cause"],
-            "gate": "a fix may be shaped only after root cause is confirmed",
-        },
-        "reproduction": {
-            "status": reproduction_status,
-            "steps": [],
-            "localization_candidates": signals["matching_paths"],
-            "next_read_only_action": (
-                "run the smallest operator-approved reproduction and capture exact output"
-            ),
-            "reason": (
-                "this advisory surface accepts no arbitrary command, so it does not invent or "
-                "execute a reproduction"
-            ),
-        },
-        "evidence_gathered": evidence,
-        "ranked_hypotheses": hypotheses,
-        "root_cause": {
-            "status": "unconfirmed",
-            "finding": None,
-            "confirmation_evidence": [],
-            "blocked_by": [
-                "no repeatable reproduction has been observed",
-                "no hypothesis has passed its confirmation test",
+            "sequence": [
+                "frame-check-the-plug",
+                "reproduce-hard-gate",
+                "minimize-localize",
+                "competing-hypotheses",
+                "falsify-and-independently-verify",
+                "root-cause-depth",
+                "verdict-handoff",
             ],
+            "gate": "no hypothesis or stated root cause before an observed red",
+            "meta_principle": (
+                "An AI agent's stated confidence is not evidence; execution is the oracle."
+            ),
         },
+        "check_the_plug": check_the_plug,
+        "reproduction": reproduction,
+        "localization": localization,
+        "hypotheses": hypotheses,
+        "confirmation": confirmation,
+        "logbook": logbook,
+        "evidence_gathered": evidence,
+        "ranked_hypotheses": ranked_hypotheses,
+        **root_cause_or_unconfirmed,
+        "fix_scope": fix_scope,
         "investigation_phases": [
             {
                 "name": "observe",
@@ -162,28 +292,36 @@ def build_trace_decision(
             },
             {
                 "name": "reproduce-localize",
-                "status": "partial" if localized else "blocked",
+                "status": "complete" if red_observed else "blocked",
                 "result": (
-                    "candidate paths localized; reproduction still required"
-                    if localized
-                    else "no candidate path or repeatable reproduction yet"
+                    f"observed red and localized with {localization['technique']}"
+                    if red_observed
+                    else reproduction["non_reproducible_reason"]
                 ),
             },
             {
                 "name": "hypothesize",
-                "status": "complete",
-                "result": "ranked hypotheses include disconfirming evidence and one next test each",
+                "status": "complete" if hypotheses else "blocked",
+                "result": (
+                    "competing mechanisms have discriminating read-only probes"
+                    if hypotheses
+                    else "hard gate stopped before hypothesis generation"
+                ),
             },
             {
                 "name": "confirm-root-cause",
-                "status": "blocked",
-                "result": "root cause remains unconfirmed; fix proposal is gated",
+                "status": "complete" if confirmed else "blocked",
+                "result": (
+                    "root cause confirmed by execution and rival falsification"
+                    if confirmed
+                    else "root cause remains unconfirmed; fix proposal is gated"
+                ),
             },
         ],
         "recommended_fix_scope": {
-            "fix_proposal_allowed": False,
-            "allowed_paths": [],
-            "instruction": "do not edit the repository until one hypothesis is confirmed",
+            "fix_proposal_allowed": confirmed,
+            "allowed_paths": [fix_scope["cause_site"]] if confirmed and fix_scope["cause_site"] else [],
+            "instruction": "recommend scope only; trace never edits the repository",
             "after_confirmation": (
                 "limit the fix to the confirmed source and add the smallest failing reproduction "
                 "test before implementation"
@@ -191,7 +329,7 @@ def build_trace_decision(
         },
         "flowplan_handoff": {
             "kind": "orro-flowplan-input",
-            "status": "blocked-root-cause-unconfirmed",
+            "status": "ready" if confirmed else "blocked-root-cause-unconfirmed",
             "profile": "code-change",
             "source_kind": "orro-trace",
             "goal_template": (
@@ -251,14 +389,36 @@ def _repo_signals(repo: Path, text: str) -> dict[str, Any]:
         if Path(path).name in {"orro_workstyle.py", "orro_report.py", "SKILL.md", "AGENTS.md"}
     ][:8]
     test_paths = [path for path in files if path.startswith("tests/") or "/tests/" in path][:8]
+    cited_regions = _cited_regions(repo, matching_paths, tokens)
     return {
         "repo_exists": repo.is_dir(),
         "file_count": len(files),
         "languages": [name for name, _count in language_counts.most_common(5)],
         "matching_paths": matching_paths,
+        "cited_regions": cited_regions,
         "existing_advisory_patterns": advisory_patterns,
         "test_paths": test_paths,
     }
+
+
+def _cited_regions(repo: Path, paths: list[str], tokens: set[str]) -> list[str]:
+    citations: list[str] = []
+    for relative in paths[:6]:
+        path = repo / relative
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        line_number = next(
+            (
+                index
+                for index, line in enumerate(lines, start=1)
+                if any(token in line.lower() for token in tokens)
+            ),
+            1,
+        )
+        citations.append(f"{relative}:{line_number}")
+    return citations
 
 
 def _repo_files(repo: Path) -> list[str]:
@@ -292,16 +452,63 @@ def _extract_constraints(goal: str) -> list[str]:
     return constraints[:6]
 
 
-def _sketch_candidates(signals: dict[str, Any]) -> list[dict[str, Any]]:
+def _sketch_criteria(signals: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": "fit-with-architecture",
+            "weight": 30,
+            "repo_signal": f"existing advisory patterns: {signals['existing_advisory_patterns']}",
+        },
+        {
+            "name": "blast-radius",
+            "weight": 25,
+            "repo_signal": f"observed repository size: {signals['file_count']} files",
+        },
+        {
+            "name": "reversibility",
+            "weight": 15,
+            "repo_signal": "additive seams can be removed without migrating stored evidence",
+        },
+        {
+            "name": "effort",
+            "weight": 10,
+            "repo_signal": f"dominant languages: {signals['languages']}",
+        },
+        {
+            "name": "test-and-observability-cost",
+            "weight": 20,
+            "repo_signal": f"focused test paths: {signals['test_paths']}",
+        },
+    ]
+
+
+def _sketch_candidates(
+    signals: dict[str, Any],
+    criteria: list[dict[str, Any]],
+    goal: str,
+) -> list[dict[str, Any]]:
     has_existing_seam = bool(signals["existing_advisory_patterns"])
+    goal_lower = goal.lower()
+    isolation_requested = any(
+        marker in goal_lower
+        for marker in ("isolate", "isolated", "new boundary", "separate module")
+    )
+    parallel_system_requested = any(
+        marker in goal_lower
+        for marker in ("new subsystem", "parallel subsystem", "separate lifecycle")
+    )
+    crowded_repo = int(signals["file_count"]) >= 10
+    bounded_fit = 1 if parallel_system_requested else (5 if has_existing_seam else 2)
+    bounded_blast_radius = 2 if parallel_system_requested else 5
     first_summary = (
         "extend the nearest existing advisory seam with a bounded additive path"
         if has_existing_seam
         else "add the smallest isolated feature slice beside the nearest existing pattern"
     )
-    return [
+    candidates = [
         {
             "id": "bounded-existing-seam",
+            "axis": "where logic lives: extend the nearest existing seam",
             "summary": first_summary,
             "shape": "reuse current CLI, artifact, and test conventions; add only the missing behavior",
             "benefits": ["small diff", "existing conventions stay authoritative", "easy rollback"],
@@ -314,26 +521,84 @@ def _sketch_candidates(signals: dict[str, Any]) -> list[dict[str, Any]]:
                 if has_existing_seam
                 else "a bounded adjacent slice minimizes assumptions while repository context is limited"
             ),
+            "per_criterion_scores": {
+                "fit-with-architecture": bounded_fit,
+                "blast-radius": bounded_blast_radius,
+                "reversibility": 5,
+                "effort": 5,
+                "test-and-observability-cost": 4,
+            },
+            "forcing_prompt": "first principles: reuse only what the observed repo already proves",
         },
         {
             "id": "isolated-module-adapter",
+            "axis": "boundary shape: isolate logic behind the existing entrypoint",
             "summary": "introduce a focused module behind the existing public entrypoint",
             "shape": "separate decision construction from CLI and persistence while retaining current aliases",
             "benefits": ["clear unit boundary", "direct tests", "future internal evolution"],
             "risks": ["one additional module and integration seam"],
             "tradeoffs": ["cleaner isolation in exchange for slightly more structure"],
             "selection_rationale": "use when the existing entrypoint is already crowded or responsibilities differ",
+            "per_criterion_scores": {
+                "fit-with-architecture": 5 if isolation_requested and not has_existing_seam else 4,
+                "blast-radius": 4,
+                "reversibility": 4,
+                "effort": 4 if isolation_requested or crowded_repo else 3,
+                "test-and-observability-cost": 5,
+            },
+            "forcing_prompt": "SCAMPER: separate the decision core without replacing the public path",
         },
         {
             "id": "new-parallel-subsystem",
+            "axis": "system ownership: create a new subsystem and lifecycle",
             "summary": "create a new subsystem with its own orchestration and artifact lifecycle",
             "shape": "separate parser, state, and workflow ownership",
             "benefits": ["maximum independence"],
             "risks": ["duplicate lifecycle", "larger public surface", "higher maintenance cost"],
             "tradeoffs": ["more autonomy in exchange for duplication and migration risk"],
             "selection_rationale": "reserve for evidence that existing seams cannot carry the behavior safely",
+            "per_criterion_scores": {
+                "fit-with-architecture": 5 if parallel_system_requested else 1,
+                "blast-radius": 4 if parallel_system_requested else 1,
+                "reversibility": 4 if parallel_system_requested else 2,
+                "effort": 3 if parallel_system_requested else 1,
+                "test-and-observability-cost": 4 if parallel_system_requested else 2,
+            },
+            "forcing_prompt": "inversion: assume existing ownership is the constraint and isolate everything",
         },
     ]
+    for candidate in candidates:
+        scores = candidate["per_criterion_scores"]
+        candidate["weighted_score"] = sum(
+            int(item["weight"]) * int(scores[str(item["name"])])
+            for item in criteria
+        )
+        candidate["generated_independently"] = True
+        candidate["critique_deferred_until_all_existed"] = True
+        candidate["score_basis"] = {
+            "existing_seam": has_existing_seam,
+            "repo_file_count": signals["file_count"],
+            "goal_requests_isolation": isolation_requested,
+            "goal_requests_parallel_system": parallel_system_requested,
+        }
+    return candidates
+
+
+def _rejection_reason(candidate: dict[str, Any], chosen: dict[str, Any]) -> str:
+    return (
+        f"lost to {chosen['id']} on the predeclared weighted criteria "
+        f"({candidate['weighted_score']} vs {chosen['weighted_score']}) and carries "
+        f"the tradeoff: {candidate['tradeoffs'][0]}"
+    )
+
+
+def _repo_signal_summary(signals: dict[str, Any]) -> str:
+    return (
+        f"file_count={signals['file_count']}; languages={signals['languages']}; "
+        f"matching_paths={signals['matching_paths']}; "
+        f"existing_advisory_patterns={signals['existing_advisory_patterns']}; "
+        f"test_paths={signals['test_paths']}"
+    )
 
 
 def _decision_branches(signals: dict[str, Any]) -> list[dict[str, Any]]:
@@ -380,7 +645,389 @@ def _flowplan_input(
     )
 
 
-def _trace_evidence(repo: Path, signals: dict[str, Any]) -> list[dict[str, Any]]:
+def _check_the_plug(repo: Path, signals: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "repo_exists": repo.is_dir(),
+        "python_version": sys.version.split()[0],
+        "git_branch": _git_branch(repo),
+        "witnessd_depone_root": os.environ.get("WITNESSD_DEPONE_ROOT"),
+        "file_count": signals["file_count"],
+        "cheap_non_bugs_checked": [
+            "repository path exists",
+            "effective Python version captured",
+            "current git branch captured when available",
+            "test discovery presence checked",
+        ],
+        "worked_before": "unknown; no external observation supplied",
+    }
+
+
+def _git_branch(repo: Path) -> str | None:
+    git_path = repo / ".git"
+    try:
+        if git_path.is_file():
+            marker = git_path.read_text(encoding="utf-8").strip()
+            if not marker.startswith("gitdir: "):
+                return None
+            git_path = (repo / marker.removeprefix("gitdir: ")).resolve(strict=False)
+        head = (git_path / "HEAD").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not head.startswith("ref: refs/heads/"):
+        return None
+    return head.removeprefix("ref: refs/heads/")
+
+
+def _observed_reproduction(repo: Path, symptom: str) -> dict[str, Any]:
+    receipt_path = repo / "orro-trace-reproduction.json"
+    if not receipt_path.is_file():
+        return _missing_reproduction("no orro-trace-reproduction.json found")
+    try:
+        if receipt_path.stat().st_size > 262_144:
+            return _missing_reproduction("reproduction receipt exceeds the 256 KiB read limit")
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return _missing_reproduction(f"malformed reproduction receipt: {exc}")
+    if not isinstance(receipt, dict) or receipt.get("kind") != "orro-trace-reproduction":
+        return _missing_reproduction("malformed reproduction receipt: invalid kind")
+
+    receipt_symptom = receipt.get("symptom")
+    command = receipt.get("command")
+    exit_code = receipt.get("exit_code")
+    stdout = receipt.get("stdout")
+    stderr = receipt.get("stderr")
+    minimized = receipt.get("minimized")
+    external_confirmation = receipt.get("external_confirmation")
+    valid_shape = all(
+        (
+            isinstance(receipt_symptom, str),
+            isinstance(command, list) and all(isinstance(item, str) for item in command),
+            isinstance(exit_code, int) and not isinstance(exit_code, bool),
+            isinstance(stdout, str),
+            isinstance(stderr, str),
+            isinstance(minimized, bool),
+        )
+    )
+    if not valid_shape:
+        return _missing_reproduction("malformed reproduction receipt: invalid field shape")
+    if external_confirmation is not None and not _valid_external_confirmation(
+        external_confirmation
+    ):
+        return _missing_reproduction(
+            "malformed reproduction receipt: invalid external confirmation"
+        )
+
+    output = _combined_output(stdout, stderr)
+    suite_red_observed = exit_code != 0
+    symptom_bound = _normalize_text(receipt_symptom) == symptom
+    red_observed = suite_red_observed and symptom_bound
+    reproduction: dict[str, Any] = {
+        "status": "observed-red" if red_observed else "not-reproduced",
+        "steps": [
+            "read the prior actual-run receipt without executing its command",
+            "bind the recorded symptom exactly to the requested symptom",
+            f"capture recorded exit={exit_code} and stdout/stderr verbatim",
+        ],
+        "minimized": minimized,
+        "red_observed": red_observed,
+        "suite_red_observed": suite_red_observed,
+        "symptom_bound": symptom_bound,
+        "observed_output": output,
+        "exit_code": exit_code,
+        "command": command,
+        "source": receipt_path.name,
+        "command_executed_by_trace": False,
+        "external_confirmation": external_confirmation,
+    }
+    if suite_red_observed and not red_observed:
+        reproduction["non_reproducible_reason"] = (
+            "cannot localize; the prior-run red is not bound to the requested symptom"
+        )
+    elif not red_observed:
+        reproduction["non_reproducible_reason"] = (
+            "cannot localize; the prior-run receipt did not record an observed red"
+        )
+    return reproduction
+
+
+def _valid_external_confirmation(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    return all(
+        (
+            isinstance(value.get("discriminating_probe_ran"), bool),
+            isinstance(value.get("ruled_out_rival"), bool),
+            isinstance(value.get("red_to_green_observed"), bool),
+            isinstance(value.get("reported_verbatim"), str),
+            bool(value.get("reported_verbatim", "").strip()),
+        )
+    )
+
+
+def _missing_reproduction(observed_output: str) -> dict[str, Any]:
+    return {
+        "status": "not-reproduced",
+        "steps": [],
+        "minimized": False,
+        "non_reproducible_reason": (
+            "cannot localize; need a symptom-bound actual-run reproduction receipt or concrete failure log"
+        ),
+        "red_observed": False,
+        "suite_red_observed": False,
+        "observed_output": observed_output,
+        "source": None,
+        "command": [],
+        "command_executed_by_trace": False,
+        "external_confirmation": None,
+    }
+
+
+def _combined_output(stdout: str, stderr: str) -> str:
+    combined = "\n".join(part.rstrip() for part in (stdout, stderr) if part).strip()
+    return combined[-12000:]
+
+
+def _localize_trace(
+    symptom: str,
+    signals: dict[str, Any],
+    reproduction: dict[str, Any],
+) -> dict[str, Any]:
+    lower = symptom.lower()
+    if "regression" in lower or "worked before" in lower:
+        technique = "git bisect over known-good and observed-red revisions"
+    elif "config" in lower or "configuration" in lower or "diff" in lower:
+        technique = "delta-minimize configuration or changed inputs"
+    else:
+        technique = "delta-minimize the reproducer, then trace to the first divergent code region"
+    cited = signals["cited_regions"]
+    if reproduction.get("red_observed") is not True:
+        cited = []
+    return {
+        "technique": technique,
+        "suspect_region_cited": cited,
+        "candidate_paths": signals["matching_paths"] if cited else [],
+        "localize_before_hypothesize": True,
+    }
+
+
+def _trace_hypotheses(
+    symptom: str,
+    localization: dict[str, Any],
+    reproduction: dict[str, Any],
+) -> list[dict[str, Any]]:
+    cited = localization["suspect_region_cited"]
+    cited_text = ", ".join(cited) if cited else "the first divergent test boundary"
+    return [
+        {
+            "id": "H1",
+            "mechanism": f"localized implementation logic at {cited_text} violates the expected invariant",
+            "prediction": "the observed red names the localized component or its failing behavior",
+            "discriminating_probe": (
+                "scan the verbatim failing output for localized path or symbol tokens; this differs "
+                "from an environment-only failure"
+            ),
+            "confidence": "prior-low",
+            "distinct_mechanism": "implementation logic",
+        },
+        {
+            "id": "H2",
+            "mechanism": "effective configuration or environment changes the runtime behavior",
+            "prediction": "the observed red reports configuration, environment, import, or dependency state",
+            "discriminating_probe": (
+                "scan the verbatim failing output for config, environment, import, or dependency markers; "
+                "this differs from a value assertion in localized logic"
+            ),
+            "confidence": "prior-low",
+            "distinct_mechanism": "runtime configuration",
+        },
+        {
+            "id": "H3",
+            "mechanism": "the reproduction expectation is stale rather than the implementation being wrong",
+            "prediction": f"the failure output for '{symptom}' lacks a stable expected-versus-actual assertion",
+            "discriminating_probe": (
+                "inspect the verbatim red for an explicit assertion mismatch; a concrete mismatch weakens "
+                "the stale-expectation mechanism"
+            ),
+            "confidence": "prior-low",
+            "distinct_mechanism": "test oracle",
+        },
+    ]
+
+
+def _falsify_hypotheses(
+    hypotheses: list[dict[str, Any]],
+    reproduction: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if not hypotheses:
+        return (
+            {
+                "falsification_ran": False,
+                "ruled_out_rival": False,
+                "verification_questions": [],
+            },
+            [],
+        )
+    output = str(reproduction.get("observed_output", ""))
+    lower = output.lower()
+    assertion_tokens = ("assertionerror", " != ", "expected", "actual")
+    environment_tokens = (
+        "config",
+        "environment",
+        "importerror",
+        "modulenotfounderror",
+        "no module named",
+        "dependency",
+    )
+    results = {
+        "H1": any(token in lower for token in assertion_tokens),
+        "H2": any(token in lower for token in environment_tokens),
+        "H3": not any(token in lower for token in assertion_tokens),
+    }
+    logbook = []
+    for hypothesis in hypotheses:
+        supported = results[str(hypothesis["id"])]
+        logbook.append(
+            {
+                "hypothesis": hypothesis["id"],
+                "probe": hypothesis["discriminating_probe"],
+                "result": f"probe_result={supported}; observed_output={output}",
+                "outcome": "survives" if supported else "falsified",
+                "reflexion": (
+                    None
+                    if supported
+                    else "Do not revisit this mechanism unless new external evidence contradicts the probe."
+                ),
+            }
+        )
+    logbook.sort(key=lambda item: item["outcome"] != "survives")
+    ruled_out = any(not result for result in results.values())
+    confirmation = {
+        "falsification_ran": True,
+        "ruled_out_rival": ruled_out,
+        "verification_questions": [
+            {
+                "question": "Did a prior actual run produce a symptom-bound red?",
+                "answer": f"{reproduction.get('red_observed')}; exit={reproduction.get('exit_code')}",
+            },
+            {
+                "question": "Does the verbatim output contain an assertion-style mismatch?",
+                "answer": str(results["H1"]),
+            },
+            {
+                "question": "Does the verbatim output identify environment/configuration failure markers?",
+                "answer": str(results["H2"]),
+            },
+        ],
+        "answers_generated_without_re_reading_hypotheses": True,
+        "supported_hypotheses": [
+            hypothesis_id for hypothesis_id, supported in results.items() if supported
+        ],
+        "ruled_out_hypotheses": [
+            hypothesis_id for hypothesis_id, supported in results.items() if not supported
+        ],
+    }
+    return confirmation, logbook
+
+
+def _rank_hypotheses_by_confirmation(
+    hypotheses: list[dict[str, Any]],
+    confirmation: dict[str, Any],
+) -> list[dict[str, Any]]:
+    supported = [str(item) for item in confirmation.get("supported_hypotheses", [])]
+    rank = {hypothesis_id: index for index, hypothesis_id in enumerate(supported)}
+    return sorted(
+        hypotheses,
+        key=lambda item: (str(item["id"]) not in rank, rank.get(str(item["id"]), len(rank))),
+    )
+
+
+def _trace_verdict(
+    symptom: str,
+    reproduction: dict[str, Any],
+    localization: dict[str, Any],
+    hypotheses: list[dict[str, Any]],
+    confirmation: dict[str, Any],
+) -> dict[str, Any]:
+    if reproduction.get("red_observed") is not True:
+        return {
+            "unconfirmed": {
+                "best_hypothesis": None,
+                "missing_evidence": (
+                    "need an observed red from a symptom-bound prior actual-run receipt or concrete failure trace before localization"
+                ),
+            }
+        }
+    supported = set(str(item) for item in confirmation.get("supported_hypotheses", []))
+    surviving = next(
+        (item for item in hypotheses if str(item["id"]) in supported),
+        None,
+    )
+    if surviving is None:
+        return {
+            "unconfirmed": {
+                "best_hypothesis": hypotheses[0]["mechanism"] if hypotheses else None,
+                "missing_evidence": "all discriminating predictions failed; need a new external probe",
+            }
+        }
+    cause_site = (
+        localization["suspect_region_cited"][0]
+        if localization["suspect_region_cited"]
+        else None
+    )
+    external_confirmation = reproduction.get("external_confirmation")
+    confirmed = bool(
+        isinstance(external_confirmation, dict)
+        and external_confirmation.get("discriminating_probe_ran") is True
+        and external_confirmation.get("ruled_out_rival") is True
+        and external_confirmation.get("red_to_green_observed") is True
+        and confirmation.get("ruled_out_rival") is True
+    )
+    tier = "confirmed" if confirmed else "suspected"
+    return {
+        "root_cause": {
+            "status": "confirmed" if confirmed else "unconfirmed",
+            "tier": tier,
+            "finding": surviving["mechanism"],
+            "backing_artifact": reproduction["observed_output"],
+            "external_confirmation": external_confirmation,
+            "depth_chain": [
+                f"symptom: {symptom}",
+                "why: the prior actual run records an assertion failure",
+                f"why: the first repo-cited suspect region is {cause_site or 'not yet isolated'}",
+            ],
+            "stop_reason": (
+                "stop at confirmed: the prior external receipt records discrimination, rival rejection, and red-to-green"
+                if confirmed
+                else "stop at suspected: no external intervention demonstrated red-to-green, and trace is read-only"
+            ),
+        }
+    }
+
+
+def _trace_fix_scope(
+    symptom: str,
+    localization: dict[str, Any],
+    reproduction: dict[str, Any],
+) -> dict[str, Any]:
+    cited = localization["suspect_region_cited"]
+    return {
+        "cause_site": cited[0] if cited else None,
+        "blast_radius": localization["candidate_paths"],
+        "invariant": f"the behavior described by '{symptom}' must match the observed expected result",
+        "regression_test": (
+            f"rerun {' '.join(reproduction.get('command', []))} and require the observed red to turn green"
+            if reproduction.get("command")
+            else "add the smallest deterministic reproduction before any fix"
+        ),
+        "implemented": False,
+    }
+
+
+def _trace_evidence(
+    repo: Path,
+    signals: dict[str, Any],
+    reproduction: dict[str, Any],
+) -> list[dict[str, Any]]:
     return [
         {
             "source": "repository-path",
@@ -399,60 +1046,17 @@ def _trace_evidence(repo: Path, signals: dict[str, Any]) -> list[dict[str, Any]]
         },
         {
             "source": "reproduction-gate",
-            "observation": "no reproduction command was accepted or executed",
-            "interpretation": "root cause and fix scope must remain unconfirmed",
+            "observation": reproduction["observed_output"],
+            "interpretation": (
+                "a prior actual execution is an external signal"
+                if reproduction.get("red_observed")
+                else "root cause and fix scope must remain unconfirmed"
+            ),
         },
     ]
 
 
-def _ranked_hypotheses(signals: dict[str, Any]) -> list[dict[str, Any]]:
-    matches = signals["matching_paths"]
-    hypotheses = [
-        {
-            "hypothesis": "configuration or environment changes the observed behavior",
-            "basis": "runtime inputs can diverge from repository defaults",
-            "evidence_for": [],
-            "evidence_against": ["no environment or configuration observation was supplied"],
-            "confirmation_test": "capture effective configuration at the failing boundary and compare it with a working run",
-            "status": "unconfirmed",
-        },
-        {
-            "hypothesis": "a recent integration change introduced the symptom",
-            "basis": "regressions often appear at changed component boundaries",
-            "evidence_for": [],
-            "evidence_against": ["this advisory surface did not inspect git history or execute a bisect"],
-            "confirmation_test": "compare the smallest known-good and known-bad revisions around the localized path",
-            "status": "unconfirmed",
-        },
-    ]
-    if matches:
-        hypotheses.insert(
-            0,
-            {
-                "hypothesis": "the symptom originates in the localized implementation path",
-                "basis": ", ".join(matches[:3]),
-                "evidence_for": matches,
-                "evidence_against": ["no repeatable reproduction or data-flow trace yet"],
-                "confirmation_test": "reproduce once, then trace the incorrect value backward through the localized call path",
-                "status": "unconfirmed",
-            },
-        )
-    else:
-        hypotheses.insert(
-            0,
-            {
-                "hypothesis": "repository localization is insufficient to rank a code-path cause",
-                "basis": "no symptom token matched an observed repository path",
-                "evidence_for": [],
-                "evidence_against": ["no candidate implementation path has been localized"],
-                "confirmation_test": "capture a repeatable reproduction and trace its first incorrect boundary",
-                "status": "localization-required",
-            },
-        )
-    return [dict(item, rank=rank) for rank, item in enumerate(hypotheses, start=1)]
-
-
-def _advisory_boundary() -> dict[str, bool]:
+def _advisory_boundary(*, executes_commands: bool = False) -> dict[str, bool]:
     return {
         "advisory_only": True,
         "is_evidence": False,
@@ -460,7 +1064,7 @@ def _advisory_boundary() -> dict[str, bool]:
         "verifies_evidence": False,
         "can_change_evidence_verdict": False,
         "executes_proofrun": False,
-        "executes_commands": False,
+        "executes_commands": executes_commands,
         "runs_workers": False,
         "calls_depone": False,
         "mutates_repo": False,
