@@ -29,6 +29,8 @@ The cross-engine artifact boundary is summarized in
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo exploration and context-pack creation |
+| `orro sketch` | advisory ideation: frame, diverge, converge, and hand one direction to flowplan |
+| `orro trace` | advisory root-cause investigation before a fix flowplan |
 | `flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
@@ -107,6 +109,24 @@ non-executing advice only and is not proof, verifier truth, approval, or
 assurance. It helps non-developers avoid wasteful or risky AI workflows, but it
 does not replace proofrun, proofcheck, handoff, or human review for risky
 changes.
+
+`python3 -m orro sketch "<goal>" --repo <repo> --home .witnessd --json`
+frames the problem, compares distinct candidate approaches, selects one with a
+repository-grounded rationale, and gives each unresolved decision branch one
+recommended answer. Its `orro-sketch` output includes an `orro-flowplan-input`
+handoff whose goal can be passed to `orro flowplan`.
+
+`python3 -m orro trace "<goal-or-symptom>" --repo <repo> --home .witnessd --json`
+orders investigation as observe -> reproduce/localize -> hypothesize -> confirm
+root cause. Missing reproduction or confirmation evidence keeps root cause
+unconfirmed and blocks a fix proposal; a later confirmed result can seed a fix
+flowplan and proofrun.
+
+Both are advisory only. They do not mutate the repo, execute commands or
+workers, call Depone, launch proofrun, verify evidence, change an evidence
+verdict, approve work, or raise assurance. Their ORRO-native methods live under
+`orro/skillpacks/` for frontmatter-selected progressive disclosure. The
+external `superpowers` plugin remains untouched as an independent dual path.
 
 `python scripts/check_orro_product_reality.py` validates local dogfood scenarios
 for ORRO usefulness: smallest safe workflow, waste avoidance, gate integrity,

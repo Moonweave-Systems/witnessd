@@ -11,6 +11,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from witnessd.__main__ import main
+from witnessd.superflow import _skillpack_matches
 
 
 def _depone_root() -> Path:
@@ -41,11 +42,82 @@ def _seed_repo(repo: Path) -> None:
     (repo / "witnessd" / "__main__.py").write_text("# cli\n", encoding="utf-8")
     (repo / "tests").mkdir()
     (repo / "tests" / "test_fixture.py").write_text("# tests\n", encoding="utf-8")
+    (repo / "orro" / "skillpacks").mkdir(parents=True)
+    (repo / "orro" / "skillpacks" / "sketch.md").write_text(
+        "---\nname: orro-sketch-method\ntriggers: sketch, ideation, design direction\n---\n# Sketch\n",
+        encoding="utf-8",
+    )
+    (repo / "orro" / "skillpacks" / "trace.md").write_text(
+        "---\nname: orro-trace-method\ntriggers: trace, debug, bug, regression\n---\n# Trace\n",
+        encoding="utf-8",
+    )
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
 
 
 class SuperflowScoutTests(unittest.TestCase):
+    def test_scout_selects_relevant_orro_skillpack_by_frontmatter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            repo.mkdir()
+            _seed_repo(repo)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "scout",
+                        "sketch candidate approaches before flowplan",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            run_dir = Path(json.loads(stdout.getvalue())["run_dir"])
+            lock = json.loads((run_dir / "skillpack-lock.json").read_text(encoding="utf-8"))
+            names = {entry["frontmatter"].get("name") for entry in lock["entries"]}
+            self.assertIn("orro-sketch-method", names)
+            self.assertNotIn("orro-trace-method", names)
+            self.assertTrue((run_dir / "skillpacks" / "sketch-copy.md").is_file())
+
+    def test_scout_skillpack_selection_is_word_bounded_and_exclusive(self) -> None:
+        self.assertFalse(_skillpack_matches({"triggers": "bug"}, "debug configuration"))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            repo.mkdir()
+            _seed_repo(repo)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "scout",
+                        "debug a design direction regression",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            run_dir = Path(json.loads(stdout.getvalue())["run_dir"])
+            lock = json.loads((run_dir / "skillpack-lock.json").read_text(encoding="utf-8"))
+            method_names = {
+                entry["frontmatter"].get("name")
+                for entry in lock["entries"]
+                if entry["frontmatter"].get("name", "").startswith("orro-")
+            }
+            self.assertEqual(method_names, {"orro-trace-method"})
+
     def test_scout_writes_read_only_planning_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

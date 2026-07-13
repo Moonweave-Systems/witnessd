@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -65,7 +66,7 @@ def run_scout(goal: str, *, repo: Path, home: Path, out_dir: Path | None = None)
         },
     )
 
-    skillpack_lock = _build_skillpack_lock(repo, run_dir)
+    skillpack_lock = _build_skillpack_lock(repo, run_dir, goal)
     _write_json(run_dir / "skillpack-lock.json", skillpack_lock)
 
     recipe = _build_verification_recipe()
@@ -156,14 +157,25 @@ def _write_discovery_notes(path: Path, goal: str, repo: Path, selected_paths: li
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _build_skillpack_lock(repo: Path, run_dir: Path) -> dict[str, Any]:
+def _build_skillpack_lock(repo: Path, run_dir: Path, goal: str) -> dict[str, Any]:
     entries: list[dict[str, Any]] = []
     skillpack_dir = run_dir / "skillpacks"
-    for source_name in ("SKILL.md", "AGENTS.md"):
-        source = repo / source_name
+    sources = [repo / "SKILL.md", repo / "AGENTS.md"]
+    local_skillpacks = repo / "orro" / "skillpacks"
+    if local_skillpacks.is_dir():
+        matches: list[tuple[int, Path]] = []
+        for source in sorted(local_skillpacks.glob("*.md")):
+            frontmatter = _frontmatter(source.read_text(encoding="utf-8"))
+            score = _skillpack_match_score(frontmatter, goal)
+            if score > 0:
+                matches.append((score, source))
+        if matches:
+            best_score = max(score for score, _source in matches)
+            sources.append(next(source for score, source in matches if score == best_score))
+    for source in sources:
         if not source.is_file():
             continue
-        target = skillpack_dir / source_name.lower().replace(".md", "-copy.md")
+        target = skillpack_dir / source.name.lower().replace(".md", "-copy.md")
         target.parent.mkdir(parents=True, exist_ok=True)
         data = source.read_bytes()
         target.write_bytes(data)
@@ -179,6 +191,24 @@ def _build_skillpack_lock(repo: Path, run_dir: Path) -> dict[str, Any]:
         "schema_version": SCHEMA_VERSION,
         "entries": entries,
     }
+
+
+def _skillpack_matches(frontmatter: dict[str, str], goal: str) -> bool:
+    return _skillpack_match_score(frontmatter, goal) > 0
+
+
+def _skillpack_match_score(frontmatter: dict[str, str], goal: str) -> int:
+    triggers = [
+        item.strip().lower()
+        for item in frontmatter.get("triggers", "").split(",")
+        if item.strip()
+    ]
+    normalized_goal = goal.lower()
+    return sum(
+        1
+        for trigger in triggers
+        if re.search(rf"(?<!\w){re.escape(trigger)}(?!\w)", normalized_goal)
+    )
 
 
 def _frontmatter(text: str) -> dict[str, str]:

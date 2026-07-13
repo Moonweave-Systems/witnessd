@@ -36,6 +36,8 @@ The cross-engine artifact boundary is summarized in
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo profile, context pack, and discovery notes |
+| `orro sketch` | advisory ideation that converges on one flowplan-ready direction |
+| `orro trace` | advisory root-cause investigation before fix planning or execution |
 | `flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
@@ -97,6 +99,23 @@ returns an `orro-workstyle-decision`. It is non-executing advice only: not
 proof, verifier truth, approval, or assurance. It helps non-developers avoid
 wasteful or risky AI workflows but does not replace proofrun, proofcheck,
 handoff, or human review for risky changes.
+
+`python3 -m orro sketch "<goal>" --repo <repo> --home .witnessd --json` emits
+an `orro-sketch` advisory decision with a problem frame, distinct approaches and
+tradeoffs, one chosen direction, and decision branches with one recommended
+answer each. Its chosen direction is shaped as flowplan input.
+
+`python3 -m orro trace "<goal-or-symptom>" --repo <repo> --home .witnessd --json`
+emits an `orro-trace` advisory decision that gates fixes behind observe,
+reproduce/localize, ranked hypotheses, and confirmed root cause. Unconfirmed
+root cause means no allowed fix paths; a later confirmed result can seed a fix
+flowplan and proofrun.
+
+Both modes are advisory and non-executing. Their artifacts are not evidence,
+verifier truth, approval, or assurance; they cannot change an evidence verdict,
+run workers, launch proofrun, call Depone, or mutate the repository. Their
+methods live in `orro/skillpacks/` for frontmatter-selected progressive
+disclosure. The external `superpowers` plugin remains untouched as a dual path.
 
 `python scripts/check_orro_product_reality.py` validates local dogfood scenarios
 for smallest safe workflow, waste avoidance, gate integrity, artifact fatigue

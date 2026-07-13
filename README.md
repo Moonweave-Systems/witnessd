@@ -108,6 +108,8 @@ witnessd runtime code or Depone verifier logic.
 | `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo exploration, repo profile, context pack, and discovery notes |
+| `orro sketch` | advisory ideation that converges on one flowplan-ready direction |
+| `orro trace` | advisory root-cause investigation before a fix flowplan |
 | `flowplan` | plan-only workflow design and ORRO workflow compiler surface |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
@@ -175,6 +177,16 @@ smallest safe ORRO path. It helps non-developers avoid wasteful or risky AI
 workflows, but it does not replace proofrun, proofcheck, handoff, or human
 review for risky changes. Its `orro-workstyle-decision` is advice only: not
 proof, verifier truth, merge approval, or assurance.
+
+`orro sketch "<goal>" --repo . --home .witnessd --json` performs advisory
+front-end ideation and emits one chosen, flowplan-ready direction after
+comparing distinct approaches and resolving each remaining branch with one
+recommended answer. `orro trace "<symptom>" --repo . --home .witnessd --json`
+records ordered root-cause investigation and blocks fix scope while root cause
+is unconfirmed. Both are read-only advisory context, not evidence, verifier
+truth, approval, or assurance; neither can change an evidence verdict or launch
+proofrun. Their methods are ORRO skillpacks, while the external `superpowers`
+plugin remains untouched for dual-path evaluation.
 
 `python scripts/check_orro_product_reality.py` validates local dogfood scenarios
 for ORRO usefulness: smallest safe workflow, waste avoidance, proofcheck/handoff

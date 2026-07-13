@@ -31,6 +31,8 @@ redefine witnessd runtime truth or Depone verifier truth.
 | `orro init` | setup surface | Create witnessd readiness/provision metadata for ORRO; not proof or assurance. |
 | `orro advise` | workstyle router | Non-executing developer-judgment layer that recommends the smallest safe workflow. |
 | `orro scout` | read-only exploration | Build repo profile, context pack, and discovery notes before planning. |
+| `orro sketch` | advisory ideation | Frame, diverge, converge, resolve decision branches, and hand one direction to flowplan. |
+| `orro trace` | advisory root-cause investigation | Observe, reproduce/localize, rank hypotheses, and confirm root cause before fix planning. |
 | `flowplan` | plan-only alias | Build or validate a workflow plan, including rolepack/workflow profiles, without running workers. |
 | `proofrun` | precise run alias | Execute with observer-signed evidence. Kept for technical invocation accuracy. |
 | `proofcheck` | verifier alias | Re-check existing evidence bytes offline. |
@@ -201,6 +203,18 @@ workflow and helps non-developers avoid wasteful or risky AI workflows. It is
 non-executing advice only: not proof, verifier truth, approval, or assurance.
 It must not call live models, call Depone proofcheck, mutate worktrees, or
 replace proofrun/proofcheck/handoff/human review.
+
+`orro sketch "<goal>" --repo <repo> --home <home> --json` is the deterministic
+ideation advisory. It frames the problem, compares distinct candidates with
+tradeoffs, selects one direction with rationale, gives each unresolved branch
+one recommended answer, and emits flowplan-ready intent. `orro trace
+"<goal-or-symptom>" --repo <repo> --home <home> --json` is the deterministic
+root-cause advisory. It records observe, reproduce/localize, hypothesis, and
+confirmation phases and must block fix scope while root cause is unconfirmed.
+Both artifacts set `raises_assurance`, `verifies_evidence`,
+`can_change_evidence_verdict`, and `executes_proofrun` false. They are not proof,
+verifier truth, approval, or assurance and must not run workers, call Depone, or
+mutate the repository.
 
 `scripts/check_orro_product_reality.py` validates local dogfood scenarios that
 ask whether ORRO avoids waste, recommends the smallest safe workflow, preserves
