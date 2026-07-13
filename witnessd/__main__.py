@@ -1352,6 +1352,60 @@ def _cmd_orro_advise(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_orro_sketch(args: argparse.Namespace) -> int:
+    from witnessd.orro_advisory import (
+        OrroAdvisoryError,
+        build_sketch_decision,
+        write_advisory_decision,
+    )
+
+    if not args.goal or not str(args.goal).strip():
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_SKETCH_INPUT_REQUIRED",
+            message="goal is required",
+        )
+        return 2
+    repo = Path(args.repo).resolve(strict=False)
+    home = Path(args.home).resolve(strict=False) if args.home else None
+    payload = build_sketch_decision(str(args.goal), repo=repo, home=home)
+    if args.out:
+        try:
+            write_advisory_decision(Path(args.out).resolve(strict=False), payload)
+        except OrroAdvisoryError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 1
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
+def _cmd_orro_trace(args: argparse.Namespace) -> int:
+    from witnessd.orro_advisory import (
+        OrroAdvisoryError,
+        build_trace_decision,
+        write_advisory_decision,
+    )
+
+    if not args.goal or not str(args.goal).strip():
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_TRACE_INPUT_REQUIRED",
+            message="goal or symptom is required",
+        )
+        return 2
+    repo = Path(args.repo).resolve(strict=False)
+    home = Path(args.home).resolve(strict=False) if args.home else None
+    payload = build_trace_decision(str(args.goal), repo=repo, home=home)
+    if args.out:
+        try:
+            write_advisory_decision(Path(args.out).resolve(strict=False), payload)
+        except OrroAdvisoryError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 1
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
 def _cmd_orro_report(args: argparse.Namespace) -> int:
     from witnessd.orro_report import (
         OrroReportError,
@@ -3266,6 +3320,36 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_advise.add_argument("--json", action="store_true")
     orro_advise.set_defaults(func=_cmd_orro_advise)
 
+    orro_sketch = sub.add_parser(
+        "orro-sketch",
+        help=argparse.SUPPRESS,
+        description=(
+            "Advisory front-end ideation: frame, diverge, converge, and hand the "
+            "chosen direction to flowplan. Not proof or assurance."
+        ),
+    )
+    orro_sketch.add_argument("goal", nargs="?")
+    orro_sketch.add_argument("--repo", default=".")
+    orro_sketch.add_argument("--home", default=None)
+    orro_sketch.add_argument("--out", default=None)
+    orro_sketch.add_argument("--json", action="store_true")
+    orro_sketch.set_defaults(func=_cmd_orro_sketch)
+
+    orro_trace = sub.add_parser(
+        "orro-trace",
+        help=argparse.SUPPRESS,
+        description=(
+            "Advisory root cause investigation: observe, reproduce/localize, "
+            "hypothesize, then confirm before any fix. Not proof or assurance."
+        ),
+    )
+    orro_trace.add_argument("goal", nargs="?")
+    orro_trace.add_argument("--repo", default=".")
+    orro_trace.add_argument("--home", default=None)
+    orro_trace.add_argument("--out", default=None)
+    orro_trace.add_argument("--json", action="store_true")
+    orro_trace.set_defaults(func=_cmd_orro_trace)
+
     orro_report = sub.add_parser("orro-report", help=argparse.SUPPRESS)
     orro_report.add_argument("run_dir", nargs="?")
     orro_report.add_argument("--home", default=None)
@@ -3773,6 +3857,10 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
         return ["orro-next", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "advise":
         return ["orro-advise", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "sketch":
+        return ["orro-sketch", *argv[2:]]
+    if len(argv) >= 2 and argv[1] == "trace":
+        return ["orro-trace", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "report":
         return ["orro-report", *argv[2:]]
     if len(argv) >= 2 and argv[1] == "review":

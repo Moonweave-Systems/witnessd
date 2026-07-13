@@ -17,6 +17,8 @@ The cross-engine artifact boundary is summarized in
 - `orro init`: setup readiness/provision metadata; not proof or assurance
 - `orro advise`: non-executing workstyle router for the smallest safe workflow
 - `orro scout`: read-only repo profile, context pack, and discovery notes
+- `orro sketch`: advisory ideation that converges on one flowplan-ready direction
+- `orro trace`: advisory root-cause investigation before a fix flowplan/proofrun
 - `flowplan`: plan-only workflow design and rolepack/workflow compiler surface
 - `proofrun`: precise evidence-backed execution alias
 - `proofcheck`: offline evidence verification alias
@@ -37,7 +39,7 @@ The cross-engine artifact boundary is summarized in
 the witnessd repo and delegates to the existing `witnessd orro ...` surface. It
 is not a standalone ORRO repository and not a third engine.
 `python3 -m orro --help` is product-facing and lists only public ORRO commands:
-`setup`, `init`, `advise`, `scout`, `flowplan`, `proofrun`, `proofcheck`, `handoff`,
+`setup`, `init`, `advise`, `scout`, `sketch`, `trace`, `flowplan`, `proofrun`, `proofcheck`, `handoff`,
 `next`, `report`, `auto`, `doctor`, and `engine-lock`.
 
 Use `python3 -m orro setup --home .witnessd` as the public setup path. It

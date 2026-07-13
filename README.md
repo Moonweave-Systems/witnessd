@@ -108,6 +108,8 @@ witnessd runtime code or Depone verifier logic.
 | `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo exploration, repo profile, context pack, and discovery notes |
+| `orro sketch` | advisory ideation that converges on one flowplan-ready direction |
+| `orro trace` | advisory root-cause investigation before a fix flowplan |
 | `flowplan` | plan-only workflow design and ORRO workflow compiler surface |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
@@ -175,6 +177,21 @@ smallest safe ORRO path. It helps non-developers avoid wasteful or risky AI
 workflows, but it does not replace proofrun, proofcheck, handoff, or human
 review for risky changes. Its `orro-workstyle-decision` is advice only: not
 proof, verifier truth, merge approval, or assurance.
+
+`orro sketch "<goal>" --repo . --home .witnessd --json` performs advisory
+controlled convergence: repo-derived criteria precede independently generated
+structural options, per-criterion scores, a devil's-advocate pass, explicit
+rejections, and an ADR-shaped flowplan handoff. `orro trace "<symptom>" --repo .
+--home .witnessd --json` applies a reproduce-first hard gate, consumes a
+symptom-bound `orro-trace-reproduction.json` from a prior actual run, then records
+localization, competing hypotheses, falsification probes, and an evidence-typed
+confidence tier. Without observed red it emits no hypothesis or root cause.
+Both are read-only advisory context, not evidence, verifier truth, approval, or
+assurance; neither can mutate the inspected repo, change an evidence verdict,
+or launch proofrun. An agent's stated confidence is not evidence; sketch cites
+external repo signals and trace treats the recorded actual run as its oracle. Their
+methods are ORRO skillpacks, while the external `superpowers` plugin remains
+untouched for dual-path evaluation.
 
 `python scripts/check_orro_product_reality.py` validates local dogfood scenarios
 for ORRO usefulness: smallest safe workflow, waste avoidance, proofcheck/handoff

@@ -12,18 +12,20 @@ DEPRECATION_WARNING = (
     "the orro command. This shim will be removed in the next major witnessd release."
 )
 
-ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,flowplan,proofrun,proofcheck,handoff,next,report,review,auto,team,doctor,engine-lock} ...
+ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,sketch,trace,flowplan,proofrun,proofcheck,handoff,next,report,review,auto,team,doctor,engine-lock} ...
 
 ORRO - Observed Run & Review Orchestrator
 
 ORRO Flow:
-  scout -> flowplan -> proofrun -> proofcheck -> handoff
+  scout -> sketch/trace -> flowplan -> proofrun -> proofcheck -> handoff
 
 public commands:
   setup       provision pinned Depone, initialize home, and write engine lock
   init         setup readiness/provision metadata; does not verify evidence
   advise       non-executing workstyle router for the smallest safe workflow
   scout        read-only repository exploration and context packaging
+  sketch       advisory ideation that converges on flowplan input
+  trace        advisory root-cause investigation before a fix flowplan
   flowplan     plan-only workflow design; does not run workers
   proofrun     evidence-backed execution through witnessd
   proofcheck   offline evidence verification delegated to Depone
@@ -38,7 +40,8 @@ public commands:
 
 boundary:
   Depone verifies; witnessd executes; ORRO exposes the workflow.
-  advise, next, and report read status/intent only; auto --dry-run recommends
+  advise, sketch, trace, next, and report read status/intent only; trace consumes a
+  symptom-bound prior-run receipt without executing repo code; auto --dry-run recommends
   commands only; auto --once executes at most one proofcheck or handoff step;
   auto --until-complete loops over those post-run steps with --max-steps. None
   is proof or assurance.
