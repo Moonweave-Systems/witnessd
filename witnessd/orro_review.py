@@ -8,6 +8,7 @@ evidence, and cannot raise assurance.
 from __future__ import annotations
 
 import json
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -66,6 +67,7 @@ def run_review_role_lane_plan(
         / f"review-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{time.monotonic_ns()}"
     )
     out_dir.mkdir(parents=True, exist_ok=True)
+    evidence_root = _review_adapter_evidence_root(repo=repo, run_dir=out_dir)
     try:
         role_lane_plan_ref = write_role_lane_plan_binding(
             role_lane_plan=plan,
@@ -82,6 +84,7 @@ def run_review_role_lane_plan(
                 lane,
                 repo=repo,
                 run_dir=out_dir,
+                evidence_root=evidence_root,
                 agy_binary=agy_binary,
                 gemini_binary=gemini_binary,
                 timeout_seconds=timeout_seconds,
@@ -162,11 +165,29 @@ def _load_review_role_lane_plan(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _review_adapter_evidence_root(*, repo: Path, run_dir: Path) -> Path:
+    try:
+        run_dir.relative_to(repo)
+    except ValueError:
+        return run_dir
+
+    temp_root = Path(tempfile.gettempdir()).resolve(strict=False)
+    if temp_root == repo or repo in temp_root.parents:
+        temp_root = repo.parent
+    return Path(
+        tempfile.mkdtemp(
+            prefix=f"witnessd-orro-review-{run_dir.name}-",
+            dir=str(temp_root),
+        )
+    ).resolve(strict=False)
+
+
 def _run_review_lane(
     lane: dict[str, Any],
     *,
     repo: Path,
     run_dir: Path,
+    evidence_root: Path,
     agy_binary: str,
     gemini_binary: str,
     timeout_seconds: int,
@@ -175,6 +196,8 @@ def _run_review_lane(
     adapter = str(lane["adapter"])
     lane_dir = run_dir / lane_id
     lane_dir.mkdir(parents=True, exist_ok=True)
+    adapter_evidence_dir = evidence_root / lane_id
+    adapter_evidence_dir.mkdir(parents=True, exist_ok=True)
     model = lane.get("model")
     model_arg = str(model) if isinstance(model, str) and model else None
     try:
@@ -183,9 +206,9 @@ def _run_review_lane(
                 sandbox=str(repo),
                 prompt=str(lane["prompt"]),
                 agy_binary=agy_binary,
-                transcript_path=str(lane_dir / "events.raw.jsonl"),
-                review_receipt_path=str(lane_dir / "review-receipt.json"),
-                log_path=str(lane_dir / "command-log.json"),
+                transcript_path=str(adapter_evidence_dir / "events.raw.jsonl"),
+                review_receipt_path=str(adapter_evidence_dir / "review-receipt.json"),
+                log_path=str(adapter_evidence_dir / "command-log.json"),
                 timeout_seconds=timeout_seconds,
                 model=model_arg,
             )
@@ -194,9 +217,9 @@ def _run_review_lane(
                 sandbox=str(repo),
                 prompt=str(lane["prompt"]),
                 gemini_binary=gemini_binary,
-                transcript_path=str(lane_dir / "events.raw.jsonl"),
-                review_receipt_path=str(lane_dir / "review-receipt.json"),
-                log_path=str(lane_dir / "command-log.json"),
+                transcript_path=str(adapter_evidence_dir / "events.raw.jsonl"),
+                review_receipt_path=str(adapter_evidence_dir / "review-receipt.json"),
+                log_path=str(adapter_evidence_dir / "command-log.json"),
                 timeout_seconds=timeout_seconds,
             )
             if model_arg is not None:
