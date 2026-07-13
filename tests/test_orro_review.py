@@ -55,6 +55,89 @@ def _fake_agy(directory: Path) -> str:
 
 
 class OrroReviewTests(unittest.TestCase):
+    def test_orro_review_keeps_adapter_evidence_outside_repo_with_internal_home(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = repo / ".witnessd"
+            repo.mkdir()
+            _seed_repo(repo)
+
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main(
+                        [
+                            "init",
+                            "--home",
+                            str(home),
+                            "--depone-root",
+                            str(_depone_root()),
+                        ]
+                    ),
+                    0,
+                )
+
+            role_lanes_out = root / "role-lane-plan.json"
+            with redirect_stdout(io.StringIO()) as flow_stdout:
+                flow_code = main(
+                    [
+                        "orro",
+                        "flowplan",
+                        "review the readme",
+                        "--root",
+                        str(repo),
+                        "--profile",
+                        "review-only",
+                        "--role-lanes-out",
+                        str(role_lanes_out),
+                        "--model-policy",
+                        "default",
+                        "--role-lane-tier",
+                        "frontier",
+                    ]
+                )
+            self.assertEqual(flow_code, 0, flow_stdout.getvalue())
+
+            bindir = root / "bin"
+            bindir.mkdir()
+            argv_capture = root / "agy-argv.txt"
+            stdout = io.StringIO()
+            with (
+                patch.dict(os.environ, {"AGY_ARGV_CAPTURE": str(argv_capture)}),
+                redirect_stdout(stdout),
+            ):
+                code = main(
+                    [
+                        "orro",
+                        "review",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--role-lane-plan",
+                        str(role_lanes_out),
+                        "--agy-binary",
+                        _fake_agy(bindir),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0, stdout.getvalue())
+            payload = json.loads(stdout.getvalue())
+            lane = payload["lanes"][0]
+            evidence_paths = [
+                Path(lane["transcript_path"]),
+                Path(lane["normalized_events_path"]),
+                Path(lane["review_receipt_path"]),
+            ]
+            evidence_dir = evidence_paths[0].parent
+            evidence_paths.append(evidence_dir / "command-log.json")
+            for evidence_path in evidence_paths:
+                self.assertTrue(evidence_path.is_file(), evidence_path)
+                self.assertNotIn(repo.resolve(), evidence_path.resolve().parents)
+
     def test_orro_review_runs_policy_resolved_agy_lane_without_assurance(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
