@@ -33,7 +33,11 @@ def _seed_repo(repo: Path) -> str:
     ).stdout.strip()
 
 
-def _evidence_context_from_dir(root: Path) -> EvidenceContext:
+def _evidence_context_from_dir(
+    root: Path,
+    *,
+    trusted_observer_public_key_file: str | None = None,
+) -> EvidenceContext:
     files = []
     for path in sorted(root.iterdir()):
         if not path.is_file():
@@ -46,7 +50,12 @@ def _evidence_context_from_dir(root: Path) -> EvidenceContext:
                 sha256=canonical_hash(content),
             )
         )
-    return EvidenceContext(run_id=root.name, files=files, raw={})
+    raw = (
+        {"trusted_observer_public_key_file": trusted_observer_public_key_file}
+        if trusted_observer_public_key_file is not None
+        else {}
+    )
+    return EvidenceContext(run_id=root.name, files=files, raw=raw)
 
 
 @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
@@ -62,7 +71,7 @@ class TestTeamFanin(unittest.TestCase):
         keys.mkdir()
         base_commit = _seed_repo(repo)
         private_key_path, public_key_path = gen_operator_keypair(str(keys))
-        return run_team(
+        result = run_team(
             lane_specs,
             repo_root=str(repo),
             out_dir=str(out_dir),
@@ -70,6 +79,8 @@ class TestTeamFanin(unittest.TestCase):
             public_key_path=public_key_path,
             base_commit=base_commit,
         )
+        result["public_key_path"] = public_key_path
+        return result
 
     def test_disjoint_write_lanes_emit_passing_team_ledger(self):
         result = self._run(
@@ -160,12 +171,13 @@ class TestTeamFanin(unittest.TestCase):
             ]["predicate"]["artifact_index"]
         ]
         self.assertIn("write-scope-declaration", subject_names)
+        self.assertIn("git-diff-name-only.txt", subject_names)
 
         contract = json.loads(
             (lane_dir / "evidence-contract.json").read_text(encoding="utf-8")
         )
         self.assertEqual(
-            contract["schema_version"], "v106.role_capability_write_scope"
+            contract["schema_version"], "v109.role_capability_write_scope"
         )
         self.assertEqual(
             contract["role_capability_write_scope"],
@@ -175,7 +187,13 @@ class TestTeamFanin(unittest.TestCase):
             },
         )
         self.assertEqual(
-            validate_evidence_contract(_evidence_context_from_dir(lane_dir)), []
+            validate_evidence_contract(
+                _evidence_context_from_dir(
+                    lane_dir,
+                    trusted_observer_public_key_file=result["public_key_path"],
+                )
+            ),
+            [],
         )
 
     def test_claim_conflict_is_audited_and_conflicting_lane_is_excluded(self):

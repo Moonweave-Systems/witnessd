@@ -22,7 +22,14 @@ from witnessd.runintent import RUN_INTENT_PAYLOAD_TYPE, build_run_intent
 from witnessd.signing import verify_dsse
 
 
-def _evidence_context_from_dir(root: pathlib.Path) -> EvidenceContext:
+BOUND_OBSERVATION_SCHEMA_VERSION = "v109.role_capability_write_scope"
+
+
+def _evidence_context_from_dir(
+    root: pathlib.Path,
+    *,
+    trusted_observer_public_key_file: str | None = None,
+) -> EvidenceContext:
     files = []
     for path in sorted(root.rglob("*")):
         if path.is_dir():
@@ -36,7 +43,16 @@ def _evidence_context_from_dir(root: pathlib.Path) -> EvidenceContext:
                 sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
             )
         )
-    return EvidenceContext(run_id=None, files=files, raw={})
+    trusted_observer_public_key_file = (
+        trusted_observer_public_key_file
+        or os.environ.get("DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE")
+    )
+    raw = (
+        {"trusted_observer_public_key_file": trusted_observer_public_key_file}
+        if trusted_observer_public_key_file is not None
+        else {}
+    )
+    return EvidenceContext(run_id=None, files=files, raw=raw)
 
 
 def _fake_codex(directory: str) -> str:
@@ -361,6 +377,9 @@ class TestAdapterRun(unittest.TestCase):
                     ),
                     "write-scope-declaration": str(
                         evidence_root / "write-scope-declaration.json"
+                    ),
+                    "git-diff-name-only.txt": str(
+                        evidence_root / "git-diff-name-only.txt"
                     ),
                 },
                 otel_spans=out["bundle"]["otel_spans"],
@@ -698,6 +717,7 @@ class TestAdapterRun(unittest.TestCase):
                 for item in out["bundle"]["statement"]["predicate"]["artifact_index"]
             ]
             self.assertIn("write-scope-declaration", subject_names)
+            self.assertIn("git-diff-name-only.txt", subject_names)
 
             declaration = json.loads(
                 (
@@ -741,7 +761,7 @@ class TestAdapterRun(unittest.TestCase):
             )
             self.assertEqual(
                 evidence_contract["schema_version"],
-                "v106.role_capability_write_scope",
+                BOUND_OBSERVATION_SCHEMA_VERSION,
             )
             self.assertEqual(
                 evidence_contract["role_capability_write_scope"],
@@ -767,10 +787,112 @@ class TestAdapterRun(unittest.TestCase):
                     "write-scope-declaration": str(
                         evidence_root / "write-scope-declaration.json"
                     ),
+                    "git-diff-name-only.txt": str(
+                        evidence_root / "git-diff-name-only.txt"
+                    ),
                 },
                 otel_spans=out["bundle"]["otel_spans"],
             )
             self.assertEqual(verdict["decision"], "pass")
+
+    def test_write_scope_git_diff_observation_is_bound_for_depone(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "write-scope-bound-observation")
+            _init_repo(sandbox)
+
+            out = run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="t-write-scope-bound-observation",
+                prompt="do X",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=_fake_codex_writes_env_and_code(bindir),
+                evidence_dir=evidence_dir,
+                allowed_touched_files=["codex-home.txt", "pkg/agent.py"],
+                write_scope=["pkg/**", "codex-home.txt"],
+                role_id="runner",
+                role_capability="execute",
+            )
+
+            evidence_root = pathlib.Path(evidence_dir)
+            contract = json.loads(
+                (evidence_root / "evidence-contract.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                contract["schema_version"], BOUND_OBSERVATION_SCHEMA_VERSION
+            )
+            observation_path = evidence_root / "git-diff-name-only.txt"
+            subjects = {
+                item["name"]: item["digest"]["sha256"]
+                for item in out["bundle"]["statement"]["subject"]
+            }
+            self.assertEqual(
+                subjects["git-diff-name-only.txt"],
+                hashlib.sha256(observation_path.read_bytes()).hexdigest(),
+            )
+            errors = validate_evidence_contract(
+                _evidence_context_from_dir(
+                    evidence_root,
+                    trusted_observer_public_key_file=out["public_key_path"],
+                )
+            )
+
+            self.assertEqual(errors, [])
+
+    def test_write_scope_git_diff_observation_tamper_refutes_in_depone(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "write-scope-tampered-observation")
+            _init_repo(sandbox)
+
+            out = run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="t-write-scope-tampered-observation",
+                prompt="do X",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=_fake_codex_writes_env_and_code(bindir),
+                evidence_dir=evidence_dir,
+                allowed_touched_files=["codex-home.txt", "pkg/agent.py"],
+                write_scope=["pkg/**", "codex-home.txt"],
+                role_id="runner",
+                role_capability="execute",
+            )
+
+            evidence_root = pathlib.Path(evidence_dir)
+            observation_path = evidence_root / "git-diff-name-only.txt"
+            observation_path.write_text(
+                observation_path.read_text(encoding="utf-8") + "\n",
+                encoding="utf-8",
+            )
+            errors = validate_evidence_contract(
+                _evidence_context_from_dir(
+                    evidence_root,
+                    trusted_observer_public_key_file=out["public_key_path"],
+                )
+            )
+
+            self.assertEqual(
+                [error.code for error in errors],
+                ["ERR_ROLE_CAPABILITY_OBSERVATION_DIGEST_MISMATCH"],
+            )
 
     def test_write_scope_blocks_allowed_touched_files_outside_scope(self):
         with (
