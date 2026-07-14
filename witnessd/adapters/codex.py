@@ -294,6 +294,7 @@ def run_codex_lane(
     evidence_invocation = list(run_invocation)
 
     before = _snapshot(repo)
+    timed_out = False
     try:
         completed = subprocess.run(
             run_invocation,
@@ -310,6 +311,7 @@ def run_codex_lane(
         stderr = _decode_output(completed.stderr)
         Path(transcript).write_bytes(raw_stdout)
     except subprocess.TimeoutExpired as exc:
+        timed_out = True
         exit_code = 124
         raw_stdout = _output_bytes(exc.stdout)
         stdout = _timeout_text(exc.stdout)
@@ -398,6 +400,7 @@ def run_codex_lane(
         command_receipts=[command_receipt],
         touched_files=touched_files,
         test_output=test_output,
+        timed_out=timed_out,
         normalized_events=normalized_events,
         raw_events_path=transcript,
         normalized_events_path=normalized_transcript,

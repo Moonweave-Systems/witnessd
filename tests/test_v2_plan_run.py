@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import shutil
@@ -42,6 +43,31 @@ def _fake_codex(directory: Path) -> str:
     return str(path)
 
 
+def _fake_codex_edit_and_verify(directory: Path) -> str:
+    path = directory / "codex-edit-and-verify"
+    path.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        "cat >/dev/null\n"
+        "sleep 1\n"
+        "mkdir -p v2_demo\n"
+        "cat > v2_demo/live_agent_result.py <<'PY'\n"
+        "from __future__ import annotations\n"
+        "\n"
+        "\n"
+        "def v2_agent_marker() -> str:\n"
+        "    return \"verified-within-lane-timeout\"\n"
+        "PY\n"
+        "/usr/bin/python3 -c 'import ast, pathlib; ast.parse(pathlib.Path(\"v2_demo/live_agent_result.py\").read_text())'\n"
+        "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"T-timeout-config\"}'\n"
+        "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"message\",\"text\":\"edit and verification completed\"}}'\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
 def _init_repo(path: Path) -> None:
     path.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=path, check=True)
@@ -54,6 +80,86 @@ def _init_repo(path: Path) -> None:
 
 @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
 class TestV2PlanRun(unittest.TestCase):
+    def test_lane_timeout_rejects_values_above_supported_bound(self):
+        with tempfile.TemporaryDirectory() as root:
+            base = Path(root)
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                code = main(
+                    [
+                        "team",
+                        "plan-run",
+                        "bounded change",
+                        "--repo",
+                        str(base / "repo"),
+                        "--out",
+                        str(base / "out"),
+                        "--lane-timeout",
+                        "3601",
+                    ]
+                )
+
+        self.assertEqual(code, 2)
+        self.assertIn("ERR_PLAN_RUN_LANE_TIMEOUT_INVALID", stderr.getvalue())
+
+    def test_configured_lane_timeout_allows_edit_and_verification_to_complete(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
+            base = Path(root)
+            repo = base / "repo"
+            out_dir = base / "v2-demo"
+            state_root = base / "w4-state-root"
+            _init_repo(repo)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "team",
+                        "plan-run",
+                        "create v2 demo marker code",
+                        "--repo",
+                        str(repo),
+                        "--out",
+                        str(out_dir),
+                        "--lane-adapter",
+                        "codex",
+                        "--lane-timeout",
+                        "3",
+                        "--state-root",
+                        str(state_root),
+                        "--codex-auth-source",
+                        "",
+                        "--codex-binary",
+                        _fake_codex_edit_and_verify(Path(bindir)),
+                        "--max-tokens",
+                        "1000",
+                        "--max-depth",
+                        "1",
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            ledger = json.loads((out_dir / "team-ledger.json").read_text())
+            lane = ledger["lanes"][0]
+            self.assertEqual(lane["verification_state"], "pass")
+            receipt = json.loads(
+                (out_dir / lane["evidence_dir"] / "runner-receipt.json").read_text()
+            )
+            self.assertEqual(receipt["exit_code"], 0)
+            run_intent_artifact = json.loads(
+                (out_dir / lane["evidence_dir"] / "run-intent.json").read_text()
+            )
+            run_intent = json.loads(
+                base64.b64decode(
+                    run_intent_artifact["dsse_envelope"]["payload"]
+                ).decode("utf-8")
+            )
+            self.assertEqual(run_intent["budgets"]["timeout_seconds"], 3)
+            transcript = (out_dir / "adapter-transcript.txt").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("edit and verification completed", transcript)
+
     def test_fake_codex_plan_run_reaches_evidence_pending_with_isolated_state(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
             base = Path(root)
@@ -117,6 +223,15 @@ class TestV2PlanRun(unittest.TestCase):
             self.assertEqual(receipt["exit_code"], 0)
             self.assertIn("--json", receipt["invocation"])
             self.assertNotIn("--output-last-message", receipt["invocation"])
+            run_intent_artifact = json.loads(
+                (lane_dir / "run-intent.json").read_text(encoding="utf-8")
+            )
+            run_intent = json.loads(
+                base64.b64decode(
+                    run_intent_artifact["dsse_envelope"]["payload"]
+                ).decode("utf-8")
+            )
+            self.assertEqual(run_intent["budgets"]["timeout_seconds"], 900)
             patch = (lane_dir / "git-diff.patch").read_text(encoding="utf-8")
             self.assertIn("+def v2_agent_marker() -> str:", patch)
 

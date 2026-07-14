@@ -307,6 +307,7 @@ def emit_lane_evidence(
         started_at=started_at or _now_iso(),
         ended_at=ended_at or _now_iso(),
         runner_kind=runner_kind or "manual",
+        timed_out=lane_result.get("timed_out") is True,
     )
 
     manifest_path = _emit_artifact("capture-manifest.json", json.dumps(manifest))

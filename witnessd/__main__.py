@@ -33,6 +33,9 @@ from witnessd.status import render_status
 from witnessd.trust_anchor import TrustAnchor
 
 
+DEFAULT_TEAM_PLAN_RUN_LANE_TIMEOUT_SECONDS = 900
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     if getattr(args, "goal", None):
         return _cmd_run_goal(args)
@@ -3188,6 +3191,9 @@ def _cmd_team_plan_run(args: argparse.Namespace) -> int:
     if args.draft_adapter != "heuristic":
         print("ERR_PLAN_RUN_DRAFT_ADAPTER_UNSUPPORTED", file=sys.stderr)
         return 2
+    if args.lane_timeout < 1 or args.lane_timeout > 3600:
+        print("ERR_PLAN_RUN_LANE_TIMEOUT_INVALID", file=sys.stderr)
+        return 2
 
     state_root = _team_plan_state_root(args, out_dir)
     if state_root is not None and _paths_overlap(Path(state_root), out_dir):
@@ -3376,6 +3382,8 @@ def _lane_packet_to_run_team_spec(
                 "opencode_binary": args.opencode_binary,
             }
         )
+        if hasattr(args, "lane_timeout"):
+            spec["timeout_seconds"] = args.lane_timeout
     return spec
 
 
@@ -4000,6 +4008,12 @@ def _build_parser() -> argparse.ArgumentParser:
     team_plan_run.add_argument("--max-tokens", type=int, default=10**9)
     team_plan_run.add_argument("--max-usd", type=float, default=10**9)
     team_plan_run.add_argument("--max-depth", type=int, default=3)
+    team_plan_run.add_argument(
+        "--lane-timeout",
+        type=int,
+        default=DEFAULT_TEAM_PLAN_RUN_LANE_TIMEOUT_SECONDS,
+        help="whole-lane adapter timeout in seconds (default: 900)",
+    )
     team_plan_run.add_argument("--state-root", default=None)
     team_plan_run.add_argument("--codex-auth-source", default="~/.codex/auth.json")
     team_plan_run.add_argument("--codex-binary", default="codex")

@@ -4,9 +4,12 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
-from witnessd.__main__ import _parse_team_lane, _parse_team_merge_group
+from witnessd.__main__ import _parse_team_lane, _parse_team_merge_group, main
 from witnessd.fanin import run_team
 from witnessd.signing import gen_operator_keypair
 
@@ -222,7 +225,7 @@ class TestTeamAdapterFanin(unittest.TestCase):
         ledger = json.loads((result["base_dir"] / "team-ledger.json").read_text())
         self.assertEqual(len(ledger["lanes"]), 2)
 
-    def test_failed_adapter_command_blocks_lane_before_proofcheck(self):
+    def test_committed_timeout_is_distinct_and_proofcheck_still_rejects(self):
         with tempfile.TemporaryDirectory() as bindir:
             result = self._run(
                 [
@@ -233,6 +236,7 @@ class TestTeamAdapterFanin(unittest.TestCase):
                         "region": ["pkg/timeout.py"],
                         "prompt": "write timeout",
                         "codex_binary": _fake_codex_timeout(bindir),
+                        "timeout_seconds": 1,
                     }
                 ]
             )
@@ -241,7 +245,12 @@ class TestTeamAdapterFanin(unittest.TestCase):
         self.assertEqual(lane["lane_id"], "timeout-lane")
         self.assertEqual(lane["runner_adapter_kind"], "codex")
         self.assertEqual(lane["verification_state"], "blocked")
-        self.assertEqual(lane["blocked_reason"], "ERR_TEAM_LANE_FAILED")
+        self.assertEqual(
+            lane["blocked_reason"],
+            "ERR_TEAM_LANE_TIMEOUT_COMMITTED_EVIDENCE_PENDING",
+        )
+        self.assertNotEqual(lane["start_commit"], lane["end_commit"])
+        self.assertEqual(lane["touched_files"], ["pkg/timeout.py"])
         self.assertNotIn("evidence_next_verdict", lane)
         self.assertFalse(
             (result["base_dir"] / "timeout-lane" / "evidence-next-verdict.json").exists()
@@ -251,10 +260,25 @@ class TestTeamAdapterFanin(unittest.TestCase):
             (result["base_dir"] / "timeout-lane" / "runner-receipt.json").read_text()
         )
         self.assertEqual(receipt["exit_code"], 124)
+        self.assertIs(receipt["timed_out"], True)
         command_log = json.loads(
             (result["base_dir"] / "adapter-command.json").read_text()
         )
         self.assertEqual(command_log["exit_code"], 124)
+
+        depone_root = os.environ.get("WITNESSD_DEPONE_ROOT")
+        if depone_root:
+            pythonpath = os.pathsep.join(
+                part for part in (depone_root, os.environ.get("PYTHONPATH")) if part
+            )
+            proofcheck_stdout = StringIO()
+            with patch.dict(os.environ, {"PYTHONPATH": pythonpath}), redirect_stdout(
+                proofcheck_stdout
+            ):
+                proofcheck_code = main(["proofcheck", str(result["base_dir"])])
+            proofcheck = json.loads(proofcheck_stdout.getvalue())
+            self.assertNotEqual(proofcheck_code, 0)
+            self.assertNotEqual(proofcheck["decision"], "pass")
 
         exit_events = [
             event
@@ -264,6 +288,30 @@ class TestTeamAdapterFanin(unittest.TestCase):
         ]
         self.assertEqual(len(exit_events), 1)
         self.assertNotEqual(exit_events[0]["payload"]["exit_code"], 0)
+
+    def test_committed_child_exit_124_remains_a_generic_lane_failure(self):
+        with tempfile.TemporaryDirectory() as bindir:
+            result = self._run(
+                [
+                    {
+                        "lane_id": "exit-124-lane",
+                        "adapter": "codex",
+                        "tier": "agentic",
+                        "region": ["pkg/exit_124.py"],
+                        "prompt": "write then return 124",
+                        "codex_binary": _fake_codex_exit_124(bindir),
+                    }
+                ]
+            )
+
+        lane = result["ledger"]["lanes"][0]
+        self.assertEqual(lane["verification_state"], "blocked")
+        self.assertEqual(lane["blocked_reason"], "ERR_TEAM_LANE_FAILED")
+        receipt = json.loads(
+            (result["base_dir"] / "exit-124-lane" / "runner-receipt.json").read_text()
+        )
+        self.assertEqual(receipt["exit_code"], 124)
+        self.assertIs(receipt["timed_out"], False)
 
 
 def _fake_codex(directory: str) -> str:
@@ -295,7 +343,28 @@ def _fake_codex_timeout(directory: str) -> str:
         "#!/bin/sh\n"
         'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
         "cat >/dev/null\n"
+        "mkdir -p pkg\n"
+        "echo committed-before-timeout > pkg/timeout.py\n"
+        "git add pkg/timeout.py\n"
+        "git commit -qm committed-before-timeout\n"
         'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T-timeout"}\'\n'
+        "sleep 5\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | 0o111)
+    return str(path)
+
+
+def _fake_codex_exit_124(directory: str) -> str:
+    path = Path(directory) / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
+        "cat >/dev/null\n"
+        "mkdir -p pkg\n"
+        "echo child-exit-124 > pkg/exit_124.py\n"
+        "git add pkg/exit_124.py\n"
+        "git commit -qm child-exit-124\n"
         "exit 124\n",
         encoding="utf-8",
     )

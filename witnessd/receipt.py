@@ -33,6 +33,7 @@ def build_runner_receipt(
     arm: str = ARM_GOVERNED,
     runner_kind: str = RUNNER_KIND_MANUAL,
     human_intervened: bool = False,
+    timed_out: bool = False,
 ) -> dict[str, Any]:
     receipt: dict[str, Any] = {
         "kind": RUNNER_RECEIPT_KIND,
@@ -48,6 +49,7 @@ def build_runner_receipt(
         "started_at": started_at,
         "ended_at": ended_at,
         "human_intervened": human_intervened,
+        "timed_out": timed_out,
     }
     receipt["source_hashes"] = {"receipt": canonical_hash(receipt)}
     return receipt
