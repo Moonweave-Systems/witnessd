@@ -190,12 +190,30 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 2
 
+    reference_fallback = (
+        args.cmd == "proofrun"
+        and role_lane_plan is None
+    )
+
     if workflow_plan is not None:
         try:
             assert_workflow_phase_allowed(workflow_plan, "proofrun")
         except OrroWorkflowError as exc:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 2
+
+    if reference_fallback and not args.allow_reference_adapter:
+        code = "ERR_ORRO_PROOFRUN_NO_PLAN"
+        message = (
+            "proofrun requires an explicit workflow and role-lane plan pair or the "
+            "--allow-reference-adapter opt-in; it will not run goal-unrelated "
+            "placeholder work as if it satisfied the goal"
+        )
+        if args.json:
+            _emit_orro_error(args, code=code, message=message)
+        else:
+            print(f"{code}: {message}", file=sys.stderr)
+        return 2
 
     if args.run_dir:
         out_dir = Path(args.run_dir).resolve(strict=False)
@@ -236,6 +254,16 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
         if role_lane_plan is not None
         else _default_w18_packets(args.goal)
     )
+    reference_warning = (
+        _proofrun_reference_adapter_warning(packets)
+        if reference_fallback
+        else None
+    )
+    if reference_warning is not None:
+        _write_json_file(
+            out_dir / "moonweave-reference-adapter-warning.json",
+            reference_warning,
+        )
     sealed = seal_plan(packets, goal=args.goal)
     sealed_path = out_dir / "sealed-plan.json"
     sealed_path.write_text(
@@ -268,6 +296,11 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
         max_parallel=args.max_parallel,
         fail_fast=args.fail_fast,
     )
+    if reference_warning is not None:
+        _stamp_reference_adapter_artifact(
+            out_dir / "team-ledger.json",
+            reference_warning,
+        )
     verdict_path = out_dir / "team-ledger-verdict.json"
     try:
         verdict = run_depone_team_ledger(
@@ -278,6 +311,9 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     except ProvisionError as exc:
         print(exc.code, file=sys.stderr)
         return 2
+    if reference_warning is not None:
+        verdict.update(_reference_adapter_markers(reference_warning))
+        _stamp_reference_adapter_artifact(verdict_path, reference_warning)
     payload = {
         "decision": verdict["decision"],
         "lane_count": verdict["lane_count"],
@@ -286,6 +322,8 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
         "team_ledger": str(out_dir / "team-ledger.json"),
         "team_ledger_verdict": str(verdict_path),
     }
+    if reference_warning is not None:
+        payload.update(_reference_adapter_markers(reference_warning))
     if workflow_plan_ref is not None:
         payload["workflow_plan"] = workflow_plan_ref
     if role_lane_plan_ref is not None:
@@ -325,6 +363,62 @@ def _default_w18_packets(goal: str) -> list[dict]:
             "stop_rule": "evidence-pending",
         },
     ]
+
+
+def _proofrun_reference_adapter_warning(
+    packets: list[dict],
+) -> dict[str, object]:
+    reference_lanes = [
+        {
+            "lane_id": packet["lane_id"],
+            "adapter": "shell",
+            "runner_kind": "manual",
+            "reference_adapter": True,
+            "not_real_ai_work": True,
+            "placeholder_fallback": True,
+        }
+        for packet in packets
+    ]
+    return {
+        "kind": "moonweave-reference-adapter-warning",
+        "schema_version": "0.1",
+        "reference_adapter": True,
+        "not_real_ai_work": True,
+        "placeholder_fallback": True,
+        "reference_adapter_lanes": reference_lanes,
+        "message": (
+            "the deterministic W18 shell fallback writes reference fixture output; "
+            "it does not perform the requested goal and is not real AI work"
+        ),
+        "can_change_evidence_verdict": False,
+        "boundary": {
+            "advisory_only": True,
+            "raises_assurance": False,
+            "depone_verifies": True,
+        },
+    }
+
+
+def _reference_adapter_markers(warning: dict[str, object]) -> dict[str, bool]:
+    return {
+        "reference_adapter": bool(warning.get("reference_adapter")),
+        "not_real_ai_work": bool(warning.get("not_real_ai_work")),
+        "placeholder_fallback": bool(warning.get("placeholder_fallback")),
+    }
+
+
+def _stamp_reference_adapter_artifact(
+    path: Path,
+    warning: dict[str, object],
+) -> None:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    payload.update(_reference_adapter_markers(warning))
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _role_lane_plan_packets(role_lane_plan: dict[str, object] | None) -> list[dict]:
@@ -899,6 +993,9 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         )
         return 2
     evidence_dir = Path(evidence_arg).resolve(strict=False)
+    reference_warning = _load_json_if_exists(
+        evidence_dir / "moonweave-reference-adapter-warning.json"
+    )
     home = Path(args.home).resolve(strict=False) if args.home else None
     try:
         env = _depone_subprocess_env(home)
@@ -987,6 +1084,10 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         **({"errors": payload["errors"]} if payload.get("errors") else {}),
         **({"error": payload["error"]} if payload.get("error") else {}),
     }
+    if reference_warning is not None:
+        result.update(_reference_adapter_markers(reference_warning))
+        if out_path is not None and out_path.is_file():
+            _stamp_reference_adapter_artifact(out_path, reference_warning)
     print(json.dumps(result, sort_keys=True))
     return 0 if code == 0 and result["decision"] == "pass" else 1
 
@@ -3313,6 +3414,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="ORRO evidence-backed execution alias; emits evidence without final trust",
     )
     _add_run_args(proofrun)
+    proofrun.add_argument(
+        "--allow-reference-adapter",
+        action="store_true",
+        help=(
+            "allow the deterministic W18 shell fallback for reference/self-test use; "
+            "marked as placeholder output and not real AI work"
+        ),
+    )
     proofrun.set_defaults(func=_cmd_run)
 
     a2 = sub.add_parser(

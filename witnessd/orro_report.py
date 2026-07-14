@@ -76,6 +76,8 @@ def build_report(
         "verification": verification,
         "handoff": handoff,
         "reference_adapter": reference_adapter,
+        "not_real_ai_work": reference_adapter["not_real_ai_work"],
+        "placeholder_fallback": reference_adapter["placeholder_fallback"],
         "next": {
             "decision": continuation.get("decision", "blocked"),
             "next_allowed": list(continuation.get("next_allowed", [])),
@@ -164,6 +166,8 @@ def _summary(
         "recommended_next_action": next_action,
         "complete": state == "complete",
         "blocked": bool(continuation.get("blocked", False)),
+        "not_real_ai_work": reference_adapter["not_real_ai_work"],
+        "placeholder_fallback": reference_adapter["placeholder_fallback"],
     }
 
 
@@ -314,11 +318,13 @@ def _reference_adapter_summary(run_dir: Path) -> dict[str, Any]:
         return {
             "reference_adapter": False,
             "not_real_ai_work": False,
+            "placeholder_fallback": False,
             "reference_adapter_lanes": [],
         }
     return {
         "reference_adapter": bool(warning.get("reference_adapter")),
         "not_real_ai_work": bool(warning.get("not_real_ai_work")),
+        "placeholder_fallback": bool(warning.get("placeholder_fallback")),
         "reference_adapter_lanes": warning.get("reference_adapter_lanes", []),
         "warning": warning,
         "can_change_evidence_verdict": False,

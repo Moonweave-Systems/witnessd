@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.__main__ import main
+from witnessd.orro_report import build_report
 from witnessd.orro_team_surface import apply_task_prompt_to_role_lane_plan
 
 
@@ -189,6 +190,8 @@ class OrroPublicFlowTests(unittest.TestCase):
             args.extend(["--workflow-plan", str(workflow_plan)])
         if role_lane_plan is not None:
             args.extend(["--role-lane-plan", str(role_lane_plan)])
+        if role_lane_plan is None:
+            args.append("--allow-reference-adapter")
         with redirect_stdout(stdout), redirect_stderr(stderr):
             code = main(args)
         self.assertEqual(code, 0, f"stdout={stdout.getvalue()}\nstderr={stderr.getvalue()}")
@@ -255,6 +258,112 @@ class OrroPublicFlowTests(unittest.TestCase):
 
             self.assertEqual(payload["decision"], "pass")
             self.assertTrue((run_dir / "team-ledger.json").is_file())
+
+    def test_orro_proofrun_without_plan_fails_closed_before_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            stdout = io.StringIO()
+
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "make a real change",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_PROOFRUN_NO_PLAN")
+            self.assertFalse((home / "runs").exists())
+            self.assertFalse(any(home.rglob("team-ledger-verdict.json")))
+            self.assertFalse(any(home.rglob("proofcheck-verdict.json")))
+
+    def test_orro_proofrun_reference_opt_in_marks_all_outputs_not_real_work(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            stdout = io.StringIO()
+
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "make a real change",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--allow-reference-adapter",
+                    ]
+                )
+
+            self.assertEqual(code, 0, stdout.getvalue())
+            payload = json.loads(stdout.getvalue())
+            run_dir = Path(payload["run_dir"])
+            ledger = json.loads((run_dir / "team-ledger.json").read_text(encoding="utf-8"))
+            team_verdict = json.loads(
+                (run_dir / "team-ledger-verdict.json").read_text(encoding="utf-8")
+            )
+            proofcheck = self._proofcheck_out(home, run_dir)
+            proofcheck_verdict = json.loads(
+                (run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8")
+            )
+            report_code, report = build_report(run_dir, home=home)
+
+            self.assertEqual(report_code, 0)
+            for artifact in (
+                payload,
+                ledger,
+                team_verdict,
+                proofcheck,
+                proofcheck_verdict,
+            ):
+                self.assertTrue(artifact["not_real_ai_work"])
+                self.assertTrue(artifact["placeholder_fallback"])
+            self.assertTrue(report["not_real_ai_work"])
+            self.assertTrue(report["placeholder_fallback"])
+            self.assertTrue(report["summary"]["not_real_ai_work"])
+            self.assertTrue(report["summary"]["placeholder_fallback"])
+            self.assertTrue(report["reference_adapter"]["not_real_ai_work"])
+            self.assertTrue(report["reference_adapter"]["placeholder_fallback"])
+            self.assertIn("not real AI work", report["summary"]["headline"])
+
+    def test_orro_proofrun_workflow_without_role_lanes_requires_reference_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            plan_path = self._flowplan_out(root, "make a real change")
+            stdout = io.StringIO()
+
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "make a real change",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--workflow-plan",
+                        str(plan_path),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_PROOFRUN_NO_PLAN")
+            self.assertFalse((home / "runs").exists())
 
     def test_proofrun_workflow_plan_binding_is_recorded_without_assurance(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2364,6 +2473,7 @@ class OrroPublicFlowTests(unittest.TestCase):
                     str(repo),
                     "--home",
                     str(home),
+                    "--allow-reference-adapter",
                 ]
             )
             self.assertEqual(proofrun.returncode, 0, proofrun.stderr)
