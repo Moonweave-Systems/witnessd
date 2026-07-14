@@ -533,6 +533,13 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 0)
         self.assertIn("root cause", stdout.getvalue().lower())
 
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as raised:
+                main(["--help"])
+        self.assertEqual(raised.exception.code, 0)
+        self.assertIn("Depone v110", stdout.getvalue())
+
     def test_product_help_keeps_scout_in_the_public_pipeline(self) -> None:
         stdout = io.StringIO()
         with redirect_stdout(stdout):
@@ -541,6 +548,7 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
         self.assertEqual(code, 0)
         help_text = stdout.getvalue()
         self.assertIn("scout -> sketch/trace -> flowplan", help_text)
+        self.assertIn("Depone v110", help_text)
 
     def test_trace_without_localization_does_not_invent_a_code_path_hypothesis(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

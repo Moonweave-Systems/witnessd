@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+from witnessd.advisory_provenance import ADVISORY_PROVENANCE_SCHEMA_VERSION
+
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
@@ -42,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     except (ImportError, OSError, ValueError, json.JSONDecodeError) as exc:
         payload = {
             "kind": "orro-advisory-provenance-verdict",
-            "schema_version": "v108.advisory_provenance",
+            "schema_version": ADVISORY_PROVENANCE_SCHEMA_VERSION,
             "decision": "BLOCKED",
             "error_codes": ["ERR_ADVISORY_PROVENANCE_CHECK_BLOCKED"],
             "errors": [
@@ -59,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     payload = {
         "kind": "orro-advisory-provenance-verdict",
-        "schema_version": "v108.advisory_provenance",
+        "schema_version": ADVISORY_PROVENANCE_SCHEMA_VERSION,
         "decision": "PASS" if not errors else "REFUTE",
         "error_codes": [error.code for error in errors],
         "errors": [

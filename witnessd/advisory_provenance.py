@@ -1,4 +1,4 @@
-"""Seal ORRO advisory decisions for Depone v108 provenance re-derivation.
+"""Seal ORRO advisory decisions for Depone v110 provenance re-derivation.
 
 This module records tamper-evident advisory provenance. It does not establish
 that a sketch direction is correct or that a trace root cause is true, and it
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import hashlib
 import json
 import shlex
 from pathlib import Path
@@ -18,15 +19,16 @@ from witnessd.canonical import canonical_hash
 from witnessd.signing import derive_public_key_id, gen_operator_keypair, sign_dsse
 
 
-ADVISORY_PROVENANCE_SCHEMA_VERSION = "v108.advisory_provenance"
+ADVISORY_PROVENANCE_SCHEMA_VERSION = "v110.advisory_provenance"
 ADVISORY_PROVENANCE_PREDICATE_TYPE = (
-    "https://depone.dev/attestations/advisory-provenance/v108"
+    "https://depone.dev/attestations/advisory-provenance/v110"
 )
 DSSE_PAYLOAD_TYPE = "application/vnd.in-toto+json"
 INTOTO_STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
 ADVISORY_PROVENANCE_BUNDLE = "advisory-provenance-bundle.json"
 EVIDENCE_CONTRACT = "evidence-contract.json"
 TRACE_RECEIPT = "orro-trace-reproduction.json"
+TRACE_EXECUTION_RECEIPT = "orro-trace-execution.json"
 
 
 def emit_advisory_provenance(
@@ -36,16 +38,21 @@ def emit_advisory_provenance(
     home: Path,
     repo: Path,
 ) -> dict[str, Any]:
-    """Write a v108 decision, optional trace receipt, DSSE bundle, and contract."""
+    """Write a v110 decision, optional trace receipts, DSSE bundle, and contract."""
 
     sealed_decision = copy.deepcopy(decision)
     subjects: list[dict[str, Any]] = []
     receipt = _sealed_trace_receipt(sealed_decision, repo=repo)
+    execution_receipt = _sealed_trace_execution_receipt(sealed_decision, repo=repo)
     if receipt is not None:
         sealed_decision.setdefault("reproduction", {})["receipt_sha256"] = (
             canonical_hash(receipt)
         )
-        _bind_trace_confirmation(sealed_decision, receipt)
+        if execution_receipt is not None:
+            sealed_decision["reproduction"]["execution_receipt_sha256"] = (
+                canonical_hash(execution_receipt)
+            )
+        _bind_trace_confirmation(sealed_decision, execution_receipt)
 
     _bind_sketch_direction(sealed_decision)
     decision_path.parent.mkdir(parents=True, exist_ok=True)
@@ -56,6 +63,10 @@ def emit_advisory_provenance(
         receipt_path = decision_path.parent / TRACE_RECEIPT
         _write_json(receipt_path, receipt)
         subjects.append(_subject(TRACE_RECEIPT, receipt))
+    if execution_receipt is not None:
+        execution_path = decision_path.parent / TRACE_EXECUTION_RECEIPT
+        _write_json(execution_path, execution_receipt)
+        subjects.append(_subject(TRACE_EXECUTION_RECEIPT, execution_receipt))
 
     statement = {
         "_type": INTOTO_STATEMENT_TYPE,
@@ -123,6 +134,19 @@ def _sealed_trace_receipt(
     return load_trace_reproduction_subject(repo)
 
 
+def _sealed_trace_execution_receipt(
+    decision: dict[str, Any], *, repo: Path
+) -> dict[str, Any] | None:
+    root_cause = decision.get("root_cause")
+    if (
+        decision.get("kind") != "orro-trace"
+        or not isinstance(root_cause, dict)
+        or root_cause.get("tier") != "confirmed"
+    ):
+        return None
+    return load_trace_execution_subject(repo)
+
+
 def load_trace_reproduction_subject(repo: Path) -> dict[str, Any] | None:
     """Normalize the external trace receipt exactly as it will be sealed."""
 
@@ -160,7 +184,87 @@ def load_trace_reproduction_subject(repo: Path) -> dict[str, Any] | None:
     }
 
 
-def _bind_trace_confirmation(decision: dict[str, Any], receipt: dict[str, Any]) -> None:
+def load_trace_execution_subject(repo: Path) -> dict[str, Any] | None:
+    """Load the exact Depone-shaped execution bytes from a prior-run receipt."""
+
+    receipt = load_trace_reproduction_subject(repo)
+    if receipt is None:
+        return None
+    command = receipt.get("command")
+    exit_code = receipt.get("exit_status")
+    transcript = receipt.get("output")
+    if (
+        not isinstance(command, str)
+        or not command.strip()
+        or not isinstance(exit_code, int)
+        or isinstance(exit_code, bool)
+        or exit_code == 0
+        or not isinstance(transcript, str)
+        or not transcript
+    ):
+        return None
+    try:
+        invocation = shlex.split(command)
+    except ValueError:
+        return None
+    if not invocation:
+        return None
+
+    source_path = repo.resolve(strict=False) / TRACE_RECEIPT
+    try:
+        source = json.loads(source_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(source, dict):
+        return None
+    execution = source.get("execution")
+    if not isinstance(execution, dict):
+        return None
+    if (
+        execution.get("kind") != "agent-fabric-runner-receipt"
+        or execution.get("schema_version") != "1.0"
+        or execution.get("runner_kind") not in {"codex-cli", "manual"}
+        or execution.get("arm") not in {"direct", "governed"}
+        or execution.get("command") != command
+        or execution.get("exit_code") != exit_code
+        or execution.get("transcript") != transcript
+        or execution.get("transcript_sha256")
+        != hashlib.sha256(transcript.encode("utf-8")).hexdigest()
+        or not isinstance(execution.get("human_intervened"), bool)
+    ):
+        return None
+    for field in (
+        "task_id",
+        "worktree",
+        "transcript_path",
+        "started_at",
+        "ended_at",
+    ):
+        if not isinstance(execution.get(field), str) or not execution[field]:
+            return None
+    if execution.get("invocation") != invocation:
+        return None
+    touched_files = execution.get("touched_files")
+    if not isinstance(touched_files, list) or not all(
+        isinstance(item, str) for item in touched_files
+    ):
+        return None
+    source_hashes = execution.get("source_hashes")
+    if (
+        not isinstance(source_hashes, dict)
+        or source_hashes.get("receipt")
+        != canonical_hash(
+            {key: value for key, value in execution.items() if key != "source_hashes"}
+        )
+    ):
+        return None
+    return copy.deepcopy(execution)
+
+
+def _bind_trace_confirmation(
+    decision: dict[str, Any],
+    execution_receipt: dict[str, Any] | None,
+) -> None:
     reproduction = decision.get("reproduction")
     if isinstance(reproduction, dict) and not isinstance(
         reproduction.get("symptom"), str
@@ -214,7 +318,11 @@ def _bind_trace_confirmation(decision: dict[str, Any], receipt: dict[str, Any]) 
         ]
     if root_cause.get("tier") != "confirmed":
         return
-    output = receipt.get("output")
+    output = (
+        execution_receipt.get("transcript")
+        if isinstance(execution_receipt, dict)
+        else None
+    )
     if decision.get("agent_authored") is True:
         planned_probe = hypothesis.get("discriminating_probe")
         observed_probe = (
@@ -235,6 +343,7 @@ def _bind_trace_confirmation(decision: dict[str, Any], receipt: dict[str, Any]) 
     )
     if (
         observed_probe is None
+        or execution_receipt is None
         or not reproduction_is_backed
         or not confirmation["rival_hypotheses_ruled_out"]
     ):

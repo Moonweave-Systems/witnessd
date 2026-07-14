@@ -184,6 +184,7 @@ def _agent_trace_decision(
 ) -> dict[str, Any]:
     from witnessd.advisory_provenance import (
         TRACE_RECEIPT,
+        load_trace_execution_subject,
         load_trace_reproduction_subject,
     )
 
@@ -290,6 +291,15 @@ def _agent_trace_decision(
     observed_reproduction["receipt_path"] = TRACE_RECEIPT
     observed_reproduction["receipt_sha256"] = actual_receipt_sha256
     if claimed_tier == "confirmed":
+        execution_receipt = load_trace_execution_subject(repo)
+        if execution_receipt is None:
+            raise OrroAdvisoryError(
+                ERR_ORRO_TRACE_CONFIRMED_UNBACKED,
+                "confirmed trace requires a real failing command and transcript",
+            )
+        observed_reproduction["execution_receipt_sha256"] = canonical_hash(
+            execution_receipt
+        )
         _gate_agent_confirmed_trace(
             symptom,
             hypotheses=hypotheses,
@@ -297,7 +307,7 @@ def _agent_trace_decision(
             confirmation=decision["confirmation"],
             root_cause=root_cause,
             reproduction=observed_reproduction,
-            receipt=sealed_receipt,
+            receipt=execution_receipt,
         )
 
     payload = copy.deepcopy(decision)
@@ -366,16 +376,28 @@ def _gate_agent_confirmed_trace(
 
     hypothesis = hypotheses[hypothesis_index]
     probe = hypothesis["discriminating_probe"]
-    output = receipt.get("output")
+    command = receipt.get("command")
+    exit_code = receipt.get("exit_code")
+    output = receipt.get("transcript")
+    transcript_sha256 = receipt.get("transcript_sha256")
     if (
         reproduction.get("red_observed") is not True
+        or not isinstance(command, str)
+        or not command.strip()
+        or not isinstance(exit_code, int)
+        or isinstance(exit_code, bool)
+        or exit_code == 0
         or not isinstance(output, str)
+        or not output
+        or not isinstance(transcript_sha256, str)
+        or transcript_sha256
+        != hashlib.sha256(output.encode("utf-8")).hexdigest()
         or symptom not in output
         or probe not in output
     ):
         raise OrroAdvisoryError(
             ERR_ORRO_TRACE_CONFIRMED_UNBACKED,
-            "confirmed trace requires a symptom-bound red receipt containing the selected discriminating probe",
+            "confirmed trace requires a symptom-bound executed-red receipt containing the selected discriminating probe",
         )
 
     gate_hypotheses = [

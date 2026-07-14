@@ -30,7 +30,7 @@ public commands:
   proofrun     evidence-backed execution through witnessd
   proofcheck   offline evidence verification delegated to Depone
   advisory-provenance-check
-               offline Depone v108 re-derivation of sealed advisory provenance
+               offline Depone v110 re-derivation of sealed advisory provenance
   handoff      maintainer review package gated by proofcheck-verdict.json
   next         non-executing continuation gate over persisted run artifacts
   report       human-facing summary of observed ORRO artifacts and next action

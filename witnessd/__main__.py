@@ -3489,7 +3489,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     advisory_provenance_check = sub.add_parser(
         "advisory-provenance-check",
-        help="offline Depone v108 check for sealed advisory provenance only",
+        help="offline Depone v110 check for sealed advisory provenance only",
     )
     advisory_provenance_check.add_argument("evidence_dir")
     advisory_provenance_check.add_argument("--home", required=True)
