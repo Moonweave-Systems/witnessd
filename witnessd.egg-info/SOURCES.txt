@@ -65,6 +65,7 @@ witnessd/team_ledger.py
 witnessd/team_shell_lane_launch.py
 witnessd/team_worktree_prep.py
 witnessd/tool_declaration.py
+witnessd/trust_anchor.py
 witnessd/worktree.py
 witnessd/write_scope_declaration.py
 witnessd.egg-info/PKG-INFO

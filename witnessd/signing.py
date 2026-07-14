@@ -4,8 +4,10 @@ witnessd signs DSSE envelopes with an operator-held Ed25519 key so Depone's
 `sign.verify_dsse_envelope` re-derives the signature from the emitted bytes.
 The PAE encoding, openssl invocation, and signature-record shape mirror Depone's
 `sign.sign_dsse_envelope` exactly — any divergence would make Depone reject the
-envelope. Trust is rooted in the distributed public key (operator key, not
-keyless Fulcio identity, not Rekor-logged).
+envelope. The verifier key's provenance is classified separately: the default
+key minted by this runtime is self-signed, while an independently controlled
+operator key must be supplied externally. Keyless Fulcio/Rekor identity remains
+unimplemented.
 
 Runtime is stdlib-only; the crypto is shelled out to `openssl`.
 """

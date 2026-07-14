@@ -30,6 +30,7 @@ from pathlib import Path
 
 from witnessd.observer import ObserverSeparationError, assert_separated
 from witnessd.status import render_status
+from witnessd.trust_anchor import TrustAnchor
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
@@ -80,7 +81,17 @@ def _cmd_run(args: argparse.Namespace) -> int:
     keys_dir = args.keys_dir or (evidence_dir.rstrip(os.sep) + "-keys")
     keys_dir = os.path.abspath(keys_dir)
     os.makedirs(keys_dir, exist_ok=True)
+    keypair_preexisted = all(
+        os.path.isfile(os.path.join(keys_dir, name))
+        for name in ("operator-ed25519.pem", "operator-ed25519.pub.pem")
+    )
     private_key_path, public_key_path = gen_operator_keypair(keys_dir)
+    from witnessd.trust_anchor import resolve_trust_anchor
+
+    trust_anchor = resolve_trust_anchor(
+        runtime_public_key=Path(public_key_path),
+        runtime_generated=not keypair_preexisted,
+    )
 
     allowed_touched_files = list(args.allow or [])
     commands = [list(args.command)]
@@ -123,8 +134,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         f"({render_status(pending=pending, verdict=None)})"
     )
     print(f"evidence_dir: {evidence_dir}")
-    print(f"assurance (candidate, unverified): {result['assurance']}")
-    print(f"trusted-observer public key (out-of-band): {result['public_key_path']}")
+    _print_trust_anchor_summary(trust_anchor, candidate_assurance=result["assurance"])
     return 0
 
 
@@ -147,6 +157,7 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     )
     from witnessd.planner import dispatch, seal_plan
     from witnessd.signing import gen_operator_keypair
+    from witnessd.trust_anchor import resolve_trust_anchor
 
     repo = Path(args.repo or ".").resolve(strict=False)
     home = Path(
@@ -277,7 +288,16 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     keys_dir = home / "keys"
     keys_dir.mkdir(parents=True, exist_ok=True)
     os.chmod(keys_dir, 0o700)
+    keypair_preexisted = all(
+        (keys_dir / name).is_file()
+        for name in ("operator-ed25519.pem", "operator-ed25519.pub.pem")
+    )
     private_key_path, public_key_path = gen_operator_keypair(str(keys_dir))
+    trust_anchor = resolve_trust_anchor(
+        home=home,
+        runtime_public_key=Path(public_key_path),
+        runtime_generated=not keypair_preexisted,
+    )
     lane_specs = (
         _role_lane_plan_team_specs(role_lane_plan, args)
         if role_lane_plan is not None
@@ -307,6 +327,7 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
             home=home,
             ledger_path=out_dir / "team-ledger.json",
             verdict_path=verdict_path,
+            trusted_observer_public_key_file=trust_anchor.public_key_path,
         )
     except ProvisionError as exc:
         print(exc.code, file=sys.stderr)
@@ -321,6 +342,8 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
         "sealed_plan": str(sealed_path),
         "team_ledger": str(out_dir / "team-ledger.json"),
         "team_ledger_verdict": str(verdict_path),
+        "trust_anchor": trust_anchor.trust_anchor,
+        "independent_trust_anchor": trust_anchor.independent,
     }
     if reference_warning is not None:
         payload.update(_reference_adapter_markers(reference_warning))
@@ -844,9 +867,15 @@ def _cmd_verify(args: argparse.Namespace) -> int:
         ).resolve(strict=False)
         ledger_path = run_dir / "team-ledger.json"
         verdict_path = run_dir / "team-ledger-verdict.json"
+        from witnessd.trust_anchor import resolve_trust_anchor
+
+        trust_anchor = resolve_trust_anchor(home=home)
         try:
             verdict = run_depone_team_ledger(
-                home=home, ledger_path=ledger_path, verdict_path=verdict_path
+                home=home,
+                ledger_path=ledger_path,
+                verdict_path=verdict_path,
+                trusted_observer_public_key_file=trust_anchor.public_key_path,
             )
         except ProvisionError as exc:
             print(exc.code, file=sys.stderr)
@@ -855,6 +884,8 @@ def _cmd_verify(args: argparse.Namespace) -> int:
             "decision": verdict["decision"],
             "team_ledger": str(ledger_path),
             "team_ledger_verdict": str(verdict_path),
+            "trust_anchor": trust_anchor.trust_anchor,
+            "independent_trust_anchor": trust_anchor.independent,
         }
         print(json.dumps(payload, sort_keys=True))
         return 0 if verdict["decision"] == "pass" else 1
@@ -1007,6 +1038,21 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         )
         return 2
 
+    from witnessd.trust_anchor import resolve_trust_anchor
+
+    default_public_key = (
+        home / "keys" / "operator-ed25519.pub.pem"
+        if home is not None
+        else Path(f"{evidence_dir}-keys") / "operator-ed25519.pub.pem"
+    )
+    trust_anchor = resolve_trust_anchor(
+        home=home,
+        runtime_public_key=default_public_key,
+    )
+    env["DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"] = str(
+        trust_anchor.public_key_path
+    )
+
     out_path = Path(args.out).resolve(strict=False) if args.out else None
     command = ["proofcheck", "--evidence-dir", str(evidence_dir)]
     if out_path is not None:
@@ -1019,20 +1065,25 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
     workflow_plan_ref = workflow_plan_binding_ref(evidence_dir)
     role_lane_plan_ref = role_lane_plan_binding_ref(evidence_dir)
     workflow_role_dispatch = workflow_role_dispatch_ref(evidence_dir)
-    if code == 0 and payload.get("decision") == "pass" and out_path is not None:
+    if out_path is not None and (
+        out_path.is_file() or (code == 0 and payload.get("decision") == "pass")
+    ):
         try:
             verdict_payload = json.loads(out_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             verdict_payload = None
             binding_error = str(exc)
         if isinstance(verdict_payload, dict):
-            verdict_payload["orro_binding"] = binding
-            if workflow_plan_ref is not None:
-                verdict_payload["workflow_plan"] = workflow_plan_ref
-            if role_lane_plan_ref is not None:
-                verdict_payload["role_lane_plan"] = role_lane_plan_ref
-            if workflow_role_dispatch is not None:
-                verdict_payload["workflow_role_dispatch"] = workflow_role_dispatch
+            verdict_payload["trust_anchor"] = trust_anchor.trust_anchor
+            verdict_payload["independent_trust_anchor"] = trust_anchor.independent
+            if code == 0 and payload.get("decision") == "pass":
+                verdict_payload["orro_binding"] = binding
+                if workflow_plan_ref is not None:
+                    verdict_payload["workflow_plan"] = workflow_plan_ref
+                if role_lane_plan_ref is not None:
+                    verdict_payload["role_lane_plan"] = role_lane_plan_ref
+                if workflow_role_dispatch is not None:
+                    verdict_payload["workflow_role_dispatch"] = workflow_role_dispatch
             try:
                 out_path.write_text(
                     json.dumps(verdict_payload, indent=2, sort_keys=True) + "\n",
@@ -1058,6 +1109,8 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         "command": "proofcheck",
         "verifier_command": payload.get("verifier_command", "proofcheck"),
         "decision": payload.get("decision", "blocked"),
+        "trust_anchor": trust_anchor.trust_anchor,
+        "independent_trust_anchor": trust_anchor.independent,
         "evidence_dir": str(evidence_dir),
         **(
             {"orro_binding": binding}
@@ -1111,15 +1164,22 @@ def _cmd_advisory_provenance_check(args: argparse.Namespace) -> int:
             message="Depone verifier readiness is blocked",
         )
         return 2
-    public_key = home / "keys" / "operator-ed25519.pub.pem"
-    if not public_key.is_file():
+    from witnessd.trust_anchor import resolve_trust_anchor
+
+    trust_anchor = resolve_trust_anchor(home=home)
+    if not trust_anchor.public_key_path.is_file():
         _emit_orro_error(
             args,
             code="ERR_ADVISORY_PROVENANCE_PUBLIC_KEY_MISSING",
-            message="operator public key is required outside the advisory artifact directory",
+            message=(
+                "trusted public key is required outside the advisory artifact "
+                "directory"
+            ),
         )
         return 2
-    env["DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"] = str(public_key)
+    env["DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"] = str(
+        trust_anchor.public_key_path
+    )
     completed = subprocess.run(
         [
             sys.executable,
@@ -1133,7 +1193,14 @@ def _cmd_advisory_provenance_check(args: argparse.Namespace) -> int:
         env=env,
     )
     if completed.stdout.strip():
-        print(completed.stdout.strip())
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            print(completed.stdout.strip())
+        else:
+            payload["trust_anchor"] = trust_anchor.trust_anchor
+            payload["independent_trust_anchor"] = trust_anchor.independent
+            print(json.dumps(payload, sort_keys=True))
     else:
         _emit_orro_error(
             args,
@@ -3087,7 +3154,17 @@ def _cmd_a2_observer_run(args: argparse.Namespace) -> int:
     observer_dir = os.path.abspath(args.observer_dir)
     keys_dir = os.path.abspath(args.keys_dir or (evidence_dir.rstrip(os.sep) + "-keys"))
     os.makedirs(keys_dir, exist_ok=True)
+    keypair_preexisted = all(
+        os.path.isfile(os.path.join(keys_dir, name))
+        for name in ("operator-ed25519.pem", "operator-ed25519.pub.pem")
+    )
     private_key_path, public_key_path = gen_operator_keypair(keys_dir)
+    from witnessd.trust_anchor import resolve_trust_anchor
+
+    trust_anchor = resolve_trust_anchor(
+        runtime_public_key=Path(public_key_path),
+        runtime_generated=not keypair_preexisted,
+    )
     runner_uid = args.runner_uid
     if runner_uid is None:
         runner_uid = uid_for_user(args.runner_user)
@@ -3112,9 +3189,21 @@ def _cmd_a2_observer_run(args: argparse.Namespace) -> int:
         f"({render_status(pending=pending, verdict=None)})"
     )
     print(f"evidence_dir: {evidence_dir}")
-    print(f"assurance (candidate, unverified): {result['assurance']}")
-    print(f"trusted-observer public key (out-of-band): {result['public_key_path']}")
+    _print_trust_anchor_summary(trust_anchor, candidate_assurance=result["assurance"])
     return 0
+
+
+def _print_trust_anchor_summary(
+    trust_anchor: TrustAnchor, *, candidate_assurance: str
+) -> None:
+    print(f"trust_anchor: {trust_anchor.trust_anchor}")
+    print(f"operator public key: {trust_anchor.public_key_path}")
+    if trust_anchor.independent:
+        print(f"assurance (candidate, unverified): {candidate_assurance}")
+        print("independent trust anchor: operator-provided")
+    else:
+        print("assurance claim: unavailable without an external operator key")
+        print("independent trust anchor: false")
 
 
 def _lane_packet_to_run_team_spec(
@@ -3437,7 +3526,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     a2 = sub.add_parser(
         "a2-observer-run",
-        help="run one observer-launched shell lane for W12 real A2 evidence",
+        help=(
+            "run one observer-launched shell lane; A2 independence additionally "
+            "requires an external operator key and real observer/runner separation"
+        ),
     )
     a2.add_argument("--runner-sandbox", required=True)
     a2.add_argument("--out", required=True, help="observer evidence directory")
