@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import pathlib
@@ -12,6 +13,7 @@ from depone.agent_fabric.paired_run import validate_runner_receipt
 from witnessd.adapters.claude import (
     ClaudeAdapterError,
     _build_claude_tool_decision_receipts,
+    _claude_pep_args,
     run_claude_lane,
 )
 from witnessd.adapters.opencode import OpenCodeAdapterError, run_opencode_lane
@@ -63,6 +65,32 @@ def _fake_claude_model_probe(directory: str, *, reject_model: str | None = None)
     )
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
     return str(path)
+
+
+def _execute_pep(
+    task_dir: pathlib.Path,
+    tool_name: str,
+    *,
+    allow: list[str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    settings_path = task_dir / "claude-settings.json"
+    if not settings_path.exists():
+        _claude_pep_args(
+            tools={"mcp": [], "allow": list(allow or [])},
+            task_dir=task_dir,
+            role_id="runner",
+            role_capability="execute",
+            lane_id="execute-1",
+        )
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    return subprocess.run(
+        shlex.split(command),
+        input=json.dumps({"tool_name": tool_name}),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
 
 class TestClaudeOpenCodeAdapter(unittest.TestCase):
@@ -185,6 +213,11 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
             allowed_tools_arg = res.invocation[
                 res.invocation.index("--allowedTools") + 1
             ]
+            self.assertIn("Edit", allowed_tools_arg)
+            self.assertIn("Write", allowed_tools_arg)
+            self.assertIn("Bash", allowed_tools_arg)
+            self.assertNotIn("WebFetch", allowed_tools_arg)
+            self.assertNotIn("WebSearch", allowed_tools_arg)
             self.assertIn("mcp__allowed__allowed_echo", allowed_tools_arg)
             self.assertIn("mcp__allowed__.*", allowed_tools_arg)
             generated = pathlib.Path(
@@ -193,6 +226,133 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
             payload = json.loads(generated.read_text(encoding="utf-8"))
             self.assertEqual(list(payload["mcpServers"]), ["allowed"])
             self.assertEqual(res.tool_declaration["adapter"], "claude")
+
+    def test_claude_execute_pep_denies_ungranted_network_builtin_and_receipts_it(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            task_dir = pathlib.Path(temporary)
+            denied = _execute_pep(task_dir, "WebFetch")
+
+            self.assertEqual(denied.returncode, 0, denied.stderr)
+            self.assertTrue(denied.stdout, "ungranted WebFetch must be denied")
+            payload = json.loads(denied.stdout)
+            self.assertEqual(
+                payload["hookSpecificOutput"]["permissionDecision"], "deny"
+            )
+            allowed = _execute_pep(task_dir, "Edit")
+            self.assertEqual(allowed.returncode, 0, allowed.stderr)
+            self.assertEqual(allowed.stdout, "")
+            receipts = _build_claude_tool_decision_receipts(
+                tools={"mcp": [], "allow": []},
+                task_dir=task_dir,
+                role_id="runner",
+                role_capability="execute",
+                lane_id="execute-1",
+                observed_tool_uses=[],
+            )
+            self.assertEqual(
+                [
+                    (
+                        item["canonical_tool_name"],
+                        item["decision"],
+                        item["reason_code"],
+                    )
+                    for item in receipts["all_tool_decisions"]
+                ],
+                [
+                    (
+                        "WebFetch",
+                        "deny",
+                        "ERR_ROLE_CAPABILITY_BUILTIN_TOOL_NOT_GRANTED",
+                    ),
+                    ("Edit", "allow", "ROLE_CAPABILITY_BUILTIN_TOOL_GRANTED"),
+                ],
+            )
+            self.assertEqual(receipts["decisions"], [])
+            self.assertIsNone(
+                receipts["all_tool_decisions"][0]["previous_decision_sha256"]
+            )
+            expected_previous = hashlib.sha256(
+                json.dumps(
+                    receipts["all_tool_decisions"][0],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            self.assertEqual(
+                receipts["all_tool_decisions"][1]["previous_decision_sha256"],
+                expected_previous,
+            )
+
+    def test_claude_execute_pep_allows_default_file_and_build_builtins(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            task_dir = pathlib.Path(temporary)
+            for tool_name in (
+                "Read",
+                "Glob",
+                "Grep",
+                "Edit",
+                "Write",
+                "NotebookEdit",
+                "Bash",
+            ):
+                allowed = _execute_pep(task_dir, tool_name)
+                self.assertEqual(allowed.returncode, 0, allowed.stderr)
+                self.assertEqual(allowed.stdout, "", tool_name)
+
+            policy = json.loads(
+                (task_dir / "claude-tool-policy.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                policy["builtin_allow"],
+                ["Read", "Glob", "Grep", "Edit", "Write", "NotebookEdit", "Bash"],
+            )
+            settings = json.loads(
+                (task_dir / "claude-settings.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(settings["hooks"]["PreToolUse"][0]["matcher"], ".*")
+            decisions = [
+                json.loads(line)
+                for line in (task_dir / "tool-call-decisions.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+                if line.strip()
+            ]
+            self.assertEqual(
+                {item["reason_code"] for item in decisions},
+                {"ROLE_CAPABILITY_BUILTIN_TOOL_GRANTED"},
+            )
+
+    def test_claude_execute_pep_denies_unknown_builtin_with_empty_grant(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            denied = _execute_pep(pathlib.Path(temporary), "CustomEscape")
+
+            self.assertEqual(denied.returncode, 0, denied.stderr)
+            self.assertTrue(denied.stdout, "unknown built-in must be denied")
+            payload = json.loads(denied.stdout)
+            self.assertIn(
+                "ERR_ROLE_CAPABILITY_BUILTIN_TOOL_NOT_GRANTED",
+                payload["hookSpecificOutput"]["permissionDecisionReason"],
+            )
+
+    def test_claude_execute_pep_allows_explicit_network_builtin_grant(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            task_dir = pathlib.Path(temporary)
+            allowed = _execute_pep(task_dir, "WebSearch", allow=["WebSearch"])
+
+            self.assertEqual(allowed.returncode, 0, allowed.stderr)
+            self.assertEqual(allowed.stdout, "")
+            policy = json.loads(
+                (task_dir / "claude-tool-policy.json").read_text(encoding="utf-8")
+            )
+            self.assertIn("WebSearch", policy["builtin_allow"])
+            decision = json.loads(
+                (task_dir / "tool-call-decisions.jsonl").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                decision["reason_code"], "ROLE_CAPABILITY_BUILTIN_TOOL_GRANTED"
+            )
 
     def test_claude_tools_grant_installs_pretooluse_pep_advisory(self):
         with (
@@ -244,7 +404,7 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
                 res.invocation[res.invocation.index("--settings") + 1]
             )
             settings = json.loads(settings_path.read_text(encoding="utf-8"))
-            self.assertEqual(settings["hooks"]["PreToolUse"][0]["matcher"], "mcp__.*")
+            self.assertEqual(settings["hooks"]["PreToolUse"][0]["matcher"], ".*")
             hook_command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
             self.assertTrue(
                 hook_command.startswith("/usr/bin/python3 "),
@@ -308,7 +468,8 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
                 ],
             )
             self.assertEqual(
-                decisions[-1]["reason_code"], "CLAUDE_BUILTIN_TOOL_OUT_OF_SCOPE"
+                decisions[-1]["reason_code"],
+                "ROLE_CAPABILITY_BUILTIN_TOOL_GRANTED",
             )
             receipts = _build_claude_tool_decision_receipts(
                 tools={
@@ -339,6 +500,17 @@ class TestClaudeOpenCodeAdapter(unittest.TestCase):
             self.assertEqual(
                 [item["sequence"] for item in receipts["decisions"]],
                 [1, 2],
+            )
+            self.assertEqual(
+                [
+                    item["canonical_tool_name"]
+                    for item in receipts["all_tool_decisions"]
+                ],
+                [
+                    "mcp__neutral_probe__allowed_echo",
+                    "mcp__neutral_probe__neutral_check",
+                    "Read",
+                ],
             )
             self.assertEqual(
                 receipts["observed_mcp_tool_calls"][0]["canonical_tool_name"],

@@ -7,7 +7,10 @@ import tempfile
 import unittest
 
 from witnessd.adapters.base import AdapterResult
-from witnessd.adapters.claude import run_claude_critic_lane
+from witnessd.adapters.claude import (
+    CLAUDE_CRITIC_BUILTIN_TOOLS,
+    run_claude_critic_lane,
+)
 
 
 def _fake_claude_critic(
@@ -97,6 +100,7 @@ class ClaudeCriticTests(unittest.TestCase):
         return repo, result
 
     def test_critic_pep_denies_edits_and_write_capable_tools(self) -> None:
+        self.assertEqual(CLAUDE_CRITIC_BUILTIN_TOOLS, ("Read", "Glob", "Grep"))
         repo, result = self._run(observed_model="claude-sonnet-4-5")
 
         self.assertEqual(result.exit_code, 0)

@@ -42,6 +42,15 @@ class ClaudeAdapterError(AdapterExecutionError):
 
 
 CLAUDE_CRITIC_BUILTIN_TOOLS = ("Read", "Glob", "Grep")
+CLAUDE_EXECUTE_BUILTIN_TOOLS = (
+    "Read",
+    "Glob",
+    "Grep",
+    "Edit",
+    "Write",
+    "NotebookEdit",
+    "Bash",
+)
 
 
 class ClaudeCLIAdapter:
@@ -207,7 +216,12 @@ def run_claude_critic_lane(
         "-p",
         prompt,
         *(["--model", model] if model else []),
-        *_claude_tool_args(critic_tools, task_dir),
+        *_claude_tool_args(
+            critic_tools,
+            task_dir,
+            role_capability="review",
+            critic_only=True,
+        ),
         *_claude_pep_args(
             tools=critic_tools,
             task_dir=task_dir,
@@ -440,7 +454,11 @@ def run_claude_lane(
         "-p",
         prompt,
         *(["--model", model] if model else []),
-        *_claude_tool_args(tools, task_dir),
+        *_claude_tool_args(
+            tools,
+            task_dir,
+            role_capability=role_capability or "execute",
+        ),
         *_claude_pep_args(
             tools=tools,
             task_dir=task_dir,
@@ -588,7 +606,13 @@ def run_claude_lane(
     )
 
 
-def _claude_tool_args(tools: dict[str, Any] | None, task_dir: Path) -> list[str]:
+def _claude_tool_args(
+    tools: dict[str, Any] | None,
+    task_dir: Path,
+    *,
+    role_capability: str,
+    critic_only: bool = False,
+) -> list[str]:
     if tools is None:
         return []
     normalized = normalize_tool_grant(tools)
@@ -598,7 +622,14 @@ def _claude_tool_args(tools: dict[str, Any] | None, task_dir: Path) -> list[str]
         encoding="utf-8",
     )
     args = ["--mcp-config", str(config_path), "--strict-mcp-config"]
-    allowed_tools = _claude_allowed_tools_arg(normalized)
+    allowed_tools = _claude_allowed_tools_arg(
+        normalized,
+        builtin_allow=_claude_builtin_allow(
+            normalized,
+            role_capability=role_capability,
+            critic_only=critic_only,
+        ),
+    )
     if allowed_tools:
         args.extend(["--allowedTools", ",".join(allowed_tools)])
     else:
@@ -606,8 +637,12 @@ def _claude_tool_args(tools: dict[str, Any] | None, task_dir: Path) -> list[str]
     return args
 
 
-def _claude_allowed_tools_arg(normalized: dict[str, list[str]]) -> list[str]:
-    values: list[str] = []
+def _claude_allowed_tools_arg(
+    normalized: dict[str, list[str]],
+    *,
+    builtin_allow: list[str],
+) -> list[str]:
+    values = list(builtin_allow)
     for name in normalized["allow"]:
         if name not in values:
             values.append(name)
@@ -615,6 +650,25 @@ def _claude_allowed_tools_arg(normalized: dict[str, list[str]]) -> list[str]:
         pattern = f"mcp__{server_id}__.*"
         if pattern not in values:
             values.append(pattern)
+    return values
+
+
+def _claude_builtin_allow(
+    normalized: dict[str, list[str]],
+    *,
+    role_capability: str,
+    critic_only: bool,
+) -> list[str]:
+    if critic_only:
+        return list(CLAUDE_CRITIC_BUILTIN_TOOLS)
+    values = (
+        list(CLAUDE_EXECUTE_BUILTIN_TOOLS)
+        if role_capability == "execute"
+        else []
+    )
+    for name in normalized["allow"]:
+        if not name.startswith("mcp__") and name not in values:
+            values.append(name)
     return values
 
 
@@ -639,6 +693,11 @@ def _claude_pep_args(
     if tools is None:
         return []
     normalized = normalize_tool_grant(tools)
+    builtin_allow = _claude_builtin_allow(
+        normalized,
+        role_capability=role_capability,
+        critic_only=critic_only,
+    )
     paths = _claude_pep_paths(task_dir)
     policy = {
         "kind": "moonweave-claude-pretooluse-policy",
@@ -649,7 +708,7 @@ def _claude_pep_args(
         "capability": role_capability,
         "mcp": normalized["mcp"],
         "allow": normalized["allow"],
-        "builtin_allow": list(CLAUDE_CRITIC_BUILTIN_TOOLS) if critic_only else [],
+        "builtin_allow": builtin_allow,
         "critic_only": critic_only,
         "deny_by_default": True,
         "match": "exact",
@@ -672,7 +731,7 @@ def _claude_pep_args(
         "hooks": {
             "PreToolUse": [
                 {
-                    "matcher": ".*" if critic_only else "mcp__.*",
+                    "matcher": ".*",
                     "hooks": [{"type": "command", "command": command}],
                 }
             ]
@@ -747,8 +806,12 @@ def main() -> int:
         else:
             reason = "ERR_CLAUDE_CRITIC_TOOL_NOT_READ_ONLY"
     else:
-        allowed = True
-        reason = "CLAUDE_BUILTIN_TOOL_OUT_OF_SCOPE"
+        allowed = name in set(policy.get("builtin_allow", []))
+        reason = (
+            "ROLE_CAPABILITY_BUILTIN_TOOL_GRANTED"
+            if allowed
+            else "ERR_ROLE_CAPABILITY_BUILTIN_TOOL_NOT_GRANTED"
+        )
     decision = "allow" if allowed else "deny"
     sequence = _next_sequence(decisions_path)
     record = {
@@ -799,6 +862,11 @@ def _build_claude_tool_decision_advisory(
 ) -> dict[str, Any]:
     normalized = normalize_tool_grant(tools)
     paths = _claude_pep_paths(task_dir)
+    builtin_allow = _claude_builtin_allow(
+        normalized,
+        role_capability=role_capability,
+        critic_only=False,
+    )
     decisions = _read_jsonl_objects(paths["decisions"])
     return {
         "kind": "moonweave-tool-call-decision-advisory",
@@ -811,6 +879,7 @@ def _build_claude_tool_decision_advisory(
         "policy": {
             "mcp": normalized["mcp"],
             "allow": normalized["allow"],
+            "builtin_allow": builtin_allow,
             "deny_by_default": True,
             "match": "exact",
         },
@@ -867,32 +936,15 @@ def _build_claude_tool_decision_receipts(
     normalized = normalize_tool_grant(tools)
     paths = _claude_pep_paths(task_dir)
     source_decisions = _read_jsonl_objects(paths["decisions"])
-    decisions: list[dict[str, Any]] = []
-    previous_hash: str | None = None
+    all_tool_decisions = _linked_claude_decisions(source_decisions)
+    decisions = _linked_claude_decisions(
+        source_decisions,
+        mcp_only=True,
+    )
     decisions_by_name: dict[str, list[dict[str, Any]]] = {}
-    for source in source_decisions:
-        canonical_tool_name = source.get("canonical_tool_name")
-        if not isinstance(canonical_tool_name, str) or not canonical_tool_name.startswith(
-            "mcp__"
-        ):
-            continue
-        request_sha = source.get("canonical_request_sha256")
-        if not isinstance(request_sha, str):
-            request_sha = source.get("request_sha256")
-        if not isinstance(request_sha, str):
-            request_sha = hashlib.sha256(_canonical_json(source).encode("utf-8")).hexdigest()
-        receipt = {
-            "sequence": len(decisions) + 1,
-            "source_sequence": source.get("sequence"),
-            "canonical_tool_name": canonical_tool_name,
-            "canonical_request_sha256": request_sha,
-            "decision": source.get("decision"),
-            "reason_code": source.get("reason_code"),
-            "previous_decision_sha256": previous_hash,
-        }
-        decisions.append(receipt)
+    for receipt in decisions:
+        canonical_tool_name = receipt["canonical_tool_name"]
         decisions_by_name.setdefault(canonical_tool_name, []).append(receipt)
-        previous_hash = _canonical_decision_hash(receipt)
 
     observed_mcp_tool_calls: list[dict[str, Any]] = []
     for observed in observed_tool_uses:
@@ -919,19 +971,59 @@ def _build_claude_tool_decision_receipts(
         "lane_id": lane_id,
         "capability": role_capability,
         "decisions": decisions,
+        "all_tool_decisions": all_tool_decisions,
         "observed_mcp_tool_calls": observed_mcp_tool_calls,
         "policy_ref": {
             "mcp": normalized["mcp"],
             "allow": normalized["allow"],
+            "builtin_allow": _claude_builtin_allow(
+                normalized,
+                role_capability=role_capability,
+                critic_only=False,
+            ),
             "deny_by_default": True,
             "match": "exact",
         },
         "boundary": {
             "can_change_evidence_verdict": True,
-            "non_mcp_tools_out_of_scope": True,
+            "builtin_tools_in_scope": True,
+            "decisions_projection": "mcp-only-depone-v107",
+            "all_tool_decisions_scope": "mcp-and-builtin",
             "source_of_decision": "pretooluse-hook-log",
         },
     }
+
+
+def _linked_claude_decisions(
+    source_decisions: list[dict[str, Any]],
+    *,
+    mcp_only: bool = False,
+) -> list[dict[str, Any]]:
+    decisions: list[dict[str, Any]] = []
+    previous_hash: str | None = None
+    for source in source_decisions:
+        canonical_tool_name = source.get("canonical_tool_name")
+        if not isinstance(canonical_tool_name, str):
+            continue
+        if mcp_only and not canonical_tool_name.startswith("mcp__"):
+            continue
+        request_sha = source.get("canonical_request_sha256")
+        if not isinstance(request_sha, str):
+            request_sha = source.get("request_sha256")
+        if not isinstance(request_sha, str):
+            request_sha = hashlib.sha256(_canonical_json(source).encode("utf-8")).hexdigest()
+        receipt = {
+            "sequence": len(decisions) + 1,
+            "source_sequence": source.get("sequence"),
+            "canonical_tool_name": canonical_tool_name,
+            "canonical_request_sha256": request_sha,
+            "decision": source.get("decision"),
+            "reason_code": source.get("reason_code"),
+            "previous_decision_sha256": previous_hash,
+        }
+        decisions.append(receipt)
+        previous_hash = _canonical_decision_hash(receipt)
+    return decisions
 
 
 def _read_jsonl_objects(path: Path) -> list[dict[str, Any]]:
