@@ -751,6 +751,8 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
             self.assertEqual(
                 pass_payload["schema_version"], "v110.advisory_provenance"
             )
+            self.assertEqual(pass_payload["trust_anchor"], "self-signed")
+            self.assertFalse(pass_payload["independent_trust_anchor"])
             self.assertFalse(pass_payload["boundary"]["raises_assurance"])
             self.assertFalse(pass_payload["boundary"]["asserts_correctness"])
 

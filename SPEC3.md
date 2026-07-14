@@ -34,7 +34,7 @@ redefine witnessd runtime truth or Depone verifier truth.
 | `orro sketch` | advisory ideation | Frame, diverge, converge, resolve decision branches, and hand one direction to flowplan. |
 | `orro trace` | advisory root-cause investigation | Observe, reproduce/localize, rank hypotheses, and confirm root cause before fix planning. |
 | `flowplan` | plan-only alias | Build or validate a workflow plan, including rolepack/workflow profiles, without running workers. |
-| `proofrun` | precise run alias | Execute with observer-signed evidence. Kept for technical invocation accuracy. |
+| `proofrun` | precise run alias | Execute with operator-key-signed evidence. Observer-signed independence requires an external operator key and real observer/runner separation. |
 | `proofcheck` | verifier alias | Re-check existing evidence bytes offline. |
 | `orro handoff` | maintainer handoff | Bind code changes to an explicit passing proofcheck verdict for human review; not merge approval. |
 | `orro report` | human-facing summary | Compress observed ORRO artifacts into state, next action, reviewer focus, and trust boundaries. |
@@ -784,7 +784,8 @@ A2-isolated-observed
 Trust root:
 
 ```text
-operator-key
+operator-key/self-signed       # default runtime-generated key; no independence
+operator-key/operator-provided # external key; independence-eligible
 keyless-anchored        # future W20
 transparency-logged     # future W20+
 ```
@@ -792,9 +793,18 @@ transparency-logged     # future W20+
 Rules:
 
 - A1/A2 are never granted by witnessd alone.
+- A runtime-generated verifier key is `trust_anchor: "self-signed"`. It may
+  verify the signed bytes but cannot support independent, observer-signed, A1,
+  or A2 claims.
+- `trust_anchor: "operator-provided"` requires an external operator public key
+  supplied through `DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE`. This is necessary
+  but not sufficient for observer-signed/A2: the observer and runner must also
+  be genuinely separated and the evidence path observer-owned.
 - Operator-key DSSE is report-level provenance; it does not create A3.
 - Keyless/transparency anchoring is a future optional enrichment of already-valid
-  evidence, not a dependency of capture.
+  evidence, not a dependency of capture. The reserved Fulcio/Rekor profile
+  remains unimplemented and fails closed with
+  `ERR_WITNESSD_KEYLESS_LIVE_UNIMPLEMENTED`.
 - Depone must be able to verify persisted anchor bytes offline.
 - Skill text, MCP output, and session transcripts are not trust roots unless a
   verifier-recognized receipt binds them to evidence.

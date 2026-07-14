@@ -138,7 +138,11 @@ def validate_orro_setup_depone_pin(
 
 
 def run_depone_team_ledger(
-    *, home: Path, ledger_path: Path, verdict_path: Path
+    *,
+    home: Path,
+    ledger_path: Path,
+    verdict_path: Path,
+    trusted_observer_public_key_file: Path | None = None,
 ) -> dict[str, Any]:
     provision = validate_depone_pin(home)
     depone = provision["depone"]
@@ -150,6 +154,10 @@ def run_depone_team_ledger(
         if not current_pythonpath
         else f"{depone_root}{os.pathsep}{current_pythonpath}"
     )
+    if trusted_observer_public_key_file is not None:
+        env["DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"] = str(
+            trusted_observer_public_key_file
+        )
     completed = subprocess.run(
         [
             sys.executable,

@@ -1,7 +1,9 @@
 # Security Policy
 
 `witnessd` is the local execution runtime. It spawns workers, records what
-happened, and emits observer-signed evidence. It does not decide trust.
+happened, and emits operator-key-signed evidence. The default single-machine
+flow generates that key on the runtime and is therefore self-signed, not an
+independent observer anchor. It does not decide trust.
 
 ```text
 Depone verifies; witnessd executes; ORRO exposes the workflow.
@@ -80,8 +82,12 @@ it with sensitive values removed or replaced.
 
 ## witnessd Boundary
 
-witnessd executes lanes and emits observer-signed evidence. It does not
-itself grant final trust.
+witnessd executes lanes and emits operator-key-signed evidence. It does not
+itself grant final trust. The default runtime-generated key is labeled
+`trust_anchor: "self-signed"`; it must not support an independence or A1/A2
+claim. `trust_anchor: "operator-provided"` requires an external public key
+selected through `DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE` and real
+observer/runner separation must still hold for observer-signed/A2 language.
 
 - witnessd does not verify evidence; Depone re-derives verdicts offline from
   the persisted bytes.
@@ -96,8 +102,9 @@ itself grant final trust.
 Known, documented ceiling (not a bug to report): witnessd + Depone currently
 align to OVERT 1.1 at **AAL-3** (operator-controlled, automated monitoring).
 **AAL-4** — a transparency log and an independent, operator-decoupled notary —
-is roadmap, not implemented. Keyless signing support exists for readiness
-checks only; it is not a live trust anchor yet. Reports that these are
+is roadmap, not implemented. The reserved Fulcio/Rekor keyless profile fails
+closed with `ERR_WITNESSD_KEYLESS_LIVE_UNIMPLEMENTED`; it is not a live trust
+anchor yet. Reports that these are
 "missing" restate a known limit rather than disclose a new one, unless you
 have found a way the current AAL-3 claim itself is false.
 

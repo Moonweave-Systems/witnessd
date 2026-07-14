@@ -8,10 +8,12 @@ one path: `_emit_artifact`, which appends a hash-chained runlog event
 observer code have no other route to the evidence dir, so run-state is always a
 projection of the signed event stream, never a side-written file.
 
-The trusted-observer public key is the trust root and is kept OUT of the
-evidence dir (the runner-reachable surface); the emitter fails closed if asked
-to root trust inside it, and exports the out-of-band location via
-`DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE` exactly as Depone reads it.
+The signing public key is kept OUT of the evidence dir (the runner-reachable
+surface); the emitter fails closed if asked to place it inside that directory.
+Verifier entrypoints classify the selected key separately, because a key that
+this runtime generated is self-signed rather than an independent trust root.
+The emitter may provide that key as a same-process verification default, but it
+does not overwrite an operator-provided external key.
 
 Runtime is stdlib-only; the provenance record is produced by witnessd's local
 emit-side copy of Depone's provenance contract.
@@ -23,6 +25,7 @@ import hashlib
 import json
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from witnessd.canonical import canonical_hash
@@ -49,6 +52,10 @@ from witnessd.substrate import (
     build_bundle,
     build_evidence_contract,
     build_otel_spans,
+)
+from witnessd.trust_anchor import (
+    is_runtime_default_public_key,
+    record_runtime_default_public_key,
 )
 
 TRUSTED_PUBLIC_KEY_ENV = "DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"
@@ -134,7 +141,7 @@ def emit_lane_evidence(
     """Assemble and emit a lane's full evidence set through the runlog SoT.
 
     Returns the built artifacts plus the ordered runlog events. Fails closed —
-    writing nothing — if `public_key_path` (the trust root) resolves inside
+    writing nothing — if `public_key_path` (the signing public key) resolves inside
     `evidence_dir`.
     """
     if _is_inside_or_equal(public_key_path, evidence_dir):
@@ -143,7 +150,17 @@ def emit_lane_evidence(
         key_id = derive_public_key_id(public_key_path)
 
     os.makedirs(evidence_dir, exist_ok=True)
-    os.environ[TRUSTED_PUBLIC_KEY_ENV] = os.path.abspath(public_key_path)
+    # Keep legacy same-process validation working without overwriting a caller's
+    # external selection. Verifier entrypoints classify this runtime default as
+    # self-signed; the fingerprint prevents path reuse from masking replacement.
+    runtime_public_key = os.path.abspath(public_key_path)
+    configured_public_key = os.environ.get(TRUSTED_PUBLIC_KEY_ENV)
+    if (
+        configured_public_key is None
+        or is_runtime_default_public_key(Path(configured_public_key))
+    ):
+        os.environ[TRUSTED_PUBLIC_KEY_ENV] = runtime_public_key
+        record_runtime_default_public_key(Path(runtime_public_key))
     if run_intent_path is None:
         intent = run_intent or build_run_intent(
             run_id=task_id,

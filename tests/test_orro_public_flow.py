@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,10 @@ from unittest.mock import patch
 from witnessd.__main__ import main
 from witnessd.orro_report import build_report
 from witnessd.orro_team_surface import apply_task_prompt_to_role_lane_plan
+from witnessd.signing import gen_operator_keypair
+
+
+TRUSTED_OBSERVER_PUBLIC_KEY_ENV = "DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"
 
 
 def _seed_repo(repo: Path) -> None:
@@ -171,8 +176,17 @@ class OrroPublicFlowTests(unittest.TestCase):
         orro_alias: bool = False,
         workflow_plan: Path | None = None,
         role_lane_plan: Path | None = None,
+        external_keys_dir: Path | None = None,
     ) -> tuple[Path, Path, dict]:
         repo, home = self._init_home(root)
+        trusted_public_key: Path | None = None
+        if external_keys_dir is not None:
+            external_keys_dir.mkdir()
+            private_key, public_key = gen_operator_keypair(str(external_keys_dir))
+            home_keys = home / "keys"
+            shutil.copyfile(private_key, home_keys / "operator-ed25519.pem")
+            shutil.copyfile(public_key, home_keys / "operator-ed25519.pub.pem")
+            trusted_public_key = Path(public_key)
         stdout = io.StringIO()
         stderr = io.StringIO()
         command = ["orro", "proofrun"] if orro_alias else ["proofrun"]
@@ -192,19 +206,54 @@ class OrroPublicFlowTests(unittest.TestCase):
             args.extend(["--role-lane-plan", str(role_lane_plan)])
         if role_lane_plan is None:
             args.append("--allow-reference-adapter")
-        with redirect_stdout(stdout), redirect_stderr(stderr):
+        with (
+            patch.dict(os.environ, {}, clear=False),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            if trusted_public_key is None:
+                os.environ.pop(TRUSTED_OBSERVER_PUBLIC_KEY_ENV, None)
+            else:
+                os.environ[TRUSTED_OBSERVER_PUBLIC_KEY_ENV] = str(trusted_public_key)
             code = main(args)
         self.assertEqual(code, 0, f"stdout={stdout.getvalue()}\nstderr={stderr.getvalue()}")
         payload = json.loads(stdout.getvalue())
         return home, Path(payload["run_dir"]), payload
 
-    def _proofcheck_out(self, home: Path, run_dir: Path) -> dict:
+    def _proofcheck_out(
+        self,
+        home: Path,
+        run_dir: Path,
+        *,
+        trusted_public_key: Path | None = None,
+    ) -> dict:
         out = run_dir / "proofcheck-verdict.json"
         stdout = io.StringIO()
-        with redirect_stdout(stdout):
+        with patch.dict(os.environ, {}, clear=False), redirect_stdout(stdout):
+            if trusted_public_key is None:
+                os.environ.pop(TRUSTED_OBSERVER_PUBLIC_KEY_ENV, None)
+            else:
+                os.environ[TRUSTED_OBSERVER_PUBLIC_KEY_ENV] = str(trusted_public_key)
             code = main(["proofcheck", str(run_dir), "--home", str(home), "--out", str(out)])
         self.assertEqual(code, 0, stdout.getvalue())
         self.assertTrue(out.is_file())
+        return json.loads(stdout.getvalue())
+
+    def _verify_out(
+        self,
+        home: Path,
+        run_dir: Path,
+        *,
+        trusted_public_key: Path | None = None,
+    ) -> dict:
+        stdout = io.StringIO()
+        with patch.dict(os.environ, {}, clear=False), redirect_stdout(stdout):
+            if trusted_public_key is None:
+                os.environ.pop(TRUSTED_OBSERVER_PUBLIC_KEY_ENV, None)
+            else:
+                os.environ[TRUSTED_OBSERVER_PUBLIC_KEY_ENV] = str(trusted_public_key)
+            code = main(["verify", str(run_dir), "--home", str(home)])
+        self.assertEqual(code, 0, stdout.getvalue())
         return json.loads(stdout.getvalue())
 
     def _handoff_out(self, run_dir: Path) -> dict:
@@ -244,13 +293,71 @@ class OrroPublicFlowTests(unittest.TestCase):
 
     def test_proofrun_alias_reuses_run_surface_without_final_trust_claim(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            _home, run_dir, payload = self._proofrun(Path(tmp))
+            home, run_dir, payload = self._proofrun(Path(tmp))
 
             self.assertEqual(payload["decision"], "pass")
+            self.assertEqual(payload["trust_anchor"], "self-signed")
+            self.assertFalse(payload["independent_trust_anchor"])
             self.assertTrue((run_dir / "team-ledger.json").is_file())
             self.assertTrue((run_dir / "team-ledger-verdict.json").is_file())
             self.assertNotIn("final_trust", payload)
             self.assertNotIn("raises_assurance", payload)
+            self.assertNotIn("assurance", payload)
+
+            verify = self._verify_out(home, run_dir)
+            self.assertEqual(verify["decision"], "pass")
+            self.assertEqual(verify["trust_anchor"], "self-signed")
+            self.assertFalse(verify["independent_trust_anchor"])
+            self.assertNotIn("assurance", verify)
+
+            proofcheck = self._proofcheck_out(home, run_dir)
+            self.assertEqual(proofcheck["decision"], "pass")
+            self.assertEqual(proofcheck["trust_anchor"], "self-signed")
+            self.assertFalse(proofcheck["independent_trust_anchor"])
+            self.assertNotIn("assurance", proofcheck)
+            verdict = json.loads(
+                (run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(verdict["trust_anchor"], "self-signed")
+            self.assertFalse(verdict["independent_trust_anchor"])
+            self.assertNotIn("assurance", verdict)
+
+    def test_external_operator_key_unlocks_independent_trust_anchor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            external_keys = root / "operator-controlled-keys"
+            home, run_dir, payload = self._proofrun(
+                root,
+                external_keys_dir=external_keys,
+            )
+            trusted_public_key = external_keys / "operator-ed25519.pub.pem"
+
+            self.assertEqual(payload["decision"], "pass")
+            self.assertEqual(payload["trust_anchor"], "operator-provided")
+            self.assertTrue(payload["independent_trust_anchor"])
+
+            verify = self._verify_out(
+                home,
+                run_dir,
+                trusted_public_key=trusted_public_key,
+            )
+            self.assertEqual(verify["decision"], "pass")
+            self.assertEqual(verify["trust_anchor"], "operator-provided")
+            self.assertTrue(verify["independent_trust_anchor"])
+
+            proofcheck = self._proofcheck_out(
+                home,
+                run_dir,
+                trusted_public_key=trusted_public_key,
+            )
+            self.assertEqual(proofcheck["decision"], "pass")
+            self.assertEqual(proofcheck["trust_anchor"], "operator-provided")
+            self.assertTrue(proofcheck["independent_trust_anchor"])
+            verdict = json.loads(
+                (run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(verdict["trust_anchor"], "operator-provided")
+            self.assertTrue(verdict["independent_trust_anchor"])
 
     def test_orro_proofrun_normalizes_to_proofrun(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1966,6 +2073,37 @@ class OrroPublicFlowTests(unittest.TestCase):
                         "ERR_ORRO_PROOFCHECK_VERDICT_BINDING_FAILED",
                     )
                     self.assertNotIn("orro_binding", payload)
+
+    def test_proofcheck_non_pass_verdict_persists_trust_anchor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence_dir = Path(tmp) / "evidence"
+            evidence_dir.mkdir()
+            out = evidence_dir / "proofcheck-verdict.json"
+
+            def fake_depone(
+                _command: list[str], *, env: dict[str, str]
+            ) -> tuple[int, dict]:
+                verdict = {
+                    "decision": "fail",
+                    "verifier_command": "proofcheck",
+                }
+                out.write_text(json.dumps(verdict) + "\n", encoding="utf-8")
+                return 1, {**verdict, "out": str(out)}
+
+            with patch("witnessd.__main__._run_depone_json", side_effect=fake_depone):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    code = main(
+                        ["proofcheck", str(evidence_dir), "--out", str(out)]
+                    )
+
+            self.assertEqual(code, 1)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["trust_anchor"], "self-signed")
+            verdict = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(verdict["trust_anchor"], "self-signed")
+            self.assertFalse(verdict["independent_trust_anchor"])
+            self.assertNotIn("orro_binding", verdict)
 
     def test_orro_proofcheck_blocks_scout_only_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
