@@ -261,12 +261,47 @@ def compile_role_lane_plan(
         "goal": workflow_plan["goal"],
         "execution_allowed": execution_allowed,
         "lanes": lanes,
+        **summarize_executable_lanes(lanes),
         "boundary": _role_lane_plan_boundary(),
     }
     required_axes = _required_role_capability_axes(profile, lanes)
     if required_axes:
         plan["required_role_capability_axes"] = required_axes
     return plan
+
+
+def summarize_executable_lanes(lanes: list[dict[str, Any]]) -> dict[str, Any]:
+    executable_lanes = [
+        lane
+        for lane in lanes
+        if lane.get("may_execute") is not False
+        and lane.get("phase", "proofrun") == "proofrun"
+    ]
+    adapters = {
+        str(adapter)
+        for lane in executable_lanes
+        if (
+            adapter := lane.get("adapter")
+            or lane.get("runner_adapter_kind")
+            or lane.get("team_adapter_kind")
+            or ("shell" if "commands" in lane else None)
+        )
+    }
+    models = {
+        str(model)
+        for lane in executable_lanes
+        if (model := lane.get("model")) is not None and str(model)
+    }
+    lane_count = len(executable_lanes)
+    distinct_adapter_count = len(adapters)
+    distinct_model_count = len(models)
+    return {
+        "lane_count": lane_count,
+        "distinct_adapter_count": distinct_adapter_count,
+        "distinct_model_count": distinct_model_count,
+        "multi_model_execution": lane_count > 1
+        and (distinct_adapter_count > 1 or distinct_model_count > 1),
+    }
 
 
 def _required_role_capability_axes(
@@ -321,12 +356,14 @@ def role_lane_plan_file_ref(path: Path) -> dict[str, Any]:
             ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan must be a JSON object"
         )
     validate_role_lane_plan(payload)
+    execution_summary = summarize_executable_lanes(payload["lanes"])
     return {
         "path": str(path.resolve(strict=False)),
         "sha256": _hash_file(path),
         "workflow_plan_hash": payload["workflow_plan_hash"],
         "profile": payload["workflow_profile"],
         "goal": payload["goal"],
+        **execution_summary,
         "boundary": payload["boundary"],
     }
 
@@ -394,6 +431,22 @@ def validate_role_lane_plan(plan: dict[str, Any]) -> None:
     if not isinstance(lanes, list):
         raise OrroWorkflowError(
             ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan lanes must be a list"
+        )
+    summary_keys = {
+        "lane_count",
+        "distinct_adapter_count",
+        "distinct_model_count",
+        "multi_model_execution",
+    }
+    present_summary_keys = summary_keys.intersection(plan)
+    expected_summary = summarize_executable_lanes(lanes)
+    if present_summary_keys and (
+        present_summary_keys != summary_keys
+        or any(plan[key] != value for key, value in expected_summary.items())
+    ):
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+            "role-lane plan execution summary is invalid",
         )
     boundary = plan.get("boundary")
     if (

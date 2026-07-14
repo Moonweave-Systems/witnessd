@@ -714,6 +714,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
         OrroWorkflowError,
         compile_role_lane_plan,
         compile_workflow_plan,
+        summarize_executable_lanes,
         write_role_lane_plan,
     )
     from witnessd.planner import (
@@ -844,6 +845,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 1
         payload["role_lane_plan"] = role_lane_plan_ref
+        payload.update(summarize_executable_lanes(role_lane_plan["lanes"]))
     if getattr(args, "out", None):
         out_path = Path(args.out).resolve(strict=False)
         try:
@@ -2670,6 +2672,7 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
         ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT,
         OrroWorkflowError,
         assert_role_lane_prompts_explicit,
+        summarize_executable_lanes,
         validate_role_lane_plan,
     )
     from witnessd.role_capability import RolepackError, default_rolepack_for_profile
@@ -2805,6 +2808,11 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
             },
             code=2,
         )
+    execution_summary = summarize_executable_lanes(patched_role_lane_plan["lanes"])
+    single_lane_policy_selection = execution_summary["lane_count"] == 1 and any(
+        isinstance(lane, dict) and lane.get("model_source") == "model-policy"
+        for lane in patched_role_lane_plan["lanes"]
+    )
     reference_adapter_lanes = _team_go_reference_adapter_lanes(patched_role_lane_plan)
     reference_adapter = bool(reference_adapter_lanes)
     reference_warning = _team_go_reference_adapter_warning(reference_adapter_lanes)
@@ -2826,6 +2834,7 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
                 "not_real_ai_work": True,
                 "reference_adapter_lanes": reference_adapter_lanes,
                 "reference_adapter_warning": reference_warning,
+                **execution_summary,
                 "message": (
                     "shell reference adapter runner lane is not real AI work; "
                     "pass --allow-reference-adapter only for intentional script/test runs"
@@ -2899,6 +2908,7 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
                 "reference_adapter_lanes": reference_adapter_lanes,
                 "reference_adapter_warning": reference_warning,
                 "no_work_detected": no_work,
+                **execution_summary,
                 "message": (
                     "proofrun lane did not touch files; execution evidence is blocked"
                     if no_work
@@ -2948,6 +2958,7 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
             "reference_adapter_lanes": reference_adapter_lanes,
             "reference_adapter_warning": reference_warning,
             "no_work_detected": False,
+            **execution_summary,
             "message": (
                 (
                     "reference shell adapter run, proofcheck, and report completed; "
@@ -2955,7 +2966,11 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
                 )
                 if proofcheck_code == 0 and reference_adapter
                 else (
-                    "team run, proofcheck, and report completed"
+                    "single-lane policy-selected run, proofcheck, and report completed"
+                    if proofcheck_code == 0 and single_lane_policy_selection
+                    else "single-lane execution, proofcheck, and report completed"
+                    if proofcheck_code == 0 and execution_summary["lane_count"] == 1
+                    else "multi-lane run, proofcheck, and report completed"
                     if proofcheck_code == 0
                     else "proofcheck failed"
                 )
@@ -3110,7 +3125,8 @@ def _emit_team_go_result(
     if args.json:
         print(json.dumps(payload, sort_keys=True))
     else:
-        print(f"ORRO team go: {payload.get('status')} ({payload.get('stage')})")
+        surface = "ORRO run" if payload.get("lane_count") == 1 else "ORRO team go"
+        print(f"{surface}: {payload.get('status')} ({payload.get('stage')})")
         print(payload.get("message", ""))
         if payload.get("run_dir"):
             print(f"run_dir: {payload['run_dir']}")

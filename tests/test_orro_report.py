@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.__main__ import main
+from witnessd.orro_report import render_text_report
 from witnessd.orro_team_surface import apply_task_prompt_to_role_lane_plan
 
 
@@ -316,6 +317,10 @@ class OrroReportTests(unittest.TestCase):
             self.assertEqual(payload["workstyle"]["task_class"], "code-change")
             self.assertEqual(payload["auto"]["session"]["steps_executed"], 1)
             self.assertTrue(payload["execution"]["runner_roles"])
+            self.assertEqual(payload["execution"]["lane_count"], 1)
+            self.assertEqual(payload["execution"]["distinct_adapter_count"], 1)
+            self.assertEqual(payload["execution"]["distinct_model_count"], 0)
+            self.assertFalse(payload["execution"]["multi_model_execution"])
 
     def test_report_out_writes_same_json_and_text_mode_is_human_readable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -335,6 +340,71 @@ class OrroReportTests(unittest.TestCase):
             self.assertIn("State: needs-proofcheck", text)
             self.assertIn("Next:", text)
             self.assertIn("Human review:", text)
+
+    def test_single_lane_report_is_explicitly_not_multi_model_or_team_execution(
+        self,
+    ) -> None:
+        payload = {
+            "goal": "fix parser",
+            "summary": {
+                "state": "needs-proofcheck",
+                "recommended_next_action": "proofcheck",
+            },
+            "workflow": {"profile": "code-change"},
+            "execution": {
+                "proofrun_evidence_present": True,
+                "lane_count": 1,
+                "distinct_adapter_count": 1,
+                "distinct_model_count": 1,
+                "multi_model_execution": False,
+                "policy_selected": True,
+            },
+            "verification": {"proofcheck_verdict_present": False},
+            "handoff": {"handoff_present": False},
+            "human_review": {"focus": []},
+            "do_not_trust": ["role-lane plan alone"],
+        }
+
+        text = render_text_report(payload)
+        execution_line = next(
+            line for line in text.splitlines() if line.startswith("Execution:")
+        )
+
+        self.assertIn("single-lane policy selection", execution_line)
+        self.assertNotIn("team", execution_line.lower())
+        self.assertNotIn("multi-model", execution_line.lower())
+        self.assertNotIn("parallel", execution_line.lower())
+
+    def test_single_lane_manual_report_does_not_claim_policy_selection(self) -> None:
+        payload = {
+            "goal": "fix parser",
+            "summary": {
+                "state": "needs-proofcheck",
+                "recommended_next_action": "proofcheck",
+            },
+            "workflow": {"profile": "code-change"},
+            "execution": {
+                "proofrun_evidence_present": True,
+                "lane_count": 1,
+                "distinct_adapter_count": 1,
+                "distinct_model_count": 1,
+                "multi_model_execution": False,
+                "policy_selected": False,
+            },
+            "verification": {"proofcheck_verdict_present": False},
+            "handoff": {"handoff_present": False},
+            "human_review": {"focus": []},
+            "do_not_trust": ["role-lane plan alone"],
+        }
+
+        execution_line = next(
+            line
+            for line in render_text_report(payload).splitlines()
+            if line.startswith("Execution:")
+        )
+
+        self.assertIn("single-lane execution", execution_line)
+        self.assertNotIn("policy", execution_line.lower())
 
     def test_report_module_aliases_and_no_artifact_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
