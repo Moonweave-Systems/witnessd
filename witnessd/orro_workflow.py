@@ -253,7 +253,7 @@ def compile_role_lane_plan(
                 lanes.append(
                     _critic_lane_from_role(role, workflow_plan, tier, rolepack)
                 )
-    return {
+    plan = {
         "kind": ROLE_LANE_PLAN_KIND,
         "schema_version": ROLE_LANE_PLAN_SCHEMA_VERSION,
         "workflow_plan_hash": workflow_plan_hash(workflow_plan),
@@ -263,6 +263,39 @@ def compile_role_lane_plan(
         "lanes": lanes,
         "boundary": _role_lane_plan_boundary(),
     }
+    required_axes = _required_role_capability_axes(profile, lanes)
+    if required_axes:
+        plan["required_role_capability_axes"] = required_axes
+    return plan
+
+
+def _required_role_capability_axes(
+    profile: str, lanes: list[dict[str, Any]]
+) -> list[str]:
+    if profile != "code-change":
+        return []
+    write_scope_required = any(
+        lane.get("phase") == "proofrun"
+        and lane.get("may_execute") is True
+        and isinstance(lane.get("granted_write_scope"), list)
+        and bool(lane["granted_write_scope"])
+        for lane in lanes
+    )
+    tool_calls_required = any(
+        lane.get("phase") == "proofrun"
+        and lane.get("may_execute") is True
+        and lane.get("adapter") == "claude"
+        and isinstance(lane.get("granted_tools"), dict)
+        for lane in lanes
+    )
+    return [
+        axis
+        for axis, required in (
+            ("write_scope", write_scope_required),
+            ("tool_calls", tool_calls_required),
+        )
+        if required
+    ]
 
 
 def write_role_lane_plan(path: Path, role_lane_plan: dict[str, Any]) -> dict[str, Any]:
