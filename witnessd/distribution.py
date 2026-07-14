@@ -31,7 +31,7 @@ PROVISION_SCHEMA_VERSION = "0.1"
 ORRO_ENGINE_LOCK_KIND = "orro-engine-lock"
 ORRO_ENGINE_LOCK_SCHEMA_VERSION = "1.0"
 DEFAULT_DEPONE_REPOSITORY = "https://github.com/Moonweave-Systems/Depone.git"
-DEFAULT_DEPONE_REF = "25e0a6e4e005bb80ca8205ccee857f9c02babc86"
+DEFAULT_DEPONE_REF = "e1b020b8300c569e35f771c9f84f6998f99a86ce"
 
 
 class ProvisionError(Exception):
@@ -127,9 +127,7 @@ def validate_orro_setup_depone_pin(
     depone = provision["depone"]
     depone_root = Path(str(depone["root"])).resolve(strict=False)
     expected_ref = (
-        depone_ref
-        or os.environ.get("WITNESSD_DEPONE_REF")
-        or DEFAULT_DEPONE_REF
+        depone_ref or os.environ.get("WITNESSD_DEPONE_REF") or DEFAULT_DEPONE_REF
     )
     expected_commit = _git_commit_for_ref(depone_root, expected_ref)
     if str(depone["commit"]) != expected_commit:
@@ -332,13 +330,18 @@ def _provision_depone_checkout(config: InitConfig) -> Path:
         or DEFAULT_DEPONE_REPOSITORY
     )
     ref = (
-        config.depone_ref
-        or os.environ.get("WITNESSD_DEPONE_REF")
-        or DEFAULT_DEPONE_REF
+        config.depone_ref or os.environ.get("WITNESSD_DEPONE_REF") or DEFAULT_DEPONE_REF
     )
     if ref and re.fullmatch(r"[0-9a-f]{40}", ref):
         commands = (
-            ["git", "clone", "--no-checkout", "--filter=blob:none", repository, str(target)],
+            [
+                "git",
+                "clone",
+                "--no-checkout",
+                "--filter=blob:none",
+                repository,
+                str(target),
+            ],
             ["git", "-C", str(target), "fetch", "--depth=1", "origin", ref],
             ["git", "-C", str(target), "checkout", "--detach", "FETCH_HEAD"],
         )
@@ -467,4 +470,6 @@ def _git_ref_name(root: Path) -> str | None:
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+    )
