@@ -12,6 +12,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from depone.agent_fabric.paired_run import validate_runner_receipt
 
 from witnessd.__main__ import main
+from witnessd.model_policy import DEFAULT_MODEL_POLICY
 
 
 def _fake_codex(directory: str) -> str:
@@ -40,6 +41,23 @@ def _init_repo(path: str) -> None:
 
 
 class TestCliW4(unittest.TestCase):
+    def test_route_reports_model_policy_model(self):
+        with tempfile.TemporaryDirectory() as root:
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = main(["route", "--root", root, "--tier", "quick"])
+
+            decision = json.loads(out.getvalue())
+            policy_models = {
+                str(candidate["model"])
+                for route in DEFAULT_MODEL_POLICY["routes"]
+                if route["tier"] == "quick"
+                for candidate in route["candidates"]
+            }
+            self.assertEqual(code, 0)
+            self.assertIn(decision["model"], policy_models)
+            self.assertFalse(decision["model"].startswith("gpt-5.3"))
+
     @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
     def test_run_codex_adapter_emits_valid_receipt(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as bindir:
