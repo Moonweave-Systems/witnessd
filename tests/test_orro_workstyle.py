@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from witnessd.__main__ import main
 
@@ -83,6 +84,61 @@ class OrroWorkstyleTests(unittest.TestCase):
             [step["phase"] for step in payload["recommended_path"]],
             ["scout", "flowplan", "proofrun", "proofcheck", "handoff"],
         )
+
+    def test_orro_doctor_accepts_review_adapters_and_emits_readiness_receipts(self) -> None:
+        for adapter in ("agy", "gemini"):
+            with self.subTest(adapter=adapter):
+                stdout = io.StringIO()
+                with patch(
+                    "witnessd.__main__.subprocess.run",
+                    return_value=subprocess.CompletedProcess(
+                        args=[], returncode=0, stdout="depone doctor: pass", stderr=""
+                    ),
+                ), redirect_stdout(stdout):
+                    code = main(["orro", "doctor", "--adapter", adapter, "--json"])
+
+                self.assertEqual(code, 0)
+                payload = json.loads(stdout.getvalue())
+                check = next(
+                    item for item in payload["checks"] if item["name"] == f"adapter:{adapter}"
+                )
+                self.assertEqual(check["receipt"]["kind"], "witnessd-adapter-capability")
+                self.assertEqual(check["receipt"]["adapter"]["id"], adapter)
+                self.assertFalse(check["receipt"]["boundary"]["executes_coding_task"])
+
+    def test_review_adapters_remain_ineligible_for_execution_lanes(self) -> None:
+        from witnessd.orro_workflow import EXECUTION_LANE_ADAPTERS
+
+        self.assertNotIn("agy", EXECUTION_LANE_ADAPTERS)
+        self.assertNotIn("gemini", EXECUTION_LANE_ADAPTERS)
+
+    def test_orro_shim_warning_is_suppressed_only_for_wrapper_delegation(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+        env["PYTHONNOUSERSITE"] = "1"
+
+        delegated_env = env | {"ORRO_WRAPPER_DELEGATION": "1"}
+        delegated = subprocess.run(
+            [sys.executable, "-m", "orro", "--help"],
+            cwd=root,
+            env=delegated_env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        direct = subprocess.run(
+            [sys.executable, "-m", "orro", "--help"],
+            cwd=root,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(delegated.returncode, 0, delegated.stderr)
+        self.assertNotIn("deprecated", delegated.stderr)
+        self.assertEqual(direct.returncode, 0, direct.stderr)
+        self.assertIn("deprecated", direct.stderr)
 
     def test_boundary_is_non_executing_non_verifying_non_assurance(self) -> None:
         code, payload = self._advise("fix parser bug")

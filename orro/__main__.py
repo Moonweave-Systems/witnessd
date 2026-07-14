@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 from witnessd.__main__ import main as witnessd_main
@@ -56,7 +57,8 @@ options:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    print(DEPRECATION_WARNING, file=sys.stderr)
+    if os.environ.get("ORRO_WRAPPER_DELEGATION") != "1":
+        print(DEPRECATION_WARNING, file=sys.stderr)
     if not args or args[0] in {"-h", "--help"}:
         print(ORRO_HELP)
         return 0
