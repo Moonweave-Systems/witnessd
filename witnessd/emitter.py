@@ -137,6 +137,8 @@ def emit_lane_evidence(
     write_scope: list[str] | None = None,
     role_id: str | None = None,
     role_capability: str | None = None,
+    observer_output_path: str | None = None,
+    transcript_path: str | None = None,
 ) -> dict[str, Any]:
     """Assemble and emit a lane's full evidence set through the runlog SoT.
 
@@ -211,7 +213,17 @@ def emit_lane_evidence(
     receipts = lane_result.get("command_receipts", [])
     if invocation is None:
         invocation = list(receipts[0]["command"]) if receipts else ["sh", "-c", "true"]
-    transcript_path = os.path.join(evidence_dir, "verify.log")
+    requested_transcript_path = os.path.abspath(
+        transcript_path or os.path.join(evidence_dir, "verify.log")
+    )
+    transcript_path = (
+        os.path.join(evidence_dir, "verify.log")
+        if requested_transcript_path == os.path.join(evidence_dir, RUNLOG_NAME)
+        else requested_transcript_path
+    )
+    requested_observer_output_path = os.path.abspath(
+        observer_output_path or os.path.join(evidence_dir, "observer-capture.json")
+    )
     receipt = None  # built after transcript path is known
 
     log = EventLog(os.path.join(evidence_dir, RUNLOG_NAME))
@@ -232,8 +244,11 @@ def emit_lane_evidence(
         )
     )
 
-    def _emit_artifact_bytes(name: str, data: bytes) -> str:
-        path = os.path.join(evidence_dir, name)
+    def _emit_artifact_bytes(
+        name: str, data: bytes, *, destination: str | None = None
+    ) -> str:
+        path = destination or os.path.join(evidence_dir, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as handle:
             handle.write(data)
         events.append(
@@ -249,8 +264,12 @@ def emit_lane_evidence(
         )
         return path
 
-    def _emit_artifact(name: str, content: str) -> str:
-        return _emit_artifact_bytes(name, content.encode("utf-8"))
+    def _emit_artifact(
+        name: str, content: str, *, destination: str | None = None
+    ) -> str:
+        return _emit_artifact_bytes(
+            name, content.encode("utf-8"), destination=destination
+        )
 
     def _record_existing_artifact(name: str, path: str) -> str:
         with open(path, "rb") as handle:
@@ -272,7 +291,9 @@ def emit_lane_evidence(
         RUN_INTENT_ARTIFACT_NAME,
         run_intent_path,
     )
-    _emit_artifact("verify.log", _transcript(lane_result))
+    _emit_artifact(
+        "verify.log", _transcript(lane_result), destination=transcript_path
+    )
 
     from witnessd.receipt import build_runner_receipt
 
@@ -289,7 +310,20 @@ def emit_lane_evidence(
     )
 
     manifest_path = _emit_artifact("capture-manifest.json", json.dumps(manifest))
-    _emit_artifact("observer-capture.json", json.dumps(manifest["observer_capture"]))
+    observer_capture_json = json.dumps(manifest["observer_capture"])
+    observer_capture_path = _emit_artifact(
+        "observer-capture.json", observer_capture_json
+    )
+    canonical_observer_paths = {
+        os.path.abspath(manifest_path),
+        os.path.abspath(observer_capture_path),
+    }
+    if requested_observer_output_path not in canonical_observer_paths:
+        _emit_artifact(
+            "requested-observer-output.json",
+            observer_capture_json,
+            destination=requested_observer_output_path,
+        )
     _emit_artifact("runner-receipt.json", json.dumps(receipt))
     redaction_manifest_path = None
     if capture_profile == CAPTURE_PROFILE_REDACTED and redaction_manifest is not None:
@@ -300,7 +334,7 @@ def emit_lane_evidence(
 
     artifacts = {
         "capture-manifest": manifest_path,
-        "observer-capture": os.path.join(evidence_dir, "observer-capture.json"),
+        "observer-capture": observer_capture_path,
         "runner-receipt": os.path.join(evidence_dir, "runner-receipt.json"),
         RUN_INTENT_SUBJECT_NAME: recorded_run_intent_path,
     }
@@ -371,6 +405,8 @@ def emit_lane_evidence(
     return {
         "manifest": manifest,
         "manifest_path": manifest_path,
+        "observer_output_path": requested_observer_output_path,
+        "transcript_path": transcript_path,
         "receipt": receipt,
         "bundle": bundle,
         "provenance": provenance,

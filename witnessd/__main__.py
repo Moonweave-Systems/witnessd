@@ -65,7 +65,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 2
 
     from witnessd.adapters.shell import run_shell_lane
-    from witnessd.emitter import emit_lane_evidence
+    from witnessd.emitter import EmitterError, emit_lane_evidence
     from witnessd.fixture import (
         build_reference_adapter_fixture,
         build_shell_invocation,
@@ -94,7 +94,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
     )
 
     allowed_touched_files = list(args.allow or [])
-    commands = [list(args.command)]
+    observed_command = (
+        ["sh", "-c", args.command[0]]
+        if len(args.command) == 1
+        else list(args.command)
+    )
+    commands = [observed_command]
     lane_result = run_shell_lane(sandbox=sandbox, commands=commands)
     redaction_context = None
     if args.capture_profile == CAPTURE_PROFILE_REDACTED:
@@ -113,20 +118,46 @@ def _cmd_run(args: argparse.Namespace) -> int:
     # agent-fabric-reference-adapter-fixture, not a placeholder.
     fixture = build_reference_adapter_fixture(build_shell_invocation(args.task_id))
 
-    result = emit_lane_evidence(
-        lane_result,
-        evidence_dir,
-        private_key_path,
-        fixture=fixture,
-        allowed_touched_files=allowed_touched_files,
-        public_key_path=public_key_path,
-        task_id=args.task_id,
-        runner_sandbox=str(redact_value(sandbox, redaction_context)),
-        capture_profile=args.capture_profile,
-        redaction_manifest=(
-            redaction_context["manifest"] if redaction_context is not None else None
-        ),
-    )
+    try:
+        result = emit_lane_evidence(
+            lane_result,
+            evidence_dir,
+            private_key_path,
+            fixture=fixture,
+            allowed_touched_files=allowed_touched_files,
+            public_key_path=public_key_path,
+            task_id=args.task_id,
+            runner_sandbox=str(redact_value(sandbox, redaction_context)),
+            capture_profile=args.capture_profile,
+            redaction_manifest=(
+                redaction_context["manifest"]
+                if redaction_context is not None
+                else None
+            ),
+            observer_output_path=out_path,
+            transcript_path=log_path,
+        )
+    except (EmitterError, OSError) as exc:
+        print(f"ERR_OBSERVER_PERSIST_FAILED: {exc}", file=sys.stderr)
+        return 1
+
+    missing_sinks = [
+        path for path in (out_path, log_path) if not os.path.isfile(path)
+    ]
+    if missing_sinks:
+        print(
+            f"ERR_OBSERVER_PERSIST_FAILED: missing {', '.join(missing_sinks)}",
+            file=sys.stderr,
+        )
+        return 1
+
+    command_exit = result["receipt"]["exit_code"]
+    if command_exit != 0:
+        print(
+            f"ERR_VERIFICATION_COMMAND_FAILED: exit {command_exit}",
+            file=sys.stderr,
+        )
+        return 1
 
     pending = 1
     print(
