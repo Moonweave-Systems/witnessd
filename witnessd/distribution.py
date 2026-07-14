@@ -24,6 +24,7 @@ ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISMATCH = "ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISM
 ERR_ORRO_ENGINE_LOCK_LOAD_FAILED = "ERR_ORRO_ENGINE_LOCK_LOAD_FAILED"
 ERR_ORRO_ENGINE_LOCK_INVALID = "ERR_ORRO_ENGINE_LOCK_INVALID"
 ERR_ORRO_ENGINE_LOCK_MISMATCH = "ERR_ORRO_ENGINE_LOCK_MISMATCH"
+ERR_ORRO_SETUP_DEPONE_PIN_MISMATCH = "ERR_ORRO_SETUP_DEPONE_PIN_MISMATCH"
 
 PROVISION_KIND = "witnessd-depone-provision"
 PROVISION_SCHEMA_VERSION = "0.1"
@@ -116,6 +117,23 @@ def validate_depone_pin(home: Path) -> dict[str, Any]:
     current_commit = _git_commit(depone_root)
     if current_commit != recorded_commit:
         raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISMATCH)
+    return provision
+
+
+def validate_orro_setup_depone_pin(
+    *, home: Path, depone_ref: str | None = None
+) -> dict[str, Any]:
+    provision = validate_depone_pin(home)
+    depone = provision["depone"]
+    depone_root = Path(str(depone["root"])).resolve(strict=False)
+    expected_ref = (
+        depone_ref
+        or os.environ.get("WITNESSD_DEPONE_REF")
+        or DEFAULT_DEPONE_REF
+    )
+    expected_commit = _git_commit_for_ref(depone_root, expected_ref)
+    if str(depone["commit"]) != expected_commit:
+        raise ProvisionError(ERR_ORRO_SETUP_DEPONE_PIN_MISMATCH)
     return provision
 
 
@@ -393,6 +411,18 @@ def _git_commit(root: Path) -> str:
     )
     if completed.returncode != 0:
         raise ProvisionError(ERR_WITNESSD_DEPONE_ROOT_INVALID)
+    return completed.stdout.strip()
+
+
+def _git_commit_for_ref(root: Path, ref: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--verify", f"{ref}^{{commit}}"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise ProvisionError(ERR_ORRO_SETUP_DEPONE_PIN_MISMATCH)
     return completed.stdout.strip()
 
 

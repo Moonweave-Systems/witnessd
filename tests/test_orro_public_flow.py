@@ -2375,7 +2375,7 @@ class OrroPublicFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _repo, home = self._init_home(root)
-            out = root / "lock.json"
+            out = home / "orro-engine-lock.json"
             write_lock = self._orro_module_run(
                 ["engine-lock", "--home", str(home), "--out", str(out)]
             )
@@ -2389,8 +2389,6 @@ class OrroPublicFlowTests(unittest.TestCase):
                         "doctor",
                         "--home",
                         str(home),
-                        "--engine-lock",
-                        str(out),
                         "--adapter",
                         "codex",
                         "--json",
@@ -2408,7 +2406,7 @@ class OrroPublicFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _repo, home = self._init_home(root)
-            out = root / "lock.json"
+            out = home / "orro-engine-lock.json"
             write_lock = self._orro_module_run(
                 ["engine-lock", "--home", str(home), "--out", str(out)]
             )
@@ -2425,8 +2423,6 @@ class OrroPublicFlowTests(unittest.TestCase):
                         "doctor",
                         "--home",
                         str(home),
-                        "--engine-lock",
-                        str(out),
                         "--adapter",
                         "codex",
                         "--json",

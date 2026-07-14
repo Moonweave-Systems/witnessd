@@ -56,7 +56,10 @@ to check the current local environment for drift against that metadata. A
 matching lock is readiness alignment only. A mismatch is readiness-blocked, not
 verifier-refuted. The lock is not proof, evidence verification, merge approval,
 or assurance, and it must not execute workers.
-`orro doctor` checks readiness, not evidence truth.
+`orro doctor` checks readiness, not evidence truth. When
+`<home>/orro-engine-lock.json` exists, it checks the provisioned engine pair
+against that lock by default. A pass means the readiness metadata matches the
+recorded pair, not that the pair passed the ORRO end-to-end compatibility smoke.
 
 Use `python3 -m orro advise "<goal>" --repo <repo> --home .witnessd --json` to
 get a deterministic workstyle decision before planning or execution. It
