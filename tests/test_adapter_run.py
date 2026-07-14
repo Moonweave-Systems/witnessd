@@ -124,6 +124,28 @@ def _fake_claude(directory: str) -> str:
     return str(path)
 
 
+def _fake_claude_invokes_builtin_hook(directory: str) -> str:
+    path = pathlib.Path(directory) / "claude"
+    path.write_text(
+        "#!/usr/bin/python3\n"
+        "import json\n"
+        "import shlex\n"
+        "import subprocess\n"
+        "import sys\n"
+        "settings_path = sys.argv[sys.argv.index('--settings') + 1]\n"
+        "settings = json.load(open(settings_path, encoding='utf-8'))\n"
+        "command = settings['hooks']['PreToolUse'][0]['hooks'][0]['command']\n"
+        "completed = subprocess.run(shlex.split(command), input=json.dumps({'tool_name': 'Edit'}), text=True, capture_output=True)\n"
+        "if completed.returncode != 0 or completed.stdout:\n"
+        "    raise SystemExit(17)\n"
+        "print(json.dumps({'type': 'session.started', 'session_id': 'S1'}))\n"
+        "print(json.dumps({'type': 'assistant.message', 'message_id': 'M1', 'text': 'done'}))\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
 def _fake_gemini(directory: str) -> str:
     path = pathlib.Path(directory) / "gemini"
     path.write_text(
@@ -1011,7 +1033,7 @@ class TestAdapterRun(unittest.TestCase):
                     tier="agentic",
                     is_supported=lambda _model: True,
                     budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
-                    claude_binary=_fake_claude(bindir),
+                    claude_binary=_fake_claude_invokes_builtin_hook(bindir),
                     evidence_dir=evidence_dir,
                     allowed_touched_files=["noop.txt"],
                     write_scope=["noop.txt"],
@@ -1055,6 +1077,23 @@ class TestAdapterRun(unittest.TestCase):
             )
             self.assertEqual(receipts["adapter"], "claude")
             self.assertEqual(receipts["decisions"], [])
+            self.assertEqual(
+                [
+                    (
+                        item["canonical_tool_name"],
+                        item["decision"],
+                        item["reason_code"],
+                    )
+                    for item in receipts["all_tool_decisions"]
+                ],
+                [
+                    (
+                        "Edit",
+                        "allow",
+                        "ROLE_CAPABILITY_BUILTIN_TOOL_GRANTED",
+                    )
+                ],
+            )
             self.assertEqual(receipts["observed_mcp_tool_calls"], [])
 
             run_intent_artifact = json.loads(
