@@ -1306,7 +1306,14 @@ def _cmd_orro_doctor(args: argparse.Namespace) -> int:
                     "path": str(home / "provision.json"),
                 }
             )
+    engine_lock_path: Path | None = None
     if args.engine_lock:
+        engine_lock_path = Path(args.engine_lock).resolve(strict=False)
+    elif home is not None:
+        default_engine_lock_path = home / "orro-engine-lock.json"
+        if default_engine_lock_path.is_file():
+            engine_lock_path = default_engine_lock_path
+    if engine_lock_path is not None:
         if home is None:
             checks.append(
                 {
@@ -1323,7 +1330,7 @@ def _cmd_orro_doctor(args: argparse.Namespace) -> int:
                 engine_lock = check_orro_engine_lock(
                     home=home,
                     witnessd_root=Path(__file__).resolve().parents[1],
-                    lock_path=Path(args.engine_lock).resolve(strict=False),
+                    lock_path=engine_lock_path,
                 )
             except ProvisionError as exc:
                 checks.append(
@@ -2202,6 +2209,7 @@ def _cmd_orro_setup(args: argparse.Namespace) -> int:
         ProvisionError,
         build_orro_engine_lock,
         init_witnessd_home,
+        validate_orro_setup_depone_pin,
     )
 
     home = Path(args.home or os.environ.get("WITNESSD_HOME") or ".witnessd")
@@ -2219,6 +2227,10 @@ def _cmd_orro_setup(args: argparse.Namespace) -> int:
                 depone_ref=args.depone_ref,
             )
         )
+        provision = validate_orro_setup_depone_pin(
+            home=home,
+            depone_ref=args.depone_ref,
+        )
         engine_lock = build_orro_engine_lock(
             home=home,
             witnessd_root=Path(__file__).resolve().parents[1],
@@ -2228,7 +2240,6 @@ def _cmd_orro_setup(args: argparse.Namespace) -> int:
             json.dumps(engine_lock, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        provision = json.loads((home / "provision.json").read_text(encoding="utf-8"))
     except ProvisionError as exc:
         _emit_orro_error(
             args,

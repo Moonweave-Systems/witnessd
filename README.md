@@ -19,7 +19,6 @@ as compatibility aliases during migration.
 cd witnessd
 python3 -m orro setup --home .witnessd --json
 python3 -m orro doctor --home .witnessd --json
-python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 python3 -m orro advise "write two independent files" --repo . --home .witnessd --json
 python3 -m orro scout "map the repo before planning" --repo . --home .witnessd
 python3 -m orro flowplan "write two independent files" --root . --profile code-change --out .witnessd/workflow-plan.json --role-lanes-out .witnessd/role-lane-plan.json
@@ -162,7 +161,11 @@ python3 -m orro doctor --home .witnessd --json
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 ```
 
-`orro doctor` checks readiness, not evidence truth. An engine lock records the
+`orro doctor` checks readiness, not evidence truth. When
+`<home>/orro-engine-lock.json` exists, doctor compares the provisioned witnessd
+and Depone commits against it by default. A doctor pass means that readiness
+metadata is consistent with the recorded engine pair; it does not mean the pair
+passed the ORRO end-to-end compatibility smoke. An engine lock records the
 pinned engine commits for distribution tooling.
 `orro-engine-lock.json` is distribution metadata only. `--out` writes the local
 witnessd/Depone pin metadata; `--check` compares the current local environment

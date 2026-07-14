@@ -26,7 +26,7 @@ class DistributionInitTests(unittest.TestCase):
     def test_default_depone_ref_pins_v109_bound_observation(self) -> None:
         self.assertEqual(
             DEFAULT_DEPONE_REF,
-            "e57f187f8ddeeffdae4324a8ec99b53ac068e6c9",
+            "42f0aaa9b3141d579f122388d49d1d74e698acfa",
         )
 
     def _depone_root(self) -> Path:
@@ -351,8 +351,55 @@ class DistributionInitTests(unittest.TestCase):
         self,
     ) -> None:
         depone_root = self._depone_root()
+        depone_commit = subprocess.run(
+            ["git", "-C", str(depone_root), "rev-parse", "HEAD"],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
+            out = io.StringIO()
+            err = io.StringIO()
+
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(
+                    [
+                        "orro",
+                        "setup",
+                        "--home",
+                        str(home),
+                        "--depone-root",
+                        str(depone_root),
+                        "--depone-ref",
+                        depone_commit,
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0, err.getvalue())
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload["depone_root"], str(depone_root.resolve()))
+            self.assertEqual(payload["depone_source"], "local-checkout")
+            self.assertFalse(payload["depone_network_used"])
+            self.assertTrue((home / "provision.json").is_file())
+            self.assertTrue((home / "orro-engine-lock.json").is_file())
+
+    def test_orro_setup_rejects_local_depone_checkout_that_misses_default_pin(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            depone_root = root / "depone"
+            depone_root.mkdir()
+            self._seed_git_repo(
+                depone_root,
+                {
+                    "depone/__init__.py": "",
+                    "README.md": "arbitrary depone checkout\n",
+                },
+            )
+            home = root / "home"
             out = io.StringIO()
             err = io.StringIO()
 
@@ -369,13 +416,62 @@ class DistributionInitTests(unittest.TestCase):
                     ]
                 )
 
-            self.assertEqual(code, 0, err.getvalue())
-            payload = json.loads(out.getvalue())
-            self.assertEqual(payload["depone_root"], str(depone_root.resolve()))
-            self.assertEqual(payload["depone_source"], "local-checkout")
-            self.assertFalse(payload["depone_network_used"])
-            self.assertTrue((home / "provision.json").is_file())
-            self.assertTrue((home / "orro-engine-lock.json").is_file())
+            self.assertEqual(code, 2)
+            self.assertEqual(err.getvalue(), "")
+            self.assertEqual(
+                json.loads(out.getvalue())["error"]["code"],
+                "ERR_ORRO_SETUP_DEPONE_PIN_MISMATCH",
+            )
+            self.assertFalse((home / "orro-engine-lock.json").exists())
+
+    def test_orro_setup_then_doctor_checks_default_engine_lock(self) -> None:
+        depone_root = self._depone_root()
+        depone_commit = subprocess.run(
+            ["git", "-C", str(depone_root), "rev-parse", "HEAD"],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            setup_out = io.StringIO()
+            doctor_out = io.StringIO()
+
+            with redirect_stdout(setup_out):
+                setup_code = main(
+                    [
+                        "orro",
+                        "setup",
+                        "--home",
+                        str(home),
+                        "--depone-root",
+                        str(depone_root),
+                        "--depone-ref",
+                        depone_commit,
+                        "--json",
+                    ]
+                )
+            with redirect_stdout(doctor_out):
+                doctor_code = main(
+                    [
+                        "orro",
+                        "doctor",
+                        "--home",
+                        str(home),
+                        "--adapter",
+                        "codex",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(setup_code, 0, setup_out.getvalue())
+            self.assertEqual(doctor_code, 0, doctor_out.getvalue())
+            checks = {
+                check["name"]: check
+                for check in json.loads(doctor_out.getvalue())["checks"]
+            }
+            self.assertEqual(checks["engine_lock"]["status"], "pass")
+            self.assertTrue(checks["engine_lock"]["locked"])
 
     def test_orro_setup_provision_failure_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

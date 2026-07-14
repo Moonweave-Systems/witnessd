@@ -75,8 +75,11 @@ and will be removed in the next major witnessd release. Public setup starts with
 `orro setup`, which provisions pinned Depone when needed, delegates to witnessd
 initialization/provisioning, and creates readiness metadata such as
 `.witnessd/provision.json` plus `.witnessd/orro-engine-lock.json`; it is not
-proof or assurance. `orro doctor` checks readiness, not evidence truth. The
-engine lock is distribution metadata only. `--out` writes the pinned commit
+proof or assurance. `orro doctor` checks readiness, not evidence truth, and
+checks `<home>/orro-engine-lock.json` by default when that file exists. A pass
+means the provisioned engine pair matches the recorded lock, not that the pair
+passed the ORRO end-to-end compatibility smoke. The engine lock is distribution
+metadata only. `--out` writes the pinned commit
 metadata; `--check` detects local environment drift against it. A matching lock
 is readiness alignment only, not evidence verification, merge approval, or an
 assurance increase. A mismatch is readiness-blocked, not verifier-refuted. The
