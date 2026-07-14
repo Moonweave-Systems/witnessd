@@ -72,6 +72,133 @@ class TestRunSeparation(unittest.TestCase):
             )
             self.assertEqual(os.listdir(sandbox), [])
 
+    @unittest.skipUnless(_HAS_OPENSSL, "openssl required to sign emitted evidence")
+    def test_proofrun_shell_persists_requested_observer_and_log(self):
+        with tempfile.TemporaryDirectory() as base:
+            sandbox = os.path.join(base, "sandbox")
+            evidence = os.path.join(base, "evidence")
+            keys = os.path.join(base, "keys")
+            observer_out = os.path.join(evidence, "observer.json")
+            proofrun_log = os.path.join(evidence, "proofrun.log")
+            os.makedirs(sandbox)
+            os.makedirs(evidence)
+
+            code = main(
+                [
+                    "orro",
+                    "proofrun",
+                    "--adapter",
+                    "shell",
+                    "--runner-sandbox",
+                    sandbox,
+                    "--out",
+                    observer_out,
+                    "--log",
+                    proofrun_log,
+                    "--keys-dir",
+                    keys,
+                    "--task-id",
+                    "issue-44-success",
+                    "--",
+                    "printf ok",
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            self.assertTrue(os.path.isfile(observer_out))
+            self.assertTrue(os.path.isfile(proofrun_log))
+            with open(observer_out, encoding="utf-8") as handle:
+                observer = json.load(handle)
+            command_receipt = observer["command_receipts"][0]
+            self.assertEqual(command_receipt["command"], ["sh", "-c", "printf ok"])
+            self.assertEqual(command_receipt["exit_code"], 0)
+            self.assertEqual(command_receipt["stdout"], "ok")
+            with open(proofrun_log, encoding="utf-8") as handle:
+                transcript = handle.read()
+            self.assertIn("$ sh -c printf ok", transcript)
+            self.assertIn("exit=0", transcript)
+            with open(
+                os.path.join(evidence, "runner-receipt.json"), encoding="utf-8"
+            ) as handle:
+                receipt = json.load(handle)
+            self.assertEqual(receipt["invocation"], ["sh", "-c", "printf ok"])
+            self.assertEqual(receipt["exit_code"], 0)
+            self.assertEqual(receipt["transcript_path"], "evidence/proofrun.log")
+
+    @unittest.skipUnless(_HAS_OPENSSL, "openssl required to sign emitted evidence")
+    def test_proofrun_shell_fails_closed_when_observer_sink_is_not_writable(self):
+        with tempfile.TemporaryDirectory() as base:
+            sandbox = os.path.join(base, "sandbox")
+            evidence = os.path.join(base, "evidence")
+            keys = os.path.join(base, "keys")
+            observer_out = os.path.join(evidence, "observer.json")
+            proofrun_log = os.path.join(evidence, "proofrun.log")
+            os.makedirs(sandbox)
+            os.makedirs(observer_out)
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "--adapter",
+                        "shell",
+                        "--runner-sandbox",
+                        sandbox,
+                        "--out",
+                        observer_out,
+                        "--log",
+                        proofrun_log,
+                        "--keys-dir",
+                        keys,
+                        "--",
+                        "printf ok",
+                    ]
+                )
+
+            self.assertNotEqual(code, 0)
+            self.assertNotIn("evidence-pending", stdout.getvalue())
+            self.assertIn("ERR_OBSERVER_PERSIST_FAILED", stderr.getvalue())
+
+    @unittest.skipUnless(_HAS_OPENSSL, "openssl required to sign emitted evidence")
+    def test_proofrun_shell_fails_closed_when_command_cannot_run(self):
+        with tempfile.TemporaryDirectory() as base:
+            sandbox = os.path.join(base, "sandbox")
+            evidence = os.path.join(base, "evidence")
+            keys = os.path.join(base, "keys")
+            observer_out = os.path.join(evidence, "observer.json")
+            proofrun_log = os.path.join(evidence, "proofrun.log")
+            os.makedirs(sandbox)
+            os.makedirs(evidence)
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "--adapter",
+                        "shell",
+                        "--runner-sandbox",
+                        sandbox,
+                        "--out",
+                        observer_out,
+                        "--log",
+                        proofrun_log,
+                        "--keys-dir",
+                        keys,
+                        "--",
+                        "command-that-does-not-exist-issue-44",
+                    ]
+                )
+
+            self.assertNotEqual(code, 0)
+            self.assertNotIn("evidence-pending", stdout.getvalue())
+            self.assertIn("ERR_VERIFICATION_COMMAND_FAILED", stderr.getvalue())
+
 
 class TestStatus(unittest.TestCase):
     def test_status_evidence_pending_only(self):
