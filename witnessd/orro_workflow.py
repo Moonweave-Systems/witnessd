@@ -873,7 +873,10 @@ def _role_lane_from_role(
         "adapter": resolved_adapter,
         "tier": tier,
         "region": region,
-        "prompt": f"Execute ORRO role {role_id} for goal: {workflow_plan['goal']}",
+        "prompt": (
+            f"{ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX}{role_id} "
+            f"for goal: {workflow_plan['goal']}"
+        ),
         "budget": {"max_tokens": 0, "max_usd": 0.0, "max_depth": 1},
         "may_execute": True,
         "may_verify": False,

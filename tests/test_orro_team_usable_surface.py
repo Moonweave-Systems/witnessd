@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import io
 import json
 import os
@@ -12,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.__main__ import main
+from witnessd import orro_team_surface, orro_workflow
 from witnessd.role_capability import validate_rolepack
 
 _LIVE_CODEX_GATE = (
@@ -77,6 +79,57 @@ def _fake_codex_noops(directory: Path) -> str:
 
 
 class OrroTeamUsableSurfaceTests(unittest.TestCase):
+    def test_placeholder_prefix_generation_and_detection_share_one_definition(
+        self,
+    ) -> None:
+        surface_source = inspect.getsource(orro_team_surface)
+        self.assertIn(
+            "from witnessd.orro_workflow import ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX",
+            surface_source,
+        )
+        self.assertNotIn(
+            'PLACEHOLDER_PROMPT_PREFIX = "Execute ORRO role "',
+            surface_source,
+        )
+        self.assertIs(
+            orro_team_surface.PLACEHOLDER_PROMPT_PREFIX,
+            orro_workflow.ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX,
+        )
+
+        workflow_plan = orro_workflow.compile_workflow_plan(
+            goal="test placeholder detection",
+            profile="code-change",
+        )
+        role_lane_plan = orro_workflow.compile_role_lane_plan(
+            workflow_plan=workflow_plan,
+            lane_adapter="codex",
+            rolepack={
+                "kind": "moonweave-rolepack",
+                "schema_version": "0.2",
+                "name": "developer",
+                "grants": [
+                    {
+                        "role_id": "runner",
+                        "capability": "execute",
+                        "adapters": ["codex"],
+                        "write_scope": ["orro/**"],
+                        "tools": {"mcp": [], "allow": []},
+                    }
+                ],
+            },
+        )
+        generated_prompt = role_lane_plan["lanes"][0]["prompt"]
+        self.assertTrue(
+            generated_prompt.startswith(
+                orro_workflow.ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX
+            )
+        )
+        patched = orro_team_surface.apply_task_prompt_to_role_lane_plan(
+            role_lane_plan,
+            task="real task prompt",
+        )
+        self.assertGreaterEqual(patched["placeholder_count"], 1)
+
     def test_orro_team_init_scaffolds_valid_rolepack(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

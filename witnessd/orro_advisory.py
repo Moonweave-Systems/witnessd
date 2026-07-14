@@ -24,7 +24,7 @@ from typing import Any
 from witnessd.canonical import canonical_hash
 
 
-ADVISORY_SCHEMA_VERSION = "0.2"
+ORRO_ADVISORY_DECISION_SCHEMA_VERSION = "0.2"
 ERR_ORRO_ADVISORY_WRITE_FAILED = "ERR_ORRO_ADVISORY_WRITE_FAILED"
 ERR_ORRO_ADVISORY_OUTPUT_INSIDE_REPO = "ERR_ORRO_ADVISORY_OUTPUT_INSIDE_REPO"
 ERR_ORRO_ADVISORY_DECISION_INVALID = "ERR_ORRO_ADVISORY_DECISION_INVALID"
@@ -161,7 +161,7 @@ def _agent_sketch_decision(
     payload.update(
         {
             "kind": "orro-sketch",
-            "schema_version": ADVISORY_SCHEMA_VERSION,
+            "schema_version": ORRO_ADVISORY_DECISION_SCHEMA_VERSION,
             "goal": goal,
             "repo": str(repo),
             "home": str(home) if home is not None else None,
@@ -314,7 +314,7 @@ def _agent_trace_decision(
     payload.update(
         {
             "kind": "orro-trace",
-            "schema_version": ADVISORY_SCHEMA_VERSION,
+            "schema_version": ORRO_ADVISORY_DECISION_SCHEMA_VERSION,
             "goal_or_symptom": symptom,
             "symptom": symptom,
             "repo": str(repo),
@@ -539,7 +539,7 @@ def build_sketch_decision(
 
     return {
         "kind": "orro-sketch",
-        "schema_version": ADVISORY_SCHEMA_VERSION,
+        "schema_version": ORRO_ADVISORY_DECISION_SCHEMA_VERSION,
         "authored_by": "heuristic-scaffold",
         "agent_authored": False,
         "degraded": True,
@@ -706,7 +706,7 @@ def build_trace_decision(
 
     return {
         "kind": "orro-trace",
-        "schema_version": ADVISORY_SCHEMA_VERSION,
+        "schema_version": ORRO_ADVISORY_DECISION_SCHEMA_VERSION,
         "authored_by": "heuristic-scaffold",
         "agent_authored": False,
         "degraded": True,
