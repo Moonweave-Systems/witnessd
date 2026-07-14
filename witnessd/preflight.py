@@ -12,6 +12,11 @@ from witnessd.codex_capability import (
 )
 
 
+ERR_OPENCODE_HEADLESS_NOOP_KNOWN_NONFUNCTIONAL = (
+    "ERR_OPENCODE_HEADLESS_NOOP_KNOWN_NONFUNCTIONAL"
+)
+
+
 class PreflightError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(f"{code}: {message}")
@@ -85,6 +90,13 @@ def probe_adapter_capability(
         receipt = _local_adapter_capability(
             "opencode", binary=opencode_binary, repo=repo
         )
+        if receipt["adapter"]["binary_path"] is not None:
+            receipt["decision"] = "blocked"
+            receipt["blocked_reasons"] = [
+                f"{ERR_OPENCODE_HEADLESS_NOOP_KNOWN_NONFUNCTIONAL}: "
+                "opencode run is known to exit 0 without events or file edits "
+                "when launched headlessly through the adapter"
+            ]
     else:
         raise PreflightError(
             "ERR_TEAM_LAUNCH_PREFLIGHT_ADAPTER_UNAVAILABLE",

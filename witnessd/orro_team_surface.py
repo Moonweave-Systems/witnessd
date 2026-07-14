@@ -129,7 +129,12 @@ def apply_task_prompt_to_role_lane_plan(
 def verdict_has_no_work_error(payload: Any) -> bool:
     if isinstance(payload, dict):
         code = payload.get("code")
-        if code == "ERR_TEAM_LEDGER_TOUCHED_FILES_REQUIRED":
+        if code in {
+            "ERR_TEAM_LEDGER_TOUCHED_FILES_REQUIRED",
+            "ERR_TEAM_LANE_ZERO_OBSERVABLE_WORK",
+        }:
+            return True
+        if payload.get("blocked_reason") == "ERR_TEAM_LANE_ZERO_OBSERVABLE_WORK":
             return True
         return any(verdict_has_no_work_error(value) for value in payload.values())
     if isinstance(payload, list):

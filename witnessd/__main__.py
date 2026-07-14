@@ -2874,7 +2874,11 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
     proofrun_payload = _json_or_text(proofrun_stdout)
     if proofrun_code != 0:
         report_payload = _write_team_go_report(run_dir, home, report_path)
-        no_work = verdict_has_no_work_error(_load_json_if_exists(run_dir / "team-ledger-verdict.json"))
+        no_work = verdict_has_no_work_error(
+            _load_json_if_exists(run_dir / "team-ledger-verdict.json")
+        ) or verdict_has_no_work_error(
+            _load_json_if_exists(run_dir / "team-ledger.json")
+        )
         return _emit_team_go_result(
             args,
             {
