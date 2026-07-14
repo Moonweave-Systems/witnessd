@@ -44,8 +44,8 @@ from witnessd.write_scope_declaration import (
 
 DEFAULT_STOP_RULE = "all write lanes pass or block"
 ERR_TEAM_LANE_FAILED = "ERR_TEAM_LANE_FAILED"
-ERR_TEAM_LANE_TIMEOUT_COMMITTED_BUT_INCOMPLETE = (
-    "ERR_TEAM_LANE_TIMEOUT_COMMITTED_BUT_INCOMPLETE"
+ERR_TEAM_LANE_TIMEOUT_COMMITTED_EVIDENCE_PENDING = (
+    "ERR_TEAM_LANE_TIMEOUT_COMMITTED_EVIDENCE_PENDING"
 )
 ERR_TEAM_LANE_CANCELLED_FAIL_FAST = "ERR_TEAM_LANE_CANCELLED_FAIL_FAST"
 ERR_TEAM_LANE_EXEC_FAILED = "ERR_TEAM_LANE_EXEC_FAILED"
@@ -1835,7 +1835,7 @@ def _run_adapter_lane(
             receipt["head_commit"] != base_commit and bool(receipt["changed_files"])
         )
         ledger_lane["blocked_reason"] = (
-            ERR_TEAM_LANE_TIMEOUT_COMMITTED_BUT_INCOMPLETE
+            ERR_TEAM_LANE_TIMEOUT_COMMITTED_EVIDENCE_PENDING
             if adapter_timed_out and committed_changes
             else ERR_TEAM_LANE_FAILED
         )

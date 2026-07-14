@@ -247,7 +247,7 @@ class TestTeamAdapterFanin(unittest.TestCase):
         self.assertEqual(lane["verification_state"], "blocked")
         self.assertEqual(
             lane["blocked_reason"],
-            "ERR_TEAM_LANE_TIMEOUT_COMMITTED_BUT_INCOMPLETE",
+            "ERR_TEAM_LANE_TIMEOUT_COMMITTED_EVIDENCE_PENDING",
         )
         self.assertNotEqual(lane["start_commit"], lane["end_commit"])
         self.assertEqual(lane["touched_files"], ["pkg/timeout.py"])
