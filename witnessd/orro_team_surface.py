@@ -19,9 +19,10 @@ from witnessd.role_capability import (
     ROLE_CAPABILITY_SCHEMA_VERSION,
     validate_rolepack,
 )
+from witnessd.orro_workflow import ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX
 
 
-PLACEHOLDER_PROMPT_PREFIX = "Execute ORRO role "
+PLACEHOLDER_PROMPT_PREFIX = ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX
 
 
 class OrroTeamSurfaceError(ValueError):
