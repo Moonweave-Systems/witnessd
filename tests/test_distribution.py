@@ -26,7 +26,7 @@ class DistributionInitTests(unittest.TestCase):
     def test_default_depone_ref_pins_v109_bound_observation(self) -> None:
         self.assertEqual(
             DEFAULT_DEPONE_REF,
-            "e57f187f8ddeeffdae4324a8ec99b53ac068e6c9",
+            "42f0aaa9b3141d579f122388d49d1d74e698acfa",
         )
 
     def _depone_root(self) -> Path:
