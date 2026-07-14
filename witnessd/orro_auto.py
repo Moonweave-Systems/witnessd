@@ -74,6 +74,8 @@ def build_auto_plan(run_dir: Path, *, home: Path | None = None) -> tuple[int, di
                     "orro",
                     "handoff",
                     str(run_dir),
+                    "--home",
+                    str(continuation.get("home", home or run_dir.parent.parent)),
                     "--out",
                     str(run_dir / "orro-handoff.json"),
                 ],
