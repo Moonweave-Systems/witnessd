@@ -35,14 +35,16 @@ The cross-engine artifact boundary is summarized in
 | ORRO | Observed Run & Review Orchestrator; flagship product/tool |
 | ORRO Flow | scout -> flowplan -> proofrun -> proofcheck -> handoff |
 | `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
+| `orro setup` | one-command setup: provision pinned Depone, initialize home, and write engine lock |
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo profile, context pack, and discovery notes |
 | `orro sketch` | advisory ideation that converges on one flowplan-ready direction |
 | `orro trace` | advisory root-cause investigation before fix planning or execution |
-| `flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
-| `proofrun` | precise evidence-backed execution alias |
-| `proofcheck` | offline evidence verification alias |
+| `orro advisory-provenance-check` | offline Depone re-derivation of sealed sketch/trace provenance; not correctness |
+| `orro flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
+| `orro proofrun` | precise evidence-backed execution alias |
+| `orro proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro next` | non-executing continuation gate over persisted run artifacts |
 | `orro report` | human-facing summary of observed artifacts and next safe action |
@@ -52,10 +54,8 @@ The cross-engine artifact boundary is summarized in
 | `orro auto --until-complete` | bounded post-run proofcheck/handoff loop; orchestration metadata only |
 | `orro team init` | scaffold `.orro/team.json` rolepack readiness config; not proof or assurance |
 | `orro team go` | one-command flowplan/proofrun/proofcheck/report wrapper; reports Depone verdict |
-| `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine/verifier/adapter/key/MCP/policy readiness check |
 | `orro auto` | future broader resume/continuation loop behind evidence gates |
-| `orro ultra` | future high-autonomy profile with stricter gates |
 
 `witnessd` is the engine name, not the main session skill name.
 

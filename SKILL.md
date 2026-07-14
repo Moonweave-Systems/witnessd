@@ -31,21 +31,21 @@ The cross-engine artifact boundary is summarized in
 | `orro scout` | read-only repo exploration and context-pack creation |
 | `orro sketch` | advisory ideation: frame, diverge, converge, and hand one direction to flowplan |
 | `orro trace` | advisory root-cause investigation before a fix flowplan |
-| `flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
-| `proofrun` | precise evidence-backed execution alias |
-| `proofcheck` | offline evidence verification alias |
+| `orro advisory-provenance-check` | offline Depone re-derivation of sealed sketch/trace provenance; not correctness |
+| `orro flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
+| `orro proofrun` | precise evidence-backed execution alias |
+| `orro proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro next` | non-executing continuation gate over persisted run artifacts |
 | `orro report` | human-facing summary of observed artifacts and next safe action |
+| `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
 | `orro auto --until-complete` | bounded post-run proofcheck/handoff loop; orchestration metadata only |
 | `orro team init` | scaffold `.orro/team.json` rolepack readiness config; not proof or assurance |
 | `orro team go` | one-command flowplan/proofrun/proofcheck/report wrapper; reports Depone verdict |
-| `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
 | `orro auto` | future broader continuation loop behind evidence gates |
-| `orro ultra` | future high-autonomy profile with stricter gates |
 
 ## Repository and install boundary
 
