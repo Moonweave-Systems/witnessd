@@ -165,7 +165,8 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
             proofcheck_payload=proofcheck_payload,
         )
         payload["next_allowed"] = [
-            f"orro handoff {run_dir} --out {run_dir / 'orro-handoff.json'}"
+            f"orro handoff {run_dir} --home {home} "
+            f"--out {run_dir / 'orro-handoff.json'}"
         ]
         return 0, payload
     if proofcheck_state["decision"] not in {None, "pass"}:

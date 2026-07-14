@@ -239,6 +239,27 @@ class OrroPublicFlowTests(unittest.TestCase):
         self.assertTrue(out.is_file())
         return json.loads(stdout.getvalue())
 
+    def _emit_sketch_bundle(self, root: Path, home: Path, run_dir: Path) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(
+                [
+                    "orro",
+                    "sketch",
+                    "seal one bounded advisory direction",
+                    "--repo",
+                    str(root / "repo"),
+                    "--home",
+                    str(home),
+                    "--out",
+                    str(run_dir / "orro-sketch.json"),
+                    "--json",
+                ]
+            )
+        self.assertEqual(code, 0, stdout.getvalue())
+        self.assertTrue((run_dir / "advisory-provenance-bundle.json").is_file())
+        self.assertTrue((run_dir / "evidence-contract.json").is_file())
+
     def _verify_out(
         self,
         home: Path,
@@ -315,6 +336,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(proofcheck["trust_anchor"], "self-signed")
             self.assertFalse(proofcheck["independent_trust_anchor"])
             self.assertNotIn("assurance", proofcheck)
+            self.assertNotIn("advisory_provenance", proofcheck)
             verdict = json.loads(
                 (run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8")
             )
@@ -647,6 +669,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(payload["decision"], "ready-for-handoff")
             self.assertFalse(payload["blocked"])
             self.assertIn("orro handoff", payload["next_allowed"][0])
+            self.assertIn(f"--home {home}", payload["next_allowed"][0])
             verifier = next(role for role in payload["role_status"] if role["phase"] == "proofcheck")
             handoff = next(role for role in payload["role_status"] if role["phase"] == "handoff")
             self.assertEqual(verifier["status"], "verified")
@@ -821,6 +844,8 @@ class OrroPublicFlowTests(unittest.TestCase):
                         "orro",
                         "handoff",
                         str(run_dir),
+                        "--home",
+                        str(home),
                         "--out",
                         str(run_dir / "orro-handoff.json"),
                     ],
@@ -955,6 +980,8 @@ class OrroPublicFlowTests(unittest.TestCase):
                 "orro",
                 "handoff",
                 str(run_dir),
+                "--home",
+                str(home),
                 "--out",
                 str(run_dir / "orro-handoff.json"),
             ])
@@ -2141,6 +2168,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(payload["kind"], "orro-handoff")
             self.assertFalse(payload["boundary"]["approves_merge"])
             self.assertFalse(payload["boundary"]["raises_assurance"])
+            self.assertNotIn("advisory_provenance", payload)
             proofcheck_payload = json.loads(
                 (run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8")
             )
@@ -2173,6 +2201,92 @@ class OrroPublicFlowTests(unittest.TestCase):
                 json.loads(rerun_stdout.getvalue())["artifact_hashes"],
                 payload["artifact_hashes"],
             )
+
+    def test_proofcheck_surfaces_advisory_provenance_as_separate_verdict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            self._emit_sketch_bundle(root, home, run_dir)
+            decision_path = run_dir / "orro-sketch.json"
+            decision = json.loads(decision_path.read_text(encoding="utf-8"))
+            decision["decision_record"]["decision"] = "tampered"
+            decision_path.write_text(
+                json.dumps(decision, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            proofcheck = self._proofcheck_out(home, run_dir)
+
+            self.assertEqual(proofcheck["decision"], "pass")
+            self.assertIn("advisory_provenance", proofcheck)
+            self.assertEqual(
+                proofcheck["advisory_provenance"]["decision"], "REFUTE"
+            )
+            self.assertFalse(
+                proofcheck["advisory_provenance"]["boundary"][
+                    "can_change_evidence_verdict"
+                ]
+            )
+            written = json.loads(
+                (run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(written["decision"], "pass")
+            self.assertEqual(
+                written["advisory_provenance"]["decision"], "REFUTE"
+            )
+
+    def test_handoff_rederives_advisory_provenance_and_refutes_tamper(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            self._emit_sketch_bundle(root, home, run_dir)
+            self._proofcheck_out(home, run_dir)
+
+            handoff = self._handoff_out(run_dir)
+
+            self.assertIn("advisory_provenance", handoff)
+            self.assertEqual(handoff["advisory_provenance"]["decision"], "PASS")
+            advisory_ref = next(
+                ref
+                for ref in handoff["decision_refs"]
+                if ref.get("track") == "advisory-provenance"
+            )
+            self.assertEqual(advisory_ref["decision"], "PASS")
+            self.assertEqual(
+                advisory_ref["path"], "advisory-provenance-bundle.json"
+            )
+
+            (run_dir / "orro-handoff.json").unlink()
+            decision_path = run_dir / "orro-sketch.json"
+            decision = json.loads(decision_path.read_text(encoding="utf-8"))
+            decision["decision_record"]["decision"] = "tampered"
+            decision_path.write_text(
+                json.dumps(decision, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            stdout = io.StringIO()
+            out = run_dir / "orro-handoff.json"
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "handoff",
+                        str(run_dir),
+                        "--out",
+                        str(out),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertFalse(out.exists())
+            error = json.loads(stdout.getvalue())
+            self.assertEqual(
+                error["error"]["code"],
+                "ERR_ORRO_HANDOFF_ADVISORY_PROVENANCE_REFUTED",
+            )
+            self.assertEqual(error["advisory_provenance"]["decision"], "REFUTE")
 
     def test_handoff_includes_workflow_plan_binding_when_present(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

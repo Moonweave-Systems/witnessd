@@ -1008,6 +1008,104 @@ def _proofcheck_binding(
     }
 
 
+def _advisory_provenance_home(
+    evidence_dir: Path, *, home: Path | None
+) -> Path | None:
+    if home is not None:
+        return home.resolve(strict=False)
+    if evidence_dir.parent.name == "runs":
+        return evidence_dir.parent.parent.resolve(strict=False)
+    return None
+
+
+def _advisory_provenance_blocked(code: str, message: str) -> dict[str, object]:
+    from witnessd.advisory_provenance import ADVISORY_PROVENANCE_SCHEMA_VERSION
+
+    return {
+        "kind": "orro-advisory-provenance-verdict",
+        "schema_version": ADVISORY_PROVENANCE_SCHEMA_VERSION,
+        "decision": "BLOCKED",
+        "error_codes": [code],
+        "errors": [{"code": code, "message": message, "evidence_path": ""}],
+        "boundary": {
+            "advisory_provenance_only": True,
+            "asserts_correctness": False,
+            "raises_assurance": False,
+            "verifies_execution_evidence": False,
+            "can_change_evidence_verdict": False,
+            "executes_proofrun": False,
+        },
+    }
+
+
+def _run_advisory_provenance_verify(
+    evidence_dir: Path, *, home: Path | None
+) -> tuple[int, dict[str, object]]:
+    if home is None:
+        return 2, _advisory_provenance_blocked(
+            "ERR_ADVISORY_PROVENANCE_CHECK_HOME_REQUIRED",
+            "--home is required when the evidence directory is not under <home>/runs",
+        )
+    try:
+        env = _depone_subprocess_env(home)
+    except Exception as exc:  # noqa: BLE001 - readiness is a blocked verdict
+        return 2, _advisory_provenance_blocked(
+            str(exc), "Depone verifier readiness is blocked"
+        )
+
+    from witnessd.trust_anchor import resolve_trust_anchor
+
+    trust_anchor = resolve_trust_anchor(home=home)
+    if not trust_anchor.public_key_path.is_file():
+        return 2, _advisory_provenance_blocked(
+            "ERR_ADVISORY_PROVENANCE_PUBLIC_KEY_MISSING",
+            "trusted public key is required outside the advisory artifact directory",
+        )
+    env["DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"] = str(
+        trust_anchor.public_key_path
+    )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "witnessd.advisory_provenance_verify",
+            str(evidence_dir),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return 2, _advisory_provenance_blocked(
+            "ERR_ADVISORY_PROVENANCE_CHECK_FAILED",
+            completed.stderr.strip()
+            or completed.stdout.strip()
+            or "Depone advisory validator produced no output",
+        )
+    if not isinstance(payload, dict):
+        return 2, _advisory_provenance_blocked(
+            "ERR_ADVISORY_PROVENANCE_CHECK_FAILED",
+            "Depone advisory validator output must be a JSON object",
+        )
+    payload["trust_anchor"] = trust_anchor.trust_anchor
+    payload["independent_trust_anchor"] = trust_anchor.independent
+    return completed.returncode, payload
+
+
+def _optional_advisory_provenance_verify(
+    evidence_dir: Path, *, home: Path | None
+) -> tuple[int, dict[str, object]] | None:
+    if not (evidence_dir / "advisory-provenance-bundle.json").is_file():
+        return None
+    return _run_advisory_provenance_verify(
+        evidence_dir,
+        home=_advisory_provenance_home(evidence_dir, home=home),
+    )
+
+
 def _cmd_proofcheck(args: argparse.Namespace) -> int:
     from witnessd.orro_workflow import (
         role_lane_plan_binding_ref,
@@ -1058,6 +1156,12 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
     if out_path is not None:
         command.extend(["--out", str(out_path)])
     code, payload = _run_depone_json(command, env=env)
+    advisory_result = _optional_advisory_provenance_verify(
+        evidence_dir, home=home
+    )
+    advisory_provenance = (
+        advisory_result[1] if advisory_result is not None else None
+    )
     binding: dict[str, object] | None = None
     binding_error: str | None = None
     if code == 0 and payload.get("decision") == "pass":
@@ -1076,6 +1180,8 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         if isinstance(verdict_payload, dict):
             verdict_payload["trust_anchor"] = trust_anchor.trust_anchor
             verdict_payload["independent_trust_anchor"] = trust_anchor.independent
+            if advisory_provenance is not None:
+                verdict_payload["advisory_provenance"] = advisory_provenance
             if code == 0 and payload.get("decision") == "pass":
                 verdict_payload["orro_binding"] = binding
                 if workflow_plan_ref is not None:
@@ -1132,6 +1238,11 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
             if workflow_role_dispatch is not None
             else {}
         ),
+        **(
+            {"advisory_provenance": advisory_provenance}
+            if advisory_provenance is not None
+            else {}
+        ),
         "error_count": payload.get("error_count", 1 if payload.get("error") else 0),
         **({"out": payload["out"]} if payload.get("out") else {}),
         **({"errors": payload["errors"]} if payload.get("errors") else {}),
@@ -1155,60 +1266,9 @@ def _cmd_advisory_provenance_check(args: argparse.Namespace) -> int:
             message="--home is required to locate the pinned Depone verifier and operator key",
         )
         return 2
-    try:
-        env = _depone_subprocess_env(home)
-    except Exception as exc:  # noqa: BLE001 - readiness is reported as blocked
-        _emit_orro_error(
-            args,
-            code=str(exc),
-            message="Depone verifier readiness is blocked",
-        )
-        return 2
-    from witnessd.trust_anchor import resolve_trust_anchor
-
-    trust_anchor = resolve_trust_anchor(home=home)
-    if not trust_anchor.public_key_path.is_file():
-        _emit_orro_error(
-            args,
-            code="ERR_ADVISORY_PROVENANCE_PUBLIC_KEY_MISSING",
-            message=(
-                "trusted public key is required outside the advisory artifact "
-                "directory"
-            ),
-        )
-        return 2
-    env["DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"] = str(
-        trust_anchor.public_key_path
-    )
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "witnessd.advisory_provenance_verify",
-            str(evidence_dir),
-        ],
-        text=True,
-        capture_output=True,
-        check=False,
-        env=env,
-    )
-    if completed.stdout.strip():
-        try:
-            payload = json.loads(completed.stdout)
-        except json.JSONDecodeError:
-            print(completed.stdout.strip())
-        else:
-            payload["trust_anchor"] = trust_anchor.trust_anchor
-            payload["independent_trust_anchor"] = trust_anchor.independent
-            print(json.dumps(payload, sort_keys=True))
-    else:
-        _emit_orro_error(
-            args,
-            code="ERR_ADVISORY_PROVENANCE_CHECK_FAILED",
-            message=completed.stderr.strip()
-            or "Depone advisory validator produced no output",
-        )
-    return completed.returncode
+    code, payload = _run_advisory_provenance_verify(evidence_dir, home=home)
+    print(json.dumps(payload, sort_keys=True))
+    return code
 
 
 def _hash_file(path: Path) -> str:
@@ -1274,6 +1334,37 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
             message="proofcheck-verdict.json decision must be pass",
         )
         return 1
+    home = Path(args.home).resolve(strict=False) if args.home else None
+    advisory_result = _optional_advisory_provenance_verify(
+        evidence_dir, home=home
+    )
+    advisory_provenance = (
+        advisory_result[1] if advisory_result is not None else None
+    )
+    if (
+        advisory_provenance is not None
+        and advisory_provenance.get("decision") != "PASS"
+    ):
+        decision = advisory_provenance.get("decision")
+        error_code = (
+            "ERR_ORRO_HANDOFF_ADVISORY_PROVENANCE_REFUTED"
+            if decision == "REFUTE"
+            else "ERR_ORRO_HANDOFF_ADVISORY_PROVENANCE_BLOCKED"
+        )
+        error_payload = {
+            "error": {
+                "code": error_code,
+                "message": (
+                    "advisory provenance re-derivation must pass before handoff"
+                ),
+            },
+            "advisory_provenance": advisory_provenance,
+        }
+        if args.json:
+            print(json.dumps(error_payload, sort_keys=True))
+        else:
+            print(error_code, file=sys.stderr)
+        return 1
     out_path = Path(args.out).resolve(strict=False) if args.out else None
     expected_binding = _proofcheck_binding(evidence_dir, out_path=out_path)
     proofcheck_binding = proofcheck_payload.get("orro_binding")
@@ -1311,6 +1402,18 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         if isinstance(payload.get("decision"), str):
             ref["decision"] = payload["decision"]
         decision_refs.append(ref)
+    if advisory_provenance is not None:
+        decision_refs.append(
+            {
+                "path": "advisory-provenance-bundle.json",
+                "sha256": _hash_file(
+                    evidence_dir / "advisory-provenance-bundle.json"
+                ),
+                "track": "advisory-provenance",
+                "decision": advisory_provenance["decision"],
+                "error_codes": advisory_provenance.get("error_codes", []),
+            }
+        )
 
     payload = {
         "kind": "orro-handoff",
@@ -1318,6 +1421,11 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         "evidence_dir": str(evidence_dir),
         "artifact_hashes": artifact_hashes,
         "decision_refs": decision_refs,
+        **(
+            {"advisory_provenance": advisory_provenance}
+            if advisory_provenance is not None
+            else {}
+        ),
         **(
             {"workflow_plan": workflow_plan_ref}
             if workflow_plan_ref is not None
@@ -3594,6 +3702,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     handoff.add_argument("evidence_dir", nargs="?")
     handoff.add_argument("--evidence-dir", dest="evidence_dir_option", default=None)
+    handoff.add_argument("--home", default=None)
     handoff.add_argument("--out", default=None)
     handoff.add_argument("--json", action="store_true")
     handoff.set_defaults(func=_cmd_handoff)
