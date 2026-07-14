@@ -10,8 +10,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.__main__ import _parse_team_lane, _parse_team_merge_group, main
-from witnessd.fanin import run_team
+from witnessd.eventlog import EventLog
+from witnessd.fanin import DEFAULT_STOP_RULE, _run_adapter_lane, run_team
 from witnessd.signing import gen_operator_keypair
+from witnessd.team_ledger import build_team_ledger
 
 
 class TestTeamAdapterLaneParsing(unittest.TestCase):
@@ -313,6 +315,96 @@ class TestTeamAdapterFanin(unittest.TestCase):
         self.assertEqual(receipt["exit_code"], 124)
         self.assertIs(receipt["timed_out"], False)
 
+    def test_zero_event_empty_diff_adapter_lane_blocks_and_proofcheck_refuses(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            root = Path(tmp)
+            repo = root / "repo"
+            out_dir = root / "evidence"
+            observer_dir = out_dir / "observer"
+            keys = root / "keys"
+            repo.mkdir()
+            out_dir.mkdir()
+            observer_dir.mkdir()
+            keys.mkdir()
+            base_commit = _seed_repo(repo)
+            private_key_path, public_key_path = gen_operator_keypair(str(keys))
+            with patch("witnessd.adapter_run.probe_adapter_capability"):
+                lane = _run_adapter_lane(
+                    lane_id="noop-lane",
+                    spec={
+                        "adapter": "opencode",
+                        "tier": "agentic",
+                        "prompt": "edit pkg/noop.py",
+                        "opencode_binary": _fake_opencode_noop(bindir),
+                    },
+                    repo_root=repo,
+                    base_commit=base_commit,
+                    base_dir=out_dir,
+                    observer_dir=observer_dir,
+                    allowed_touched_files=["pkg/noop.py"],
+                    private_key_path=private_key_path,
+                    public_key_path=public_key_path,
+                    log=EventLog(str(out_dir / "runlog.jsonl")),
+                    run_id="m17-noop",
+                    state_root=str(root / "state"),
+                )
+
+            ledger_lane = lane["ledger_lane"]
+            self.assertEqual(ledger_lane["verification_state"], "blocked")
+            self.assertEqual(
+                ledger_lane["blocked_reason"],
+                "ERR_TEAM_LANE_ZERO_OBSERVABLE_WORK",
+            )
+            self.assertEqual(ledger_lane["touched_files"], [])
+            self.assertEqual(lane["adapter_result"]["normalized_events"], [])
+            self.assertNotIn("evidence_next_verdict", ledger_lane)
+            self.assertFalse(
+                (out_dir / "noop-lane" / "evidence-next-verdict.json").exists()
+            )
+
+            ledger = build_team_ledger(
+                leader_objective="M17 no-op canary",
+                leader_id="leader-fixed",
+                start_commit=base_commit,
+                stop_rule=DEFAULT_STOP_RULE,
+                lanes=[ledger_lane],
+            )
+            (out_dir / "team-ledger.json").write_text(
+                json.dumps(ledger), encoding="utf-8"
+            )
+            depone_root = os.environ.get("WITNESSD_DEPONE_ROOT")
+            if depone_root:
+                pythonpath = os.pathsep.join(
+                    part
+                    for part in (depone_root, os.environ.get("PYTHONPATH"))
+                    if part
+                )
+                proofcheck_stdout = StringIO()
+                with patch.dict(
+                    os.environ, {"PYTHONPATH": pythonpath}
+                ), redirect_stdout(proofcheck_stdout):
+                    proofcheck_code = main(["proofcheck", str(out_dir)])
+                proofcheck = json.loads(proofcheck_stdout.getvalue())
+                self.assertNotEqual(proofcheck_code, 0)
+                self.assertNotEqual(proofcheck["decision"], "pass")
+
+                handoff_stdout = StringIO()
+                with redirect_stdout(handoff_stdout):
+                    handoff_code = main(
+                        [
+                            "orro",
+                            "handoff",
+                            str(out_dir),
+                            "--out",
+                            str(out_dir / "orro-handoff.json"),
+                        ]
+                    )
+                self.assertNotEqual(handoff_code, 0)
+                self.assertFalse((out_dir / "orro-handoff.json").exists())
+
 
 def _fake_codex(directory: str) -> str:
     path = Path(directory) / "codex"
@@ -333,6 +425,13 @@ def _fake_codex(directory: str) -> str:
         "exit 0\n",
         encoding="utf-8",
     )
+    path.chmod(path.stat().st_mode | 0o111)
+    return str(path)
+
+
+def _fake_opencode_noop(directory: str) -> str:
+    path = Path(directory) / "opencode"
+    path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     path.chmod(path.stat().st_mode | 0o111)
     return str(path)
 

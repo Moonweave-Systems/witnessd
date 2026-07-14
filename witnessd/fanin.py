@@ -47,6 +47,7 @@ ERR_TEAM_LANE_FAILED = "ERR_TEAM_LANE_FAILED"
 ERR_TEAM_LANE_TIMEOUT_COMMITTED_EVIDENCE_PENDING = (
     "ERR_TEAM_LANE_TIMEOUT_COMMITTED_EVIDENCE_PENDING"
 )
+ERR_TEAM_LANE_ZERO_OBSERVABLE_WORK = "ERR_TEAM_LANE_ZERO_OBSERVABLE_WORK"
 ERR_TEAM_LANE_CANCELLED_FAIL_FAST = "ERR_TEAM_LANE_CANCELLED_FAIL_FAST"
 ERR_TEAM_LANE_EXEC_FAILED = "ERR_TEAM_LANE_EXEC_FAILED"
 ERR_TEAM_LANE_INDETERMINATE_PARENT_CRASH = "ERR_TEAM_LANE_INDETERMINATE_PARENT_CRASH"
@@ -1839,6 +1840,9 @@ def _run_adapter_lane(
             if adapter_timed_out and committed_changes
             else ERR_TEAM_LANE_FAILED
         )
+    elif not result.get("normalized_events") and not receipt["changed_files"]:
+        ledger_lane["verification_state"] = "blocked"
+        ledger_lane["blocked_reason"] = ERR_TEAM_LANE_ZERO_OBSERVABLE_WORK
     else:
         verdict = build_evidence_next_verdict()
         _write_json_artifact(
