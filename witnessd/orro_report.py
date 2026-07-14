@@ -15,6 +15,7 @@ from typing import Any
 from witnessd.orro_next import decide_next
 from witnessd.orro_workflow import (
     role_lane_plan_binding_ref,
+    summarize_executable_lanes,
     workflow_plan_binding_ref,
     workflow_role_dispatch_ref,
 )
@@ -122,12 +123,7 @@ def render_text_report(payload: dict[str, Any]) -> str:
         f"Goal: {payload.get('goal') or 'unknown'}",
         f"State: {summary.get('state', 'blocked')}",
         f"Profile: {workflow.get('profile') or 'unknown'}",
-        (
-            "Execution: evidence present, "
-            f"{execution.get('lane_count', 0)} lane(s)"
-            if execution.get("proofrun_evidence_present")
-            else "Execution: evidence missing"
-        ),
+        _execution_line(execution),
         _verification_line(verification),
         "Handoff: packaged" if handoff.get("handoff_present") else "Handoff: not packaged",
         f"Next: {summary.get('recommended_next_action') or 'none'}",
@@ -142,6 +138,33 @@ def render_text_report(payload: dict[str, Any]) -> str:
     else:
         lines.append("- no specific reviewer focus recorded")
     return "\n".join(lines) + "\n"
+
+
+def _execution_line(execution: dict[str, Any]) -> str:
+    if not execution.get("proofrun_evidence_present"):
+        return "Execution: evidence missing"
+    lane_count = execution.get("lane_count", 0)
+    adapter_count = execution.get("distinct_adapter_count", 0)
+    model_count = execution.get("distinct_model_count", 0)
+    if lane_count == 1:
+        label = (
+            "single-lane policy selection"
+            if execution.get("policy_selected")
+            else "single-lane execution"
+        )
+        return (
+            f"Execution: evidence present; {label} "
+            f"({adapter_count} adapter, {model_count} model)"
+        )
+    if execution.get("multi_model_execution"):
+        return (
+            f"Execution: evidence present; multi-model execution across {lane_count} lanes "
+            f"({adapter_count} adapters, {model_count} models)"
+        )
+    return (
+        f"Execution: evidence present; {lane_count} lanes "
+        f"({adapter_count} adapters, {model_count} models)"
+    )
 
 
 def _verification_line(verification: dict[str, Any]) -> str:
@@ -235,12 +258,34 @@ def _execution_summary(
 ) -> dict[str, Any]:
     ledger = _load_json_object(run_dir / "team-ledger.json")
     lanes = ledger.get("lanes") if isinstance(ledger, dict) else None
-    lane_count = len(lanes) if isinstance(lanes, list) else 0
+    executed_lanes = lanes if isinstance(lanes, list) else []
+    role_lane_plan = _load_json_object(run_dir / "role-lane-plan.json")
+    planned_lanes = (
+        role_lane_plan.get("lanes") if isinstance(role_lane_plan, dict) else []
+    )
+    if not isinstance(planned_lanes, list):
+        planned_lanes = []
+    planned_by_id = {
+        str(lane.get("lane_id")): lane
+        for lane in planned_lanes
+        if isinstance(lane, dict) and lane.get("lane_id") is not None
+    }
+    summary_lanes = []
+    for lane in executed_lanes:
+        if not isinstance(lane, dict):
+            continue
+        planned = planned_by_id.get(str(lane.get("lane_id")), {})
+        summary_lanes.append({**lane, **planned})
+    execution_summary = summarize_executable_lanes(summary_lanes)
+    policy_selected = len(summary_lanes) == 1 and (
+        summary_lanes[0].get("model_source") == "model-policy"
+    )
     return {
         "proofrun_evidence_present": bool(observed.get("team_ledger")),
         "team_ledger_present": bool(observed.get("team_ledger")),
         "team_ledger_verdict_present": bool(observed.get("team_ledger_verdict")),
-        "lane_count": lane_count,
+        **execution_summary,
+        "policy_selected": policy_selected,
         "runner_roles": [
             role
             for role in continuation.get("role_status", [])

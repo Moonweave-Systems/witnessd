@@ -283,6 +283,8 @@ class OrroTeamUsableSurfaceTests(unittest.TestCase):
             self.assertEqual(payload["routing_decision"]["chosen_profile"], "code-change")
             self.assertEqual(payload["routing_decision"]["chosen_rolepack"], str(team_path.resolve(strict=False)))
             self.assertEqual(payload["routing_decision"]["rolepack_source"], "manual-team")
+            self.assertIn("single-lane execution", payload["message"])
+            self.assertNotIn("policy-selected", payload["message"])
             self.assertTrue((run_dir / "workflow-plan.json").is_file())
             self.assertTrue((run_dir / "role-lane-plan.json").is_file())
             self.assertTrue((run_dir / "proofcheck-verdict.json").is_file())
@@ -345,6 +347,14 @@ class OrroTeamUsableSurfaceTests(unittest.TestCase):
             self.assertEqual(payload["routing_decision"]["profile_source"], "advise")
             self.assertEqual(payload["routing_decision"]["rolepack_source"], "profile-default")
             self.assertFalse(payload["routing_decision"]["can_change_evidence_verdict"])
+            self.assertEqual(payload["lane_count"], 1)
+            self.assertEqual(payload["distinct_adapter_count"], 1)
+            self.assertEqual(payload["distinct_model_count"], 1)
+            self.assertFalse(payload["multi_model_execution"])
+            self.assertEqual(payload["report_payload"]["execution"]["lane_count"], 1)
+            self.assertFalse(
+                payload["report_payload"]["execution"]["multi_model_execution"]
+            )
 
             workflow_plan = json.loads((run_dir / "workflow-plan.json").read_text(encoding="utf-8"))
             self.assertEqual(workflow_plan["profile"], "docs-change")

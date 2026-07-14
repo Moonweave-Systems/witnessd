@@ -4,6 +4,7 @@ import io
 import json
 import tempfile
 import unittest
+from copy import deepcopy
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -248,6 +249,20 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertEqual(role_lanes["workflow_profile"], "code-change")
             self.assertEqual(role_lanes["goal"], "fix parser")
             self.assertTrue(role_lanes["execution_allowed"])
+            self.assertEqual(role_lanes["lane_count"], 1)
+            self.assertEqual(role_lanes["distinct_adapter_count"], 1)
+            self.assertEqual(role_lanes["distinct_model_count"], 1)
+            self.assertFalse(role_lanes["multi_model_execution"])
+            self.assertEqual(payload["lane_count"], 1)
+            self.assertEqual(payload["distinct_adapter_count"], 1)
+            self.assertEqual(payload["distinct_model_count"], 1)
+            self.assertFalse(payload["multi_model_execution"])
+            self.assertEqual(payload["role_lane_plan"]["lane_count"], 1)
+            self.assertEqual(
+                payload["role_lane_plan"]["distinct_adapter_count"], 1
+            )
+            self.assertEqual(payload["role_lane_plan"]["distinct_model_count"], 1)
+            self.assertFalse(payload["role_lane_plan"]["multi_model_execution"])
             self.assertRegex(role_lanes["workflow_plan_hash"], r"^[0-9a-f]{64}$")
             self.assertEqual(
                 payload["role_lane_plan"]["path"], str(out.resolve(strict=False))
@@ -269,6 +284,70 @@ class OrroWorkflowTests(unittest.TestCase):
                 self.assertFalse(lane["raises_assurance"])
             self.assertFalse((root / ".witnessd" / "runs").exists())
             self.assertFalse((root / "team-ledger.json").exists())
+
+    def test_compile_role_lane_plan_labels_distinct_multi_model_execution(self) -> None:
+        workflow_plan = compile_workflow_plan(
+            goal="implement and review parser fix", profile="code-change"
+        )
+        runner = next(
+            role for role in workflow_plan["roles"] if role["role_id"] == "runner"
+        )
+        reviewer = deepcopy(runner)
+        reviewer.update(
+            {
+                "role_id": "reviewer",
+                "purpose": "review the parser implementation",
+            }
+        )
+        workflow_plan["roles"].append(reviewer)
+        policy = {
+            "kind": DEFAULT_MODEL_POLICY["kind"],
+            "schema_version": DEFAULT_MODEL_POLICY["schema_version"],
+            "routes": [
+                {
+                    "role_kind": "runner",
+                    "tier": "quick",
+                    "budget": {"max_tokens": 1, "max_usd": 1.0, "max_depth": 1},
+                    "candidates": [{"adapter": "codex", "model": "model-a"}],
+                },
+                {
+                    "role_kind": "reviewer",
+                    "tier": "quick",
+                    "budget": {"max_tokens": 1, "max_usd": 1.0, "max_depth": 1},
+                    "candidates": [{"adapter": "claude", "model": "model-b"}],
+                },
+            ],
+        }
+        rolepack = {
+            "kind": "moonweave-rolepack",
+            "schema_version": "0.2",
+            "name": "two-lane-test",
+            "grants": [
+                {
+                    "role_id": "runner",
+                    "capability": "execute",
+                    "adapters": ["codex"],
+                    "write_scope": ["src/**"],
+                },
+                {
+                    "role_id": "reviewer",
+                    "capability": "execute",
+                    "adapters": ["claude"],
+                    "write_scope": ["tests/**"],
+                },
+            ],
+        }
+
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan,
+            policy=policy,
+            rolepack=rolepack,
+        )
+
+        self.assertEqual(role_lane_plan["lane_count"], 2)
+        self.assertEqual(role_lane_plan["distinct_adapter_count"], 2)
+        self.assertEqual(role_lane_plan["distinct_model_count"], 2)
+        self.assertTrue(role_lane_plan["multi_model_execution"])
 
     def test_flowplan_role_lanes_review_only_can_route_to_gemini_reviewer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
