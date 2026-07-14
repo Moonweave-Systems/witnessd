@@ -23,10 +23,10 @@ from witnessd.distribution import (
 
 
 class DistributionInitTests(unittest.TestCase):
-    def test_default_depone_ref_pins_v110_executed_red(self) -> None:
+    def test_default_depone_ref_pins_m14_required_role_axes(self) -> None:
         self.assertEqual(
             DEFAULT_DEPONE_REF,
-            "25e0a6e4e005bb80ca8205ccee857f9c02babc86",
+            "e1b020b8300c569e35f771c9f84f6998f99a86ce",
         )
 
     def _depone_root(self) -> Path:
@@ -232,10 +232,13 @@ class DistributionInitTests(unittest.TestCase):
             out = io.StringIO()
             err = io.StringIO()
 
-            with patch.dict(os.environ, {"WITNESSD_DEPONE_ROOT": ""}), patch.object(
-                witnessd_cli,
-                "__file__",
-                str(witnessd_root / "witnessd" / "__main__.py"),
+            with (
+                patch.dict(os.environ, {"WITNESSD_DEPONE_ROOT": ""}),
+                patch.object(
+                    witnessd_cli,
+                    "__file__",
+                    str(witnessd_root / "witnessd" / "__main__.py"),
+                ),
             ):
                 os.environ.pop("WITNESSD_DEPONE_ROOT", None)
                 with redirect_stdout(out), redirect_stderr(err):
@@ -312,10 +315,13 @@ class DistributionInitTests(unittest.TestCase):
             out = io.StringIO()
             err = io.StringIO()
 
-            with patch.dict(os.environ, {"WITNESSD_DEPONE_ROOT": ""}), patch.object(
-                witnessd_cli,
-                "__file__",
-                str(fake_witnessd / "witnessd" / "__main__.py"),
+            with (
+                patch.dict(os.environ, {"WITNESSD_DEPONE_ROOT": ""}),
+                patch.object(
+                    witnessd_cli,
+                    "__file__",
+                    str(fake_witnessd / "witnessd" / "__main__.py"),
+                ),
             ):
                 os.environ.pop("WITNESSD_DEPONE_ROOT", None)
                 with redirect_stdout(out), redirect_stderr(err):
@@ -341,7 +347,9 @@ class DistributionInitTests(unittest.TestCase):
             self.assertEqual(payload["home"], str(home.resolve(strict=False)))
             self.assertTrue((home / "provision.json").is_file())
             self.assertTrue((home / "orro-engine-lock.json").is_file())
-            self.assertEqual(payload["engine_lock"], str(home / "orro-engine-lock.json"))
+            self.assertEqual(
+                payload["engine_lock"], str(home / "orro-engine-lock.json")
+            )
             self.assertEqual(payload["depone_source"], "setup-clone")
             self.assertTrue(payload["depone_network_used"])
             self.assertRegex(payload["depone_commit"], r"^[0-9a-f]{40}$")
@@ -483,10 +491,13 @@ class DistributionInitTests(unittest.TestCase):
             out = io.StringIO()
             err = io.StringIO()
 
-            with patch.dict(os.environ, {"WITNESSD_DEPONE_ROOT": ""}), patch.object(
-                witnessd_cli,
-                "__file__",
-                str(fake_witnessd / "witnessd" / "__main__.py"),
+            with (
+                patch.dict(os.environ, {"WITNESSD_DEPONE_ROOT": ""}),
+                patch.object(
+                    witnessd_cli,
+                    "__file__",
+                    str(fake_witnessd / "witnessd" / "__main__.py"),
+                ),
             ):
                 os.environ.pop("WITNESSD_DEPONE_ROOT", None)
                 with redirect_stdout(out), redirect_stderr(err):
