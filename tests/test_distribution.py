@@ -23,10 +23,10 @@ from witnessd.distribution import (
 
 
 class DistributionInitTests(unittest.TestCase):
-    def test_default_depone_ref_pins_v109_bound_observation(self) -> None:
+    def test_default_depone_ref_pins_v110_executed_red(self) -> None:
         self.assertEqual(
             DEFAULT_DEPONE_REF,
-            "42f0aaa9b3141d579f122388d49d1d74e698acfa",
+            "25e0a6e4e005bb80ca8205ccee857f9c02babc86",
         )
 
     def _depone_root(self) -> Path:

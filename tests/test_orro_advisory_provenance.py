@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
 import os
+import shlex
 import sys
 import tempfile
 import unittest
@@ -26,6 +28,8 @@ from depone.verify.adapters.base import EvidenceContext, EvidenceFile  # noqa: E
 from depone.verify.evidence_contract import validate_advisory_provenance  # noqa: E402
 from witnessd.__main__ import main  # noqa: E402
 from witnessd.distribution import InitConfig, init_witnessd_home  # noqa: E402
+from witnessd.receipt import build_runner_receipt  # noqa: E402
+from witnessd.signing import derive_public_key_id, sign_dsse  # noqa: E402
 
 if _added_depone_path:
     sys.path.remove(str(DEPONE_ROOT))
@@ -42,28 +46,67 @@ BOUNDARY_FLAGS = (
 )
 
 
-def _write_trace_receipt(repo: Path, symptom: str) -> str:
-    command = ["python3", "-m", "unittest", "tests.test_widget"]
+def _write_trace_receipt(
+    repo: Path,
+    symptom: str,
+    *,
+    command: list[str] | None = None,
+) -> str:
+    recorded_command = (
+        ["python3", "-m", "unittest", "tests.test_widget"]
+        if command is None
+        else command
+    )
     output = f"{symptom}\nAssertionError: 7 != 9"
-    receipt_text = (
-        json.dumps(
-            {
-                "kind": "orro-trace-reproduction",
-                "symptom": symptom,
-                "command": command,
-                "exit_code": 1,
-                "stdout": "",
-                "stderr": output,
-                "minimized": True,
-                "external_confirmation": {
-                    "discriminating_probe_ran": True,
-                    "ruled_out_rival": True,
-                    "red_to_green_observed": True,
-                    "reported_verbatim": "operator isolated the cause and reran: PASS",
-                },
-            },
-            sort_keys=True,
+    execution = None
+    if recorded_command:
+        execution = build_runner_receipt(
+            task_id="trace-red",
+            worktree="/tmp/trace-red",
+            invocation=recorded_command,
+            transcript_path="orro-trace-execution.log",
+            exit_code=1,
+            touched_files=[],
+            started_at="2026-07-14T00:00:00Z",
+            ended_at="2026-07-14T00:00:01Z",
         )
+        execution.update(
+            {
+                "command": shlex.join(recorded_command),
+                "transcript": output,
+                "transcript_sha256": hashlib.sha256(
+                    output.encode("utf-8")
+                ).hexdigest(),
+            }
+        )
+        execution["source_hashes"] = {
+            "receipt": canonical_hash(
+                {
+                    key: value
+                    for key, value in execution.items()
+                    if key != "source_hashes"
+                }
+            )
+        }
+    receipt = {
+        "kind": "orro-trace-reproduction",
+        "symptom": symptom,
+        "command": recorded_command,
+        "exit_code": 1,
+        "stdout": "",
+        "stderr": output,
+        "minimized": True,
+        "external_confirmation": {
+            "discriminating_probe_ran": True,
+            "ruled_out_rival": True,
+            "red_to_green_observed": True,
+            "reported_verbatim": "operator isolated the cause and reran: PASS",
+        },
+    }
+    if execution is not None:
+        receipt["execution"] = execution
+    receipt_text = (
+        json.dumps(receipt, sort_keys=True)
         + "\n"
     )
     (repo / "orro-trace-reproduction.json").write_text(
@@ -261,6 +304,55 @@ def _validate(out_dir: Path, public_key: Path) -> list:
     return validate_advisory_provenance(evidence, contract)
 
 
+def _force_v110_freetext_confirmed_bundle(out_dir: Path, home: Path) -> None:
+    decision_path = out_dir / "orro-trace.json"
+    decision = json.loads(decision_path.read_text(encoding="utf-8"))
+    decision["reproduction"].pop("execution_receipt_sha256", None)
+    decision_path.write_text(
+        json.dumps(decision, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    reproduction = json.loads(
+        (out_dir / "orro-trace-reproduction.json").read_text(encoding="utf-8")
+    )
+    statement = {
+        "_type": "https://in-toto.io/Statement/v1",
+        "subject": [
+            {
+                "name": "orro-trace.json",
+                "digest": {"sha256": canonical_hash(decision)},
+            },
+            {
+                "name": "orro-trace-reproduction.json",
+                "digest": {"sha256": canonical_hash(reproduction)},
+            },
+        ],
+        "predicateType": (
+            "https://depone.dev/attestations/advisory-provenance/v110"
+        ),
+        "predicate": {"schema_version": "v110.advisory_provenance"},
+    }
+    payload = json.dumps(statement, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    private_key = home / "keys" / "operator-ed25519.pem"
+    public_key = home / "keys" / "operator-ed25519.pub.pem"
+    bundle = sign_dsse(
+        {
+            "payloadType": "application/vnd.in-toto+json",
+            "payload": base64.b64encode(payload).decode("ascii"),
+            "signatures": [],
+        },
+        str(private_key),
+        key_id=derive_public_key_id(str(public_key)),
+    )
+    (out_dir / "advisory-provenance-bundle.json").write_text(
+        json.dumps(bundle, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (out_dir / "orro-trace-execution.json").unlink()
+
+
 class OrroAdvisoryProvenanceTests(unittest.TestCase):
     def _assert_boundary(self, decision: dict) -> None:
         self.assertTrue(decision["boundary"]["advisory_only"])
@@ -268,7 +360,7 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
             with self.subTest(flag=flag):
                 self.assertFalse(decision["boundary"][flag])
 
-    def test_sketch_emission_is_rederived_by_depone_v108(self) -> None:
+    def test_sketch_emission_is_rederived_by_depone_v110(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo = root / "repo"
@@ -393,6 +485,9 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
             verdict_path = out_dir / "team-ledger-verdict.json"
             verdict_path.write_text('{"decision":"pass"}\n', encoding="utf-8")
             verdict_before = verdict_path.read_bytes()
+            git_diff_path = out_dir / "git-diff.patch"
+            git_diff_path.write_text("recorded execution evidence\n", encoding="utf-8")
+            git_diff_before = git_diff_path.read_bytes()
 
             decision = _run_advisory(
                 "trace",
@@ -406,16 +501,76 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
             receipt_path = out_dir / "orro-trace-reproduction.json"
             self.assertTrue(receipt_path.is_file(), "trace receipt was not emitted")
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            execution_path = out_dir / "orro-trace-execution.json"
+            self.assertTrue(
+                execution_path.is_file(), "executed-red receipt was not emitted"
+            )
+            execution = json.loads(execution_path.read_text(encoding="utf-8"))
+            contract = json.loads(
+                (out_dir / "evidence-contract.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(decision["root_cause"]["tier"], "confirmed")
+            self.assertEqual(contract["schema_version"], "v110.advisory_provenance")
             self.assertEqual(
                 decision["reproduction"]["receipt_sha256"], canonical_hash(receipt)
             )
+            self.assertEqual(
+                decision["reproduction"]["execution_receipt_sha256"],
+                canonical_hash(execution),
+            )
+            self.assertEqual(
+                execution["transcript_sha256"],
+                hashlib.sha256(execution["transcript"].encode("utf-8")).hexdigest(),
+            )
+            self.assertEqual(execution["exit_code"], 1)
+            self.assertTrue(execution["command"].strip())
+            self.assertEqual(execution["worktree"], "/tmp/trace-red")
+            self.assertEqual(execution["started_at"], "2026-07-14T00:00:00Z")
             self._assert_boundary(decision)
             self.assertEqual(verdict_path.read_bytes(), verdict_before)
+            self.assertEqual(git_diff_path.read_bytes(), git_diff_before)
             self.assertEqual(
                 _validate(out_dir, home / "keys" / "operator-ed25519.pub.pem"),
                 [],
             )
+
+            _force_v110_freetext_confirmed_bundle(out_dir, home)
+            errors = _validate(
+                out_dir,
+                home / "keys" / "operator-ed25519.pub.pem",
+            )
+            self.assertIn(
+                "ERR_ADVISORY_TRACE_RED_NOT_EXECUTED",
+                [error.code for error in errors],
+            )
+
+    def test_agent_authored_confirmed_trace_refuses_freetext_without_command(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            symptom = "widget total was 7 expected 9"
+            receipt_sha256 = _write_trace_receipt(repo, symptom, command=[])
+            out_dir = root / "trace-artifacts"
+
+            code, result = _run_advisory_result(
+                "trace",
+                symptom,
+                repo=repo,
+                home=root / ".witnessd",
+                out_dir=out_dir,
+                decision=_trace_decision(receipt_sha256, tier="confirmed"),
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(
+                result["error"]["code"],
+                "ERR_ORRO_TRACE_CONFIRMED_UNBACKED",
+            )
+            self.assertFalse((out_dir / "orro-trace.json").exists())
+            self.assertFalse((out_dir / "orro-trace-execution.json").exists())
 
     def test_agent_authored_suspected_trace_accepts_one_hypothesis(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -593,6 +748,9 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
             pass_code, pass_payload = run_check()
             self.assertEqual(pass_code, 0)
             self.assertEqual(pass_payload["decision"], "PASS")
+            self.assertEqual(
+                pass_payload["schema_version"], "v110.advisory_provenance"
+            )
             self.assertFalse(pass_payload["boundary"]["raises_assurance"])
             self.assertFalse(pass_payload["boundary"]["asserts_correctness"])
 
@@ -607,6 +765,9 @@ class OrroAdvisoryProvenanceTests(unittest.TestCase):
             refute_code, refute_payload = run_check()
             self.assertEqual(refute_code, 1)
             self.assertEqual(refute_payload["decision"], "REFUTE")
+            self.assertEqual(
+                refute_payload["schema_version"], "v110.advisory_provenance"
+            )
             self.assertIn("ERR_ADVISORY_SKETCH_TAMPER", refute_payload["error_codes"])
 
 

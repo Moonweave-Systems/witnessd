@@ -109,7 +109,7 @@ witnessd runtime code or Depone verifier logic.
 | `orro scout` | read-only repo exploration, repo profile, context pack, and discovery notes |
 | `orro sketch` | validates and seals an agent-authored advisory direction |
 | `orro trace` | validates, gates, and seals an agent-authored root-cause record |
-| `orro advisory-provenance-check` | offline Depone v108 re-derivation of sealed sketch/trace provenance; not correctness |
+| `orro advisory-provenance-check` | offline Depone v110 re-derivation of sealed sketch/trace provenance; not correctness |
 | `flowplan` | plan-only workflow design and ORRO workflow compiler surface |
 | `proofrun` | precise evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
@@ -190,11 +190,11 @@ reasons, no-gos, and rabbit holes. `orro trace "<symptom>" --decision trace.json
 --repo . --home .witnessd --json` validates the agent's hypotheses and claimed
 tier against the symptom-bound `orro-trace-reproduction.json` from a prior actual
 run. The decision may bind either the source-file SHA-256 or the canonical sealed
-receipt SHA-256; emission records the canonical v108 hash. A claimed `confirmed`
-tier is refused unless the receipt binds the symptom
-and authored discriminating probe and records a ruled-out rival plus red-to-green
-confirmation. Suspected, speculative, and unconfirmed records impose no minimum
-hypothesis count beyond shape consistency. Without `--decision`, each command
+receipt SHA-256. A claimed `confirmed` tier is refused unless the receipt binds a
+real failing command, exit code, transcript digest, symptom, and authored
+discriminating probe, and records a ruled-out rival plus red-to-green confirmation.
+Suspected, speculative, and unconfirmed records impose no minimum hypothesis count
+beyond shape consistency. Without `--decision`, each command
 emits only a non-authoritative scaffold stamped `agent_authored=false` and
 `degraded=true`; the harness-authored fallback is intended for headless/CI use.
 Both surfaces are read-only advisory context, not evidence, verifier truth,
@@ -203,9 +203,13 @@ verdict, or launch proofrun. Their skillpacks are reference knowledge for the
 agent, not CLI-enforced ceremonies or CLI-generated reasoning.
 
 With `--out`, sketch and trace also write `advisory-provenance-bundle.json` and
-the Depone `v108.advisory_provenance` `evidence-contract.json`; trace additionally
-copies the prior run receipt into the sealed subject set and records its canonical
-hash in the decision. Re-derive the separate provenance track with:
+the Depone `v110.advisory_provenance` `evidence-contract.json`; trace additionally
+copies the prior run receipt into the sealed subject set. A confirmed trace also
+seals `orro-trace-execution.json` as a digest-bound subject and records its canonical
+hash in the decision. That subject must already exist as a complete, self-hashed
+`execution` object inside the prior-run reproduction; witnessd validates and
+canonicalizes it but does not invent missing execution metadata. Re-derive the
+separate provenance track with:
 
 ```bash
 python3 -m orro advisory-provenance-check <artifact-dir> --home .witnessd --json
