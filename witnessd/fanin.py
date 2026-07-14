@@ -44,6 +44,9 @@ from witnessd.write_scope_declaration import (
 
 DEFAULT_STOP_RULE = "all write lanes pass or block"
 ERR_TEAM_LANE_FAILED = "ERR_TEAM_LANE_FAILED"
+ERR_TEAM_LANE_TIMEOUT_COMMITTED_BUT_INCOMPLETE = (
+    "ERR_TEAM_LANE_TIMEOUT_COMMITTED_BUT_INCOMPLETE"
+)
 ERR_TEAM_LANE_CANCELLED_FAIL_FAST = "ERR_TEAM_LANE_CANCELLED_FAIL_FAST"
 ERR_TEAM_LANE_EXEC_FAILED = "ERR_TEAM_LANE_EXEC_FAILED"
 ERR_TEAM_LANE_INDETERMINATE_PARENT_CRASH = "ERR_TEAM_LANE_INDETERMINATE_PARENT_CRASH"
@@ -856,6 +859,18 @@ def _has_failed_command_receipt(command_receipts: object) -> bool:
         except (TypeError, ValueError):
             return True
     return False
+
+
+def _has_timeout_marker(command_receipts: object) -> bool:
+    if isinstance(command_receipts, dict):
+        return command_receipts.get("timed_out") is True
+    if not isinstance(command_receipts, list):
+        return False
+    return any(
+        _has_timeout_marker(command)
+        for command in command_receipts
+        if isinstance(command, dict)
+    )
 
 
 def _cancelled_lane(
@@ -1773,6 +1788,7 @@ def _run_adapter_lane(
         role_id=spec.get("role_id"),
         role_capability=spec.get("role_capability"),
         tools=spec.get("tools"),
+        timeout_seconds=int(spec.get("timeout_seconds", 120)),
     )
     _commit_lane(worktree, lane_id)
 
@@ -1781,6 +1797,9 @@ def _run_adapter_lane(
     adapter_command_failed = _has_failed_command_receipt(
         runner_receipt
     ) or _has_failed_command_receipt(command_receipts)
+    adapter_timed_out = _has_timeout_marker(runner_receipt) or _has_timeout_marker(
+        command_receipts
+    )
     receipt = build_worktree_lane_receipt(
         worktree=worktree,
         base_commit=base_commit,
@@ -1812,7 +1831,14 @@ def _run_adapter_lane(
     verdict = None
     if adapter_command_failed:
         ledger_lane["verification_state"] = "blocked"
-        ledger_lane["blocked_reason"] = ERR_TEAM_LANE_FAILED
+        committed_changes = (
+            receipt["head_commit"] != base_commit and bool(receipt["changed_files"])
+        )
+        ledger_lane["blocked_reason"] = (
+            ERR_TEAM_LANE_TIMEOUT_COMMITTED_BUT_INCOMPLETE
+            if adapter_timed_out and committed_changes
+            else ERR_TEAM_LANE_FAILED
+        )
     else:
         verdict = build_evidence_next_verdict()
         _write_json_artifact(

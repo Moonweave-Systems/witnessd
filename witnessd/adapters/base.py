@@ -97,6 +97,7 @@ class AdapterResult:
     command_receipts: list[dict[str, Any]]
     touched_files: list[str]
     test_output: dict[str, Any]
+    timed_out: bool = False
     normalized_events: list[dict[str, Any]] = field(default_factory=list)
     raw_events_path: str | None = None
     normalized_events_path: str | None = None
@@ -138,6 +139,7 @@ class AdapterResult:
             arm=arm,
             runner_kind=self.runner_kind,
             human_intervened=human_intervened,
+            timed_out=self.timed_out,
         )
 
 

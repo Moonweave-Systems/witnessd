@@ -495,6 +495,7 @@ def run_adapter_lane(
             "command_receipts": adapter_result.command_receipts,
             "touched_files": adapter_result.touched_files,
             "test_output": adapter_result.test_output,
+            "timed_out": getattr(adapter_result, "timed_out", False),
         }
         if redaction_context is not None:
             lane_result = redact_value(lane_result, redaction_context)
