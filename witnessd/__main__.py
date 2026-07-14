@@ -1457,6 +1457,8 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
 
 
 def _cmd_orro_doctor(args: argparse.Namespace) -> int:
+    from witnessd.preflight import probe_adapter_capability
+
     checks = []
     checks.append({"name": "witnessd_import", "status": "pass"})
     home = Path(args.home).resolve(strict=False) if args.home else None
@@ -1541,11 +1543,13 @@ def _cmd_orro_doctor(args: argparse.Namespace) -> int:
         }
     )
 
-    for adapter in args.adapter or ["codex", "claude", "opencode"]:
+    for adapter in args.adapter or ["codex", "claude", "agy", "gemini", "opencode"]:
+        receipt = probe_adapter_capability(adapter, repo=os.getcwd())
         checks.append(
             {
                 "name": f"adapter:{adapter}",
-                "status": "pass" if shutil.which(adapter) else "missing",
+                "status": "pass" if receipt["decision"] == "pass" else "missing",
+                "receipt": receipt,
             }
         )
     decision = (
@@ -3729,7 +3733,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--adapter",
         action="append",
         default=None,
-        choices=["codex", "claude", "opencode"],
+        choices=["codex", "claude", "agy", "gemini", "opencode"],
     )
     orro_doctor.add_argument("--json", action="store_true")
     orro_doctor.add_argument("--engine-lock", default=None)
