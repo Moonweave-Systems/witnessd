@@ -118,6 +118,8 @@ class OrroRuntimeHardeningTests(unittest.TestCase):
                 role_lanes=True,
             )
             args.extend(["--workflow-plan", str(workflow_plan), "--role-lane-plan", str(role_lane_plan)])
+        else:
+            args.append("--allow-reference-adapter")
         stdout = io.StringIO()
         with redirect_stdout(stdout):
             code = main(args)

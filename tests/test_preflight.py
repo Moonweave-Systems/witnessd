@@ -2,8 +2,7 @@ import subprocess
 import tempfile
 import unittest
 
-from depone.agent_fabric.codex_local_capability import validate_codex_local_capability
-
+from witnessd.codex_capability import validate_codex_local_capability
 from witnessd.preflight import PreflightError, probe_adapter_capability
 
 

@@ -1,4 +1,3 @@
-import json
 import os
 import shutil
 import stat
@@ -9,9 +8,6 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import depone
-from depone.agent_fabric.codex_local_capability import (
-    build_codex_local_capability as depone_codex_capability,
-)
 from depone.agent_fabric.evidence_substrate import build_otel_genai_spans
 from depone.agent_fabric.isolation import (
     UID_OBSERVER_LAUNCHED_ISOLATION_MODEL,
@@ -27,7 +23,10 @@ from depone.agent_fabric.reference_adapter import (
 )
 
 from witnessd.adapters.base import VALID_RUNNERS
-from witnessd.codex_capability import build_codex_local_capability
+from witnessd.codex_capability import (
+    build_codex_local_capability,
+    validate_codex_local_capability,
+)
 from witnessd.fixture import build_reference_adapter_fixture
 from witnessd.isolation import (
     probe_lane_isolation,
@@ -169,10 +168,10 @@ class TestDeponeReplicaConformance(unittest.TestCase):
                 "instruction_files": [Path("AGENTS.md")],
             }
 
-            with _cwd(DEPONE_ROOT):
-                depone_receipt = depone_codex_capability(**kwargs)
-
-            self.assertEqual(build_codex_local_capability(**kwargs), depone_receipt)
+            # Depone's codex_local_capability replica was removed (M5: Depone no
+            # longer executes/orchestrates); witnessd now owns this capability.
+            receipt = build_codex_local_capability(**kwargs)
+            self.assertEqual(validate_codex_local_capability(receipt), [])
 
     def test_codex_capability_blocks_when_git_head_unknown(self):
         with tempfile.TemporaryDirectory() as tmp:

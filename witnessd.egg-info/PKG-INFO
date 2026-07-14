@@ -1,0 +1,12 @@
+Metadata-Version: 2.1
+Name: witnessd
+Version: 2.2.1
+Summary: witnessd execution engine with deprecated ORRO compatibility shim
+Home-page: UNKNOWN
+License: UNKNOWN
+Platform: UNKNOWN
+Requires-Python: >=3.10
+License-File: LICENSE
+
+UNKNOWN
+
