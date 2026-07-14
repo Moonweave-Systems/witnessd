@@ -4,19 +4,31 @@ from __future__ import annotations
 
 from typing import Callable, Any
 
+from witnessd.model_policy import DEFAULT_MODEL_POLICY
 from witnessd.runlog import append_runlog
-
-TIER_CANDIDATES = {
-    "quick": ["gpt-5.3-codex-spark", "gpt-5.4-mini", "gpt-5.5"],
-    "agentic": ["gpt-5.5", "gpt-5.4-mini", "gpt-5.3-codex-spark"],
-    "frontier": ["gpt-5.5", "gpt-5.4-mini", "gpt-5.3-codex-spark"],
-}
 
 
 class RouteExhaustedError(RuntimeError):
     def __init__(self, message: str = "route candidates exhausted") -> None:
         super().__init__(f"ERR_WITNESSD_ROUTE_EXHAUSTED: {message}")
         self.code = "ERR_WITNESSD_ROUTE_EXHAUSTED"
+
+
+def _tier_candidates(tier: str) -> list[str]:
+    # route_model is role-agnostic, so its tier ladder follows model-policy
+    # route order across role kinds (runner first, then reviewer in the default
+    # policy) and tries every model declared for that tier exactly once.
+    candidates: list[str] = []
+    for route in DEFAULT_MODEL_POLICY.get("routes", []):
+        if route.get("tier") != tier:
+            continue
+        for candidate in route.get("candidates") or []:
+            model = str(candidate["model"])
+            if model not in candidates:
+                candidates.append(model)
+    if not candidates:
+        raise ValueError(f"unknown model tier: {tier}")
+    return candidates
 
 
 def route_model(
@@ -27,11 +39,8 @@ def route_model(
     is_supported: Callable[[str], bool],
     concurrency_key: str | None = None,
 ) -> dict[str, Any]:
-    if tier not in TIER_CANDIDATES:
-        raise ValueError(f"unknown model tier: {tier}")
-
     attempts: list[dict[str, Any]] = []
-    candidates = TIER_CANDIDATES[tier]
+    candidates = _tier_candidates(tier)
     for index, model in enumerate(candidates):
         supported = bool(is_supported(model))
         attempts.append({"model": model, "supported": supported})
@@ -90,7 +99,7 @@ def _self_test() -> None:
             task_id="self-test",
             tier="quick",
             log=log,
-            is_supported=lambda model: model == TIER_CANDIDATES["quick"][-1],
+            is_supported=lambda model: model == _tier_candidates("quick")[-1],
         )
         assert decision["degraded"] is True
         try:
