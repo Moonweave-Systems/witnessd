@@ -117,26 +117,27 @@ witnessd runtime code or Depone verifier logic.
 | ORRO | flagship product/tool: evidence-governed agent workflow orchestrator |
 | ORRO Flow | `scout -> flowplan -> proofrun -> proofcheck -> handoff` |
 | `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
+| `orro setup` | one-command setup: provision pinned Depone, initialize home, and write engine lock |
+| `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo exploration, repo profile, context pack, and discovery notes |
 | `orro sketch` | validates and seals an agent-authored advisory direction |
 | `orro trace` | validates, gates, and seals an agent-authored root-cause record |
 | `orro advisory-provenance-check` | offline Depone v110 re-derivation of sealed sketch/trace provenance; not correctness |
-| `flowplan` | plan-only workflow design and ORRO workflow compiler surface |
-| `proofrun` | precise evidence-backed execution alias |
-| `proofcheck` | offline evidence verification alias |
+| `orro flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
+| `orro proofrun` | precise evidence-backed execution alias |
+| `orro proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro next` | non-executing continuation gate over persisted run artifacts |
 | `orro report` | human-facing summary of observed ORRO artifacts and next safe action |
+| `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
 | `orro auto --dry-run` | non-executing automation planner that recommends the next command |
 | `orro auto --once` | one-step executor for proofcheck or handoff only |
 | `orro auto --until-complete` | bounded post-run loop over proofcheck and handoff only |
 | `orro team init` | scaffold `.orro/team.json` rolepack readiness config; not proof or assurance |
 | `orro team go` | one-command flowplan/proofrun/proofcheck/report wrapper; reports Depone verdict |
-| `orro skillpack` | knowledge-as-code and progressive-disclosure support |
 | `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
 | `orro auto` | future broader resume/continuation loop behind evidence gates |
-| `orro ultra` | future high-autonomy profile with stricter gates |
 
 `witnessd` is the engine name, not the main session skill name. `Moonweave` is the
 publisher/account namespace, not the tool name.
