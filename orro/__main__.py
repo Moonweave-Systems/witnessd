@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 import sys
+from difflib import get_close_matches
 
-from witnessd.__main__ import main as witnessd_main
+from witnessd.__main__ import ORRO_COMMANDS, main as witnessd_main
 
 
 DEPRECATION_WARNING = (
@@ -62,6 +63,17 @@ def main(argv: list[str] | None = None) -> int:
     if not args or args[0] in {"-h", "--help"}:
         print(ORRO_HELP)
         return 0
+    command = args[0]
+    if command not in ORRO_COMMANDS:
+        print(f"orro: unknown command '{command}'", file=sys.stderr)
+        suggestion = get_close_matches(command, sorted(ORRO_COMMANDS), n=1)
+        if suggestion:
+            print(f"did you mean '{suggestion[0]}'?", file=sys.stderr)
+        print(
+            "valid commands: " + ", ".join(sorted(ORRO_COMMANDS)),
+            file=sys.stderr,
+        )
+        return 2
     return witnessd_main(["orro", *args])
 
 

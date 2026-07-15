@@ -4405,47 +4405,35 @@ def _normalize_superflow_argv(argv: list[str]) -> list[str]:
     return argv
 
 
+ORRO_COMMAND_MAP: dict[str, str] = {
+    "setup": "orro-setup",
+    "init": "init",
+    "scout": "scout",
+    "flowplan": "flowplan",
+    "proofrun": "proofrun",
+    "proofcheck": "proofcheck",
+    "advisory-provenance-check": "advisory-provenance-check",
+    "handoff": "handoff",
+    "doctor": "orro-doctor",
+    "engine-lock": "engine-lock",
+    "lock": "engine-lock",
+    "next": "orro-next",
+    "advise": "orro-advise",
+    "sketch": "orro-sketch",
+    "trace": "orro-trace",
+    "report": "orro-report",
+    "review": "orro-review",
+    "auto": "orro-auto",
+    "team": "team",
+}
+ORRO_COMMANDS: frozenset[str] = frozenset(ORRO_COMMAND_MAP)
+
+
 def _normalize_orro_argv(argv: list[str]) -> list[str]:
     if not argv or argv[0] != "orro":
         return argv
-    if len(argv) >= 2 and argv[1] == "setup":
-        return ["orro-setup", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "init":
-        return ["init", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "scout":
-        return ["scout", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "flowplan":
-        return ["flowplan", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "proofrun":
-        return ["proofrun", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "proofcheck":
-        return ["proofcheck", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "advisory-provenance-check":
-        return ["advisory-provenance-check", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "handoff":
-        return ["handoff", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "doctor":
-        return ["orro-doctor", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "engine-lock":
-        return ["engine-lock", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "lock":
-        return ["engine-lock", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "next":
-        return ["orro-next", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "advise":
-        return ["orro-advise", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "sketch":
-        return ["orro-sketch", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "trace":
-        return ["orro-trace", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "report":
-        return ["orro-report", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "review":
-        return ["orro-review", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "auto":
-        return ["orro-auto", *argv[2:]]
-    if len(argv) >= 2 and argv[1] == "team":
-        return ["team", *argv[2:]]
+    if len(argv) >= 2 and argv[1] in ORRO_COMMAND_MAP:
+        return [ORRO_COMMAND_MAP[argv[1]], *argv[2:]]
     return argv
 
 
