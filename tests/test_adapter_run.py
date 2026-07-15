@@ -17,6 +17,7 @@ from depone.verify.adapters.base import EvidenceContext, EvidenceFile
 from depone.verify.evidence_contract import validate_evidence_contract
 
 from witnessd.adapter_run import LaneBlocked, run_adapter_lane
+from witnessd.emitter import emit_lane_evidence
 from witnessd.observer import ObserverSeparationError
 from witnessd.runintent import RUN_INTENT_PAYLOAD_TYPE, build_run_intent
 from witnessd.signing import verify_dsse
@@ -249,21 +250,35 @@ class TestAdapterRun(unittest.TestCase):
             _init_repo(sandbox)
             secret_prompt = "read /home/operator/private-notes and write code"
 
-            out = run_adapter_lane(
-                root=root,
-                sandbox=sandbox,
-                adapter="codex",
-                task_id="t-redacted",
-                prompt=secret_prompt,
-                arm="direct",
-                tier="agentic",
-                is_supported=lambda _model: True,
-                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
-                codex_binary=_fake_codex_writes_env_and_code(bindir),
-                evidence_dir=evidence_dir,
-                allowed_touched_files=["codex-home.txt", "pkg/agent.py"],
-                capture_profile="redacted",
+            with patch(
+                "witnessd.adapter_run.emit_lane_evidence",
+                wraps=emit_lane_evidence,
+            ) as emit:
+                out = run_adapter_lane(
+                    root=root,
+                    sandbox=sandbox,
+                    adapter="codex",
+                    task_id="t-redacted",
+                    prompt=secret_prompt,
+                    arm="direct",
+                    tier="agentic",
+                    is_supported=lambda _model: True,
+                    budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                    codex_binary=_fake_codex_writes_env_and_code(bindir),
+                    evidence_dir=evidence_dir,
+                    allowed_touched_files=["codex-home.txt", "pkg/agent.py"],
+                    capture_profile="redacted",
+                )
+
+            self.assertEqual(emit.call_args.kwargs["runtime_sandbox"], sandbox)
+            self.assertNotEqual(out["runner_receipt"]["worktree"], sandbox)
+            self.assertIn("path:", out["runner_receipt"]["worktree"])
+            persisted = "\n".join(
+                path.read_text(encoding="utf-8")
+                for path in sorted(pathlib.Path(evidence_dir).rglob("*"))
+                if path.is_file()
             )
+            self.assertNotIn(sandbox, persisted)
 
             run_intent_artifact = json.loads(
                 pathlib.Path(evidence_dir, "run-intent.json").read_text(
@@ -276,6 +291,7 @@ class TestAdapterRun(unittest.TestCase):
                 ).decode("utf-8")
             )
             self.assertEqual(intent["capture_profile"], "redacted")
+            self.assertEqual(intent["baseline"]["git_head_status"], "known")
             self.assertNotIn("pkg/agent.py", json.dumps(intent))
             self.assertNotIn(secret_prompt, json.dumps(intent))
 

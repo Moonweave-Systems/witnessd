@@ -48,6 +48,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 2
 
     sandbox = os.path.abspath(args.runner_sandbox)
+    if not os.path.isdir(sandbox):
+        print("ERR_RUNTIME_SANDBOX_UNAVAILABLE", file=sys.stderr)
+        return 2
     if not args.out or not args.log:
         print("ERR_OBSERVER_OUTPUT_REQUIRED", file=sys.stderr)
         return 2
@@ -131,6 +134,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             public_key_path=public_key_path,
             task_id=args.task_id,
             runner_sandbox=str(redact_value(sandbox, redaction_context)),
+            runtime_sandbox=sandbox,
             capture_profile=args.capture_profile,
             redaction_manifest=(
                 redaction_context["manifest"]

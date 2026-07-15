@@ -531,6 +531,7 @@ def run_adapter_lane(
             task_id=task_id,
             invocation=redact_value(adapter_result.invocation, redaction_context),
             runner_sandbox=str(redact_value(worktree, redaction_context)),
+            runtime_sandbox=worktree,
             runner_kind=adapter_result.runner_kind,
             started_at=started_at,
             ended_at=ended_at,

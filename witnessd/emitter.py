@@ -66,6 +66,9 @@ class EmitterError(Exception):
     pass
 
 
+ERR_RUNTIME_SANDBOX_UNAVAILABLE = "ERR_RUNTIME_SANDBOX_UNAVAILABLE"
+
+
 def _is_inside_or_equal(path: str, root: str) -> bool:
     norm_path = os.path.normcase(os.path.realpath(path))
     norm_root = os.path.normcase(os.path.realpath(root))
@@ -118,6 +121,7 @@ def emit_lane_evidence(
     task_id: str = "witnessd-lane",
     invocation: list[str] | None = None,
     runner_sandbox: str = "",
+    runtime_sandbox: str | None = None,
     prev_capture_hash: str | None = None,
     isolation: dict[str, Any] | None = None,
     runner_kind: str | None = None,
@@ -142,12 +146,25 @@ def emit_lane_evidence(
 ) -> dict[str, Any]:
     """Assemble and emit a lane's full evidence set through the runlog SoT.
 
+    `runner_sandbox` is persisted in the runner receipt and may be redacted.
+    `runtime_sandbox` is never persisted and is used only for real filesystem
+    operations. It defaults to `runner_sandbox` for backward compatibility.
+
     Returns the built artifacts plus the ordered runlog events. Fails closed —
     writing nothing — if `public_key_path` (the signing public key) resolves inside
-    `evidence_dir`.
+    `evidence_dir`, or if the runtime sandbox cannot be used for baseline capture.
     """
     if _is_inside_or_equal(public_key_path, evidence_dir):
         raise EmitterError("ERR_TRUST_ROOT_NOT_SEPARATED")
+    runtime_sandbox = runner_sandbox if runtime_sandbox is None else runtime_sandbox
+    baseline: dict[str, Any] = {}
+    if run_intent_path is None and run_intent is None and runtime_sandbox:
+        if not os.path.isdir(runtime_sandbox):
+            raise EmitterError(ERR_RUNTIME_SANDBOX_UNAVAILABLE)
+        try:
+            baseline = git_baseline(runtime_sandbox)
+        except OSError as exc:
+            raise EmitterError(ERR_RUNTIME_SANDBOX_UNAVAILABLE) from exc
     if key_id == DEFAULT_OPERATOR_KEY_ID:
         key_id = derive_public_key_id(public_key_path)
 
@@ -166,7 +183,7 @@ def emit_lane_evidence(
     if run_intent_path is None:
         intent = run_intent or build_run_intent(
             run_id=task_id,
-            baseline=git_baseline(runner_sandbox) if runner_sandbox else {},
+            baseline=baseline,
             allowed_paths=allowed_touched_files,
             approval_policy="unknown",
             sandbox_mode="unknown",
