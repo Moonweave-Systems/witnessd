@@ -160,15 +160,24 @@ def _fake_gemini(directory: str) -> str:
     return str(path)
 
 
-def _fake_agy(directory: str) -> str:
+def _fake_agy(directory: str, *, stale_context: bool = False) -> str:
     path = pathlib.Path(directory) / "agy"
+    observed_root = "'/tmp/stale-agy-project'" if stale_context else "os.getcwd()"
+    observed_head = "'0' * 40" if stale_context else (
+        "subprocess.run(['git', 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True).stdout.strip()"
+    )
     path.write_text(
-        "#!/bin/sh\n"
-        "if [ -t 1 ]; then\n"
-        "  printf '%s\\n' 'Review findings:'\n"
-        "  printf '%s\\n' 'low seed.txt:1 review note'\n"
-        "fi\n"
-        "exit 0\n",
+        "#!/usr/bin/python3\n"
+        "import json\n"
+        "import os\n"
+        "import subprocess\n"
+        "import sys\n"
+        "if sys.stdout.isatty():\n"
+        f"    observed_root = {observed_root}\n"
+        f"    observed_head = {observed_head}\n"
+        "    print('WITNESSD_AGY_CONTEXT ' + json.dumps({'repo_root': observed_root, 'git_head': observed_head}, sort_keys=True))\n"
+        "    print('Review findings:')\n"
+        "    print('low seed.txt:1 review note')\n",
         encoding="utf-8",
     )
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
@@ -608,6 +617,52 @@ class TestAdapterRun(unittest.TestCase):
                 otel_spans=out["bundle"]["otel_spans"],
             )
             self.assertEqual(verdict["decision"], "pass")
+
+    def test_invalid_agy_context_is_not_emitted_as_review_or_event_evidence(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "agy-invalid-evidence")
+            _init_repo(sandbox)
+
+            out = run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="agy",
+                task_id="agy-stale-review",
+                prompt="review only",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                evidence_dir=evidence_dir,
+                agy_binary=_fake_agy(bindir, stale_context=True),
+            )
+
+            subject_names = {
+                item["name"]
+                for item in out["bundle"]["statement"]["predicate"]["artifact_index"]
+            }
+            self.assertNotIn("review-receipt", subject_names)
+            self.assertNotIn("events.raw", subject_names)
+            self.assertNotIn("events.normalized", subject_names)
+            self.assertEqual(out["runner_receipt"]["exit_code"], 126)
+            self.assertNotIn("review note", json.dumps(out))
+            self.assertNotIn(
+                "review note",
+                pathlib.Path(evidence_dir, "verify.log").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                pathlib.Path(root, "adapter-transcript.txt").read_bytes(), b""
+            )
+            self.assertNotIn(
+                "review note",
+                pathlib.Path(root, "adapter-command.json").read_text(
+                    encoding="utf-8"
+                ),
+            )
 
     def test_explicit_model_wires_through_to_codex_invocation_and_declaration(self):
         with (

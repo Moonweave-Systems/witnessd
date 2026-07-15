@@ -41,11 +41,21 @@ from witnessd.model_declaration import (
 )
 
 _OUTPUT_LIMIT = 4096
+ERR_AGY_INVALID_CONTEXT = "ERR_AGY_INVALID_CONTEXT"
+_INVALID_CONTEXT_EXIT_CODE = 126
+_CONTEXT_MARKER_PREFIX = "WITNESSD_AGY_CONTEXT "
+_CONTEXT_IDENTITY_KIND = "witnessd-repo-head-binding-v1"
+_INVALID_CONTEXT_RECEIPT_KIND = "moonweave-review-context-diagnostic"
+_REVIEW_RECEIPT_KIND = "moonweave-review-receipt"
+_GIT_HEAD_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _FORBIDDEN_FLAGS = frozenset(
     {
         "--dangerously-skip-permissions",
         "--approval-mode",
         "--output-format",
+        "--project",
+        "--new-project",
+        "--add-dir",
     }
 )
 _FINDING_RE = re.compile(
@@ -129,7 +139,15 @@ def _agy_invocation(
     extra_args: list[str] | None = None,
 ) -> list[str]:
     _validate_extra_args(extra_args)
-    invocation = [_agy_binary(agy_binary), "-p", prompt, "--mode", "plan", "--sandbox"]
+    invocation = [
+        _agy_binary(agy_binary),
+        "-p",
+        prompt,
+        "--mode",
+        "plan",
+        "--sandbox",
+        "--new-project",
+    ]
     if print_timeout:
         invocation.extend(["--print-timeout", print_timeout])
     if model:
@@ -144,10 +162,11 @@ def _agy_invocation(
 def _validate_extra_args(extra_args: list[str] | None) -> None:
     args = list(extra_args or [])
     for index, arg in enumerate(args):
-        if arg in _FORBIDDEN_FLAGS:
+        flag = arg.split("=", 1)[0]
+        if flag in _FORBIDDEN_FLAGS:
             raise AgyAdapterError(
                 "ERR_AGY_FORBIDDEN_FLAG",
-                f"agy review lane forbids {arg}",
+                f"agy review lane forbids {flag}",
             )
         if arg == "--mode":
             value = args[index + 1] if index + 1 < len(args) else ""
@@ -156,6 +175,120 @@ def _validate_extra_args(extra_args: list[str] | None) -> None:
                     "ERR_AGY_FORBIDDEN_FLAG",
                     "agy review lane requires --mode plan",
                 )
+
+
+def _git_head(repo: str) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    head = completed.stdout.strip().lower()
+    if completed.returncode != 0 or _GIT_HEAD_RE.fullmatch(head) is None:
+        return None
+    return head
+
+
+def _context_prompt(prompt: str) -> str:
+    return (
+        "Before reviewing, use the terminal in the active workspace to run "
+        "`pwd -P` and `git rev-parse HEAD`. Do not edit files. Print exactly one "
+        "line beginning `WITNESSD_AGY_CONTEXT ` followed by a JSON object with "
+        "exactly two string fields: `repo_root` containing the observed absolute "
+        "working directory and `git_head` containing the observed full 40-character "
+        "commit SHA. No expected values are supplied here; report only values "
+        "observed with those commands. Then continue the advisory review.\n\n"
+        f"Review request:\n{prompt}"
+    )
+
+
+def _binding_identity(repo_root: str, git_head: str) -> str:
+    payload = json.dumps(
+        {
+            "identity_kind": _CONTEXT_IDENTITY_KIND,
+            "repo_root": repo_root,
+            "git_head": git_head,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return f"{_CONTEXT_IDENTITY_KIND}:{digest}"
+
+
+def _observe_context(raw_output: bytes) -> tuple[str | None, str | None, str | None]:
+    marker_lines = [
+        line.strip()
+        for line in raw_output.decode("utf-8", errors="replace").splitlines()
+        if line.strip().startswith(_CONTEXT_MARKER_PREFIX)
+    ]
+    if len(marker_lines) != 1:
+        return None, None, "missing or duplicate context marker"
+    encoded = marker_lines[0][len(_CONTEXT_MARKER_PREFIX) :]
+    try:
+        payload = json.loads(encoded)
+    except json.JSONDecodeError:
+        return None, None, "malformed context marker"
+    if not isinstance(payload, dict) or set(payload) != {"repo_root", "git_head"}:
+        return None, None, "context marker fields are invalid"
+    observed_root = payload.get("repo_root")
+    observed_head = payload.get("git_head")
+    if not isinstance(observed_root, str) or not Path(observed_root).is_absolute():
+        return None, None, "observed repo root is not absolute"
+    if not isinstance(observed_head, str) or _GIT_HEAD_RE.fullmatch(observed_head) is None:
+        return None, None, "observed git HEAD is invalid"
+    return (
+        str(Path(observed_root).resolve(strict=False)),
+        observed_head.lower(),
+        None,
+    )
+
+
+def _context_binding(
+    *,
+    repo: str,
+    requested_head: str | None,
+    raw_output: bytes,
+) -> dict[str, Any]:
+    requested_identity = (
+        _binding_identity(repo, requested_head) if requested_head is not None else None
+    )
+    observed_root, observed_head, detail = _observe_context(raw_output)
+    observed_identity = (
+        _binding_identity(observed_root, observed_head)
+        if observed_root is not None and observed_head is not None
+        else None
+    )
+    bound = (
+        requested_head is not None
+        and observed_root == repo
+        and observed_head == requested_head
+        and observed_identity == requested_identity
+    )
+    if requested_head is None:
+        detail = "requested repository Git HEAD could not be confirmed"
+    elif not bound and detail is None:
+        detail = "observed AGY project context does not match requested repository"
+    return {
+        "status": "bound" if bound else "invalid-context",
+        "error_code": None if bound else ERR_AGY_INVALID_CONTEXT,
+        "detail": None if bound else detail,
+        "binding_mode": "new-project",
+        "identity_kind": _CONTEXT_IDENTITY_KIND,
+        "agy_project_id_observed": None,
+        "requested_project_identity": requested_identity,
+        "observed_project_identity": observed_identity,
+        "canonical_repo_root": repo,
+        "requested_repo_root": repo,
+        "observed_repo_root": observed_root,
+        "requested_git_head_sha": requested_head,
+        "observed_git_head_sha": observed_head,
+    }
 
 
 def _merged_env(env: dict[str, str] | None) -> dict[str, str] | None:
@@ -277,17 +410,31 @@ def _write_review_receipt(
     invocation: list[str],
     raw_output: bytes,
     findings: list[dict[str, Any]],
+    context_binding: dict[str, Any],
 ) -> None:
+    context_bound = context_binding["status"] == "bound"
     receipt = {
-        "kind": "moonweave-review-receipt",
+        "kind": (
+            _REVIEW_RECEIPT_KIND
+            if context_bound
+            else _INVALID_CONTEXT_RECEIPT_KIND
+        ),
         "schema_version": "1.0",
         "provider": "google-antigravity",
         "axis": "review",
         "can_change_evidence_verdict": False,
+        "raises_assurance": False,
+        "verifies_evidence": False,
         "invocation": invocation,
         "raw_output_sha256": hashlib.sha256(raw_output).hexdigest(),
-        "raw_output_text": raw_output.decode("utf-8", errors="replace"),
-        "findings": findings,
+        "raw_output_text": (
+            raw_output.decode("utf-8", errors="replace") if context_bound else ""
+        ),
+        "context_binding": context_binding,
+        "findings": findings if context_bound else [],
+        "findings_usable": context_bound,
+        "usable_as_review_evidence": context_bound,
+        "usable_as_implementation_guidance": context_bound,
     }
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -378,8 +525,10 @@ def run_agy_review_lane(
         raise AgyAdapterError(
             "ERR_AGY_PROMPT_MISSING", "agy review prompt must not be empty"
         )
+    _validate_extra_args(extra_args)
 
     repo = str(Path(sandbox).resolve(strict=False))
+    requested_head = _git_head(repo)
     transcript = str(Path(transcript_path).resolve(strict=False))
     normalized_transcript = str(Path(transcript).with_name("events.normalized.jsonl"))
     review_receipt = str(
@@ -396,45 +545,62 @@ def run_agy_review_lane(
     for evidence_path in evidence_paths:
         assert_evidence_path_separated(repo, evidence_path, error_cls=AgyAdapterError)
     Path(transcript).parent.mkdir(parents=True, exist_ok=True)
+    controlled_add_dirs = [repo]
+    for directory in add_dirs or []:
+        resolved = str(Path(directory).resolve(strict=False))
+        if resolved not in controlled_add_dirs:
+            controlled_add_dirs.append(resolved)
     invocation = _agy_invocation(
         agy_binary,
-        prompt,
+        _context_prompt(prompt),
         print_timeout=print_timeout,
         model=model,
-        add_dirs=add_dirs,
+        add_dirs=controlled_add_dirs,
         extra_args=extra_args,
     )
 
     before = _snapshot(repo)
-    try:
-        completed = _run_pty_command(
-            invocation,
-            cwd=repo,
-            timeout_seconds=timeout_seconds,
-            env=env,
-        )
-        exit_code = completed["exit_code"]
-        raw_stdout = completed["raw_output"]
-        stdout = completed["stdout"]
-        stderr = completed["stderr"]
-        Path(transcript).write_bytes(raw_stdout)
-    except OSError as exc:
-        exit_code = 127
+    if requested_head is None:
+        exit_code = _INVALID_CONTEXT_EXIT_CODE
         raw_stdout = b""
         stdout = ""
-        stderr = str(exc)
-        Path(transcript).write_bytes(raw_stdout)
-
-    normalized_events = normalize_agy_text_events(raw_stdout)
+        stderr = "requested repository Git HEAD could not be confirmed"
+    else:
+        try:
+            completed = _run_pty_command(
+                invocation,
+                cwd=repo,
+                timeout_seconds=timeout_seconds,
+                env=env,
+            )
+            exit_code = completed["exit_code"]
+            raw_stdout = completed["raw_output"]
+            stdout = completed["stdout"]
+            stderr = completed["stderr"]
+        except OSError as exc:
+            exit_code = 127
+            raw_stdout = b""
+            stdout = ""
+            stderr = str(exc)
+    context_binding = _context_binding(
+        repo=repo,
+        requested_head=requested_head,
+        raw_output=raw_stdout,
+    )
+    context_bound = context_binding["status"] == "bound"
+    Path(transcript).write_bytes(raw_stdout if context_bound else b"")
+    normalized_events = (
+        normalize_agy_text_events(raw_stdout) if context_bound else []
+    )
     Path(normalized_transcript).write_bytes(encode_agent_event_jsonl(normalized_events))
-    findings = _extract_findings(raw_stdout)
+    findings = _extract_findings(raw_stdout) if context_bound else []
     _write_review_receipt(
         review_receipt,
         invocation=invocation,
         raw_output=raw_stdout,
         findings=findings,
+        context_binding=context_binding,
     )
-
     after = _snapshot(repo)
     touched_files = _diff_touched(
         before, after, sandbox=repo, evidence_paths=evidence_paths
@@ -448,6 +614,15 @@ def run_agy_review_lane(
         message = "read-only review lane changed files"
         stderr = f"{stderr}\n{message}".strip()
         test_output = {"status": "failed", "summary": message}
+    elif not context_bound:
+        exit_code = _INVALID_CONTEXT_EXIT_CODE
+        message = "invalid-context: AGY project/repository binding could not be confirmed"
+        stderr = f"{ERR_AGY_INVALID_CONTEXT}: {message}"
+        test_output = {
+            "status": "failed",
+            "summary": message,
+            "error_code": ERR_AGY_INVALID_CONTEXT,
+        }
 
     model_declaration = None
     if model is not None:
@@ -468,7 +643,7 @@ def run_agy_review_lane(
             log_path,
             command=invocation,
             cwd=repo,
-            stdout=stdout,
+            stdout=stdout if context_bound else "",
             stderr=stderr,
             exit_code=exit_code,
         )
@@ -484,15 +659,15 @@ def run_agy_review_lane(
                 "command": invocation,
                 "cwd": repo,
                 "exit_code": exit_code,
-                "stdout": stdout[:_OUTPUT_LIMIT],
+                "stdout": stdout[:_OUTPUT_LIMIT] if context_bound else "",
                 "stderr": stderr[:_OUTPUT_LIMIT],
             }
         ],
         touched_files=touched_files,
         test_output=test_output,
         normalized_events=normalized_events,
-        raw_events_path=transcript,
-        normalized_events_path=normalized_transcript,
+        raw_events_path=transcript if context_bound else None,
+        normalized_events_path=normalized_transcript if context_bound else None,
         review_receipt_path=review_receipt,
         model_declaration=model_declaration,
     )

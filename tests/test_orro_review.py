@@ -41,13 +41,23 @@ def _seed_repo(repo: Path) -> None:
 def _fake_agy(directory: Path) -> str:
     path = directory / "agy"
     path.write_text(
-        "#!/bin/sh\n"
-        'printf \'%s\\n\' "$@" > "$AGY_ARGV_CAPTURE"\n'
-        "if [ -t 1 ]; then\n"
-        "  printf '%s\\n' 'Review findings:'\n"
-        "  printf '%s\\n' 'low README.md:1 review-only smoke finding'\n"
-        "fi\n"
-        "exit 0\n",
+        "#!/usr/bin/python3\n"
+        "import json\n"
+        "import os\n"
+        "import pathlib\n"
+        "import subprocess\n"
+        "import sys\n"
+        "capture = os.environ.get('AGY_ARGV_CAPTURE')\n"
+        "if capture:\n"
+        "    pathlib.Path(capture).write_text('\\n'.join(sys.argv[1:]) + '\\n', encoding='utf-8')\n"
+        "if os.environ.get('AGY_WRITE') == '1':\n"
+        "    pathlib.Path('reviewed.txt').write_text('changed\\n', encoding='utf-8')\n"
+        "if sys.stdout.isatty():\n"
+        "    observed_root = os.environ.get('AGY_OBSERVED_REPO', os.getcwd())\n"
+        "    observed_head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=observed_root, check=True, capture_output=True, text=True).stdout.strip()\n"
+        "    print('WITNESSD_AGY_CONTEXT ' + json.dumps({'repo_root': observed_root, 'git_head': observed_head}, sort_keys=True))\n"
+        "    print('Review findings:')\n"
+        "    print('low README.md:1 review-only smoke finding')\n",
         encoding="utf-8",
     )
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
@@ -332,6 +342,23 @@ class OrroReviewTests(unittest.TestCase):
             self.assertEqual(lane["touched_files"], [])
             self.assertEqual(lane["review_receipt"]["kind"], "moonweave-review-receipt")
             self.assertEqual(lane["review_receipt"]["can_change_evidence_verdict"], False)
+            binding = lane["review_receipt"]["context_binding"]
+            self.assertEqual(binding["status"], "bound")
+            self.assertEqual(binding["canonical_repo_root"], str(repo.resolve()))
+            self.assertEqual(
+                binding["requested_project_identity"],
+                binding["observed_project_identity"],
+            )
+            self.assertEqual(
+                binding["requested_git_head_sha"],
+                subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=repo,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip(),
+            )
             self.assertEqual(
                 lane["model_declaration"]["verification_status"],
                 "requested-unverified",
@@ -344,6 +371,101 @@ class OrroReviewTests(unittest.TestCase):
             self.assertTrue((run_dir / "orro-review-summary.json").is_file())
             self.assertTrue((run_dir / reviewer_lane["lane_id"] / "review-receipt.json").is_file())
             self.assertFalse((run_dir / "team-ledger.json").exists())
+
+            stale_repo = root / "stale-repo"
+            stale_repo.mkdir()
+            _seed_repo(stale_repo)
+            stale_stdout = io.StringIO()
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "AGY_ARGV_CAPTURE": str(argv_capture),
+                        "AGY_OBSERVED_REPO": str(stale_repo),
+                    },
+                ),
+                redirect_stdout(stale_stdout),
+            ):
+                stale_code = main(
+                    [
+                        "orro",
+                        "review",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--role-lane-plan",
+                        str(role_lanes_out),
+                        "--agy-binary",
+                        _fake_agy(bindir),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(stale_code, 1, stale_stdout.getvalue())
+            stale_payload = json.loads(stale_stdout.getvalue())
+            self.assertEqual(stale_payload["decision"], "invalid-context")
+            stale_lane = stale_payload["lanes"][0]
+            self.assertEqual(stale_lane["decision"], "invalid-context")
+            self.assertEqual(stale_lane["test_output"]["error_code"], "ERR_AGY_INVALID_CONTEXT")
+            self.assertEqual(
+                stale_lane["review_receipt"]["context_binding"]["status"],
+                "invalid-context",
+            )
+            self.assertEqual(
+                stale_lane["review_receipt"]["kind"],
+                "moonweave-review-context-diagnostic",
+            )
+            self.assertEqual(stale_lane["review_receipt"]["findings"], [])
+            self.assertFalse(stale_lane["review_receipt"]["findings_usable"])
+            self.assertIsNone(stale_lane["transcript_path"])
+            self.assertIsNone(stale_lane["normalized_events_path"])
+            self.assertNotIn("review-only smoke finding", json.dumps(stale_payload))
+            stale_lane_dir = Path(stale_payload["run_dir"]) / stale_lane["lane_id"]
+            self.assertEqual(
+                (stale_lane_dir / "events.raw.jsonl").read_bytes(), b""
+            )
+            self.assertNotIn(
+                "review-only smoke finding",
+                (stale_lane_dir / "command-log.json").read_text(encoding="utf-8"),
+            )
+            self.assertFalse(
+                (Path(stale_payload["run_dir"]) / "orro-handoff.json").exists()
+            )
+
+            write_stdout = io.StringIO()
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "AGY_OBSERVED_REPO": str(stale_repo),
+                        "AGY_WRITE": "1",
+                    },
+                ),
+                redirect_stdout(write_stdout),
+            ):
+                write_code = main(
+                    [
+                        "orro",
+                        "review",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--role-lane-plan",
+                        str(role_lanes_out),
+                        "--agy-binary",
+                        _fake_agy(bindir),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(write_code, 1, write_stdout.getvalue())
+            write_payload = json.loads(write_stdout.getvalue())
+            self.assertEqual(write_payload["decision"], "fail")
+            self.assertEqual(write_payload["lanes"][0]["decision"], "fail")
+            self.assertEqual(write_payload["lanes"][0]["exit_code"], 125)
+            self.assertIn("reviewed.txt", write_payload["lanes"][0]["touched_files"])
 
 
 if __name__ == "__main__":
