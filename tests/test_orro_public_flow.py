@@ -2150,6 +2150,137 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(payload["decision"], "blocked")
             self.assertEqual(payload["verifier_command"], "proofcheck")
 
+    def test_proofrun_help_labels_direct_shell_capture_as_capture_only(self) -> None:
+        result = self._module_run(["proofrun", "--help"])
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("capture-only", result.stdout)
+        self.assertIn("not proofcheckable", result.stdout)
+        self.assertIn("orro scout", result.stdout)
+
+    def test_direct_shell_capture_stays_blocked_with_workflow_contract_guidance(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            evidence_dir = root / "direct-capture"
+            evidence_dir.mkdir()
+
+            proofrun = self._module_run(
+                [
+                    "orro",
+                    "proofrun",
+                    "--adapter",
+                    "shell",
+                    "--runner-sandbox",
+                    str(repo),
+                    "--out",
+                    str(evidence_dir / "lane.json"),
+                    "--log",
+                    str(evidence_dir / "run.log"),
+                    "--task-id",
+                    "direct-capture",
+                    "--",
+                    "printf ok",
+                ]
+            )
+            self.assertEqual(proofrun.returncode, 0, proofrun.stderr)
+
+            proofcheck = self._module_run(
+                ["orro", "proofcheck", str(evidence_dir), "--home", str(home), "--json"]
+            )
+
+            self.assertEqual(proofcheck.returncode, 1, proofcheck.stdout)
+            payload = json.loads(proofcheck.stdout)
+            self.assertEqual(payload["decision"], "blocked")
+            missing = {
+                error["message"]
+                for error in payload["errors"]
+                if error["code"] == "ERR_ORRO_ARTIFACT_REQUIRED_MISSING"
+            }
+            for artifact in (
+                "repo-profile.json",
+                "context-pack.json",
+                "skillpack-lock.json",
+                "verification-recipe.json",
+                "verification-receipt.json",
+                "pr-handoff.json",
+            ):
+                self.assertIn(f"required artifact is missing: {artifact}", missing)
+            self.assertTrue(payload["workflow_contract"]["capture_only"])
+            self.assertIn("orro scout", payload["message"])
+            self.assertIn("flowplan", payload["message"])
+
+    def test_documented_scout_flowplan_proofrun_proofcheck_sequence_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            plan_path = root / "workflow-plan.json"
+
+            scout = self._module_run(
+                [
+                    "orro",
+                    "scout",
+                    "write proof file",
+                    "--repo",
+                    str(repo),
+                    "--home",
+                    str(home),
+                ]
+            )
+            self.assertEqual(scout.returncode, 0, scout.stderr)
+            scout_dir = Path(json.loads(scout.stdout)["run_dir"])
+
+            flowplan = self._module_run(
+                [
+                    "orro",
+                    "flowplan",
+                    "write proof file",
+                    "--root",
+                    str(repo),
+                    "--profile",
+                    "code-change",
+                    "--out",
+                    str(plan_path),
+                ]
+            )
+            self.assertEqual(flowplan.returncode, 0, flowplan.stderr)
+
+            proofrun = self._module_run(
+                [
+                    "orro",
+                    "proofrun",
+                    "write proof file",
+                    "--repo",
+                    str(repo),
+                    "--home",
+                    str(home),
+                    "--workflow-plan",
+                    str(plan_path),
+                    "--run-dir",
+                    str(scout_dir),
+                    "--allow-reference-adapter",
+                    "--json",
+                ]
+            )
+            self.assertEqual(proofrun.returncode, 0, proofrun.stderr)
+
+            proofcheck = self._module_run(
+                [
+                    "orro",
+                    "proofcheck",
+                    str(scout_dir),
+                    "--home",
+                    str(home),
+                    "--out",
+                    str(scout_dir / "proofcheck-verdict.json"),
+                    "--json",
+                ]
+            )
+            self.assertEqual(proofcheck.returncode, 0, proofcheck.stderr)
+            self.assertEqual(json.loads(proofcheck.stdout)["decision"], "pass")
+
     def test_orro_handoff_hashes_evidence_without_approval_or_assurance(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home, run_dir, _payload = self._proofrun(Path(tmp))
