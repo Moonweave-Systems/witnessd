@@ -203,6 +203,37 @@ class TestEmitter(unittest.TestCase):
                 )
             self.assertFalse(os.path.exists(os.path.join(evidence_dir, "bundle.json")))
 
+    def test_missing_runtime_sandbox_raises_stable_emitter_error(self):
+        from witnessd.signing import gen_operator_keypair
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sandbox = os.path.join(tmp, "sandbox")
+            evidence_dir = os.path.join(tmp, "evidence")
+            keydir = os.path.join(tmp, "keys")
+            os.makedirs(sandbox)
+            os.makedirs(keydir)
+            priv, pub = gen_operator_keypair(keydir)
+            lane = run_shell_lane(
+                sandbox=sandbox,
+                commands=[["sh", "-c", "true"]],
+            )
+
+            with self.assertRaisesRegex(
+                EmitterError, "^ERR_RUNTIME_SANDBOX_UNAVAILABLE$"
+            ):
+                emit_lane_evidence(
+                    lane,
+                    evidence_dir,
+                    priv,
+                    fixture=_fixture(),
+                    allowed_touched_files=[],
+                    public_key_path=pub,
+                    runner_sandbox="path:redacted-sandbox",
+                    runtime_sandbox=os.path.join(tmp, "missing-sandbox"),
+                )
+
+            self.assertFalse(os.path.exists(evidence_dir))
+
 
 if __name__ == "__main__":
     unittest.main()
