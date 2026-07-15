@@ -20,10 +20,12 @@ cd witnessd
 python3 -m orro setup --home .witnessd --json
 python3 -m orro doctor --home .witnessd --json
 python3 -m orro advise "write two independent files" --repo . --home .witnessd --json
-python3 -m orro scout "map the repo before planning" --repo . --home .witnessd
-python3 -m orro flowplan "write two independent files" --root . --profile code-change --out .witnessd/workflow-plan.json --role-lanes-out .witnessd/role-lane-plan.json
-run_json="$(python3 -m orro proofrun "write two independent files" --repo . --home .witnessd --workflow-plan .witnessd/workflow-plan.json --role-lane-plan .witnessd/role-lane-plan.json)"
+scout_json="$(python3 -m orro scout "map the repo before planning" --repo . --home .witnessd)"
+run_dir="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["run_dir"])' "$scout_json")"
+python3 -m orro flowplan "write two independent files" --root . --profile code-change --out "$run_dir/workflow-plan.json"
+run_json="$(python3 -m orro proofrun "write two independent files" --repo . --home .witnessd --workflow-plan "$run_dir/workflow-plan.json" --run-dir "$run_dir" --allow-reference-adapter --json)"
 run_dir="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["run_dir"])' "$run_json")"
+python3 -m orro proofcheck "$run_dir" --home .witnessd --out "$run_dir/proofcheck-verdict.json" --json
 python3 -m orro next "$run_dir" --home .witnessd --json
 python3 -m orro auto --dry-run "$run_dir" --home .witnessd --json
 python3 -m orro auto --until-complete "$run_dir" --home .witnessd --max-steps 2 --json
@@ -56,8 +58,14 @@ rule matches, selected profile, and selected rolepack are visible. That artifact
 cannot change the evidence verdict and is not proof, approval, or assurance.
 
 The `proofrun` command prints JSON. Use its `run_dir` field for the proofcheck
-and handoff steps. `proofcheck` must write an explicit `proofcheck-verdict.json`
-before packaging the handoff:
+and handoff steps. A direct shell invocation (`orro proofrun --adapter shell --
+<command>`) is capture-only and is not proofcheckable by itself. It does not
+contain the workflow packet that proofcheck requires. Start with `orro scout`,
+put the flowplan and proofrun artifacts in the scout run directory, or use
+`orro team go`. The workflow path above is copy-pasteable; it uses the
+intentional shell reference adapter and therefore is not real AI work.
+`proofcheck` must write an explicit `proofcheck-verdict.json` before packaging
+the handoff:
 
 ```bash
 python3 -m orro proofcheck .witnessd/runs/<run-dir> \

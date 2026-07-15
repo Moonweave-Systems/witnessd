@@ -35,6 +35,15 @@ from witnessd.trust_anchor import TrustAnchor
 
 DEFAULT_TEAM_PLAN_RUN_LANE_TIMEOUT_SECONDS = 900
 
+PROOFCHECK_WORKFLOW_ARTIFACTS = (
+    "repo-profile.json",
+    "context-pack.json",
+    "skillpack-lock.json",
+    "verification-recipe.json",
+    "verification-receipt.json",
+    "pr-handoff.json",
+)
+
 
 def _cmd_run(args: argparse.Namespace) -> int:
     if getattr(args, "goal", None):
@@ -1288,12 +1297,56 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         **({"errors": payload["errors"]} if payload.get("errors") else {}),
         **({"error": payload["error"]} if payload.get("error") else {}),
     }
+    workflow_contract = _proofcheck_workflow_contract(payload)
+    if workflow_contract is not None:
+        result["workflow_contract"] = workflow_contract
+        result["message"] = (
+            "proofcheck blocked: this direct shell run is capture-only and is not "
+            "proofcheckable by itself; missing workflow artifacts: "
+            f"{', '.join(workflow_contract['missing_workflow_artifacts'])}. "
+            "Run `orro scout` first, then the `flowplan -> proofrun -> proofcheck` "
+            "workflow in the same run directory, or use `orro team go`."
+        )
     if reference_warning is not None:
         result.update(_reference_adapter_markers(reference_warning))
         if out_path is not None and out_path.is_file():
             _stamp_reference_adapter_artifact(out_path, reference_warning)
     print(json.dumps(result, sort_keys=True))
     return 0 if code == 0 and result["decision"] == "pass" else 1
+
+
+def _proofcheck_workflow_contract(
+    payload: dict[str, object],
+) -> dict[str, object] | None:
+    errors = payload.get("errors")
+    if not isinstance(errors, list):
+        return None
+    missing: list[str] = []
+    for error in errors:
+        if not isinstance(error, dict):
+            continue
+        message = error.get("message")
+        if not isinstance(message, str):
+            continue
+        for artifact in PROOFCHECK_WORKFLOW_ARTIFACTS:
+            if message == f"required artifact is missing: {artifact}" and artifact not in missing:
+                missing.append(artifact)
+    workflow_packet_missing = [
+        artifact
+        for artifact in missing
+        if artifact != "verification-receipt.json"
+    ]
+    if not workflow_packet_missing:
+        return None
+    return {
+        "capture_only": True,
+        "proofcheckable_by_itself": False,
+        "missing_workflow_artifacts": missing,
+        "next_step": (
+            "Run `orro scout` first, then `flowplan -> proofrun -> proofcheck` "
+            "in the same run directory, or use `orro team go`."
+        ),
+    }
 
 
 def _cmd_advisory_provenance_check(args: argparse.Namespace) -> int:
@@ -3687,6 +3740,13 @@ def _build_parser() -> argparse.ArgumentParser:
     proofrun = sub.add_parser(
         "proofrun",
         help="ORRO evidence-backed execution alias; emits evidence without final trust",
+        description=(
+            "ORRO evidence-backed execution alias. A direct shell invocation "
+            "(`--adapter shell -- <command>`) is capture-only and is not "
+            "proofcheckable by itself. For a proofcheckable packet, run `orro "
+            "scout` first and continue through `flowplan -> proofrun -> "
+            "proofcheck` in the same run directory, or use `orro team go`."
+        ),
     )
     _add_run_args(proofrun)
     proofrun.add_argument(
