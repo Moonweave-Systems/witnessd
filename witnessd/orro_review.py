@@ -97,11 +97,12 @@ def run_review_role_lane_plan(
             )
         )
 
-    decision = (
-        "pass"
-        if lane_summaries and all(lane["exit_code"] == 0 for lane in lane_summaries)
-        else "fail"
-    )
+    if any(lane["decision"] == "invalid-context" for lane in lane_summaries):
+        decision = "invalid-context"
+    elif lane_summaries and all(lane["exit_code"] == 0 for lane in lane_summaries):
+        decision = "pass"
+    else:
+        decision = "fail"
     payload: dict[str, Any] = {
         "kind": "orro-review-summary",
         "schema_version": "1.0",
@@ -277,6 +278,16 @@ def _run_review_lane(
         model_declaration_path = lane_dir / "model-declaration.json"
         _write_json(model_declaration_path, result.model_declaration)
     review_receipt = _load_json_object(Path(str(result.review_receipt_path)))
+    context_binding = review_receipt.get("context_binding")
+    context_invalid = (
+        adapter == "agy"
+        and isinstance(context_binding, dict)
+        and context_binding.get("status") == "invalid-context"
+    )
+    invalid_context_result = (
+        context_invalid
+        and result.test_output.get("error_code") == "ERR_AGY_INVALID_CONTEXT"
+    )
     return {
         "lane_id": lane_id,
         "role_id": lane["role_id"],
@@ -284,11 +295,16 @@ def _run_review_lane(
         "adapter": adapter,
         "model": model_arg,
         "region": lane["region"],
+        "decision": "invalid-context" if invalid_context_result else (
+            "pass" if result.exit_code == 0 else "fail"
+        ),
         "exit_code": result.exit_code,
         "touched_files": result.touched_files,
         "test_output": result.test_output,
-        "transcript_path": result.transcript_path,
-        "normalized_events_path": result.normalized_events_path,
+        "transcript_path": None if context_invalid else result.transcript_path,
+        "normalized_events_path": (
+            None if context_invalid else result.normalized_events_path
+        ),
         "review_receipt_path": result.review_receipt_path,
         "review_receipt": review_receipt,
         "model_declaration_path": (

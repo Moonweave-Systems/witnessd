@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 from witnessd.adapters.claude import run_claude_lane
 from witnessd.adapters.codex import run_codex_lane
-from witnessd.adapters.agy import run_agy_review_lane
+from witnessd.adapters.agy import ERR_AGY_INVALID_CONTEXT, run_agy_review_lane
 from witnessd.adapters.gemini import run_gemini_review_lane
 from witnessd.adapters.opencode import run_opencode_lane
 from witnessd.budget import BudgetExceededError, CostBreaker
@@ -416,15 +416,25 @@ def run_adapter_lane(
         )
         diff_patch = _git_diff_patch(worktree, adapter_result.touched_files)
         provider_artifacts = {}
-        raw_events_path = getattr(adapter_result, "raw_events_path", None)
-        normalized_events_path = getattr(adapter_result, "normalized_events_path", None)
-        if raw_events_path is not None:
-            provider_artifacts["events.raw"] = raw_events_path
-        if normalized_events_path is not None:
-            provider_artifacts["events.normalized"] = normalized_events_path
-        review_receipt_path = getattr(adapter_result, "review_receipt_path", None)
-        if review_receipt_path is not None:
-            provider_artifacts["review-receipt"] = review_receipt_path
+        invalid_agy_context = (
+            adapter == "agy"
+            and adapter_result.test_output.get("error_code")
+            == ERR_AGY_INVALID_CONTEXT
+        )
+        if not invalid_agy_context:
+            raw_events_path = getattr(adapter_result, "raw_events_path", None)
+            normalized_events_path = getattr(
+                adapter_result, "normalized_events_path", None
+            )
+            if raw_events_path is not None:
+                provider_artifacts["events.raw"] = raw_events_path
+            if normalized_events_path is not None:
+                provider_artifacts["events.normalized"] = normalized_events_path
+            review_receipt_path = getattr(
+                adapter_result, "review_receipt_path", None
+            )
+            if review_receipt_path is not None:
+                provider_artifacts["review-receipt"] = review_receipt_path
         model_declaration = getattr(adapter_result, "model_declaration", None)
         if model_declaration is not None:
             model_declaration_path = task_dir / "model-declaration.json"
