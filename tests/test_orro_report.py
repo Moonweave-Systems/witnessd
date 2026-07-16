@@ -138,8 +138,7 @@ class OrroReportTests(unittest.TestCase):
             workflow_plan = self._flowplan_out(root, "write report fixture")
             role_lane_plan = self._role_lane_plan_out(root, "write report fixture")
             args.extend(["--workflow-plan", str(workflow_plan), "--role-lane-plan", str(role_lane_plan)])
-        else:
-            args.append("--allow-reference-adapter")
+        args.append("--allow-reference-adapter")
         stdout = io.StringIO()
         with redirect_stdout(stdout):
             code = main(args)

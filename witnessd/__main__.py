@@ -34,6 +34,7 @@ from witnessd.trust_anchor import TrustAnchor
 
 
 DEFAULT_TEAM_PLAN_RUN_LANE_TIMEOUT_SECONDS = 900
+ERR_ORRO_REFERENCE_ADAPTER_REFUSED = "ERR_ORRO_REFERENCE_ADAPTER_REFUSED"
 
 PROOFCHECK_WORKFLOW_ARTIFACTS = (
     "repo-profile.json",
@@ -260,6 +261,30 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 2
 
+    reference_adapter_lanes = (
+        _team_go_reference_adapter_lanes(role_lane_plan)
+        if role_lane_plan is not None
+        else []
+    )
+    if reference_adapter_lanes and not args.allow_reference_adapter:
+        message = (
+            "role-lane plan contains shell reference/placeholder proofrun lanes "
+            "that are not real AI work; pass --allow-reference-adapter only for "
+            "intentional script/test runs, or supply real-adapter lanes"
+        )
+        if args.json:
+            _emit_orro_error(
+                args,
+                code=ERR_ORRO_REFERENCE_ADAPTER_REFUSED,
+                message=message,
+            )
+        else:
+            print(
+                f"{ERR_ORRO_REFERENCE_ADAPTER_REFUSED}: {message}",
+                file=sys.stderr,
+            )
+        return 2
+
     if reference_fallback and not args.allow_reference_adapter:
         code = "ERR_ORRO_PROOFRUN_NO_PLAN"
         message = (
@@ -315,7 +340,7 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     reference_warning = (
         _proofrun_reference_adapter_warning(packets)
         if reference_fallback
-        else None
+        else _team_go_reference_adapter_warning(reference_adapter_lanes)
     )
     if reference_warning is not None:
         _write_json_file(
@@ -2936,6 +2961,7 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
             args.opencode_binary,
         ]
         + (["--fail-fast"] if args.fail_fast else [])
+        + (["--allow-reference-adapter"] if args.allow_reference_adapter else [])
     )
     proofrun_payload = _json_or_text(proofrun_stdout)
     if proofrun_code != 0:
@@ -3753,8 +3779,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--allow-reference-adapter",
         action="store_true",
         help=(
-            "allow the deterministic W18 shell fallback for reference/self-test use; "
-            "marked as placeholder output and not real AI work"
+            "allow deterministic W18 fallback or role-lane shell reference/placeholder "
+            "proofrun lanes for intentional script/test use; marked as not real AI work"
         ),
     )
     proofrun.set_defaults(func=_cmd_run)
