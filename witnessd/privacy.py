@@ -89,13 +89,13 @@ def redact_secrets(text: str) -> tuple[str, list[dict[str, Any]]]:
         def replace(match: re.Match[str]) -> str:
             raw_match = match.group(0)
             prefix = ""
-            secret = raw_match
+            matched_value = raw_match
             if rule == "bearer_token":
                 separator = re.search(r"\s+", raw_match)
                 if separator is not None:
                     prefix = raw_match[: separator.end()]
-                    secret = raw_match[separator.end() :]
-            match_sha256 = _sha256_text(secret)
+                    matched_value = raw_match[separator.end() :]
+            match_sha256 = _sha256_text(matched_value)
             rule_findings.append(
                 {
                     "rule": rule,
