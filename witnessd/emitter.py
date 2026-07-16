@@ -267,6 +267,9 @@ def emit_lane_evidence(
         isolation=isolation,
         evidence_mode=evidence_mode,
         epoch_seconds=epoch_seconds,
+        # Captured strings were scrubbed above; persisting their deterministic
+        # replacement tokens and rule-level digests is intentional metadata.
+        # codeql[py/clear-text-storage-sensitive-data]
         monotonic_counter=monotonic_counter,
         parent_attestation_id=parent_attestation_id,
     )
