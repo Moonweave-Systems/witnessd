@@ -89,6 +89,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
     from witnessd.privacy import (
         CAPTURE_PROFILE_REDACTED,
         build_redaction_context,
+        build_pattern_scrub_manifest,
+        redact_secrets_in,
         redact_value,
     )
     from witnessd.signing import gen_operator_keypair
@@ -129,6 +131,24 @@ def _cmd_run(args: argparse.Namespace) -> int:
         allowed_touched_files = list(
             redact_value(allowed_touched_files, redaction_context)
         )
+    scrubbed_values, secret_findings = redact_secrets_in(
+        {
+            "lane_result": lane_result,
+            "allowed_touched_files": allowed_touched_files,
+            "runner_sandbox": str(redact_value(sandbox, redaction_context)),
+        }
+    )
+    lane_result = scrubbed_values["lane_result"]
+    allowed_touched_files = scrubbed_values["allowed_touched_files"]
+    runner_sandbox = scrubbed_values["runner_sandbox"]
+    redaction_manifest = build_pattern_scrub_manifest(
+        run_id=args.task_id,
+        capture_profile=args.capture_profile,
+        findings=secret_findings,
+        manifest=(
+            redaction_context["manifest"] if redaction_context is not None else None
+        ),
+    )
 
     # The source fixture is the declared (A0) side; Depone requires a proper
     # agent-fabric-reference-adapter-fixture, not a placeholder.
@@ -143,14 +163,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
             allowed_touched_files=allowed_touched_files,
             public_key_path=public_key_path,
             task_id=args.task_id,
-            runner_sandbox=str(redact_value(sandbox, redaction_context)),
+            runner_sandbox=runner_sandbox,
             runtime_sandbox=sandbox,
             capture_profile=args.capture_profile,
-            redaction_manifest=(
-                redaction_context["manifest"]
-                if redaction_context is not None
-                else None
-            ),
+            redaction_manifest=redaction_manifest,
             observer_output_path=out_path,
             transcript_path=log_path,
         )
@@ -4332,7 +4348,7 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
     run.add_argument(
         "--capture-profile",
         choices=["full", "redacted"],
-        default="full",
+        default="redacted",
     )
     run.add_argument("command", nargs=argparse.REMAINDER)
 

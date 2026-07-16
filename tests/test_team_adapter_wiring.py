@@ -157,6 +157,7 @@ class TestTeamAdapterFanin(unittest.TestCase):
                         "write_scope": ["frontend/**"],
                         "role_id": "runner",
                         "role_capability": "execute",
+                        "capture_profile": "full",
                     }
                 ]
             )
@@ -640,6 +641,7 @@ class TestTeamAdapterLedgerContract(unittest.TestCase):
             lane = _parse_team_lane(
                 "codex-lane:adapter=codex:tier=quick:region=pkg/allowed.py:prompt=write outside"
             )
+            lane["capture_profile"] = "full"
             lane["codex_binary"] = _fake_codex_touches_outside_region(bindir)
             result = run_team(
                 [lane],
