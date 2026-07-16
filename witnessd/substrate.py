@@ -184,7 +184,9 @@ def build_bundle(
     _ = public_key_path
     profile = select_signing_profile(signing_profile)
     if profile.name != OPERATOR_KEY_PROFILE:
-        raise AssertionError("non-operator signing profile escaped fail-closed selection")
+        raise AssertionError(
+            "non-operator signing profile escaped fail-closed selection"
+        )
     assurance = _cap_assurance(manifest.get("assurance"))
     signed = private_key_path is not None
     evidence_mode = manifest.get("evidence_mode", EVIDENCE_MODE_CONTEMPORANEOUS)
@@ -275,15 +277,17 @@ def build_evidence_contract(
     paths to the signed bundle; the declared scope itself stays in the signed
     run-intent artifact.
     """
-    schema_version = (
-        ROLE_CAPABILITY_TOOL_CALLS_EVIDENCE_CONTRACT_SCHEMA_VERSION
-        if tool_call_decision_receipts
-        else (
-            ROLE_CAPABILITY_EVIDENCE_CONTRACT_SCHEMA_VERSION
-            if write_scope is not None
-            else EVIDENCE_CONTRACT_SCHEMA_VERSION
-        )
-    )
+    # write_scope requires the v109 bound-observation schema so Depone verifies the
+    # git-diff observation is bound to the signed bundle. A contract that also carries
+    # tool-call receipts stays on v109 (which accepts both directives) rather than
+    # falling back to v107, whose write_scope would be accepted without a bound
+    # observation and is refused by Depone.
+    if write_scope is not None:
+        schema_version = ROLE_CAPABILITY_EVIDENCE_CONTRACT_SCHEMA_VERSION
+    elif tool_call_decision_receipts:
+        schema_version = ROLE_CAPABILITY_TOOL_CALLS_EVIDENCE_CONTRACT_SCHEMA_VERSION
+    else:
+        schema_version = EVIDENCE_CONTRACT_SCHEMA_VERSION
     contract = {
         "schema_version": schema_version,
         "allowed_touched_files": list(allowed_touched_files),
