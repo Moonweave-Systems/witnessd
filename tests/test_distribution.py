@@ -23,11 +23,12 @@ from witnessd.distribution import (
 
 
 class DistributionInitTests(unittest.TestCase):
-    def test_default_depone_ref_pins_m14_required_role_axes(self) -> None:
+    def test_default_depone_ref_pins_v109_combined_contract_support(self) -> None:
         self.assertEqual(
             DEFAULT_DEPONE_REF,
-            "e1b020b8300c569e35f771c9f84f6998f99a86ce",
+            "8e4379cae2bab817efeaf51ae2bdf2e3b703fa2b",
         )
+        self.assertRegex(DEFAULT_DEPONE_REF, r"^[0-9a-f]{40}$")
 
     def _depone_root(self) -> Path:
         env_root = os.environ.get("WITNESSD_DEPONE_ROOT")

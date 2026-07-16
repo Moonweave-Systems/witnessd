@@ -20,8 +20,14 @@ jobs:
       - name: Checkout witnessd
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Clone Depone verifier
-        run: git clone --depth=1 https://github.com/Moonweave-Systems/Depone.git "$RUNNER_TEMP/depone"
+      - name: Clone pinned Depone verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPONE_REF="$(python3 -c 'from witnessd.distribution import DEFAULT_DEPONE_REF; print(DEFAULT_DEPONE_REF)')"
+          git clone --depth=1 --no-checkout https://github.com/Moonweave-Systems/Depone.git "$RUNNER_TEMP/depone"
+          git -C "$RUNNER_TEMP/depone" fetch --depth=1 origin "$DEPONE_REF"
+          git -C "$RUNNER_TEMP/depone" checkout --detach "$DEPONE_REF"
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -41,8 +47,14 @@ jobs:
       - name: Checkout witnessd
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Clone Depone verifier
-        run: git clone --depth=1 https://github.com/Moonweave-Systems/Depone.git "$RUNNER_TEMP/depone"
+      - name: Clone pinned Depone verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPONE_REF="$(python3 -c 'from witnessd.distribution import DEFAULT_DEPONE_REF; print(DEFAULT_DEPONE_REF)')"
+          git clone --depth=1 --no-checkout https://github.com/Moonweave-Systems/Depone.git "$RUNNER_TEMP/depone"
+          git -C "$RUNNER_TEMP/depone" fetch --depth=1 origin "$DEPONE_REF"
+          git -C "$RUNNER_TEMP/depone" checkout --detach "$DEPONE_REF"
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -65,8 +77,14 @@ jobs:
       - name: Checkout witnessd
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Clone Depone verifier
-        run: git clone --depth=1 https://github.com/Moonweave-Systems/Depone.git "$RUNNER_TEMP/depone"
+      - name: Clone pinned Depone verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPONE_REF="$(python3 -c 'from witnessd.distribution import DEFAULT_DEPONE_REF; print(DEFAULT_DEPONE_REF)')"
+          git clone --depth=1 --no-checkout https://github.com/Moonweave-Systems/Depone.git "$RUNNER_TEMP/depone"
+          git -C "$RUNNER_TEMP/depone" fetch --depth=1 origin "$DEPONE_REF"
+          git -C "$RUNNER_TEMP/depone" checkout --detach "$DEPONE_REF"
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -77,6 +95,28 @@ jobs:
         env:
           WITNESSD_DEPONE_ROOT: ${{ runner.temp }}/depone
         run: scripts/quickstart_check.sh
+
+  depone-main-drift:
+    name: "warning: Depone main drift (non-blocking)"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout witnessd
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Clone Depone main for drift warning
+        run: git clone --depth=1 https://github.com/Moonweave-Systems/Depone.git "$RUNNER_TEMP/depone"
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Run unit tests against floating Depone main
+        env:
+          PYTHONPATH: ${{ runner.temp }}/depone
+          WITNESSD_DEPONE_ROOT: ${{ runner.temp }}/depone
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
 
   decoupling-guard:
     name: depone-free runtime guard
