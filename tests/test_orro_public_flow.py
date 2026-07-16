@@ -61,6 +61,50 @@ def _write_shell_rolepack(root: Path) -> Path:
     return path
 
 
+def _write_codex_rolepack(root: Path) -> Path:
+    path = root / "codex-rolepack.json"
+    path.write_text(
+        json.dumps(
+            {
+                "kind": "moonweave-rolepack",
+                "schema_version": "0.2",
+                "name": "codex-test",
+                "grants": [
+                    {
+                        "role_id": "runner",
+                        "capability": "execute",
+                        "adapters": ["codex"],
+                        "write_scope": ["orro/proof.txt"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _fake_codex_writes_proof(directory: Path) -> str:
+    path = directory / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then echo 'codex-cli 0.0.0'; exit 0; fi\n"
+        "out=\"\"\n"
+        "while [ $# -gt 0 ]; do\n"
+        "  if [ \"$1\" = \"--output-last-message\" ]; then out=\"$2\"; fi\n"
+        "  shift\n"
+        "done\n"
+        "mkdir -p orro\n"
+        "printf 'real adapter test output\\n' > orro/proof.txt\n"
+        "cat >/dev/null\n"
+        "if [ -n \"$out\" ]; then printf 'done\\n' > \"$out\"; fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | 0o111)
+    return str(path)
+
+
 class OrroPublicFlowTests(unittest.TestCase):
     def _module_run(self, args: list[str]) -> subprocess.CompletedProcess[str]:
         root = Path(__file__).resolve().parents[1]
@@ -136,9 +180,16 @@ class OrroPublicFlowTests(unittest.TestCase):
         *,
         profile: str = "code-change",
         explicit_prompt: bool = True,
+        lane_adapter: str = "shell",
     ) -> Path:
         out = root / "role-lane-plan.json"
-        rolepack = _write_shell_rolepack(root) if profile == "code-change" else None
+        rolepack = None
+        if profile == "code-change":
+            rolepack = (
+                _write_codex_rolepack(root)
+                if lane_adapter == "codex"
+                else _write_shell_rolepack(root)
+            )
         rolepack_args = (
             ["--rolepack-file", str(rolepack)] if rolepack is not None else []
         )
@@ -153,6 +204,8 @@ class OrroPublicFlowTests(unittest.TestCase):
                     str(root),
                     "--profile",
                     profile,
+                    "--lane-adapter",
+                    lane_adapter,
                     "--role-lanes-out",
                     str(out),
                     *rolepack_args,
@@ -177,6 +230,8 @@ class OrroPublicFlowTests(unittest.TestCase):
         workflow_plan: Path | None = None,
         role_lane_plan: Path | None = None,
         external_keys_dir: Path | None = None,
+        allow_reference_adapter: bool = True,
+        codex_binary: str | None = None,
     ) -> tuple[Path, Path, dict]:
         repo, home = self._init_home(root)
         trusted_public_key: Path | None = None
@@ -204,8 +259,10 @@ class OrroPublicFlowTests(unittest.TestCase):
             args.extend(["--workflow-plan", str(workflow_plan)])
         if role_lane_plan is not None:
             args.extend(["--role-lane-plan", str(role_lane_plan)])
-        if role_lane_plan is None:
+        if allow_reference_adapter:
             args.append("--allow-reference-adapter")
+        if codex_binary is not None:
+            args.extend(["--codex-binary", codex_binary])
         with (
             patch.dict(os.environ, {}, clear=False),
             redirect_stdout(stdout),
@@ -544,7 +601,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertFalse(verifier["may_execute"])
             self.assertTrue(verifier["may_verify"])
 
-    def test_proofrun_role_lane_plan_executes_declared_lanes(self) -> None:
+    def test_proofrun_role_lane_shell_reference_opt_in_marks_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             plan_path = self._flowplan_out(root, "write two proof files", profile="code-change")
@@ -577,7 +634,20 @@ class OrroPublicFlowTests(unittest.TestCase):
             role_lane_plan = json.loads((run_dir / "role-lane-plan.json").read_text(encoding="utf-8"))
             lane_ids = sorted(lane["lane_id"] for lane in role_lane_plan["lanes"])
             ledger = json.loads((run_dir / "team-ledger.json").read_text(encoding="utf-8"))
+            warning = json.loads(
+                (run_dir / "moonweave-reference-adapter-warning.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            verdict = json.loads(
+                (run_dir / "team-ledger-verdict.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(sorted(lane["lane_id"] for lane in ledger["lanes"]), lane_ids)
+            for artifact in (payload, warning, ledger, verdict):
+                self.assertTrue(artifact["reference_adapter"])
+                self.assertTrue(artifact["not_real_ai_work"])
+            self.assertFalse(ledger["placeholder_fallback"])
+            self.assertFalse(verdict["placeholder_fallback"])
             dispatch = json.loads((run_dir / "workflow-role-dispatch.json").read_text(encoding="utf-8"))
             self.assertEqual(dispatch["role_lane_plan_hash"], role_lane_ref["sha256"])
             runner = next(role for role in dispatch["roles"] if role["phase"] == "proofrun")
@@ -587,6 +657,69 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertFalse(dispatch["boundary"]["role_dispatch_is_proof"])
             self.assertFalse(dispatch["boundary"]["raises_assurance"])
             self.assertFalse(dispatch["boundary"]["approves_merge"])
+
+    def test_proofrun_real_adapter_role_lane_runs_without_reference_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bindir = root / "bin"
+            bindir.mkdir()
+            codex_binary = _fake_codex_writes_proof(bindir)
+            plan_path = self._flowplan_out(root, "write two proof files")
+            role_lane_path = self._role_lane_plan_out(
+                root,
+                "write two proof files",
+                lane_adapter="codex",
+            )
+
+            _home, run_dir, payload = self._proofrun(
+                root,
+                workflow_plan=plan_path,
+                role_lane_plan=role_lane_path,
+                allow_reference_adapter=False,
+                codex_binary=codex_binary,
+            )
+
+            self.assertEqual(payload["decision"], "pass")
+            self.assertTrue((run_dir / "team-ledger-verdict.json").is_file())
+            self.assertFalse(
+                (run_dir / "moonweave-reference-adapter-warning.json").exists()
+            )
+            self.assertNotIn("reference_adapter", payload)
+
+    def test_proofrun_refuses_shell_reference_role_lane_before_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            plan_path = self._flowplan_out(root, "write two proof files")
+            role_lane_path = self._role_lane_plan_out(root, "write two proof files")
+            stdout = io.StringIO()
+
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "write two proof files",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--workflow-plan",
+                        str(plan_path),
+                        "--role-lane-plan",
+                        str(role_lane_path),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(
+                payload["error"]["code"],
+                "ERR_ORRO_REFERENCE_ADAPTER_REFUSED",
+            )
+            self.assertFalse((home / "runs").exists())
+            self.assertFalse(any(home.rglob("team-ledger-verdict.json")))
 
     def test_proofrun_refuses_placeholder_role_lane_prompt_before_launch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2157,6 +2290,8 @@ class OrroPublicFlowTests(unittest.TestCase):
         self.assertIn("capture-only", result.stdout)
         self.assertIn("not proofcheckable", result.stdout)
         self.assertIn("orro scout", result.stdout)
+        self.assertIn("role-lane shell", result.stdout)
+        self.assertIn("reference/placeholder proofrun lanes", result.stdout)
 
     def test_direct_shell_capture_stays_blocked_with_workflow_contract_guidance(
         self,
