@@ -24,6 +24,16 @@ from witnessd.signing import verify_dsse
 
 
 BOUND_OBSERVATION_SCHEMA_VERSION = "v109.role_capability_write_scope"
+PLANTED_OPENAI_KEY = "sk-" + "a" * 32
+PLANTED_GITHUB_PAT = "ghp_" + "b" * 36
+PLANTED_PEM_KEY = (
+    "-----BEGIN PRIVATE KEY-----\n"
+    "planted-private-key-material\n"
+    "-----END PRIVATE KEY-----"
+)
+PLANTED_SECRET_OUTPUT = " ".join(
+    [PLANTED_OPENAI_KEY, PLANTED_GITHUB_PAT, PLANTED_PEM_KEY]
+)
 
 
 def _evidence_context_from_dir(
@@ -65,6 +75,29 @@ def _fake_codex(directory: str) -> str:
         "cat >/dev/null\n"
         'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T1"}\'\n'
         'printf \'%s\\n\' \'{"type":"item.completed","item":{"type":"message","text":"done"}}\'\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
+def _fake_codex_with_secrets(directory: str) -> str:
+    path = pathlib.Path(directory) / "codex"
+    started = json.dumps({"type": "thread.started", "thread_id": "T1"})
+    completed = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {"type": "message", "text": PLANTED_SECRET_OUTPUT},
+        }
+    )
+    path.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
+        "while [ $# -gt 0 ]; do shift; done\n"
+        "cat >/dev/null\n"
+        f"printf '%s\\n' '{started}'\n"
+        f"printf '%s\\n' '{completed}'\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -239,8 +272,12 @@ class TestAdapterRun(unittest.TestCase):
             self.assertEqual(intent["schema_version"], "1.0")
             self.assertNotIn("role_capability", intent)
             self.assertEqual(intent["run_id"], "t")
-            self.assertEqual(intent["allowed_paths"], ["noop.txt"])
+            self.assertEqual(intent["capture_profile"], "redacted")
+            self.assertNotIn("noop.txt", json.dumps(intent["allowed_paths"]))
             self.assertEqual(intent["provider"]["name"], "codex")
+            self.assertTrue(
+                pathlib.Path(out["evidence_dir"], "redaction-manifest.json").exists()
+            )
             evidence_contract = json.loads(
                 pathlib.Path(out["evidence_dir"], "evidence-contract.json").read_text(
                     encoding="utf-8"
@@ -252,6 +289,119 @@ class TestAdapterRun(unittest.TestCase):
                 item["name"] for item in out["bundle"]["statement"]["subject"]
             ]
             self.assertIn("run-intent", subject_names)
+
+    def test_high_confidence_secrets_are_scrubbed_and_rederived_in_both_profiles(self):
+        for capture_profile in ("full", "redacted"):
+            with (
+                self.subTest(capture_profile=capture_profile),
+                tempfile.TemporaryDirectory() as root,
+                tempfile.TemporaryDirectory() as bindir,
+            ):
+                sandbox = os.path.join(root, "repo")
+                evidence_dir = pathlib.Path(root, "evidence")
+                _init_repo(sandbox)
+
+                out = run_adapter_lane(
+                    root=root,
+                    sandbox=sandbox,
+                    adapter="codex",
+                    task_id=f"secret-{capture_profile}",
+                    prompt="emit planted fake credentials",
+                    arm="direct",
+                    tier="agentic",
+                    is_supported=lambda _model: True,
+                    budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                    codex_binary=_fake_codex_with_secrets(bindir),
+                    evidence_dir=str(evidence_dir),
+                    allowed_touched_files=["noop.txt"],
+                    capture_profile=capture_profile,
+                )
+
+                persisted = b"\n".join(
+                    path.read_bytes()
+                    for path in sorted(evidence_dir.rglob("*"))
+                    if path.is_file()
+                )
+                for raw_secret in (
+                    PLANTED_OPENAI_KEY,
+                    PLANTED_GITHUB_PAT,
+                    PLANTED_PEM_KEY,
+                ):
+                    self.assertNotIn(raw_secret.encode("utf-8"), persisted)
+                for rule in ("openai_key", "github_pat_classic", "pem_private_key"):
+                    self.assertIn(f"[REDACTED:{rule}:".encode("utf-8"), persisted)
+
+                manifest = json.loads(
+                    (evidence_dir / "redaction-manifest.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                secret_scrub = manifest["secret_scrub"]
+                self.assertEqual(
+                    {item["rule"] for item in secret_scrub["rules_matched"]},
+                    {"openai_key", "github_pat_classic", "pem_private_key"},
+                )
+                self.assertEqual(
+                    secret_scrub["boundary"],
+                    {
+                        "best_effort": True,
+                        "guarantees_completeness": False,
+                        "note": "high-confidence secret patterns only; not a guarantee that all secrets are removed",
+                    },
+                )
+
+                verdict = ingest_signed_evidence_bundle(
+                    out["bundle"],
+                    out["public_key_path"],
+                    {
+                        "capture-manifest": str(evidence_dir / "capture-manifest.json"),
+                        "observer-capture": str(evidence_dir / "observer-capture.json"),
+                        "runner-receipt": str(evidence_dir / "runner-receipt.json"),
+                        "run-intent": str(evidence_dir / "run-intent.json"),
+                        "redaction-manifest": str(
+                            evidence_dir / "redaction-manifest.json"
+                        ),
+                        "events.raw": str(evidence_dir / "events.raw.jsonl"),
+                        "events.normalized": str(
+                            evidence_dir / "events.normalized.jsonl"
+                        ),
+                    },
+                    otel_spans=out["bundle"]["otel_spans"],
+                )
+                self.assertEqual(verdict["decision"], "pass")
+
+    def test_full_profile_without_secret_matches_preserves_provider_bytes(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = pathlib.Path(root, "evidence")
+            _init_repo(sandbox)
+            fake_codex = _fake_codex(bindir)
+
+            run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="ordinary-full",
+                prompt="ordinary output",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=fake_codex,
+                evidence_dir=str(evidence_dir),
+                allowed_touched_files=["noop.txt"],
+                capture_profile="full",
+            )
+
+            expected = (
+                b'{"type":"thread.started","thread_id":"T1"}\n'
+                b'{"type":"item.completed","item":{"type":"message","text":"done"}}\n'
+            )
+            self.assertEqual((evidence_dir / "events.raw.jsonl").read_bytes(), expected)
+            self.assertFalse((evidence_dir / "redaction-manifest.json").exists())
 
     def test_redacted_capture_profile_emits_manifest_subject_and_verifies(self):
         with (
@@ -477,6 +627,7 @@ class TestAdapterRun(unittest.TestCase):
                     evidence_dir=os.path.join(root, f"{adapter}-evidence"),
                     allowed_touched_files=["noop.txt"],
                     run_intent=intent,
+                    capture_profile="full",
                     **{binary_arg: fake_binary},
                 )
 
@@ -547,6 +698,7 @@ class TestAdapterRun(unittest.TestCase):
                 budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
                 evidence_dir=evidence_dir,
                 gemini_binary=_fake_gemini(bindir),
+                capture_profile="full",
             )
 
             subject_names = [
@@ -595,6 +747,7 @@ class TestAdapterRun(unittest.TestCase):
                 budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
                 evidence_dir=evidence_dir,
                 agy_binary=_fake_agy(bindir),
+                capture_profile="full",
             )
 
             subject_names = [
@@ -689,6 +842,7 @@ class TestAdapterRun(unittest.TestCase):
                 evidence_dir=evidence_dir,
                 allowed_touched_files=["noop.txt"],
                 model="gpt-5.5",
+                capture_profile="full",
             )
 
             self.assertIn("-m", out["runner_receipt"]["invocation"])
@@ -803,6 +957,7 @@ class TestAdapterRun(unittest.TestCase):
                 write_scope=["pkg/**", "codex-home.txt"],
                 role_id="runner",
                 role_capability="execute",
+                capture_profile="full",
             )
 
             subject_names = [
@@ -914,6 +1069,7 @@ class TestAdapterRun(unittest.TestCase):
                 codex_binary=_fake_codex_writes_env_and_code(bindir),
                 evidence_dir=evidence_dir,
                 allowed_touched_files=["codex-home.txt", "pkg/agent.py"],
+                capture_profile="full",
                 write_scope=["pkg/**", "codex-home.txt"],
                 role_id="runner",
                 role_capability="execute",
@@ -1041,6 +1197,7 @@ class TestAdapterRun(unittest.TestCase):
                 codex_binary=_fake_codex(bindir),
                 evidence_dir=evidence_dir,
                 allowed_touched_files=["noop.txt"],
+                capture_profile="full",
                 tools={"mcp": ["filesystem"], "allow": ["read_file"]},
                 role_id="runner",
                 role_capability="execute",
@@ -1336,6 +1493,7 @@ class TestAdapterRun(unittest.TestCase):
                 codex_binary=_fake_codex_writes_env_and_code(bindir),
                 evidence_dir=evidence_dir,
                 allowed_touched_files=["codex-home.txt", "pkg/agent.py"],
+                capture_profile="full",
             )
 
             patch = pathlib.Path(evidence_dir, "git-diff.patch").read_text(
@@ -1366,6 +1524,7 @@ class TestAdapterRun(unittest.TestCase):
                 codex_binary=_fake_codex(bindir),
                 evidence_dir=evidence_dir,
                 allowed_touched_files=["noop.txt"],
+                capture_profile="full",
             )
 
             receipt = out["runner_receipt"]
@@ -1469,6 +1628,7 @@ class TestAdapterRun(unittest.TestCase):
                 codex_binary=_fake_codex_stages_tracked_change(bindir),
                 evidence_dir=evidence_dir,
                 allowed_touched_files=["tracked.txt"],
+                capture_profile="full",
             )
 
             patch = pathlib.Path(evidence_dir, "git-diff.patch").read_text(

@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from witnessd.privacy import CAPTURE_PROFILE_REDACTED
 from witnessd.signing import DEFAULT_OPERATOR_KEY_ID, sign_dsse
 
 RUN_INTENT_ARTIFACT_NAME = "run-intent.json"
@@ -69,7 +70,7 @@ def build_run_intent(
     provider: str,
     instruction_hashes: dict[str, str],
     budgets: dict[str, Any],
-    capture_profile: str = "full",
+    capture_profile: str = CAPTURE_PROFILE_REDACTED,
     adapter_version: str = DEFAULT_ADAPTER_VERSION,
     role_capability: dict[str, Any] | None = None,
 ) -> dict[str, Any]:

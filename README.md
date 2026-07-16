@@ -92,6 +92,17 @@ matching operator keypair outside the runtime and supply its public key through
 `trust_anchor: "operator-provided"`. Observer-signed/A2 language additionally
 requires real observer/runner separation.
 
+Capture defaults to the `redacted` profile. It replaces known local values such
+as the prompt, selected paths, worktree, and `CODEX_HOME`, and every profile
+also best-effort-scrubs a fixed set of high-confidence secret patterns from
+captured output before hashing and signing. When matched, the scrub and its
+rule-level digests are recorded in `redaction-manifest.json`; explicit `full`
+capture remains available for raw local paths and prompts.
+
+Secret-pattern scrubbing is high-confidence-patterns-only and is not a
+completeness guarantee. Operators must still avoid putting secrets where a
+lane, command, model, tool, or adapter can print them.
+
 witnessd may emit self-declared runtime facts and `DELAYED_NOTARY` style
 post-hoc records, but those records do not upgrade trust. A2 requires a
 dedicated observer uid, a separate runner, and observer-owned evidence paths that

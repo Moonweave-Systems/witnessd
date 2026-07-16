@@ -26,6 +26,7 @@ from witnessd.eventlog import EventLog
 from witnessd.fixture import build_reference_adapter_fixture, build_shell_invocation
 from witnessd.lock import ClaimConflictError, OwnershipRegistry
 from witnessd.observer import assert_separated
+from witnessd.privacy import CAPTURE_PROFILE_REDACTED
 from witnessd.runlog import append_runlog
 from witnessd.killswitch import kill_all
 from witnessd.process_identity import read_pid_start_time
@@ -1783,7 +1784,9 @@ def _run_adapter_lane(
         private_key_path=private_key_path,
         public_key_path=public_key_path,
         allowed_touched_files=list(allowed_touched_files),
-        capture_profile=str(spec.get("capture_profile", "full")),
+        capture_profile=str(
+            spec.get("capture_profile", CAPTURE_PROFILE_REDACTED)
+        ),
         model=spec.get("model"),
         write_scope=spec.get("write_scope"),
         role_id=spec.get("role_id"),

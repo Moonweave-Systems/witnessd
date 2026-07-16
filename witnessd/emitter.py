@@ -36,6 +36,10 @@ from witnessd.privacy import (
     CAPTURE_PROFILE_REDACTED,
     REDACTION_MANIFEST_ARTIFACT_NAME,
     REDACTION_MANIFEST_SUBJECT_NAME,
+    build_secret_scrub_manifest,
+    merge_secret_findings,
+    redact_secrets,
+    redact_secrets_in,
 )
 from witnessd.provenance import build_signed_trusted_observer_provenance
 from witnessd.runintent import (
@@ -135,7 +139,7 @@ def emit_lane_evidence(
     parent_attestation_id: str | None = None,
     run_intent_path: str | None = None,
     run_intent: dict[str, Any] | None = None,
-    capture_profile: str = "full",
+    capture_profile: str = CAPTURE_PROFILE_REDACTED,
     redaction_manifest: dict[str, Any] | None = None,
     provider_artifacts: dict[str, str] | None = None,
     write_scope: list[str] | None = None,
@@ -157,6 +161,28 @@ def emit_lane_evidence(
     if _is_inside_or_equal(public_key_path, evidence_dir):
         raise EmitterError("ERR_TRUST_ROOT_NOT_SEPARATED")
     runtime_sandbox = runner_sandbox if runtime_sandbox is None else runtime_sandbox
+
+    secret_findings: list[dict[str, Any]] = []
+    lane_result, findings = redact_secrets_in(lane_result)
+    secret_findings = merge_secret_findings(secret_findings, findings)
+    fixture, findings = redact_secrets_in(fixture)
+    secret_findings = merge_secret_findings(secret_findings, findings)
+    allowed_touched_files, findings = redact_secrets_in(allowed_touched_files)
+    secret_findings = merge_secret_findings(secret_findings, findings)
+    if invocation is not None:
+        invocation, findings = redact_secrets_in(invocation)
+        secret_findings = merge_secret_findings(secret_findings, findings)
+    runner_sandbox, findings = redact_secrets_in(runner_sandbox)
+    secret_findings = merge_secret_findings(secret_findings, findings)
+    diff_patch, findings = redact_secrets_in(diff_patch)
+    secret_findings = merge_secret_findings(secret_findings, findings)
+    if write_scope is not None:
+        write_scope, findings = redact_secrets_in(write_scope)
+        secret_findings = merge_secret_findings(secret_findings, findings)
+    if run_intent_path is None and run_intent is not None:
+        run_intent, findings = redact_secrets_in(run_intent)
+        secret_findings = merge_secret_findings(secret_findings, findings)
+
     baseline: dict[str, Any] = {}
     if run_intent_path is None and run_intent is None and runtime_sandbox:
         if not os.path.isdir(runtime_sandbox):
@@ -167,6 +193,25 @@ def emit_lane_evidence(
             raise EmitterError(ERR_RUNTIME_SANDBOX_UNAVAILABLE) from exc
     if key_id == DEFAULT_OPERATOR_KEY_ID:
         key_id = derive_public_key_id(public_key_path)
+
+    prepared_provider_artifacts: dict[str, bytes] = {}
+    for subject_name, source_path in sorted((provider_artifacts or {}).items()):
+        data = Path(source_path).read_bytes()
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            prepared_provider_artifacts[subject_name] = data
+            continue
+        scrubbed_text, findings = redact_secrets(text)
+        prepared_provider_artifacts[subject_name] = scrubbed_text.encode("utf-8")
+        secret_findings = merge_secret_findings(secret_findings, findings)
+
+    redaction_manifest = build_secret_scrub_manifest(
+        run_id=task_id,
+        capture_profile=capture_profile,
+        findings=secret_findings,
+        manifest=redaction_manifest,
+    )
 
     os.makedirs(evidence_dir, exist_ok=True)
     # Keep legacy same-process validation working without overwriting a caller's
@@ -344,7 +389,7 @@ def emit_lane_evidence(
         )
     _emit_artifact("runner-receipt.json", json.dumps(receipt))
     redaction_manifest_path = None
-    if capture_profile == CAPTURE_PROFILE_REDACTED and redaction_manifest is not None:
+    if redaction_manifest is not None:
         redaction_manifest_path = _emit_artifact(
             REDACTION_MANIFEST_ARTIFACT_NAME,
             json.dumps(redaction_manifest),
@@ -358,9 +403,8 @@ def emit_lane_evidence(
     }
     if redaction_manifest_path is not None:
         artifacts[REDACTION_MANIFEST_SUBJECT_NAME] = redaction_manifest_path
-    if provider_artifacts:
-        for subject_name, source_path in sorted(provider_artifacts.items()):
-            source = os.path.abspath(source_path)
+    if prepared_provider_artifacts:
+        for subject_name, data in prepared_provider_artifacts.items():
             artifact_name = (
                 "review-receipt.json"
                 if subject_name == "review-receipt"
@@ -376,10 +420,7 @@ def emit_lane_evidence(
                 if subject_name == "tool-call-decision-receipts"
                 else f"{subject_name}.jsonl"
             )
-            with open(source, "rb") as handle:
-                artifacts[subject_name] = _emit_artifact_bytes(
-                    artifact_name, handle.read()
-                )
+            artifacts[subject_name] = _emit_artifact_bytes(artifact_name, data)
     otel_spans = None
     if runner_kind is not None:
         otel_spans = build_otel_spans(manifest, runner_receipt=receipt)
@@ -462,7 +503,7 @@ def emit_supervised_lane(
     observer_launched: bool = False,
     run_intent_path: str | None = None,
     run_intent: dict[str, Any] | None = None,
-    capture_profile: str = "full",
+    capture_profile: str = CAPTURE_PROFILE_REDACTED,
     redaction_manifest: dict[str, Any] | None = None,
     provider_artifacts: dict[str, str] | None = None,
     write_scope: list[str] | None = None,

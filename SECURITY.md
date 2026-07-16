@@ -80,6 +80,19 @@ Secret-looking material in a report is not proof of a vulnerability by
 itself — describe the mechanism, and attach only what is needed to reproduce
 it with sensitive values removed or replaced.
 
+The default `redacted` capture profile replaces known local values such as the
+run prompt, selected paths, worktree, and `CODEX_HOME`. In every capture
+profile, including explicit `full`, witnessd also best-effort-scrubs a small set
+of high-confidence secret patterns from captured output before the evidence is
+hashed and signed. A `redaction-manifest.json` records matched rules and states
+the boundary when a scrub occurs.
+
+This pattern scrub is best-effort and high-confidence-patterns-only. It is not
+a guarantee that all secrets are removed. Operators must still avoid placing
+secrets where a lane, command, model, tool, or adapter can print them. The
+explicit `full` profile preserves local paths and prompts; it does not disable
+the always-on high-confidence secret-pattern scrub.
+
 ## witnessd Boundary
 
 witnessd executes lanes and emits operator-key-signed evidence. It does not

@@ -122,6 +122,8 @@ class TestRunSeparation(unittest.TestCase):
                     keys,
                     "--task-id",
                     "issue-44-success",
+                    "--capture-profile",
+                    "full",
                     "--",
                     "printf ok",
                 ]
@@ -147,6 +149,14 @@ class TestRunSeparation(unittest.TestCase):
             self.assertEqual(receipt["invocation"], ["sh", "-c", "printf ok"])
             self.assertEqual(receipt["exit_code"], 0)
             self.assertEqual(receipt["transcript_path"], "evidence/proofrun.log")
+            with open(
+                os.path.join(evidence, "run-intent.json"), encoding="utf-8"
+            ) as handle:
+                intent = json.load(handle)["intent"]
+            self.assertEqual(intent["capture_profile"], "full")
+            self.assertFalse(
+                os.path.exists(os.path.join(evidence, "redaction-manifest.json"))
+            )
 
     @unittest.skipUnless(_HAS_OPENSSL, "openssl required to sign emitted evidence")
     def test_proofrun_shell_redacts_persisted_path_but_uses_real_git_baseline(self):
@@ -172,8 +182,6 @@ class TestRunSeparation(unittest.TestCase):
                     keys,
                     "--task-id",
                     "orro-48-redacted",
-                    "--capture-profile",
-                    "redacted",
                     "--",
                     "git status --short",
                 ]
@@ -186,6 +194,7 @@ class TestRunSeparation(unittest.TestCase):
                 intent = json.load(handle)["intent"]
             self.assertEqual(intent["baseline"]["git_head"], git_head)
             self.assertEqual(intent["baseline"]["git_head_status"], "known")
+            self.assertEqual(intent["capture_profile"], "redacted")
             with open(
                 os.path.join(evidence, "runner-receipt.json"), encoding="utf-8"
             ) as handle:

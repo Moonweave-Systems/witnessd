@@ -26,9 +26,11 @@ from witnessd.model_declaration import (
 from witnessd.observer import assert_separated
 from witnessd.preflight import PreflightError, probe_adapter_capability
 from witnessd.privacy import (
-    CAPTURE_PROFILE_FULL,
     CAPTURE_PROFILE_REDACTED,
     build_redaction_context,
+    build_secret_scrub_manifest,
+    merge_secret_findings,
+    redact_secrets_in,
     redact_value,
     validate_capture_profile,
 )
@@ -234,7 +236,7 @@ def run_adapter_lane(
     public_key_path: str | None = None,
     allowed_touched_files: list[str] | None = None,
     approval_policy: str = "on-request",
-    capture_profile: str = CAPTURE_PROFILE_FULL,
+    capture_profile: str = CAPTURE_PROFILE_REDACTED,
     run_intent: dict[str, Any] | None = None,
     model: str | None = None,
     write_scope: list[str] | None = None,
@@ -340,6 +342,9 @@ def run_adapter_lane(
         redacted_allowed_for_manifest = list(
             redact_value(allowed_for_manifest, redaction_context)
         )
+        redacted_allowed_for_manifest, secret_findings = redact_secrets_in(
+            redacted_allowed_for_manifest
+        )
         redacted_write_scope = None
         if write_scope is not None:
             redacted_write_scope = (
@@ -347,6 +352,8 @@ def run_adapter_lane(
                 if redaction_context is not None
                 else list(write_scope)
             )
+            redacted_write_scope, findings = redact_secrets_in(redacted_write_scope)
+            secret_findings = merge_secret_findings(secret_findings, findings)
         declared_tools = normalized_tools if adapter == "claude" else None
         role_capability_intent = None
         if redacted_write_scope is not None or declared_tools is not None:
@@ -510,6 +517,31 @@ def run_adapter_lane(
         if redaction_context is not None:
             lane_result = redact_value(lane_result, redaction_context)
             diff_patch = str(redact_value(diff_patch, redaction_context))
+        emission_values, findings = redact_secrets_in(
+            {
+                "lane_result": lane_result,
+                "diff_patch": diff_patch,
+                "invocation": redact_value(
+                    adapter_result.invocation, redaction_context
+                ),
+                "runner_sandbox": str(redact_value(worktree, redaction_context)),
+            }
+        )
+        secret_findings = merge_secret_findings(secret_findings, findings)
+        lane_result = emission_values["lane_result"]
+        diff_patch = emission_values["diff_patch"]
+        invocation = emission_values["invocation"]
+        runner_sandbox = emission_values["runner_sandbox"]
+        redaction_manifest = build_secret_scrub_manifest(
+            run_id=task_id,
+            capture_profile=capture_profile,
+            findings=secret_findings,
+            manifest=(
+                redaction_context["manifest"]
+                if redaction_context is not None
+                else None
+            ),
+        )
 
         if redacted_write_scope is not None:
             write_scope_declaration = build_write_scope_declaration(
@@ -539,8 +571,8 @@ def run_adapter_lane(
             allowed_touched_files=redacted_allowed_for_manifest,
             public_key_path=public_key,
             task_id=task_id,
-            invocation=redact_value(adapter_result.invocation, redaction_context),
-            runner_sandbox=str(redact_value(worktree, redaction_context)),
+            invocation=invocation,
+            runner_sandbox=runner_sandbox,
             runtime_sandbox=worktree,
             runner_kind=adapter_result.runner_kind,
             started_at=started_at,
@@ -549,9 +581,7 @@ def run_adapter_lane(
             run_intent_path=str(run_intent_path),
             run_intent=run_intent,
             capture_profile=capture_profile,
-            redaction_manifest=(
-                redaction_context["manifest"] if redaction_context is not None else None
-            ),
+            redaction_manifest=redaction_manifest,
             provider_artifacts=provider_artifacts,
             write_scope=redacted_write_scope,
             role_id=role_id,
