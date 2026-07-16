@@ -89,7 +89,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     from witnessd.privacy import (
         CAPTURE_PROFILE_REDACTED,
         build_redaction_context,
-        build_secret_scrub_manifest,
+        build_pattern_scrub_manifest,
         redact_secrets_in,
         redact_value,
     )
@@ -141,7 +141,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     lane_result = scrubbed_values["lane_result"]
     allowed_touched_files = scrubbed_values["allowed_touched_files"]
     runner_sandbox = scrubbed_values["runner_sandbox"]
-    redaction_manifest = build_secret_scrub_manifest(
+    redaction_manifest = build_pattern_scrub_manifest(
         run_id=args.task_id,
         capture_profile=args.capture_profile,
         findings=secret_findings,

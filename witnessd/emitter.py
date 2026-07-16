@@ -36,7 +36,7 @@ from witnessd.privacy import (
     CAPTURE_PROFILE_REDACTED,
     REDACTION_MANIFEST_ARTIFACT_NAME,
     REDACTION_MANIFEST_SUBJECT_NAME,
-    build_secret_scrub_manifest,
+    build_pattern_scrub_manifest,
     merge_secret_findings,
     redact_secrets,
     redact_secrets_in,
@@ -206,7 +206,7 @@ def emit_lane_evidence(
         prepared_provider_artifacts[subject_name] = scrubbed_text.encode("utf-8")
         secret_findings = merge_secret_findings(secret_findings, findings)
 
-    redaction_manifest = build_secret_scrub_manifest(
+    redaction_manifest = build_pattern_scrub_manifest(
         run_id=task_id,
         capture_profile=capture_profile,
         findings=secret_findings,
@@ -259,9 +259,6 @@ def emit_lane_evidence(
         test_output=lane_result["test_output"],
         source_fixture_hash=source_fixture_hash,
     )
-    # Captured strings were scrubbed above; persisting their deterministic
-    # replacement tokens and rule-level digests is intentional metadata.
-    # codeql[py/clear-text-storage-sensitive-data]
     manifest = build_capture_manifest(
         fixture,
         observer_capture=observer_capture,

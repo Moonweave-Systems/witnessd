@@ -28,7 +28,7 @@ from witnessd.preflight import PreflightError, probe_adapter_capability
 from witnessd.privacy import (
     CAPTURE_PROFILE_REDACTED,
     build_redaction_context,
-    build_secret_scrub_manifest,
+    build_pattern_scrub_manifest,
     merge_secret_findings,
     redact_secrets_in,
     redact_value,
@@ -532,7 +532,7 @@ def run_adapter_lane(
         diff_patch = emission_values["diff_patch"]
         invocation = emission_values["invocation"]
         runner_sandbox = emission_values["runner_sandbox"]
-        redaction_manifest = build_secret_scrub_manifest(
+        redaction_manifest = build_pattern_scrub_manifest(
             run_id=task_id,
             capture_profile=capture_profile,
             findings=secret_findings,

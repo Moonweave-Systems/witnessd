@@ -133,7 +133,7 @@ def redact_secrets_in(value: Any) -> tuple[Any, list[dict[str, Any]]]:
     return value, []
 
 
-def build_secret_scrub_manifest(
+def build_pattern_scrub_manifest(
     *,
     run_id: str,
     capture_profile: str,
