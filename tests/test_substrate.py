@@ -218,9 +218,7 @@ class TestEvidenceContract(unittest.TestCase):
         )
 
         contract = json.loads(files["evidence-contract.json"])
-        self.assertEqual(
-            contract["schema_version"], "v109.role_capability_write_scope"
-        )
+        self.assertEqual(contract["schema_version"], "v109.role_capability_write_scope")
         self.assertEqual(
             contract["role_capability_write_scope"],
             {
@@ -234,7 +232,7 @@ class TestEvidenceContract(unittest.TestCase):
             errors,
         )
 
-    def test_tool_call_contract_uses_v107_schema(self):
+    def test_combined_tool_call_and_write_scope_contract_uses_v109_schema(self):
         files = build_evidence_contract(
             allowed_touched_files=["depone/example.py"],
             touched_files=["depone/example.py"],
@@ -244,9 +242,10 @@ class TestEvidenceContract(unittest.TestCase):
         )
 
         contract = json.loads(files["evidence-contract.json"])
-        self.assertEqual(
-            contract["schema_version"], "v107.role_capability_tool_calls"
-        )
+        # write_scope forces the v109 bound-observation schema even when tool-call
+        # receipts are present; v107 would leave write_scope unbound and Depone
+        # refuses it. Depone accepts both directives at v109.
+        self.assertEqual(contract["schema_version"], "v109.role_capability_write_scope")
         self.assertEqual(
             contract["role_capability_write_scope"],
             {

@@ -163,8 +163,12 @@ def _fake_gemini(directory: str) -> str:
 def _fake_agy(directory: str, *, stale_context: bool = False) -> str:
     path = pathlib.Path(directory) / "agy"
     observed_root = "'/tmp/stale-agy-project'" if stale_context else "os.getcwd()"
-    observed_head = "'0' * 40" if stale_context else (
-        "subprocess.run(['git', 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True).stdout.strip()"
+    observed_head = (
+        "'0' * 40"
+        if stale_context
+        else (
+            "subprocess.run(['git', 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True).stdout.strip()"
+        )
     )
     path.write_text(
         "#!/usr/bin/python3\n"
@@ -659,9 +663,7 @@ class TestAdapterRun(unittest.TestCase):
             )
             self.assertNotIn(
                 "review note",
-                pathlib.Path(root, "adapter-command.json").read_text(
-                    encoding="utf-8"
-                ),
+                pathlib.Path(root, "adapter-command.json").read_text(encoding="utf-8"),
             )
 
     def test_explicit_model_wires_through_to_codex_invocation_and_declaration(self):
@@ -758,9 +760,7 @@ class TestAdapterRun(unittest.TestCase):
                     encoding="utf-8"
                 )
             )
-            self.assertEqual(
-                declaration["verification_status"], "requested-unverified"
-            )
+            self.assertEqual(declaration["verification_status"], "requested-unverified")
             runlog_path = pathlib.Path(root, ".witnessd", "runlog.jsonl")
             events = [
                 json.loads(line)
@@ -813,17 +813,23 @@ class TestAdapterRun(unittest.TestCase):
             self.assertIn("git-diff-name-only.txt", subject_names)
 
             declaration = json.loads(
-                (
-                    pathlib.Path(evidence_dir) / "write-scope-declaration.json"
-                ).read_text(encoding="utf-8")
+                (pathlib.Path(evidence_dir) / "write-scope-declaration.json").read_text(
+                    encoding="utf-8"
+                )
             )
             self.assertEqual(declaration["kind"], "moonweave-write-scope-declaration")
             self.assertFalse(declaration["can_change_evidence_verdict"])
             self.assertEqual(declaration["role_id"], "runner")
             self.assertEqual(declaration["capability"], "execute")
-            self.assertEqual(declaration["declared_write_scope"], ["pkg/**", "codex-home.txt"])
-            self.assertEqual(declaration["allowed_touched_files"], ["codex-home.txt", "pkg/agent.py"])
-            self.assertEqual(declaration["touched_files"], ["codex-home.txt", "pkg/agent.py"])
+            self.assertEqual(
+                declaration["declared_write_scope"], ["pkg/**", "codex-home.txt"]
+            )
+            self.assertEqual(
+                declaration["allowed_touched_files"], ["codex-home.txt", "pkg/agent.py"]
+            )
+            self.assertEqual(
+                declaration["touched_files"], ["codex-home.txt", "pkg/agent.py"]
+            )
             self.assertEqual(declaration["verification_status"], "verified")
             self.assertEqual(declaration["conformance"], "pass")
 
@@ -848,9 +854,7 @@ class TestAdapterRun(unittest.TestCase):
                 },
             )
             evidence_contract = json.loads(
-                (evidence_root / "evidence-contract.json").read_text(
-                    encoding="utf-8"
-                )
+                (evidence_root / "evidence-contract.json").read_text(encoding="utf-8")
             )
             self.assertEqual(
                 evidence_contract["schema_version"],
@@ -917,9 +921,7 @@ class TestAdapterRun(unittest.TestCase):
 
             evidence_root = pathlib.Path(evidence_dir)
             contract = json.loads(
-                (evidence_root / "evidence-contract.json").read_text(
-                    encoding="utf-8"
-                )
+                (evidence_root / "evidence-contract.json").read_text(encoding="utf-8")
             )
             self.assertEqual(
                 contract["schema_version"], BOUND_OBSERVATION_SCHEMA_VERSION
@@ -1143,9 +1145,7 @@ class TestAdapterRun(unittest.TestCase):
                     pathlib.Path(evidence_dir) / "tool-call-decision-receipts.json"
                 ).read_text(encoding="utf-8")
             )
-            self.assertEqual(
-                receipts["kind"], "moonweave-tool-call-decision-receipts"
-            )
+            self.assertEqual(receipts["kind"], "moonweave-tool-call-decision-receipts")
             self.assertEqual(receipts["adapter"], "claude")
             self.assertEqual(receipts["decisions"], [])
             self.assertEqual(
@@ -1190,7 +1190,7 @@ class TestAdapterRun(unittest.TestCase):
             )
             self.assertEqual(
                 evidence_contract["schema_version"],
-                "v107.role_capability_tool_calls",
+                "v109.role_capability_write_scope",
             )
             self.assertEqual(
                 evidence_contract["role_capability_tool_calls"][
