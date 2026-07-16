@@ -15,6 +15,15 @@ from witnessd.__main__ import main
 
 
 class OrroWorkstyleTests(unittest.TestCase):
+    def test_deprecation_warning_names_minimum_functional_orro_version(self):
+        from orro.__main__ import DEPRECATION_WARNING
+
+        self.assertIn("orro>=0.0.2", DEPRECATION_WARNING)
+        self.assertNotIn(
+            "install the ORRO package for the orro command",
+            DEPRECATION_WARNING,
+        )
+
     def _advise(self, goal: str, *extra: str) -> tuple[int, dict]:
         stdout = io.StringIO()
         with redirect_stdout(stdout):

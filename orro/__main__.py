@@ -10,8 +10,9 @@ from witnessd.__main__ import ORRO_COMMANDS, main as witnessd_main
 
 
 DEPRECATION_WARNING = (
-    "warning: witnessd-hosted orro is deprecated; install the ORRO package for "
-    "the orro command. This shim will be removed in the next major witnessd release."
+    "warning: witnessd-hosted orro is deprecated; install the ORRO package with "
+    "pip install \"orro>=0.0.2\" for the orro command. This shim will be removed "
+    "in the next major witnessd release."
 )
 
 ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,sketch,trace,flowplan,proofrun,proofcheck,advisory-provenance-check,handoff,next,report,review,auto,team,doctor,engine-lock} ...
