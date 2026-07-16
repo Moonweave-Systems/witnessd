@@ -8,3 +8,9 @@ __pycache__/
 
 # Transient W10 live-capture sandbox (run_w10_live.py); never commit
 fixtures/w10-sandbox/
+
+# Python build/editable-install artifacts
+*.egg-info/
+build/
+dist/
+__pycache__/
