@@ -124,8 +124,7 @@ class OrroEngineContractTests(unittest.TestCase):
                 role_lanes=True,
             )
             args.extend(["--workflow-plan", str(workflow_plan), "--role-lane-plan", str(role_lane_plan)])
-        else:
-            args.append("--allow-reference-adapter")
+        args.append("--allow-reference-adapter")
         code, payload = self._json_command(args)
         self.assertEqual(code, 0, payload)
         return home, Path(payload["run_dir"]), payload
