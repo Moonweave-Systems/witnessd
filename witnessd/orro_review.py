@@ -99,7 +99,9 @@ def run_review_role_lane_plan(
 
     if any(lane["decision"] == "invalid-context" for lane in lane_summaries):
         decision = "invalid-context"
-    elif lane_summaries and all(lane["exit_code"] == 0 for lane in lane_summaries):
+    elif any(lane["decision"] == "incomplete-review" for lane in lane_summaries):
+        decision = "incomplete-review"
+    elif lane_summaries and all(lane["decision"] == "pass" for lane in lane_summaries):
         decision = "pass"
     else:
         decision = "fail"
@@ -288,6 +290,22 @@ def _run_review_lane(
         context_invalid
         and result.test_output.get("error_code") == "ERR_AGY_INVALID_CONTEXT"
     )
+    completion_binding = review_receipt.get("completion_binding")
+    review_usable = review_receipt.get("usable_as_review_evidence") is True
+    incomplete_review_result = (
+        adapter == "agy"
+        and isinstance(completion_binding, dict)
+        and completion_binding.get("status") == "incomplete-review"
+        and result.exit_code == 0
+    )
+    if invalid_context_result:
+        decision = "invalid-context"
+    elif incomplete_review_result:
+        decision = "incomplete-review"
+    elif adapter == "agy" and result.exit_code == 0 and not review_usable:
+        decision = "fail"
+    else:
+        decision = "pass" if result.exit_code == 0 else "fail"
     return {
         "lane_id": lane_id,
         "role_id": lane["role_id"],
@@ -295,9 +313,7 @@ def _run_review_lane(
         "adapter": adapter,
         "model": model_arg,
         "region": lane["region"],
-        "decision": "invalid-context" if invalid_context_result else (
-            "pass" if result.exit_code == 0 else "fail"
-        ),
+        "decision": decision,
         "exit_code": result.exit_code,
         "touched_files": result.touched_files,
         "test_output": result.test_output,

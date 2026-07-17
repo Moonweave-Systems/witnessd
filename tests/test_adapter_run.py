@@ -214,7 +214,8 @@ def _fake_agy(directory: str, *, stale_context: bool = False) -> str:
         f"    observed_head = {observed_head}\n"
         "    print('WITNESSD_AGY_CONTEXT ' + json.dumps({'repo_root': observed_root, 'git_head': observed_head}, sort_keys=True))\n"
         "    print('Review findings:')\n"
-        "    print('low seed.txt:1 review note')\n",
+        "    print('low seed.txt:1 review note')\n"
+        "    print('WITNESSD_AGY_COMPLETE ' + json.dumps({'status': 'complete'}, sort_keys=True))\n",
         encoding="utf-8",
     )
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
