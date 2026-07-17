@@ -64,15 +64,28 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _requested_route(route_decision: dict[str, Any]) -> dict[str, Any]:
+    route_requested = dict(route_decision)
+    route_requested["model_requested"] = route_requested.pop("model")
+    route_requested["attempts"] = [
+        {
+            **{key: value for key, value in attempt.items() if key != "model"},
+            "model_requested": attempt["model"],
+        }
+        for attempt in route_decision.get("attempts", [])
+    ]
+    return route_requested
+
+
 def _fixture(
-    adapter: str, task_id: str, route_decision: dict[str, Any]
+    adapter: str, task_id: str, route_requested: dict[str, Any]
 ) -> dict[str, Any]:
     invocation = build_shell_invocation(task_id)
     invocation["profile"] = "w4-adapter-run"
-    invocation["route"] = {
-        "tier": route_decision["tier"],
-        "model": route_decision["model"],
-        "degraded": route_decision["degraded"],
+    invocation["route_requested"] = {
+        "tier": route_requested["tier"],
+        "model_requested": route_requested["model_requested"],
+        "degraded": route_requested["degraded"],
     }
     invocation["toolbelt"]["allowed_tools"] = [adapter]
     invocation["toolbelt"]["output_schema"] = "adapter-result-v1"
@@ -283,6 +296,7 @@ def run_adapter_lane(
             )
         except RouteExhaustedError as exc:
             raise LaneBlocked("route_blocked", str(exc)) from exc
+        route_requested = _requested_route(route_decision)
 
         breaker = CostBreaker(
             log=log,
@@ -567,7 +581,7 @@ def run_adapter_lane(
             lane_result,
             str(lane_evidence_dir),
             private_key,
-            fixture=_fixture(adapter, task_id, route_decision),
+            fixture=_fixture(adapter, task_id, route_requested),
             allowed_touched_files=redacted_allowed_for_manifest,
             public_key_path=public_key,
             task_id=task_id,
@@ -596,7 +610,7 @@ def run_adapter_lane(
             "evidence_dir": str(lane_evidence_dir),
             "public_key_path": emitted["public_key_path"],
             "normalized_events": getattr(adapter_result, "normalized_events", []),
-            "route": route_decision,
+            "route_requested": route_requested,
             "status_axis": {
                 "assurance": render_status(pending=1, verdict=None),
                 "lifecycle": "active",
