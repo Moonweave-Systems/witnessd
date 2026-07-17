@@ -496,7 +496,66 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertFalse(out.exists())
             payload = json.loads(text)
-            self.assertEqual(payload["error"]["code"], "ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED")
+            error = payload["error"]
+            self.assertEqual(error["code"], "ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED")
+            self.assertEqual(
+                error["reason"],
+                "code-change proofrun lanes need a concrete write_scope from the rolepack",
+            )
+            self.assertEqual(
+                error["required_input_or_grant"],
+                "a rolepack granting the role's write_scope",
+            )
+            self.assertIn("team init --template developer", error["next_command"])
+            self.assertIn("--write-scope '<glob>'", error["next_command"])
+            self.assertIn("--model-policy default", error["next_command"])
+
+    def test_flowplan_adapter_not_granted_has_actionable_rolepack_details(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out = root / "role-lane-plan.json"
+            rolepack_path = root / "rolepack.json"
+            rolepack_path.write_text(
+                json.dumps(
+                    _runner_rolepack(
+                        adapters=["codex"],
+                        write_scope=["src/**"],
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            code, text = self._flowplan_raw(
+                [
+                    "fix parser",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(out),
+                    "--rolepack-file",
+                    str(rolepack_path),
+                    "--model-policy",
+                    "off",
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertFalse(out.exists())
+            error = json.loads(text)["error"]
+            self.assertEqual(error["code"], "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED")
+            self.assertIn("resolved adapter 'shell'", error["reason"])
+            self.assertIn("granted adapters ['codex']", error["reason"])
+            self.assertIn("grants role_ids ['runner']", error["reason"])
+            self.assertIn(
+                "pass --model-policy default (routes to the granted adapter)",
+                error["reason"],
+            )
+            self.assertIn("adapter 'shell'", error["required_input_or_grant"])
+            self.assertIn("--model-policy default", error["next_command"])
 
     def test_flowplan_rolepack_developer_inlines_grants(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -368,7 +368,12 @@ def role_lane_plan_file_ref(path: Path) -> dict[str, Any]:
     }
 
 
-def load_role_lane_plan(path: Path, *, workflow_plan: dict[str, Any]) -> dict[str, Any]:
+def load_role_lane_plan(
+    path: Path,
+    *,
+    workflow_plan: dict[str, Any],
+    require_explicit_prompts: bool = True,
+) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -395,7 +400,8 @@ def load_role_lane_plan(path: Path, *, workflow_plan: dict[str, Any]) -> dict[st
             ERR_ORRO_ROLE_LANE_PLAN_EMPTY,
             "role-lane plan has no executable lanes",
         )
-    assert_role_lane_prompts_explicit(payload)
+    if require_explicit_prompts:
+        assert_role_lane_prompts_explicit(payload)
     return deepcopy(payload)
 
 

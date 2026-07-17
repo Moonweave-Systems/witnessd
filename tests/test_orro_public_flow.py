@@ -15,6 +15,7 @@ from unittest.mock import patch
 from witnessd.__main__ import main
 from witnessd.orro_report import build_report
 from witnessd.orro_team_surface import apply_task_prompt_to_role_lane_plan
+from witnessd.orro_workflow import OrroWorkflowError
 from witnessd.signing import gen_operator_keypair
 
 
@@ -721,7 +722,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertFalse((home / "runs").exists())
             self.assertFalse(any(home.rglob("team-ledger-verdict.json")))
 
-    def test_proofrun_refuses_placeholder_role_lane_prompt_before_launch(self) -> None:
+    def test_proofrun_patches_placeholder_role_lane_prompt_from_workflow_goal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo, home = self._init_home(root)
@@ -731,14 +732,100 @@ class OrroPublicFlowTests(unittest.TestCase):
                 "write two proof files",
                 explicit_prompt=False,
             )
+            role_lane_plan = json.loads(role_lane_path.read_text(encoding="utf-8"))
+            explicit_lane = json.loads(json.dumps(role_lane_plan["lanes"][0]))
+            explicit_lane["lane_id"] = "runner-explicit"
+            explicit_lane["role_id"] = "runner-explicit"
+            explicit_lane["role_capability"]["role_id"] = "runner-explicit"
+            explicit_lane["prompt"] = "Keep this explicit lane task"
+            role_lane_plan["lanes"].append(explicit_lane)
+            role_lane_plan["lane_count"] = 2
+            role_lane_path.write_text(
+                json.dumps(role_lane_plan) + "\n",
+                encoding="utf-8",
+            )
 
             stdout = io.StringIO()
-            with redirect_stdout(stdout):
+            def block_after_placeholder_patch(**kwargs: object) -> dict:
+                role_lane_plan = kwargs["role_lane_plan"]
+                self.assertIsInstance(role_lane_plan, dict)
+                self.assertEqual(
+                    role_lane_plan["lanes"][0]["prompt"],
+                    "write two proof files",
+                )
+                self.assertEqual(
+                    role_lane_plan["lanes"][1]["prompt"],
+                    "Keep this explicit lane task",
+                )
+                raise OrroWorkflowError(
+                    "ERR_TEST_PAST_PLACEHOLDER_CHECK",
+                    "test stopped after placeholder validation",
+                )
+
+            with patch(
+                "witnessd.orro_workflow.write_role_lane_plan_binding",
+                side_effect=block_after_placeholder_patch,
+            ), redirect_stdout(stdout):
                 code = main(
                     [
                         "orro",
                         "proofrun",
-                        "write two proof files",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--workflow-plan",
+                        str(plan_path),
+                        "--role-lane-plan",
+                        str(role_lane_path),
+                        "--allow-reference-adapter",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 1)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(
+                payload["error"]["code"],
+                "ERR_TEST_PAST_PLACEHOLDER_CHECK",
+            )
+            self.assertNotEqual(
+                payload["error"]["code"],
+                "ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT",
+            )
+
+    def test_proofrun_unfillable_placeholder_has_actionable_structured_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            plan_path = root / "workflow-plan.json"
+            role_lane_path = root / "role-lane-plan.json"
+            plan_path.write_text("{}\n", encoding="utf-8")
+            role_lane_path.write_text("{}\n", encoding="utf-8")
+            workflow_plan = {"flow": ["proofrun"]}
+            role_lane_plan = {
+                "lanes": [
+                    {
+                        "lane_id": "runner-test",
+                        "phase": "proofrun",
+                        "may_execute": True,
+                        "prompt": "Execute ORRO role runner for goal: ",
+                    }
+                ]
+            }
+
+            stdout = io.StringIO()
+            with patch(
+                "witnessd.orro_workflow.load_workflow_plan",
+                return_value=workflow_plan,
+            ), patch(
+                "witnessd.orro_workflow.load_role_lane_plan",
+                return_value=role_lane_plan,
+            ), redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
                         "--repo",
                         str(repo),
                         "--home",
@@ -752,12 +839,18 @@ class OrroPublicFlowTests(unittest.TestCase):
                 )
 
             self.assertEqual(code, 2)
-            payload = json.loads(stdout.getvalue())
+            error = json.loads(stdout.getvalue())["error"]
+            self.assertEqual(error["code"], "ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT")
             self.assertEqual(
-                payload["error"]["code"],
-                "ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT",
+                error["reason"],
+                "the sealed plan's lane prompts are placeholders and no task/goal was available to fill them",
             )
-            self.assertFalse((home / "runs").exists())
+            self.assertEqual(
+                error["required_input_or_grant"],
+                "--task '<goal>' or a workflow-plan with a goal",
+            )
+            self.assertIn("proofrun", error["next_command"])
+            self.assertIn("--task", error["next_command"])
 
     def test_orro_next_after_proofrun_needs_proofcheck_without_execution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
