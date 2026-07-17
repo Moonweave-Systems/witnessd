@@ -32,6 +32,7 @@ class OrroCommandSurfaceTests(unittest.TestCase):
             "setup": "orro-setup",
             "init": "init",
             "scout": "scout",
+            "flow": "orro-flow",
             "flowplan": "flowplan",
             "proofrun": "proofrun",
             "proofcheck": "proofcheck",

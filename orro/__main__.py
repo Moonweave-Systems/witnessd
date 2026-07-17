@@ -15,7 +15,7 @@ DEPRECATION_WARNING = (
     "in the next major witnessd release."
 )
 
-ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,sketch,trace,flowplan,proofrun,proofcheck,advisory-provenance-check,handoff,next,report,review,auto,team,doctor,engine-lock} ...
+ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,sketch,trace,flow,flowplan,proofrun,proofcheck,advisory-provenance-check,handoff,next,report,review,auto,team,doctor,engine-lock} ...
 
 ORRO - Observed Run & Review Orchestrator
 
@@ -29,6 +29,7 @@ public commands:
   scout        read-only repository exploration and context packaging
   sketch       validate and seal an agent-authored advisory direction
   trace        validate, gate, and seal an agent-authored root-cause record
+  flow         guided init/scout/flowplan/proofrun/proofcheck with gated blockers
   flowplan     plan-only workflow design; does not run workers
   proofrun     evidence-backed execution through witnessd
   proofcheck   offline evidence verification delegated to Depone

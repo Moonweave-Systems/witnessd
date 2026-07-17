@@ -32,6 +32,7 @@ The cross-engine artifact boundary is summarized in
 | `orro sketch` | advisory ideation: frame, diverge, converge, and hand one direction to flowplan |
 | `orro trace` | advisory root-cause investigation before a fix flowplan |
 | `orro advisory-provenance-check` | offline Depone re-derivation of sealed sketch/trace provenance; not correctness |
+| `orro flow` | guided init/scout/flowplan/proofrun/proofcheck with structured blockers |
 | `orro flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
 | `orro proofrun` | precise evidence-backed execution alias |
 | `orro proofcheck` | offline evidence verification alias |
@@ -78,6 +79,15 @@ rolepack and keeps tool grants deny-by-default. The default `developer`
 template pins a real Codex runner adapter/model rather than a shell reference
 lane, but team initialization itself is still not execution, verification,
 proof, approval, or assurance.
+
+`python3 -m orro flow "<goal>" --write-scope "<glob>" --adapter codex --json`
+threads the existing init, scout, flowplan, proofrun, and proofcheck phases. It
+uses model-policy default and emits an `orro-flow-result` with per-phase
+artifacts. The command never invents or broadens write scope, requires supplied
+rolepack execute scopes to match it, keeps runner and observer directories
+separate, and stops at the first existing gate with an actionable structured
+blocker. It does not approve risky work, opt into reference adapters, weaken
+Depone verification, or create a new assurance source.
 
 `python3 -m orro team go "<task>" --repo <repo> --home .witnessd --json`
 is the one-command wrapper for `flowplan -> proofrun -> proofcheck -> report`.
