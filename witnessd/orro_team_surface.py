@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from witnessd.role_capability import (
-    DEFAULT_DEVELOPER_ROLEPACK,
     ROLEPACK_KIND,
+    ROLEPACK_REGISTRY,
     ROLEPACK_SCHEMA_VERSION,
     ROLE_CAPABILITY_SCHEMA_VERSION,
     validate_rolepack,
@@ -23,6 +23,10 @@ from witnessd.orro_workflow import ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX
 
 
 PLACEHOLDER_PROMPT_PREFIX = ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX
+
+
+def valid_team_templates() -> tuple[str, ...]:
+    return tuple(sorted(ROLEPACK_REGISTRY))
 
 
 class OrroTeamSurfaceError(ValueError):
@@ -40,15 +44,15 @@ def build_rolepack_scaffold(
     tool_mcp: list[str] | None = None,
     tool_allow: list[str] | None = None,
 ) -> dict[str, Any]:
-    if template not in {None, "developer"}:
+    if template is not None and template not in valid_team_templates():
         raise OrroTeamSurfaceError(
             "ERR_ORRO_TEAM_TEMPLATE_UNKNOWN", f"unknown team template: {template}"
         )
     if roles:
         rolepack = _rolepack_from_role_specs(roles)
     else:
-        rolepack = copy.deepcopy(DEFAULT_DEVELOPER_ROLEPACK)
-    rolepack["name"] = "custom-team" if roles else "developer"
+        rolepack = copy.deepcopy(ROLEPACK_REGISTRY[template or "developer"])
+    rolepack["name"] = "custom-team" if roles else str(template)
     _apply_execute_defaults(
         rolepack,
         write_scope=write_scope,

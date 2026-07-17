@@ -35,6 +35,75 @@ def _init_repo(path: str) -> str:
 
 
 class TestRunSeparation(unittest.TestCase):
+    def test_proofrun_adapter_missing_sandbox_returns_actionable_error(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        # Regression: origin/main@9826496 called os.path.abspath(None) here and
+        # raised TypeError instead of returning a CLI error.
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = main(
+                [
+                    "orro",
+                    "proofrun",
+                    "--adapter",
+                    "codex",
+                    "--json",
+                    "--",
+                    "do X",
+                ]
+            )
+
+        self.assertEqual(code, 2)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(
+            payload["error"]["code"],
+            "ERR_WITNESSD_RUNNER_SANDBOX_REQUIRED",
+        )
+        self.assertEqual(
+            payload["error"]["reason"],
+            "the codex/claude runner executes inside an isolated sandbox dir",
+        )
+        self.assertEqual(
+            payload["error"]["required_input_or_grant"],
+            "--runner-sandbox <dir>",
+        )
+        self.assertIn("--runner-sandbox <dir>", payload["error"]["next_command"])
+        self.assertIn("-- 'do X'", payload["error"]["next_command"])
+        self.assertNotIn("Traceback", stdout.getvalue() + stderr.getvalue())
+        self.assertNotIn("TypeError", stdout.getvalue() + stderr.getvalue())
+
+    def test_proofrun_adapter_missing_prompt_returns_actionable_error(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = main(
+                [
+                    "orro",
+                    "proofrun",
+                    "--adapter",
+                    "codex",
+                    "--runner-sandbox",
+                    "/tmp/witnessd-runner",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(code, 2)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["error"]["code"], "ERR_NO_PROMPT")
+        self.assertEqual(
+            payload["error"]["reason"],
+            "the adapter needs a worker prompt",
+        )
+        self.assertEqual(
+            payload["error"]["required_input_or_grant"],
+            "a prompt after `--` (or derive it from the sealed plan)",
+        )
+        self.assertIn('-- "<prompt>"', payload["error"]["next_command"])
+        self.assertNotIn("Traceback", stdout.getvalue() + stderr.getvalue())
+
     @unittest.skipUnless(_HAS_OPENSSL, "openssl required to sign emitted evidence")
     def test_run_outside_sandbox_emits_evidence(self):
         with tempfile.TemporaryDirectory() as base:
