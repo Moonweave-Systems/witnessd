@@ -33,6 +33,26 @@ python3 -m orro report "$run_dir" --home .witnessd --json
 python3 -m orro next "$run_dir" --home .witnessd --json
 ```
 
+For a code-change goal, `orro flow` removes the artifact-threading steps while
+keeping the same phase gates:
+
+```bash
+python3 -m orro flow "Create pkg/output.txt" \
+  --write-scope "pkg/output.txt" \
+  --adapter codex \
+  --home .witnessd \
+  --json
+```
+
+It runs `init -> scout -> flowplan -> proofrun -> proofcheck`, uses
+`--model-policy default`, and returns one `orro-flow-result` containing the run
+directory, final verdict, and per-phase artifacts. `--write-scope` is required,
+repeatable, and never inferred or widened. A supplied rolepack must use exactly
+the same execute scopes. The runner sandbox is created outside the observer run
+directory unless `--runner-sandbox` is supplied; overlapping paths fail closed.
+Every first-phase failure is returned as an actionable structured blocker. No
+risky-change, reference-adapter, write-scope, or Depone gate is bypassed.
+
 `orro team init` only writes readiness configuration (`.orro/team.json`). It is
 not execution, verification, proof, or assurance. `orro team go` is the ergonomic
 wrapper for the longer `flowplan -> proofrun -> proofcheck -> report` path: it
@@ -143,6 +163,7 @@ witnessd runtime code or Depone verifier logic.
 | `orro sketch` | validates and seals an agent-authored advisory direction |
 | `orro trace` | validates, gates, and seals an agent-authored root-cause record |
 | `orro advisory-provenance-check` | offline Depone v110 re-derivation of sealed sketch/trace provenance; not correctness |
+| `orro flow` | guided init/scout/flowplan/proofrun/proofcheck with first-phase structured blockers |
 | `orro flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
 | `orro proofrun` | precise evidence-backed execution alias |
 | `orro proofcheck` | offline evidence verification alias |

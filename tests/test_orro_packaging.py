@@ -69,6 +69,7 @@ class OrroPackagingTests(unittest.TestCase):
             self.assertIn("report", help_result.stdout)
             self.assertIn("auto", help_result.stdout)
             self.assertIn("engine-lock", help_result.stdout)
+            self.assertIn("flow", help_result.stdout)
             self.assertNotIn("self-test", help_result.stdout)
 
             advise = subprocess.run(

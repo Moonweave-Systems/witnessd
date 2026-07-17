@@ -1,0 +1,377 @@
+from __future__ import annotations
+
+import io
+import json
+import os
+import subprocess
+import tempfile
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+from unittest.mock import patch
+
+from witnessd.__main__ import main
+
+
+def _seed_repo(repo: Path) -> None:
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "orro-flow@example.invalid"],
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "ORRO Flow"], cwd=repo, check=True
+    )
+    (repo / "README.md").write_text("# ORRO flow fixture\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
+
+
+class OrroFlowTests(unittest.TestCase):
+    def test_help_exposes_guided_flow_options(self) -> None:
+        stdout = io.StringIO()
+
+        with redirect_stdout(stdout), self.assertRaises(SystemExit) as ctx:
+            main(["orro", "flow", "--help"])
+
+        self.assertEqual(ctx.exception.code, 0)
+        help_text = stdout.getvalue()
+        for option in (
+            "--write-scope",
+            "--adapter",
+            "--runner-sandbox",
+            "--rolepack-file",
+            "--role-lane-tier",
+            "--run-dir",
+            "--allow-reference-adapter",
+            "--json",
+        ):
+            self.assertIn(option, help_text)
+
+    def test_missing_write_scope_is_a_structured_flowplan_blocker(self) -> None:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = main(
+                [
+                    "orro",
+                    "flow",
+                    "create pkg/output.txt",
+                    "--adapter",
+                    "codex",
+                    "--json",
+                ]
+            )
+
+        self.assertNotEqual(code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["kind"], "orro-flow-result")
+        self.assertEqual(payload["decision"], "blocked")
+        self.assertEqual(payload["blocked_phase"], "flowplan")
+        self.assertEqual(payload["phases"], [])
+        self.assertEqual(
+            payload["error"]["code"], "ERR_ORRO_FLOW_WRITE_SCOPE_REQUIRED"
+        )
+        for key in ("message", "reason", "required_input_or_grant", "next_command"):
+            self.assertTrue(payload["error"][key])
+        self.assertIn("--write-scope", payload["error"]["next_command"])
+        self.assertNotIn("Traceback", stdout.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_shell_reference_flow_returns_a_structured_first_phase_blocker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            run_dir = root / "observer" / "run"
+            runner_sandbox = root / "runner"
+            repo.mkdir()
+            runner_sandbox.mkdir()
+            _seed_repo(repo)
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with (
+                patch("witnessd.__main__.Path.cwd", return_value=repo),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                code = main(
+                    [
+                        "orro",
+                        "flow",
+                        "create a package file",
+                        "--write-scope",
+                        "pkg/**",
+                        "--adapter",
+                        "shell",
+                        "--runner-sandbox",
+                        str(runner_sandbox),
+                        "--home",
+                        str(home),
+                        "--run-dir",
+                        str(run_dir),
+                        "--json",
+                    ]
+                )
+
+            self.assertNotEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["kind"], "orro-flow-result")
+            self.assertEqual(payload["decision"], "blocked")
+            self.assertEqual(payload["blocked_phase"], "flowplan")
+            self.assertEqual(
+                [phase["phase"] for phase in payload["phases"]],
+                ["init", "scout"],
+            )
+            self.assertTrue(all(phase["status"] == "ok" for phase in payload["phases"]))
+            self.assertEqual(payload["run_dir"], str(run_dir.resolve(strict=False)))
+            self.assertIn("not granted", payload["error"]["reason"])
+            self.assertIn("'shell'", payload["error"]["required_input_or_grant"])
+            self.assertIn("flowplan", payload["error"]["next_command"])
+            rolepack = json.loads(
+                (run_dir / "generated-rolepack.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(rolepack["grants"][0]["write_scope"], ["pkg/**"])
+            self.assertNotIn("Traceback", stdout.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_rolepack_file_cannot_widen_the_command_write_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            run_dir = root / "observer" / "run"
+            runner_sandbox = root / "runner"
+            rolepack_path = root / "rolepack.json"
+            repo.mkdir()
+            runner_sandbox.mkdir()
+            _seed_repo(repo)
+            rolepack_path.write_text(
+                json.dumps(
+                    {
+                        "kind": "moonweave-rolepack",
+                        "schema_version": "0.2",
+                        "name": "wider-than-flow",
+                        "grants": [
+                            {
+                                "role_id": "runner",
+                                "capability": "execute",
+                                "adapters": ["shell"],
+                                "model": "reference-shell",
+                                "write_scope": ["**"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+
+            with (
+                patch("witnessd.__main__.Path.cwd", return_value=repo),
+                redirect_stdout(stdout),
+                redirect_stderr(io.StringIO()),
+            ):
+                code = main(
+                    [
+                        "orro",
+                        "flow",
+                        "create pkg/output.txt",
+                        "--write-scope",
+                        "pkg/output.txt",
+                        "--adapter",
+                        "shell",
+                        "--runner-sandbox",
+                        str(runner_sandbox),
+                        "--rolepack-file",
+                        str(rolepack_path),
+                        "--home",
+                        str(home),
+                        "--run-dir",
+                        str(run_dir),
+                        "--json",
+                    ]
+                )
+
+            self.assertNotEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["blocked_phase"], "flowplan")
+            self.assertEqual(
+                payload["error"]["code"], "ERR_ORRO_FLOW_WRITE_SCOPE_MISMATCH"
+            )
+            self.assertIn("exactly match", payload["error"]["reason"])
+            self.assertFalse((run_dir / "workflow-plan.json").exists())
+
+    def test_reference_shell_flow_can_complete_with_explicit_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            run_dir = root / "observer" / "run"
+            runner_sandbox = root / "runner"
+            rolepack_path = root / "rolepack.json"
+            repo.mkdir()
+            runner_sandbox.mkdir()
+            _seed_repo(repo)
+            rolepack_path.write_text(
+                json.dumps(
+                    {
+                        "kind": "moonweave-rolepack",
+                        "schema_version": "0.2",
+                        "name": "shell-reference",
+                        "grants": [
+                            {
+                                "role_id": "runner",
+                                "capability": "execute",
+                                "adapters": ["shell"],
+                                "model": "reference-shell",
+                                "write_scope": ["pkg/output.txt"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with (
+                patch("witnessd.__main__.Path.cwd", return_value=repo),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                code = main(
+                    [
+                        "orro",
+                        "flow",
+                        "create pkg/output.txt",
+                        "--write-scope",
+                        "pkg/output.txt",
+                        "--adapter",
+                        "shell",
+                        "--runner-sandbox",
+                        str(runner_sandbox),
+                        "--rolepack-file",
+                        str(rolepack_path),
+                        "--home",
+                        str(home),
+                        "--run-dir",
+                        str(run_dir),
+                        "--allow-reference-adapter",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0, stderr.getvalue())
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["kind"], "orro-flow-result")
+            self.assertEqual(payload["decision"], "pass")
+            self.assertEqual(payload["run_dir"], str(run_dir.resolve(strict=False)))
+            self.assertEqual(payload["verdict"], str(run_dir / "proofcheck-verdict.json"))
+            self.assertEqual(
+                [phase["phase"] for phase in payload["phases"]],
+                ["init", "scout", "flowplan", "proofrun", "proofcheck"],
+            )
+            self.assertTrue(all(phase["status"] == "ok" for phase in payload["phases"]))
+            self.assertEqual(payload["runner_sandbox"], str(runner_sandbox.resolve()))
+            self.assertFalse((run_dir / "team-ledger.json").is_relative_to(runner_sandbox))
+            self.assertTrue((run_dir / "proofcheck-verdict.json").is_file())
+            self.assertNotIn("Traceback", stdout.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_risky_change_gate_stops_before_proofrun(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            run_dir = root / "observer" / "run"
+            runner_sandbox = root / "runner"
+            repo.mkdir()
+            runner_sandbox.mkdir()
+            _seed_repo(repo)
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with (
+                patch("witnessd.__main__.Path.cwd", return_value=repo),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                code = main(
+                    [
+                        "orro",
+                        "flow",
+                        "rotate secret auth token",
+                        "--write-scope",
+                        "pkg/**",
+                        "--adapter",
+                        "codex",
+                        "--runner-sandbox",
+                        str(runner_sandbox),
+                        "--home",
+                        str(home),
+                        "--run-dir",
+                        str(run_dir),
+                        "--json",
+                    ]
+                )
+
+            self.assertNotEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["kind"], "orro-flow-result")
+            self.assertEqual(payload["decision"], "blocked")
+            self.assertEqual(payload["blocked_phase"], "flowplan")
+            self.assertEqual(
+                payload["error"]["code"],
+                "ERR_ORRO_FLOW_RISKY_CHANGE_REVIEW_REQUIRED",
+            )
+            self.assertIn("human review", payload["error"]["reason"])
+            self.assertIn("flowplan", payload["error"]["next_command"])
+            self.assertEqual(
+                [phase["phase"] for phase in payload["phases"]],
+                ["init", "scout"],
+            )
+            self.assertFalse((run_dir / "team-ledger.json").exists())
+            self.assertNotIn("Traceback", stdout.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_runner_sandbox_must_be_separate_from_observer_run_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "run"
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(
+                    [
+                        "orro",
+                        "flow",
+                        "create pkg/output.txt",
+                        "--write-scope",
+                        "pkg/output.txt",
+                        "--adapter",
+                        "codex",
+                        "--runner-sandbox",
+                        str(run_dir / "runner"),
+                        "--run-dir",
+                        str(run_dir),
+                        "--json",
+                    ]
+                )
+
+            self.assertNotEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["decision"], "blocked")
+            self.assertEqual(payload["blocked_phase"], "proofrun")
+            self.assertEqual(
+                payload["error"]["code"], "ERR_ORRO_FLOW_RUNNER_NOT_SEPARATED"
+            )
+            self.assertIn("--runner-sandbox", payload["error"]["next_command"])
+            self.assertNotIn("Traceback", stderr.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()
