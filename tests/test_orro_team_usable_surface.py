@@ -79,6 +79,44 @@ def _fake_codex_noops(directory: Path) -> str:
 
 
 class OrroTeamUsableSurfaceTests(unittest.TestCase):
+    def test_orro_team_init_help_lists_valid_templates(self) -> None:
+        stdout = io.StringIO()
+
+        with redirect_stdout(stdout), self.assertRaises(SystemExit) as ctx:
+            main(["orro", "team", "init", "--help"])
+
+        self.assertEqual(ctx.exception.code, 0)
+        self.assertIn("developer", stdout.getvalue())
+
+    def test_orro_team_init_unknown_template_lists_valid_templates(self) -> None:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = main(
+                [
+                    "orro",
+                    "team",
+                    "init",
+                    "--template",
+                    "code-change",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(code, 2)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(
+            payload["error"]["code"],
+            "ERR_ORRO_TEAM_TEMPLATE_UNKNOWN",
+        )
+        self.assertEqual(
+            payload["error"]["required_input_or_grant"],
+            "--template developer",
+        )
+        self.assertEqual(payload["error"]["valid_templates"], ["developer"])
+        self.assertIn("--template developer", payload["error"]["next_command"])
+
     def test_placeholder_prefix_generation_and_detection_share_one_definition(
         self,
     ) -> None:
@@ -378,6 +416,69 @@ class OrroTeamUsableSurfaceTests(unittest.TestCase):
             self.assertEqual(routing["source"], "advise")
             self.assertFalse(routing["can_change_evidence_verdict"])
             self.assertTrue(routing["boundary"]["advisory_only"])
+
+    def test_orro_team_go_risky_adapter_grant_failure_is_actionable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            run_dir = root / "run"
+            team_path = root / ".orro" / "team.json"
+            repo.mkdir()
+            _seed_repo(repo)
+
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main(
+                        [
+                            "orro",
+                            "team",
+                            "init",
+                            "--out",
+                            str(team_path),
+                            "--yes",
+                        ]
+                    ),
+                    0,
+                )
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(
+                    [
+                        "orro",
+                        "team",
+                        "go",
+                        "perform migration",
+                        "--repo",
+                        str(repo),
+                        "--team",
+                        str(team_path),
+                        "--run-dir",
+                        str(run_dir),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 1)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["status"], "blocked")
+            self.assertEqual(payload["stage"], "flowplan")
+            self.assertEqual(
+                payload["error"]["code"],
+                "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED",
+            )
+            self.assertIn(
+                "risky change keywords require human review",
+                payload["error"]["reason"],
+            )
+            self.assertIn(
+                "--team <rolepack.json>",
+                payload["error"]["required_input_or_grant"],
+            )
+            self.assertIn("--team <rolepack.json>", payload["error"]["next_command"])
+            self.assertFalse(payload["can_change_evidence_verdict"])
+            self.assertFalse((run_dir / "team-ledger.json").exists())
 
     def test_orro_team_go_refuses_when_placeholder_prompt_rewrite_does_not_land(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

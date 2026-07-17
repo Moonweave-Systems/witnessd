@@ -618,7 +618,31 @@ def _attach_role_capability_team_fields(spec: dict, lane: dict) -> None:
 
 def _cmd_run_adapter(args: argparse.Namespace) -> int:
     if not args.command:
-        print("ERR_NO_PROMPT", file=sys.stderr)
+        _emit_orro_error(
+            args,
+            code="ERR_NO_PROMPT",
+            message="proofrun adapter execution requires a worker prompt",
+            reason="the adapter needs a worker prompt",
+            required_input_or_grant=(
+                "a prompt after `--` (or derive it from the sealed plan)"
+            ),
+            next_command=_adapter_proofrun_next_command(args, prompt=None),
+        )
+        return 2
+    if not args.runner_sandbox:
+        _emit_orro_error(
+            args,
+            code="ERR_WITNESSD_RUNNER_SANDBOX_REQUIRED",
+            message="proofrun adapter execution requires --runner-sandbox <dir>",
+            reason=(
+                "the codex/claude runner executes inside an isolated sandbox dir"
+            ),
+            required_input_or_grant="--runner-sandbox <dir>",
+            next_command=_adapter_proofrun_next_command(
+                args,
+                prompt=list(args.command),
+            ),
+        )
         return 2
 
     from witnessd.adapter_run import LaneBlocked, run_adapter_lane
@@ -664,6 +688,19 @@ def _cmd_run_adapter(args: argparse.Namespace) -> int:
     print(f"evidence_dir: {result['evidence_dir']}")
     print(f"runner_kind: {result['runner_receipt']['runner_kind']}")
     return 0
+
+
+def _adapter_proofrun_next_command(
+    args: argparse.Namespace,
+    *,
+    prompt: list[str] | None,
+) -> str:
+    prompt_text = shlex.join(prompt) if prompt else '"<prompt>"'
+    return (
+        "python3 -m witnessd proofrun "
+        f"--adapter {shlex.quote(str(args.adapter))} "
+        f"--runner-sandbox <dir> -- {prompt_text}"
+    )
 
 
 def _count_pending(evidence_dir: str) -> int:
@@ -1036,11 +1073,51 @@ def _run_depone_json(command: list[str], *, env: dict[str, str]) -> tuple[int, d
         }
 
 
-def _emit_orro_error(args: argparse.Namespace, *, code: str, message: str) -> None:
+def _structured_error(
+    *,
+    code: str,
+    message: str,
+    reason: str | None = None,
+    required_input_or_grant: str | None = None,
+    next_command: str | None = None,
+    extra: dict[str, object] | None = None,
+) -> dict[str, object]:
+    error: dict[str, object] = {"code": code, "message": message}
+    if reason is not None:
+        error["reason"] = reason
+    if required_input_or_grant is not None:
+        error["required_input_or_grant"] = required_input_or_grant
+    if next_command is not None:
+        error["next_command"] = next_command
+    if extra:
+        error.update(extra)
+    return error
+
+
+def _emit_orro_error(
+    args: argparse.Namespace,
+    *,
+    code: str,
+    message: str,
+    reason: str | None = None,
+    required_input_or_grant: str | None = None,
+    next_command: str | None = None,
+    extra: dict[str, object] | None = None,
+) -> None:
+    error = _structured_error(
+        code=code,
+        message=message,
+        reason=reason,
+        required_input_or_grant=required_input_or_grant,
+        next_command=next_command,
+        extra=extra,
+    )
     if getattr(args, "json", False):
-        print(json.dumps({"error": {"code": code, "message": message}}, sort_keys=True))
+        print(json.dumps({"error": error}, sort_keys=True))
         return
     print(code, file=sys.stderr)
+    if next_command is not None:
+        print(f"{message} Next: {next_command}", file=sys.stderr)
 
 
 def _emit_orro_engine_lock_check_error(
@@ -2300,6 +2377,22 @@ def _cmd_faultkit(args: argparse.Namespace) -> int:
     if args.fault == "budget-blowout":
         from witnessd.adapter_run import LaneBlocked, run_adapter_lane
 
+        if not args.runner_sandbox:
+            _emit_orro_error(
+                args,
+                code="ERR_WITNESSD_RUNNER_SANDBOX_REQUIRED",
+                message="faultkit adapter execution requires --runner-sandbox <dir>",
+                reason=(
+                    "the codex/claude runner executes inside an isolated sandbox dir"
+                ),
+                required_input_or_grant="--runner-sandbox <dir>",
+                next_command=(
+                    "python3 -m witnessd faultkit budget-blowout "
+                    "--root <repo> --runner-sandbox <dir>"
+                ),
+            )
+            return 2
+
         try:
             run_adapter_lane(
                 root=os.path.abspath(args.root),
@@ -2720,6 +2813,7 @@ def _cmd_team_init(args: argparse.Namespace) -> int:
     from witnessd.orro_team_surface import (
         OrroTeamSurfaceError,
         build_rolepack_scaffold,
+        valid_team_templates,
         write_rolepack_scaffold,
     )
 
@@ -2742,7 +2836,23 @@ def _cmd_team_init(args: argparse.Namespace) -> int:
             yes=args.yes,
         )
     except OrroTeamSurfaceError as exc:
-        print(exc.code, file=sys.stderr)
+        if exc.code == "ERR_ORRO_TEAM_TEMPLATE_UNKNOWN":
+            valid_templates = list(valid_team_templates())
+            required = "--template " + "|".join(valid_templates)
+            _emit_orro_error(
+                args,
+                code=exc.code,
+                message=exc.message,
+                reason="the requested team template is not registered",
+                required_input_or_grant=required,
+                next_command=(
+                    "python3 -m orro team init "
+                    f"--template {shlex.quote(valid_templates[0])} --yes"
+                ),
+                extra={"valid_templates": valid_templates},
+            )
+        else:
+            print(exc.code, file=sys.stderr)
         return 2
     except ValueError as exc:
         print(f"ERR_ORRO_TEAM_INIT_INVALID: {exc}", file=sys.stderr)
@@ -2852,6 +2962,7 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
         str(role_lane_plan_path),
         "--role-lane-tier",
         args.role_lane_tier,
+        "--json",
     ]
     if args.team:
         flow_argv.extend(["--team", str(Path(args.team).resolve(strict=False))])
@@ -2862,6 +2973,41 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
 
     flow_code, flow_stdout, flow_stderr = _invoke_cli_capture(flow_argv)
     if flow_code != 0:
+        flow_error_payload = _json_or_text(flow_stdout)
+        flow_error = (
+            flow_error_payload.get("error")
+            if isinstance(flow_error_payload, dict)
+            and isinstance(flow_error_payload.get("error"), dict)
+            else None
+        )
+        actionable_error = None
+        if (
+            isinstance(flow_error, dict)
+            and flow_error.get("code")
+            == "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED"
+        ):
+            rule_matches = advice.get("rule_matches")
+            reason = (
+                str(rule_matches[0])
+                if isinstance(rule_matches, list) and rule_matches
+                else str(flow_error.get("message", "role capability adapter grant blocked"))
+            )
+            required = (
+                "a human-reviewed --team <rolepack.json> whose runner grant "
+                "includes the selected adapter"
+            )
+            next_command = (
+                "python3 -m orro team go "
+                f"{shlex.quote(str(args.goal))} --repo {shlex.quote(str(repo))} "
+                f"--home {shlex.quote(str(home))} --team <rolepack.json> --json"
+            )
+            actionable_error = _structured_error(
+                code=str(flow_error["code"]),
+                message=str(flow_error.get("message", "flowplan failed")),
+                reason=reason,
+                required_input_or_grant=required,
+                next_command=next_command,
+            )
         return _emit_team_go_result(
             args,
             {
@@ -2874,6 +3020,7 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
                 "message": "flowplan failed",
                 "stderr": flow_stderr,
                 "stdout": flow_stdout,
+                **({"error": actionable_error} if actionable_error else {}),
                 "can_change_evidence_verdict": False,
             },
             code=flow_code,
@@ -3224,6 +3371,15 @@ def _emit_team_go_result(
     if args.json:
         print(json.dumps(payload, sort_keys=True))
     else:
+        error = payload.get("error")
+        if isinstance(error, dict) and error.get("code"):
+            print(str(error["code"]), file=sys.stderr)
+            if error.get("next_command"):
+                print(
+                    f"{error.get('message', payload.get('message', 'blocked'))} "
+                    f"Next: {error['next_command']}",
+                    file=sys.stderr,
+                )
         surface = "ORRO run" if payload.get("lane_count") == 1 else "ORRO team go"
         print(f"{surface}: {payload.get('status')} ({payload.get('stage')})")
         print(payload.get("message", ""))
@@ -4039,13 +4195,21 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     team_init.add_argument("--out", default=".orro/team.json")
-    team_init.add_argument("--template", default="developer")
+    from witnessd.orro_team_surface import valid_team_templates
+
+    team_templates = valid_team_templates()
+    team_init.add_argument(
+        "--template",
+        default="developer",
+        help=f"team rolepack template (valid: {', '.join(team_templates)})",
+    )
     team_init.add_argument("--role", action="append", default=[])
     team_init.add_argument("--write-scope", action="append", default=[])
     team_init.add_argument("--tool-mcp", action="append", default=[])
     team_init.add_argument("--tool-allow", action="append", default=[])
     team_init.add_argument("--interactive", action="store_true")
     team_init.add_argument("--yes", action="store_true")
+    team_init.add_argument("--json", action="store_true")
     team_init.set_defaults(func=_cmd_team_init)
 
     team_go = team_sub.add_parser(
