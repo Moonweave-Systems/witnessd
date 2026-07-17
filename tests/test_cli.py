@@ -104,6 +104,58 @@ class TestRunSeparation(unittest.TestCase):
         self.assertIn('-- "<prompt>"', payload["error"]["next_command"])
         self.assertNotIn("Traceback", stdout.getvalue() + stderr.getvalue())
 
+    def test_proofrun_with_plan_derives_prompt_and_skips_adapter_prompt_requirement(
+        self,
+    ):
+        # A sealed workflow/role-lane plan carries its own lane prompts, so
+        # proofrun must route to the plan executor rather than demanding an
+        # ad-hoc prompt via the direct --adapter path (ORRO #66 layer 4a).
+        with tempfile.TemporaryDirectory() as base:
+            workflow_plan = os.path.join(base, "workflow-plan.json")
+            role_lane_plan = os.path.join(base, "role-lane-plan.json")
+            with open(workflow_plan, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "kind": "orro-workflow-plan",
+                        "schema_version": "0.1",
+                        "goal": "x",
+                        "profile": "code-change",
+                        "phases": [],
+                    },
+                    handle,
+                )
+            with open(role_lane_plan, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "kind": "orro-role-lane-plan",
+                        "schema_version": "0.1",
+                        "lanes": [],
+                    },
+                    handle,
+                )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "--workflow-plan",
+                        workflow_plan,
+                        "--role-lane-plan",
+                        role_lane_plan,
+                        "--adapter",
+                        "codex",
+                        "--json",
+                    ]
+                )
+
+        combined = stdout.getvalue() + stderr.getvalue()
+        # The plan is present, so the adapter-prompt requirement must NOT fire.
+        self.assertNotIn("ERR_NO_PROMPT", combined)
+        self.assertNotIn("Traceback", combined)
+        self.assertNotEqual(code, 0)
+
     @unittest.skipUnless(_HAS_OPENSSL, "openssl required to sign emitted evidence")
     def test_run_outside_sandbox_emits_evidence(self):
         with tempfile.TemporaryDirectory() as base:
