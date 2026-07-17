@@ -168,6 +168,40 @@ class OrroTeamUsableSurfaceTests(unittest.TestCase):
         )
         self.assertGreaterEqual(patched["placeholder_count"], 1)
 
+    def test_role_lane_prompt_helper_preserves_explicit_prompts_in_mixed_plan(self) -> None:
+        role_lane_plan = {
+            "lanes": [
+                {
+                    "lane_id": "runner-placeholder",
+                    "phase": "proofrun",
+                    "may_execute": True,
+                    "prompt": "Execute ORRO role runner for goal: fix parser",
+                },
+                {
+                    "lane_id": "runner-explicit",
+                    "phase": "proofrun",
+                    "may_execute": True,
+                    "prompt": "Keep this explicit task",
+                },
+            ]
+        }
+
+        patched = orro_team_surface.apply_task_prompt_to_role_lane_plan(
+            role_lane_plan,
+            task="Use the sealed workflow goal",
+        )
+
+        self.assertEqual(patched["placeholder_count"], 1)
+        self.assertEqual(patched["patched_count"], 1)
+        self.assertEqual(
+            patched["role_lane_plan"]["lanes"][0]["prompt"],
+            "Use the sealed workflow goal",
+        )
+        self.assertEqual(
+            patched["role_lane_plan"]["lanes"][1]["prompt"],
+            "Keep this explicit task",
+        )
+
     def test_orro_team_init_scaffolds_valid_rolepack(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

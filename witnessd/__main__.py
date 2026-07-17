@@ -213,11 +213,16 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     )
     from witnessd.eventlog import EventLog
     from witnessd.fanin import run_team
+    from witnessd.orro_team_surface import apply_task_prompt_to_role_lane_plan
     from witnessd.orro_workflow import (
+        ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT,
+        ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX,
         OrroWorkflowError,
+        assert_role_lane_prompts_explicit,
         assert_workflow_phase_allowed,
         load_workflow_plan,
         load_role_lane_plan,
+        validate_role_lane_plan,
         write_workflow_plan_binding,
         write_role_lane_plan_binding,
         write_workflow_role_dispatch,
@@ -263,7 +268,62 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
             role_lane_plan = load_role_lane_plan(
                 role_lane_plan_source,
                 workflow_plan=workflow_plan,
+                require_explicit_prompts=False,
             )
+        except OrroWorkflowError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 2
+
+        task_value = (
+            getattr(args, "task", None)
+            or args.goal
+            or workflow_plan.get("goal")
+        )
+        task = task_value if isinstance(task_value, str) and task_value.strip() else None
+        lanes = role_lane_plan.get("lanes")
+        placeholder_count = sum(
+            1
+            for lane in lanes
+            if isinstance(lane, dict)
+            and isinstance(lane.get("prompt"), str)
+            and lane["prompt"].startswith(ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX)
+        ) if isinstance(lanes, list) else 0
+        if placeholder_count and task is None:
+            _emit_orro_error(
+                args,
+                code=ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT,
+                message="role-lane placeholder prompts could not be filled",
+                reason=(
+                    "the sealed plan's lane prompts are placeholders and no "
+                    "task/goal was available to fill them"
+                ),
+                required_input_or_grant=(
+                    "--task '<goal>' or a workflow-plan with a goal"
+                ),
+                next_command=(
+                    "python3 -m orro proofrun --workflow-plan workflow-plan.json "
+                    "--role-lane-plan role-lane-plan.json --task '<goal>' --json"
+                ),
+            )
+            return 2
+        patch_result = (
+            apply_task_prompt_to_role_lane_plan(role_lane_plan, task=task or "")
+            if placeholder_count
+            else {
+                "role_lane_plan": role_lane_plan,
+                "patched_count": 0,
+                "placeholder_count": 0,
+            }
+        )
+        role_lane_plan = patch_result["role_lane_plan"]
+        try:
+            if patch_result["placeholder_count"] > patch_result["patched_count"]:
+                raise OrroWorkflowError(
+                    ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT,
+                    "one or more role-lane placeholder prompts were not replaced",
+                )
+            validate_role_lane_plan(role_lane_plan)
+            assert_role_lane_prompts_explicit(role_lane_plan)
         except OrroWorkflowError as exc:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 2
@@ -348,10 +408,15 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 1
 
+    execution_goal = (
+        getattr(args, "task", None)
+        or args.goal
+        or (workflow_plan.get("goal") if workflow_plan is not None else None)
+    )
     packets = (
         _role_lane_plan_packets(role_lane_plan)
         if role_lane_plan is not None
-        else _default_w18_packets(args.goal)
+        else _default_w18_packets(execution_goal)
     )
     reference_warning = (
         _proofrun_reference_adapter_warning(packets)
@@ -363,7 +428,7 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
             out_dir / "moonweave-reference-adapter-warning.json",
             reference_warning,
         )
-    sealed = seal_plan(packets, goal=args.goal)
+    sealed = seal_plan(packets, goal=execution_goal)
     sealed_path = out_dir / "sealed-plan.json"
     sealed_path.write_text(
         json.dumps(sealed, sort_keys=True, separators=(",", ":")),
@@ -399,7 +464,7 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
         out_dir=str(out_dir),
         private_key_path=private_key_path,
         public_key_path=public_key_path,
-        leader_objective=args.goal,
+        leader_objective=execution_goal,
         stop_rule="evidence-pending",
         max_parallel=args.max_parallel,
         fail_fast=args.fail_fast,
@@ -892,6 +957,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
         if workflow_plan is None:
             workflow_plan = compile_workflow_plan(goal=args.goal, profile="code-change")
             payload["workflow_plan"] = workflow_plan
+        rolepack: dict[str, object] | None = None
         try:
             from witnessd.model_policy import DEFAULT_MODEL_POLICY
             from witnessd.role_capability import (
@@ -935,7 +1001,18 @@ def _cmd_plan(args: argparse.Namespace) -> int:
             _emit_orro_error(args, code=exc.code, message=exc.message)
             return 1
         except OrroWorkflowError as exc:
-            _emit_orro_error(args, code=exc.code, message=str(exc))
+            details = _flowplan_role_lane_error_details(
+                args,
+                code=exc.code,
+                message=str(exc),
+                rolepack=rolepack,
+            )
+            _emit_orro_error(
+                args,
+                code=exc.code,
+                message=str(exc),
+                **(details or {}),
+            )
             return 1
         payload["role_lane_plan"] = role_lane_plan_ref
         payload.update(summarize_executable_lanes(role_lane_plan["lanes"]))
@@ -1094,6 +1171,108 @@ def _structured_error(
     if extra:
         error.update(extra)
     return error
+
+
+def _flowplan_role_lane_error_details(
+    args: argparse.Namespace,
+    *,
+    code: str,
+    message: str,
+    rolepack: dict[str, object] | None,
+) -> dict[str, str] | None:
+    if code == "ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED":
+        flowplan_command = (
+            "python3 -m orro flowplan "
+            f"{shlex.quote(str(args.goal))} --root {shlex.quote(str(args.root))} "
+            f"--profile {shlex.quote(str(args.profile or 'code-change'))} "
+            f"--role-lanes-out {shlex.quote(str(args.role_lanes_out))} "
+            "--rolepack-file rolepack.json --model-policy default"
+        )
+        return {
+            "reason": (
+                "code-change proofrun lanes need a concrete write_scope from the rolepack"
+            ),
+            "required_input_or_grant": (
+                "a rolepack granting the role's write_scope"
+            ),
+            "next_command": (
+                "python3 -m orro team init --template developer "
+                "--write-scope '<glob>' --out rolepack.json && "
+                f"{flowplan_command}"
+            ),
+        }
+    if code != "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED":
+        return None
+
+    grants = rolepack.get("grants") if isinstance(rolepack, dict) else None
+    grant_rows = [grant for grant in grants if isinstance(grant, dict)] if isinstance(grants, list) else []
+    role_ids = sorted(
+        str(grant["role_id"])
+        for grant in grant_rows
+        if isinstance(grant.get("role_id"), str)
+    )
+    role_id = next(
+        (candidate for candidate in role_ids if f"role_id={candidate!r}" in message),
+        role_ids[0] if len(role_ids) == 1 else "<role>",
+    )
+    matching_grant = next(
+        (grant for grant in grant_rows if grant.get("role_id") == role_id),
+        None,
+    )
+    adapters = (
+        matching_grant.get("adapters")
+        if isinstance(matching_grant, dict)
+        else None
+    )
+    granted_adapters = sorted(
+        str(adapter) for adapter in adapters if isinstance(adapter, str)
+    ) if isinstance(adapters, list) else []
+    resolved_adapter = next(
+        (
+            adapter
+            for adapter in ("shell", "codex", "claude", "agy", "gemini", "opencode")
+            if f"adapter {adapter!r}" in message
+        ),
+        str(args.lane_adapter),
+    )
+    reason = (
+        f"resolved adapter {resolved_adapter!r} is not granted for role_id={role_id!r}; "
+        f"the rolepack has granted adapters {granted_adapters!r} for that role and grants "
+        f"role_ids {role_ids!r}"
+    )
+    if resolved_adapter == "shell" and any(
+        adapter != "shell" for adapter in granted_adapters
+    ):
+        reason += (
+            "; pass --model-policy default (routes to the granted adapter) or ensure "
+            "the rolepack grants the adapter you intend"
+        )
+    rolepack_arg = (
+        f"--rolepack-file {shlex.quote(str(args.rolepack_file))}"
+        if args.rolepack_file
+        else (
+            f"--team {shlex.quote(str(args.team))}"
+            if getattr(args, "team", None)
+            else f"--rolepack {shlex.quote(str(args.rolepack))}"
+        )
+    )
+    next_command = (
+        "python3 -m orro flowplan "
+        f"{shlex.quote(str(args.goal))} --root {shlex.quote(str(args.root))} "
+        f"--profile {shlex.quote(str(args.profile or 'code-change'))} "
+        f"--role-lanes-out {shlex.quote(str(args.role_lanes_out))} "
+        f"{rolepack_arg} --model-policy default; or scaffold a matching rolepack: "
+        "python3 -m orro team init --role <role> --write-scope '<glob>' "
+        "--out rolepack.json"
+    )
+    return {
+        "reason": reason,
+        "required_input_or_grant": (
+            f"a rolepack granting adapter {resolved_adapter!r} for role_id={role_id!r}; "
+            f"granted adapters: {granted_adapters!r}; role_ids: {role_ids!r}"
+        ),
+        "next_command": next_command,
+    }
 
 
 def _emit_orro_error(
@@ -4457,6 +4636,7 @@ def _add_plan_args(plan: argparse.ArgumentParser) -> None:
 
 def _add_run_args(run: argparse.ArgumentParser) -> None:
     run.add_argument("--goal", default=None, help=argparse.SUPPRESS)
+    run.add_argument("--task", default=None, help=argparse.SUPPRESS)
     run.add_argument("--repo", default=None)
     run.add_argument("--home", default=None)
     run.add_argument("--run-dir", default=None)

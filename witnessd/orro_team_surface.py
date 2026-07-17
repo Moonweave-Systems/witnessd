@@ -114,9 +114,16 @@ def apply_task_prompt_to_role_lane_plan(
         if not isinstance(lane, dict):
             continue
         prompt = lane.get("prompt")
-        if isinstance(prompt, str) and prompt.startswith(PLACEHOLDER_PROMPT_PREFIX):
+        is_placeholder = isinstance(prompt, str) and prompt.startswith(
+            PLACEHOLDER_PROMPT_PREFIX
+        )
+        if is_placeholder:
             placeholder_count += 1
-        if lane.get("phase") == "proofrun" and lane.get("may_execute") is True:
+        if (
+            is_placeholder
+            and lane.get("phase") == "proofrun"
+            and lane.get("may_execute") is True
+        ):
             lane["prompt"] = task
             patched_count += 1
             exact_scope = _exact_write_scope(lane.get("granted_write_scope"))
