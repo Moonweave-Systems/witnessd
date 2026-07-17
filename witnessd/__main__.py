@@ -50,6 +50,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if getattr(args, "goal", None):
         return _cmd_run_goal(args)
 
+    # A sealed workflow/role-lane plan carries its own lane prompts, so proofrun
+    # executes the plan (deriving prompts from its lanes and applying the
+    # reference-adapter/placeholder guard) instead of demanding an ad-hoc prompt
+    # via the direct-adapter path.
+    if getattr(args, "workflow_plan", None) or getattr(args, "role_lane_plan", None):
+        return _cmd_run_goal(args)
+
     if args.adapter != "shell":
         return _cmd_run_adapter(args)
 
@@ -113,9 +120,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     allowed_touched_files = list(args.allow or [])
     observed_command = (
-        ["sh", "-c", args.command[0]]
-        if len(args.command) == 1
-        else list(args.command)
+        ["sh", "-c", args.command[0]] if len(args.command) == 1 else list(args.command)
     )
     commands = [observed_command]
     lane_result = run_shell_lane(sandbox=sandbox, commands=commands)
@@ -174,9 +179,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"ERR_OBSERVER_PERSIST_FAILED: {exc}", file=sys.stderr)
         return 1
 
-    missing_sinks = [
-        path for path in (out_path, log_path) if not os.path.isfile(path)
-    ]
+    missing_sinks = [path for path in (out_path, log_path) if not os.path.isfile(path)]
     if missing_sinks:
         print(
             f"ERR_OBSERVER_PERSIST_FAILED: missing {', '.join(missing_sinks)}",
@@ -265,10 +268,7 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 2
 
-    reference_fallback = (
-        args.cmd == "proofrun"
-        and role_lane_plan is None
-    )
+    reference_fallback = args.cmd == "proofrun" and role_lane_plan is None
 
     if workflow_plan is not None:
         try:
@@ -634,9 +634,7 @@ def _cmd_run_adapter(args: argparse.Namespace) -> int:
             args,
             code="ERR_WITNESSD_RUNNER_SANDBOX_REQUIRED",
             message="proofrun adapter execution requires --runner-sandbox <dir>",
-            reason=(
-                "the codex/claude runner executes inside an isolated sandbox dir"
-            ),
+            reason=("the codex/claude runner executes inside an isolated sandbox dir"),
             required_input_or_grant="--runner-sandbox <dir>",
             next_command=_adapter_proofrun_next_command(
                 args,
@@ -904,7 +902,11 @@ def _cmd_plan(args: argparse.Namespace) -> int:
 
             selected_rolepack_inputs = [
                 value
-                for value in (args.rolepack, args.rolepack_file, getattr(args, "team", None))
+                for value in (
+                    args.rolepack,
+                    args.rolepack_file,
+                    getattr(args, "team", None),
+                )
                 if value
             ]
             if len(selected_rolepack_inputs) > 1:
@@ -1175,9 +1177,7 @@ def _proofcheck_binding(
     }
 
 
-def _advisory_provenance_home(
-    evidence_dir: Path, *, home: Path | None
-) -> Path | None:
+def _advisory_provenance_home(evidence_dir: Path, *, home: Path | None) -> Path | None:
     if home is not None:
         return home.resolve(strict=False)
     if evidence_dir.parent.name == "runs":
@@ -1228,9 +1228,7 @@ def _run_advisory_provenance_verify(
             "ERR_ADVISORY_PROVENANCE_PUBLIC_KEY_MISSING",
             "trusted public key is required outside the advisory artifact directory",
         )
-    env["DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"] = str(
-        trust_anchor.public_key_path
-    )
+    env["DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"] = str(trust_anchor.public_key_path)
     completed = subprocess.run(
         [
             sys.executable,
@@ -1314,21 +1312,15 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         home=home,
         runtime_public_key=default_public_key,
     )
-    env["DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"] = str(
-        trust_anchor.public_key_path
-    )
+    env["DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"] = str(trust_anchor.public_key_path)
 
     out_path = Path(args.out).resolve(strict=False) if args.out else None
     command = ["proofcheck", "--evidence-dir", str(evidence_dir)]
     if out_path is not None:
         command.extend(["--out", str(out_path)])
     code, payload = _run_depone_json(command, env=env)
-    advisory_result = _optional_advisory_provenance_verify(
-        evidence_dir, home=home
-    )
-    advisory_provenance = (
-        advisory_result[1] if advisory_result is not None else None
-    )
+    advisory_result = _optional_advisory_provenance_verify(evidence_dir, home=home)
+    advisory_provenance = advisory_result[1] if advisory_result is not None else None
     binding: dict[str, object] | None = None
     binding_error: str | None = None
     if code == 0 and payload.get("decision") == "pass":
@@ -1447,12 +1439,13 @@ def _proofcheck_workflow_contract(
         if not isinstance(message, str):
             continue
         for artifact in PROOFCHECK_WORKFLOW_ARTIFACTS:
-            if message == f"required artifact is missing: {artifact}" and artifact not in missing:
+            if (
+                message == f"required artifact is missing: {artifact}"
+                and artifact not in missing
+            ):
                 missing.append(artifact)
     workflow_packet_missing = [
-        artifact
-        for artifact in missing
-        if artifact != "verification-receipt.json"
+        artifact for artifact in missing if artifact != "verification-receipt.json"
     ]
     if not workflow_packet_missing:
         return None
@@ -1546,12 +1539,8 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         )
         return 1
     home = Path(args.home).resolve(strict=False) if args.home else None
-    advisory_result = _optional_advisory_provenance_verify(
-        evidence_dir, home=home
-    )
-    advisory_provenance = (
-        advisory_result[1] if advisory_result is not None else None
-    )
+    advisory_result = _optional_advisory_provenance_verify(evidence_dir, home=home)
+    advisory_provenance = advisory_result[1] if advisory_result is not None else None
     if (
         advisory_provenance is not None
         and advisory_provenance.get("decision") != "PASS"
@@ -1617,9 +1606,7 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         decision_refs.append(
             {
                 "path": "advisory-provenance-bundle.json",
-                "sha256": _hash_file(
-                    evidence_dir / "advisory-provenance-bundle.json"
-                ),
+                "sha256": _hash_file(evidence_dir / "advisory-provenance-bundle.json"),
                 "track": "advisory-provenance",
                 "decision": advisory_provenance["decision"],
                 "error_codes": advisory_provenance.get("error_codes", []),
@@ -1922,9 +1909,7 @@ def _cmd_orro_sketch(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve(strict=False)
     home = Path(args.home).resolve(strict=False) if args.home else None
     try:
-        decision = (
-            read_agent_decision(Path(args.decision)) if args.decision else None
-        )
+        decision = read_agent_decision(Path(args.decision)) if args.decision else None
         payload = build_sketch_decision(
             str(args.goal), repo=repo, home=home, decision=decision
         )
@@ -1972,9 +1957,7 @@ def _cmd_orro_trace(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve(strict=False)
     home = Path(args.home).resolve(strict=False) if args.home else None
     try:
-        decision = (
-            read_agent_decision(Path(args.decision)) if args.decision else None
-        )
+        decision = read_agent_decision(Path(args.decision)) if args.decision else None
         payload = build_trace_decision(
             str(args.goal), repo=repo, home=home, decision=decision
         )
@@ -2679,7 +2662,7 @@ def _cmd_orro_setup(args: argparse.Namespace) -> int:
         "next_steps": [
             f"python3 -m orro doctor --home {shlex.quote(str(home))} --json",
             "python3 -m orro team init --template developer --yes",
-            f"python3 -m orro team go \"<goal>\" --repo <repo> --home {shlex.quote(str(home))} --json",
+            f'python3 -m orro team go "<goal>" --repo <repo> --home {shlex.quote(str(home))} --json',
         ],
         "boundary": {
             "setup_may_use_network": True,
@@ -2967,9 +2950,7 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
     if args.team:
         flow_argv.extend(["--team", str(Path(args.team).resolve(strict=False))])
     elif selected_rolepack:
-        flow_argv.extend(
-            ["--rolepack", selected_rolepack, "--model-policy", "default"]
-        )
+        flow_argv.extend(["--rolepack", selected_rolepack, "--model-policy", "default"])
 
     flow_code, flow_stdout, flow_stderr = _invoke_cli_capture(flow_argv)
     if flow_code != 0:
@@ -2983,14 +2964,15 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
         actionable_error = None
         if (
             isinstance(flow_error, dict)
-            and flow_error.get("code")
-            == "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED"
+            and flow_error.get("code") == "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED"
         ):
             rule_matches = advice.get("rule_matches")
             reason = (
                 str(rule_matches[0])
                 if isinstance(rule_matches, list) and rule_matches
-                else str(flow_error.get("message", "role capability adapter grant blocked"))
+                else str(
+                    flow_error.get("message", "role capability adapter grant blocked")
+                )
             )
             required = (
                 "a human-reviewed --team <rolepack.json> whose runner grant "
@@ -3062,7 +3044,9 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
     reference_adapter = bool(reference_adapter_lanes)
     reference_warning = _team_go_reference_adapter_warning(reference_adapter_lanes)
     if reference_warning is not None:
-        _write_json_file(run_dir / "moonweave-reference-adapter-warning.json", reference_warning)
+        _write_json_file(
+            run_dir / "moonweave-reference-adapter-warning.json", reference_warning
+        )
     if reference_adapter and not args.allow_reference_adapter:
         return _emit_team_go_result(
             args,
@@ -3228,7 +3212,9 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
     )
 
 
-def _team_go_reference_adapter_lanes(role_lane_plan: dict[str, object]) -> list[dict[str, object]]:
+def _team_go_reference_adapter_lanes(
+    role_lane_plan: dict[str, object],
+) -> list[dict[str, object]]:
     lanes = role_lane_plan.get("lanes")
     if not isinstance(lanes, list):
         return []
