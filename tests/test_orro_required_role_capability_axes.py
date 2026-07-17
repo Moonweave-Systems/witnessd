@@ -59,9 +59,17 @@ def _code_change_plan(
     )
 
 
-def _emit_conforming_bundle(evidence_dir: Path, keys_dir: Path) -> None:
-    keys_dir.mkdir(parents=True)
+def _emit_bundle(
+    evidence_dir: Path,
+    keys_dir: Path,
+    *,
+    touched_file: str = "pkg/a.py",
+    write_scope: list[str] | None = None,
+    task_id: str = "m14-code-change",
+) -> None:
+    keys_dir.mkdir(parents=True, exist_ok=True)
     private_key, public_key = gen_operator_keypair(str(keys_dir))
+    declared_write_scope = ["pkg/**"] if write_scope is None else write_scope
     fixture = build_reference_adapter_fixture(
         {
             "packet_version": "1.0",
@@ -76,7 +84,7 @@ def _emit_conforming_bundle(evidence_dir: Path, keys_dir: Path) -> None:
                 "output_schema": "runner-result-v1",
                 "evidence_obligations": ["command_receipt"],
             },
-            "instructions": "Write pkg/a.py within the granted scope.",
+            "instructions": f"Write {touched_file} within the granted scope.",
             "evidence_obligations": ["command_receipt"],
             "context_policy": "local-code-only",
         }
@@ -90,16 +98,16 @@ def _emit_conforming_bundle(evidence_dir: Path, keys_dir: Path) -> None:
                     "status": "passed",
                 }
             ],
-            "touched_files": ["pkg/a.py"],
+            "touched_files": [touched_file],
             "test_output": {"status": "passed", "summary": "1 passed"},
         },
         str(evidence_dir),
         private_key,
         fixture=fixture,
-        allowed_touched_files=["pkg/a.py"],
+        allowed_touched_files=[touched_file],
         public_key_path=public_key,
-        task_id="m14-code-change",
-        write_scope=["pkg/**"],
+        task_id=task_id,
+        write_scope=declared_write_scope,
         role_id="runner",
         role_capability="execute",
     )
@@ -196,7 +204,7 @@ class OrroRequiredRoleCapabilityAxesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ):
             root = Path(tmp)
             evidence_dir = root / "evidence"
-            _emit_conforming_bundle(evidence_dir, root / "keys")
+            _emit_bundle(evidence_dir, root / "keys")
             plan = _code_change_plan()
 
             conforming = run_verification(
@@ -222,7 +230,7 @@ class OrroRequiredRoleCapabilityAxesTests(unittest.TestCase):
             ["ERR_ROLE_CAPABILITY_PLAN_REQUIRED_AXIS_UNDECLARED"],
         )
 
-    def test_docs_change_without_grant_preserves_verified_v105_verdict(self) -> None:
+    def test_docs_change_plan_requires_and_emits_write_scope_axis(self) -> None:
         workflow_plan = compile_workflow_plan(
             goal="update docs",
             profile="docs-change",
@@ -231,42 +239,82 @@ class OrroRequiredRoleCapabilityAxesTests(unittest.TestCase):
             workflow_plan=workflow_plan,
             lane_adapter="shell",
         )
+        lane = plan["lanes"][0]
+
+        self.assertEqual(plan["required_role_capability_axes"], ["write_scope"])
+        self.assertEqual(lane["granted_write_scope"], lane["region"])
+        self.assertEqual(lane["role_capability"]["write_scope"], lane["region"])
+
         with tempfile.TemporaryDirectory() as tmp:
-            evidence_dir = Path(tmp)
-            (evidence_dir / "evidence-contract.json").write_text(
-                json.dumps(
-                    {
-                        "schema_version": "v105.verify_wedge",
-                        "allowed_touched_files": ["docs/note.txt"],
-                        "expected_exit_code": 0,
-                    }
-                ),
-                encoding="utf-8",
+            root = Path(tmp)
+            evidence_dir = root / "evidence"
+            _emit_bundle(
+                evidence_dir,
+                root / "keys",
+                touched_file=lane["region"][0],
+                write_scope=lane["granted_write_scope"],
+                task_id="m14-docs-change-contract",
             )
-            (evidence_dir / "git-diff-name-only.txt").write_text(
-                "docs/note.txt\n",
-                encoding="utf-8",
+            contract = json.loads(
+                (evidence_dir / "evidence-contract.json").read_text(encoding="utf-8")
             )
-            (evidence_dir / "exit-code.txt").write_text("0\n", encoding="utf-8")
 
-            report = run_verification(plan, read_evidence(str(evidence_dir)))
-
-        self.assertNotIn("required_role_capability_axes", plan)
-        self.assertEqual(report.verdict, "verified")
-
-    def test_docs_change_grant_does_not_require_code_change_axis(self) -> None:
-        workflow_plan = compile_workflow_plan(
-            goal="update docs",
-            profile="docs-change",
+        self.assertEqual(
+            contract["schema_version"], "v109.role_capability_write_scope"
         )
+        self.assertIn("role_capability_write_scope", contract)
 
+    def test_docs_change_write_scope_is_rederived_for_in_and_out_of_scope_writes(
+        self,
+    ) -> None:
         plan = compile_role_lane_plan(
-            workflow_plan=workflow_plan,
+            workflow_plan=compile_workflow_plan(
+                goal="update docs",
+                profile="docs-change",
+            ),
             lane_adapter="shell",
-            rolepack=_runner_rolepack(),
         )
+        lane = plan["lanes"][0]
+        in_scope_path = lane["region"][0]
 
-        self.assertNotIn("required_role_capability_axes", plan)
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ):
+            root = Path(tmp)
+            in_scope_dir = root / "in-scope"
+            out_of_scope_dir = root / "out-of-scope"
+            _emit_bundle(
+                in_scope_dir,
+                root / "keys",
+                touched_file=in_scope_path,
+                write_scope=lane["granted_write_scope"],
+                task_id="m14-docs-change-in-scope",
+            )
+            _emit_bundle(
+                out_of_scope_dir,
+                root / "keys",
+                touched_file="docs/outside-declared-region.md",
+                write_scope=lane["granted_write_scope"],
+                task_id="m14-docs-change-out-of-scope",
+            )
+
+            conforming = run_verification(
+                plan,
+                _read_role_capability_evidence(in_scope_dir),
+            )
+            refused = run_verification(
+                plan,
+                _read_role_capability_evidence(out_of_scope_dir),
+            )
+
+        self.assertEqual(conforming.verdict, "verified")
+        self.assertEqual(refused.verdict, "refuted")
+        self.assertEqual(
+            [
+                entry.error_code
+                for entry in refused.role_capability_conformance
+                if entry.axis == "write_scope"
+            ],
+            ["ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION"],
+        )
 
 
 if __name__ == "__main__":
