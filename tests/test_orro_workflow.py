@@ -448,6 +448,17 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertTrue(role_lanes["execution_allowed"])
             self.assertEqual(role_lanes["workflow_profile"], "docs-change")
             self.assertGreaterEqual(len(role_lanes["lanes"]), 1)
+            for lane in role_lanes["lanes"]:
+                self.assertEqual(lane["granted_write_scope"], lane["region"])
+                self.assertEqual(
+                    lane["role_capability"]["write_scope"], lane["region"]
+                )
+                self.assertTrue(
+                    all(path.startswith("docs/") for path in lane["region"])
+                )
+            self.assertEqual(
+                role_lanes["required_role_capability_axes"], ["write_scope"]
+            )
             self.assertFalse((Path(tmp) / ".witnessd" / "runs").exists())
 
     def test_flowplan_role_lanes_invalid_adapter_fails_closed(self) -> None:

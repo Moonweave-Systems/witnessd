@@ -307,7 +307,7 @@ def summarize_executable_lanes(lanes: list[dict[str, Any]]) -> dict[str, Any]:
 def _required_role_capability_axes(
     profile: str, lanes: list[dict[str, Any]]
 ) -> list[str]:
-    if profile != "code-change":
+    if profile not in {"code-change", "docs-change"}:
         return []
     write_scope_required = any(
         lane.get("phase") == "proofrun"
@@ -910,6 +910,13 @@ def _role_lane_from_role(
         )
     if profile == "docs-change" and not region:
         region = [f"docs/{lane_id}.txt"]
+    if profile == "docs-change" and grant is None:
+        grant = RoleCapabilityGrant(
+            role_id=role_id,
+            capability="execute",
+            adapters=(resolved_adapter,),
+            write_scope=tuple(region),
+        )
     role_capability = _role_capability_for_lane(
         grant=grant,
         role_id=role_id,
