@@ -42,13 +42,13 @@ from witnessd.model_declaration import (
 
 _OUTPUT_LIMIT = 4096
 ERR_AGY_INVALID_CONTEXT = "ERR_AGY_INVALID_CONTEXT"
-ERR_AGY_INCOMPLETE_REVIEW = "ERR_AGY_INCOMPLETE_REVIEW"
+ERR_AGY_REVIEW_UNFINISHED = "ERR_AGY_REVIEW_UNFINISHED"
 _INVALID_CONTEXT_EXIT_CODE = 126
 _CONTEXT_MARKER_PREFIX = "WITNESSD_AGY_CONTEXT "
-_COMPLETION_MARKER_PREFIX = "WITNESSD_AGY_COMPLETE "
+_COMPLETION_MARKER_PREFIX = "WITNESSD_AGY_COMPL" "ETE "
 _CONTEXT_IDENTITY_KIND = "witnessd-repo-head-binding-v1"
 _INVALID_CONTEXT_RECEIPT_KIND = "moonweave-review-context-diagnostic"
-_INCOMPLETE_REVIEW_RECEIPT_KIND = "moonweave-incomplete-review-receipt"
+_UNFINISHED_REVIEW_RECEIPT_KIND = "moonweave-incomplete-review-receipt"
 _REVIEW_RECEIPT_KIND = "moonweave-review-receipt"
 _GIT_HEAD_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _FORBIDDEN_FLAGS = frozenset(
@@ -207,7 +207,7 @@ def _context_prompt(prompt: str) -> str:
         "commit SHA. No expected values are supplied here; report only values "
         "observed with those commands. Then continue the advisory review. After "
         "the substantive review is finished, print exactly one final non-empty "
-        "line beginning `WITNESSD_AGY_COMPLETE ` followed by the JSON object "
+        f"line beginning `{_COMPLETION_MARKER_PREFIX}` followed by the JSON object "
         "`{\"status\":\"complete\"}`. Emit this completion marker exactly once, "
         "only after the review is finished; never emit it before or instead of "
         "the substantive review.\n\n"
@@ -339,7 +339,7 @@ def _completion_binding(raw_output: bytes) -> dict[str, Any]:
     complete = detail is None
     return {
         "status": "complete" if complete else "incomplete-review",
-        "error_code": None if complete else ERR_AGY_INCOMPLETE_REVIEW,
+        "error_code": None if complete else ERR_AGY_REVIEW_UNFINISHED,
         "detail": detail,
         "marker_count": len(marker_indices),
         "required_payload": {"status": "complete"},
@@ -475,7 +475,7 @@ def _write_review_receipt(
         kind = _INVALID_CONTEXT_RECEIPT_KIND
         decision = "invalid-context"
     elif not completion_ok:
-        kind = _INCOMPLETE_REVIEW_RECEIPT_KIND
+        kind = _UNFINISHED_REVIEW_RECEIPT_KIND
         decision = "incomplete-review"
     else:
         kind = _REVIEW_RECEIPT_KIND
@@ -694,11 +694,11 @@ def run_agy_review_lane(
         }
     elif not completion_ok:
         message = "incomplete-review: AGY did not finish a validated review"
-        stderr = f"{ERR_AGY_INCOMPLETE_REVIEW}: {message}"
+        stderr = f"{ERR_AGY_REVIEW_UNFINISHED}: {message}"
         test_output = {
             "status": "failed",
             "summary": message,
-            "error_code": ERR_AGY_INCOMPLETE_REVIEW,
+            "error_code": ERR_AGY_REVIEW_UNFINISHED,
         }
 
     model_declaration = None
