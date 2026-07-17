@@ -130,6 +130,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Reject runtime imports of Depone
+        run: python3 scripts/check_no_depone_import.py
+
       - name: Import runtime without Depone installed
         run: python3 -c "import witnessd.emitter, witnessd.__main__"
 

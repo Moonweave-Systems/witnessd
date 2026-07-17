@@ -1400,6 +1400,50 @@ class TestAdapterRun(unittest.TestCase):
                 (pathlib.Path(evidence_dir) / "model-declaration.json").exists()
             )
 
+    def test_routed_model_is_recorded_only_as_requested(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            _init_repo(sandbox)
+
+            out = run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="t-route-requested",
+                prompt="do X",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=_fake_codex(bindir),
+                allowed_touched_files=["noop.txt"],
+            )
+
+            self.assertNotIn("-m", out["runner_receipt"]["invocation"])
+            self.assertNotIn("route", out)
+            route_requested = out["route_requested"]
+            self.assertIn("model_requested", route_requested)
+            self.assertNotIn("model", route_requested)
+            self.assertTrue(route_requested["attempts"])
+            for attempt in route_requested["attempts"]:
+                self.assertIn("model_requested", attempt)
+                self.assertNotIn("model", attempt)
+
+            fixture_invocation = out["capture_manifest"]["fixture"]["invocation"]
+            self.assertNotIn("route", fixture_invocation)
+            self.assertEqual(
+                fixture_invocation["route_requested"],
+                {
+                    "tier": route_requested["tier"],
+                    "model_requested": route_requested["model_requested"],
+                    "degraded": route_requested["degraded"],
+                },
+            )
+            self.assertNotIn("executed_model", fixture_invocation)
+
     def test_codex_uses_isolated_state_namespace(self):
         with (
             tempfile.TemporaryDirectory() as root,
