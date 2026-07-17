@@ -56,8 +56,13 @@ def _fake_agy(directory: Path) -> str:
         "    observed_root = os.environ.get('AGY_OBSERVED_REPO', os.getcwd())\n"
         "    observed_head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=observed_root, check=True, capture_output=True, text=True).stdout.strip()\n"
         "    print('WITNESSD_AGY_CONTEXT ' + json.dumps({'repo_root': observed_root, 'git_head': observed_head}, sort_keys=True))\n"
-        "    print('Review findings:')\n"
-        "    print('low README.md:1 review-only smoke finding')\n",
+        "    if os.environ.get('AGY_REVIEW_MODE') == 'intent-only':\n"
+        "        print('I will inspect the requested files now.')\n"
+        "    else:\n"
+        "        print('Review findings:')\n"
+        "        print('low README.md:1 review-only smoke finding')\n"
+        "    if os.environ.get('AGY_COMPLETION_MODE', 'correct') != 'missing':\n"
+        "        print('WITNESSD_AGY_COMPLETE ' + json.dumps({'status': 'complete'}, sort_keys=True))\n",
         encoding="utf-8",
     )
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
@@ -371,6 +376,49 @@ class OrroReviewTests(unittest.TestCase):
             self.assertTrue((run_dir / "orro-review-summary.json").is_file())
             self.assertTrue((run_dir / reviewer_lane["lane_id"] / "review-receipt.json").is_file())
             self.assertFalse((run_dir / "team-ledger.json").exists())
+
+            incomplete_stdout = io.StringIO()
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "AGY_ARGV_CAPTURE": str(argv_capture),
+                        "AGY_COMPLETION_MODE": "missing",
+                        "AGY_REVIEW_MODE": "intent-only",
+                    },
+                ),
+                redirect_stdout(incomplete_stdout),
+            ):
+                incomplete_code = main(
+                    [
+                        "orro",
+                        "review",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--role-lane-plan",
+                        str(role_lanes_out),
+                        "--agy-binary",
+                        _fake_agy(bindir),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(incomplete_code, 1, incomplete_stdout.getvalue())
+            incomplete_payload = json.loads(incomplete_stdout.getvalue())
+            self.assertNotEqual(incomplete_payload["decision"], "pass")
+            incomplete_lane = incomplete_payload["lanes"][0]
+            self.assertEqual(incomplete_lane["decision"], "incomplete-review")
+            self.assertEqual(incomplete_lane["exit_code"], 0)
+            self.assertFalse(incomplete_lane["review_receipt"]["findings_usable"])
+            self.assertFalse(
+                incomplete_lane["review_receipt"]["usable_as_review_evidence"]
+            )
+            self.assertIn(
+                "I will inspect",
+                Path(incomplete_lane["transcript_path"]).read_text(encoding="utf-8"),
+            )
 
             stale_repo = root / "stale-repo"
             stale_repo.mkdir()

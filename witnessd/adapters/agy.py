@@ -42,10 +42,13 @@ from witnessd.model_declaration import (
 
 _OUTPUT_LIMIT = 4096
 ERR_AGY_INVALID_CONTEXT = "ERR_AGY_INVALID_CONTEXT"
+ERR_AGY_REVIEW_UNFINISHED = "ERR_AGY_REVIEW_UNFINISHED"
 _INVALID_CONTEXT_EXIT_CODE = 126
 _CONTEXT_MARKER_PREFIX = "WITNESSD_AGY_CONTEXT "
+_COMPLETION_MARKER_PREFIX = "WITNESSD_AGY_COMPL" "ETE "
 _CONTEXT_IDENTITY_KIND = "witnessd-repo-head-binding-v1"
 _INVALID_CONTEXT_RECEIPT_KIND = "moonweave-review-context-diagnostic"
+_UNFINISHED_REVIEW_RECEIPT_KIND = "moonweave-incomplete-review-receipt"
 _REVIEW_RECEIPT_KIND = "moonweave-review-receipt"
 _GIT_HEAD_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _FORBIDDEN_FLAGS = frozenset(
@@ -202,7 +205,12 @@ def _context_prompt(prompt: str) -> str:
         "exactly two string fields: `repo_root` containing the observed absolute "
         "working directory and `git_head` containing the observed full 40-character "
         "commit SHA. No expected values are supplied here; report only values "
-        "observed with those commands. Then continue the advisory review.\n\n"
+        "observed with those commands. Then continue the advisory review. After "
+        "the substantive review is finished, print exactly one final non-empty "
+        f"line beginning `{_COMPLETION_MARKER_PREFIX}` followed by the JSON object "
+        "`{\"status\":\"complete\"}`. Emit this completion marker exactly once, "
+        "only after the review is finished; never emit it before or instead of "
+        "the substantive review.\n\n"
         f"Review request:\n{prompt}"
     )
 
@@ -288,6 +296,53 @@ def _context_binding(
         "observed_repo_root": observed_root,
         "requested_git_head_sha": requested_head,
         "observed_git_head_sha": observed_head,
+    }
+
+
+def _completion_binding(raw_output: bytes) -> dict[str, Any]:
+    lines = [
+        line.strip()
+        for line in raw_output.decode("utf-8", errors="replace").splitlines()
+    ]
+    marker_indices = [
+        index
+        for index, line in enumerate(lines)
+        if line.startswith(_COMPLETION_MARKER_PREFIX)
+    ]
+    detail: str | None = None
+    if not marker_indices:
+        detail = "missing completion marker"
+    elif len(marker_indices) > 1:
+        detail = "duplicate completion marker"
+    else:
+        marker_index = marker_indices[0]
+        encoded = lines[marker_index][len(_COMPLETION_MARKER_PREFIX) :]
+        try:
+            payload = json.loads(encoded)
+        except json.JSONDecodeError:
+            payload = None
+            detail = "malformed completion marker"
+        if detail is None and payload != {"status": "complete"}:
+            detail = "completion marker fields are invalid"
+        non_empty_indices = [index for index, line in enumerate(lines) if line]
+        if detail is None and marker_index != non_empty_indices[-1]:
+            detail = "completion marker is not the final non-empty output line"
+        substantive_lines = [
+            line
+            for line in lines[:marker_index]
+            if line
+            and not line.startswith(_CONTEXT_MARKER_PREFIX)
+            and not line.startswith(_COMPLETION_MARKER_PREFIX)
+        ]
+        if detail is None and not substantive_lines:
+            detail = "completion marker has no substantive review before it"
+    complete = detail is None
+    return {
+        "status": "complete" if complete else "incomplete-review",
+        "error_code": None if complete else ERR_AGY_REVIEW_UNFINISHED,
+        "detail": detail,
+        "marker_count": len(marker_indices),
+        "required_payload": {"status": "complete"},
     }
 
 
@@ -411,17 +466,26 @@ def _write_review_receipt(
     raw_output: bytes,
     findings: list[dict[str, Any]],
     context_binding: dict[str, Any],
+    completion_binding: dict[str, Any],
 ) -> None:
     context_bound = context_binding["status"] == "bound"
+    completion_ok = completion_binding["status"] == "complete"
+    usable = context_bound and completion_ok
+    if not context_bound:
+        kind = _INVALID_CONTEXT_RECEIPT_KIND
+        decision = "invalid-context"
+    elif not completion_ok:
+        kind = _UNFINISHED_REVIEW_RECEIPT_KIND
+        decision = "incomplete-review"
+    else:
+        kind = _REVIEW_RECEIPT_KIND
+        decision = "pass"
     receipt = {
-        "kind": (
-            _REVIEW_RECEIPT_KIND
-            if context_bound
-            else _INVALID_CONTEXT_RECEIPT_KIND
-        ),
+        "kind": kind,
         "schema_version": "1.0",
         "provider": "google-antigravity",
         "axis": "review",
+        "decision": decision,
         "can_change_evidence_verdict": False,
         "raises_assurance": False,
         "verifies_evidence": False,
@@ -431,10 +495,12 @@ def _write_review_receipt(
             raw_output.decode("utf-8", errors="replace") if context_bound else ""
         ),
         "context_binding": context_binding,
+        "completion_binding": completion_binding,
+        "completion_status": completion_binding["status"],
         "findings": findings if context_bound else [],
-        "findings_usable": context_bound,
-        "usable_as_review_evidence": context_bound,
-        "usable_as_implementation_guidance": context_bound,
+        "findings_usable": usable,
+        "usable_as_review_evidence": usable,
+        "usable_as_implementation_guidance": usable,
     }
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -588,6 +654,8 @@ def run_agy_review_lane(
         raw_output=raw_stdout,
     )
     context_bound = context_binding["status"] == "bound"
+    completion_binding = _completion_binding(raw_stdout)
+    completion_ok = completion_binding["status"] == "complete"
     Path(transcript).write_bytes(raw_stdout if context_bound else b"")
     normalized_events = (
         normalize_agy_text_events(raw_stdout) if context_bound else []
@@ -600,6 +668,7 @@ def run_agy_review_lane(
         raw_output=raw_stdout,
         findings=findings,
         context_binding=context_binding,
+        completion_binding=completion_binding,
     )
     after = _snapshot(repo)
     touched_files = _diff_touched(
@@ -622,6 +691,14 @@ def run_agy_review_lane(
             "status": "failed",
             "summary": message,
             "error_code": ERR_AGY_INVALID_CONTEXT,
+        }
+    elif not completion_ok:
+        message = "incomplete-review: AGY did not finish a validated review"
+        stderr = f"{ERR_AGY_REVIEW_UNFINISHED}: {message}"
+        test_output = {
+            "status": "failed",
+            "summary": message,
+            "error_code": ERR_AGY_REVIEW_UNFINISHED,
         }
 
     model_declaration = None

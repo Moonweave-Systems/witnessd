@@ -66,8 +66,24 @@ def _fake_agy(directory: str, *, writes_file: bool = False) -> str:
         "        print(marker)\n"
         "        if mode == 'duplicate':\n"
         "            print(marker)\n"
-        "    print('Review findings:')\n"
-        "    print('medium pkg/a.py:7 check edge case')\n"
+        "    completion_mode = os.environ.get('AGY_COMPLETION_MODE', 'correct')\n"
+        "    completion = 'WITNESSD_AGY_COMPLETE ' + json.dumps({'status': 'complete'}, sort_keys=True)\n"
+        "    if completion_mode == 'early':\n"
+        "        print(completion)\n"
+        "    review_mode = os.environ.get('AGY_REVIEW_MODE')\n"
+        "    if review_mode == 'none':\n"
+        "        pass\n"
+        "    elif review_mode == 'intent-only':\n"
+        "        print('I will inspect the requested files now.')\n"
+        "    else:\n"
+        "        print('Review findings:')\n"
+        "        print('medium pkg/a.py:7 check edge case')\n"
+        "    if completion_mode == 'malformed':\n"
+        "        print('WITNESSD_AGY_COMPLETE not-json')\n"
+        "    elif completion_mode not in {'missing', 'early'}:\n"
+        "        print(completion)\n"
+        "        if completion_mode == 'duplicate':\n"
+        "            print(completion)\n"
         "else:\n"
         "    print('non-tty-final-response-lost', file=sys.stderr)\n",
         encoding="utf-8",
@@ -126,6 +142,10 @@ class TestAgyAdapter(unittest.TestCase):
             self.assertNotIn("--output-format", res.invocation)
             self.assertNotIn("--dangerously-skip-permissions", res.invocation)
             self.assertIn("-p", res.invocation)
+            review_prompt = res.invocation[res.invocation.index("-p") + 1]
+            self.assertIn("WITNESSD_AGY_COMPLETE ", review_prompt)
+            self.assertIn("exactly once", review_prompt)
+            self.assertIn("only after the review is finished", review_prompt)
             self.assertEqual(res.test_output, {"status": "not-run"})
             self.assertIn(
                 b"Review findings:", pathlib.Path(res.transcript_path).read_bytes()
@@ -226,9 +246,99 @@ class TestAgyAdapter(unittest.TestCase):
             self.assertEqual(binding["requested_git_head_sha"], head)
             self.assertEqual(binding["observed_git_head_sha"], head)
             self.assertTrue(receipt["findings_usable"])
+            self.assertEqual(receipt["completion_status"], "complete")
+            self.assertEqual(receipt["completion_binding"]["status"], "complete")
+            self.assertTrue(receipt["usable_as_review_evidence"])
             self.assertEqual(receipt["findings"][0]["severity"], "medium")
             self.assertIn("WITNESSD_AGY_CONTEXT ", receipt["raw_output_text"])
+            self.assertIn("WITNESSD_AGY_COMPLETE ", receipt["raw_output_text"])
             self.assertEqual(res.review_receipt_path, str(receipt_path))
+
+    def test_context_bound_review_without_completion_fails_closed_and_keeps_transcript(self):
+        with (
+            tempfile.TemporaryDirectory() as sandbox,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            _seed_repo(pathlib.Path(sandbox))
+            receipt_path = pathlib.Path(bindir) / "review-receipt.json"
+            transcript_path = pathlib.Path(bindir) / "agy.raw.jsonl"
+            res = run_agy_review_lane(
+                sandbox=sandbox,
+                prompt="review only",
+                agy_binary=_fake_agy(bindir),
+                transcript_path=str(transcript_path),
+                review_receipt_path=str(receipt_path),
+                env={
+                    "AGY_COMPLETION_MODE": "missing",
+                    "AGY_REVIEW_MODE": "intent-only",
+                },
+            )
+
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            self.assertEqual(res.exit_code, 0)
+            self.assertEqual(receipt["kind"], "moonweave-incomplete-review-receipt")
+            self.assertEqual(receipt["decision"], "incomplete-review")
+            self.assertEqual(receipt["context_binding"]["status"], "bound")
+            self.assertEqual(receipt["completion_status"], "incomplete-review")
+            self.assertEqual(
+                receipt["completion_binding"]["detail"],
+                "missing completion marker",
+            )
+            self.assertFalse(receipt["findings_usable"])
+            self.assertFalse(receipt["usable_as_review_evidence"])
+            self.assertFalse(receipt["usable_as_implementation_guidance"])
+            self.assertIn("I will inspect", receipt["raw_output_text"])
+            self.assertIn("I will inspect", transcript_path.read_text(encoding="utf-8"))
+            self.assertEqual(res.raw_events_path, str(transcript_path))
+
+    def test_invalid_completion_marker_fails_closed(self):
+        for completion_mode, review_mode, expected_detail in (
+            ("duplicate", None, "duplicate completion marker"),
+            ("malformed", None, "malformed completion marker"),
+            (
+                "early",
+                None,
+                "completion marker is not the final non-empty output line",
+            ),
+            (
+                "correct",
+                "none",
+                "completion marker has no substantive review before it",
+            ),
+        ):
+            with self.subTest(
+                completion_mode=completion_mode,
+                review_mode=review_mode,
+            ):
+                with (
+                    tempfile.TemporaryDirectory() as sandbox,
+                    tempfile.TemporaryDirectory() as bindir,
+                ):
+                    _seed_repo(pathlib.Path(sandbox))
+                    receipt_path = pathlib.Path(bindir) / "review-receipt.json"
+                    run_agy_review_lane(
+                        sandbox=sandbox,
+                        prompt="review only",
+                        agy_binary=_fake_agy(bindir),
+                        transcript_path=str(pathlib.Path(bindir) / "agy.raw.jsonl"),
+                        review_receipt_path=str(receipt_path),
+                        env={
+                            "AGY_COMPLETION_MODE": completion_mode,
+                            **(
+                                {"AGY_REVIEW_MODE": review_mode}
+                                if review_mode is not None
+                                else {}
+                            ),
+                        },
+                    )
+
+                    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+                    self.assertEqual(receipt["decision"], "incomplete-review")
+                    self.assertEqual(
+                        receipt["completion_binding"]["detail"], expected_detail
+                    )
+                    self.assertFalse(receipt["findings_usable"])
+                    self.assertFalse(receipt["usable_as_review_evidence"])
 
     def test_stale_project_context_is_invalid_and_findings_are_unusable(self):
         with (
