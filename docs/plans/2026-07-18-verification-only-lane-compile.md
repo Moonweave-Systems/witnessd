@@ -21,7 +21,7 @@ RUN='env PYTHONPATH=../depone PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 /usr/
 - Modify: `witnessd/orro_workflow.py:1366-1391` (profile spec)
 - Modify: `tests/test_orro_workflow.py:138-172` (two pinned tests flip)
 
-- [ ] **Step 1: Update the two pinned tests to the new contract** (they must FAIL against current code)
+- [x] **Step 1: Update the two pinned tests to the new contract** (they must FAIL against current code)
 
 Replace `test_verification_only_profile_delegates_verification_without_execution` (`tests/test_orro_workflow.py:138-154`):
 
@@ -65,12 +65,12 @@ In `test_workflow_phase_gate_allows_only_declared_execution_phase` (`tests/test_
         assert_workflow_phase_allowed(verification_only, "proofrun")
 ```
 
-- [ ] **Step 2: Run to verify both fail**
+- [x] **Step 2: Run to verify both fail**
 
 Run: `$RUN tests.test_orro_workflow -k verification -k phase_gate -v` (or run the two tests by full name)
 Expected: FAIL — no proofrun engine call / phase gate raises.
 
-- [ ] **Step 3: Implement the profile change**
+- [x] **Step 3: Implement the profile change**
 
 Replace the `"verification-only"` spec (`witnessd/orro_workflow.py:1366-1391`) with:
 
@@ -115,12 +115,12 @@ Replace the `"verification-only"` spec (`witnessd/orro_workflow.py:1366-1391`) w
         },
 ```
 
-- [ ] **Step 4: Run the module's tests**
+- [x] **Step 4: Run the module's tests**
 
 Run: `$RUN tests.test_orro_workflow`
 Expected: the two updated tests PASS. `test_flowplan_role_lanes_profiles_block_non_execution_profiles` (`:410-429`) may now fail for verification-only — that is Task 2's contract; if it fails here, proceed to Task 2 before committing, then commit Tasks 1+2 separately per file grouping below.
 
-- [ ] **Step 5: Commit** (if Step 4 is fully green; otherwise commit at the end of Task 2)
+- [x] **Step 5: Commit** (if Step 4 is fully green; otherwise commit at the end of Task 2)
 
 ```bash
 git add witnessd/orro_workflow.py tests/test_orro_workflow.py
@@ -134,7 +134,7 @@ git commit -m "feat(orro): verification-only profile declares executable check-r
 - Modify: `tests/test_orro_workflow.py:410-429`
 - Test: `tests/test_orro_workflow.py` (new cases in the existing class)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Replace `test_flowplan_role_lanes_profiles_block_non_execution_profiles` (`tests/test_orro_workflow.py:410-429`) — release-readiness keeps the old pin, verification-only gets the new contract:
 
@@ -234,12 +234,12 @@ Replace `test_flowplan_role_lanes_profiles_block_non_execution_profiles` (`tests
 
 Add any missing imports at the top of the test file (`compile_role_lane_plan`, `validate_role_lane_plan`, `ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX`, `deepcopy` — check what is already imported).
 
-- [ ] **Step 2: Run to verify the new tests fail**
+- [x] **Step 2: Run to verify the new tests fail**
 
 Run: `$RUN tests.test_orro_workflow`
 Expected: new tests FAIL (unknown kwarg `check_commands`, missing constants).
 
-- [ ] **Step 3: Implement in `witnessd/orro_workflow.py`**
+- [x] **Step 3: Implement in `witnessd/orro_workflow.py`**
 
 Add constants beside `ERR_ORRO_ROLE_LANE_INTENT_INVALID` (`:39`):
 
@@ -352,12 +352,12 @@ In `_validate_role_lane` (`:1097-1165`), after the existing `lane_intent` valida
             )
 ```
 
-- [ ] **Step 4: Run the module's tests**
+- [x] **Step 4: Run the module's tests**
 
 Run: `$RUN tests.test_orro_workflow`
 Expected: PASS (all, including Task 1's).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add witnessd/orro_workflow.py tests/test_orro_workflow.py
@@ -370,7 +370,7 @@ git commit -m "feat(orro): compile verification-only profile into claimless decl
 - Modify: `witnessd/__main__.py` (`_add_flowplan_args:5306-5335`, `_cmd_plan` role-lanes block `:1015-1021`, arg guard near `:905`)
 - Test: `tests/test_orro_workflow.py` (CLI-level cases via existing `self._flowplan` helper)
 
-- [ ] **Step 1: Write failing CLI tests**
+- [x] **Step 1: Write failing CLI tests**
 
 ```python
     def test_flowplan_check_flag_compiles_verification_lane(self) -> None:
@@ -443,12 +443,12 @@ git commit -m "feat(orro): compile verification-only profile into claimless decl
 
 (Adapt the error-payload shape to whatever `self._flowplan` returns for existing error cases in this file — follow the profile-unknown test's assertions.)
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `$RUN tests.test_orro_workflow -v` (new tests)
 Expected: FAIL (`--check` unknown argument).
 
-- [ ] **Step 3: Implement in `witnessd/__main__.py`**
+- [x] **Step 3: Implement in `witnessd/__main__.py`**
 
 In `_add_flowplan_args` (after `--lane-intent`, `:5315`):
 
@@ -478,12 +478,12 @@ In the `compile_role_lane_plan` call (`:1015-1021`) add `check_commands=getattr(
 
 Check `orro/__main__.py` / the `orro-flow` parser only if `flowplan` args are mirrored there (grep `--lane-intent` to see); mirror `--check` wherever `--lane-intent` is mirrored.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `$RUN tests.test_orro_workflow`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add witnessd/__main__.py tests/test_orro_workflow.py
@@ -496,7 +496,7 @@ git commit -m "feat(cli): flowplan --check declares verification-only lane check
 - Modify: `witnessd/__main__.py:640-648` (`_role_lane_plan_team_specs` shell branch)
 - Test: `tests/test_orro_workflow.py` (spec-thread test, mirroring the existing lane_intent thread test at `:1158-1197`)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
     def test_verification_lane_spec_runs_declared_checks_not_default_write(self) -> None:
@@ -525,11 +525,11 @@ git commit -m "feat(cli): flowplan --check declares verification-only lane check
 
 (Mirror the import/`args` pattern of the existing spec-thread test at `:1158-1197` — reuse its helper if one exists.)
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Expected: FAIL — commands equal the `_default_team_lane_command` output (`["sh", "-c", "true"]` for empty region), not the declared checks.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `_role_lane_plan_team_specs` (`:640-648`), replace the shell branch:
 
@@ -556,12 +556,12 @@ In `_role_lane_plan_team_specs` (`:640-648`), replace the shell branch:
 
 Note: flag-path lanes (`code-change` + `--lane-intent verification-only`) carry no `check_commands`, so they keep the default command and stay reconciled by Depone's mutation gate — do not change their behavior.
 
-- [ ] **Step 4: Run tests, including the pinned flag-path thread test**
+- [x] **Step 4: Run tests, including the pinned flag-path thread test**
 
 Run: `$RUN tests.test_orro_workflow tests.test_orro_flow`
 Expected: PASS (flag-path pins at `tests/test_orro_workflow.py:1158-1197` and `tests/test_orro_flow.py` untouched).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add witnessd/__main__.py tests/test_orro_workflow.py
@@ -574,7 +574,7 @@ git commit -m "feat(team): verification-only shell specs run declared checks"
 - Modify: `witnessd/fanin.py:136-143`
 - Test: `tests/test_team_fanin.py` (new cases; follow that file's existing `run_team` harness — `_seed_repo`-style git setup + `gen_operator_keypair`, see `tests/test_w16_merge_lanes.py:1-60` for the pattern)
 
-- [ ] **Step 1: Write failing tests** (adapt setup helpers to the file's existing conventions)
+- [x] **Step 1: Write failing tests** (adapt setup helpers to the file's existing conventions)
 
 ```python
     def test_claimless_verification_lane_executes_and_passes(self) -> None:
@@ -677,12 +677,12 @@ git commit -m "feat(team): verification-only shell specs run declared checks"
 
 The `...` in setup/assertion plumbing means: reuse this test file's existing fixtures verbatim (repo seeding, key generation, runlog reading, `run_team` kwargs) — copy from the nearest existing `run_team` test in the same file, keeping its exact keyword arguments. The lane-spec dicts and assertions above are the normative content.
 
-- [ ] **Step 2: Run to verify current behavior fails them**
+- [x] **Step 2: Run to verify current behavior fails them**
 
 Run: `$RUN tests.test_team_fanin -v` (new tests)
 Expected: first three FAIL (lane skipped → no ledger lane entry); the regression pin PASSES already.
 
-- [ ] **Step 3: Implement in `witnessd/fanin.py:136-143`**
+- [x] **Step 3: Implement in `witnessd/fanin.py:136-143`**
 
 ```python
             if not allowed_touched_files:
@@ -704,13 +704,13 @@ Expected: first three FAIL (lane skipped → no ledger lane entry); the regressi
 
 (The declared verification lane falls through to `runnable.append(...)` with `allowed_touched_files=[]`; keyed on the declared spec intent, never on observed emptiness.)
 
-- [ ] **Step 4: Run and fix fallout in the claimless execution path**
+- [x] **Step 4: Run and fix fallout in the claimless execution path**
 
 Run: `$RUN tests.test_team_fanin`
 If `emit_supervised_lane` (`witnessd/emitter.py:479`) or `_run_write_lane` rejects `allowed_touched_files=[]`, make the narrowest change that lets an empty allowed-list lane emit evidence (this is the only genuinely unexplored seam; keep any change inside the claimless path and re-run the full fanin/emitter test modules after).
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add witnessd/fanin.py tests/test_team_fanin.py
@@ -723,11 +723,11 @@ git commit -m "feat(fanin): execute declared claimless verification-only lanes"
 - Modify: `tests/test_orro_public_flow.py:1588+` (forbidden-profiles loop)
 - Test: new e2e in `tests/test_orro_public_flow.py` (reuse `_init_home`/`_flowplan_out` helpers)
 
-- [ ] **Step 1: Update the forbidden-profiles pin**
+- [x] **Step 1: Update the forbidden-profiles pin**
 
 In `test_proofrun_role_lane_plan_forbidden_profiles_fail_before_run_dir` (`:1588`), change the loop to `for profile in ("critic-only", "review-only"):` — verification-only is no longer forbidden and is covered by the new e2e below.
 
-- [ ] **Step 2: Write the e2e test** (same class, reusing its helpers)
+- [x] **Step 2: Write the e2e test** (same class, reusing its helpers)
 
 ```python
     def test_verification_only_flow_runs_checks_and_passes_depone(self) -> None:
@@ -793,12 +793,12 @@ In `test_proofrun_role_lane_plan_forbidden_profiles_fail_before_run_dir` (`:1588
 
 Adapt the workflow-plan/role-lane out-path flags and result-payload keys to how sibling tests in this file already invoke `flowplan`/`proofrun` (follow `test_proofrun_role_lane_plan_forbidden_profiles_fail_before_run_dir` and its helpers exactly; e.g. if `_flowplan_out`/`_role_lane_plan_out` helpers exist, extend them with a `checks=None` parameter instead of inlining argv). If proofrun requires extra gates (risky-goal, adapters), mirror how the code-change e2e in this file satisfies them.
 
-- [ ] **Step 3: Run**
+- [x] **Step 3: Run**
 
 Run: `$RUN tests.test_orro_public_flow -v`
 Expected: PASS (both the updated pin and the new e2e).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/test_orro_public_flow.py
@@ -810,7 +810,7 @@ git commit -m "test(e2e): verification-only flowplan->proofrun passes Depone end
 **Files:**
 - Modify: `SPEC3.md:253-254`, `CLAUDE.md:160`, `SKILL.md:187`, `docs/README.md:120`
 
-- [ ] **Step 1: Revise every statement of the old invariant**
+- [x] **Step 1: Revise every statement of the old invariant**
 
 Replace each "review-only, verification-only, and default release-readiness role-lane plans cannot launch proofrun."-form sentence with (adapt surrounding grammar per file):
 
@@ -818,7 +818,7 @@ Replace each "review-only, verification-only, and default release-readiness role
 
 Also grep the four files (plus `README.md`) for other "verification-only" statements that describe the profile as non-executing and align them.
 
-- [ ] **Step 2: Full suite + self-test**
+- [x] **Step 2: Full suite + self-test**
 
 ```bash
 env PYTHONPATH=../depone PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -m unittest discover -s tests
@@ -827,7 +827,7 @@ env PYTHONPATH=../depone PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 /usr/bin/p
 
 Expected: 0 failures (baseline 806 + new tests), self-test green.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add SPEC3.md CLAUDE.md SKILL.md docs/README.md README.md
