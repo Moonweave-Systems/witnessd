@@ -41,7 +41,7 @@ public commands:
   review       advisory read-only reviewer lanes; not proof or assurance
   auto         dry-run, one-step, or bounded post-run automation
   team         scaffold team config or run flowplan/proofrun/proofcheck/report
-  doctor       ORRO readiness check; does not verify evidence
+  doctor       ORRO engine/verifier readiness; not runlog health or evidence verification
   engine-lock  write/check distribution metadata for pinned engine commits
 
 boundary:

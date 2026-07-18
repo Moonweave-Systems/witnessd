@@ -36,7 +36,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     init = sub.add_parser("init", help="initialize witnessd config and pinned Depone")
     init.add_argument("--home", default=None)
-    init.add_argument("--repo", default=".")
+    init.add_argument("--repo", "--root", dest="repo", default=".")
     init.add_argument("--depone-root", default=None)
     init.add_argument("--depone-repository", default=None)
     init.add_argument("--depone-ref", default=None)
@@ -66,7 +66,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     scout = sub.add_parser("scout", help="run read-only ORRO repo scout")
     scout.add_argument("goal")
-    scout.add_argument("--repo", default=".")
+    scout.add_argument("--repo", "--root", dest="repo", default=".")
     scout.add_argument("--home", default=None)
     scout.add_argument("--out-dir", default=None)
     scout.set_defaults(func=_cli_handler("bootstrap", "_cmd_scout"))
@@ -175,7 +175,7 @@ def _build_parser() -> argparse.ArgumentParser:
     handoff.set_defaults(func=_cli_handler("verify", "_cmd_handoff"))
 
     route = sub.add_parser("route", help="dry-run W4 model routing")
-    route.add_argument("--root", default=".")
+    route.add_argument("--root", "--repo", dest="root", default=".")
     route.add_argument("--runlog", default=None)
     route.add_argument("--task-id", default="witnessd-route")
     route.add_argument(
@@ -184,13 +184,22 @@ def _build_parser() -> argparse.ArgumentParser:
     route.add_argument("--unsupported-model", action="append", default=[])
     route.set_defaults(func=_cli_handler("bootstrap", "_cmd_route"))
 
-    doctor = sub.add_parser("doctor", help="report runlog-derived lane health")
+    doctor = sub.add_parser(
+        "doctor", help="report runlog health; not ORRO engine/verifier readiness"
+    )
     doctor.add_argument("--runlog", default=None)
-    doctor.add_argument("--root", default=".")
+    doctor.add_argument("--root", "--repo", dest="root", default=".")
     doctor.add_argument("--external-worktree", action="append", default=[])
     doctor.set_defaults(func=_cli_handler("runtime_ops", "_cmd_doctor"))
 
-    orro_doctor = sub.add_parser("orro-doctor", help=argparse.SUPPRESS)
+    orro_doctor = sub.add_parser(
+        "orro-doctor",
+        help=argparse.SUPPRESS,
+        description=(
+            "Report ORRO engine/verifier readiness; not runlog health or evidence "
+            "verification."
+        ),
+    )
     orro_doctor.add_argument("--home", default=None)
     orro_doctor.add_argument(
         "--adapter",
@@ -221,7 +230,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     orro_advise = sub.add_parser("orro-advise", help=argparse.SUPPRESS)
     orro_advise.add_argument("goal", nargs="?")
-    orro_advise.add_argument("--repo", default=".")
+    orro_advise.add_argument("--repo", "--root", dest="repo", default=".")
     orro_advise.add_argument("--home", default=None)
     orro_advise.add_argument("--out", default=None)
     orro_advise.add_argument("--json", action="store_true")
@@ -236,7 +245,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     orro_sketch.add_argument("goal", nargs="?")
-    orro_sketch.add_argument("--repo", default=".")
+    orro_sketch.add_argument("--repo", "--root", dest="repo", default=".")
     orro_sketch.add_argument("--home", default=None)
     orro_sketch.add_argument("--decision", default=None)
     orro_sketch.add_argument("--out", default=None)
@@ -252,7 +261,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     orro_trace.add_argument("goal", nargs="?")
-    orro_trace.add_argument("--repo", default=".")
+    orro_trace.add_argument("--repo", "--root", dest="repo", default=".")
     orro_trace.add_argument("--home", default=None)
     orro_trace.add_argument("--decision", default=None)
     orro_trace.add_argument("--out", default=None)
@@ -275,7 +284,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "Not proofrun, not proofcheck, and not assurance."
         ),
     )
-    orro_review.add_argument("--repo", required=True)
+    orro_review.add_argument("--repo", "--root", dest="repo", required=True)
     orro_review.add_argument("--home", default=None)
     orro_review.add_argument("--run-dir", default=None)
     orro_review.add_argument("--role-lane-plan", required=True)
@@ -345,7 +354,7 @@ def _build_parser() -> argparse.ArgumentParser:
     pause_race.add_argument("--run-id", default="faultkit-pause-run")
     pause_race.set_defaults(func=_cli_handler("runtime_ops", "_cmd_faultkit"))
     budget = faultkit_sub.add_parser("budget-blowout")
-    budget.add_argument("--root", required=True)
+    budget.add_argument("--root", "--repo", dest="root", required=True)
     budget.add_argument("--runner-sandbox", required=True)
     budget.add_argument("--codex-binary", default="codex")
     budget.add_argument("--task-id", default="budget-blowout")
@@ -389,7 +398,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     team_go.add_argument("goal")
     team_go.add_argument("--task", default=None)
-    team_go.add_argument("--repo", required=True)
+    team_go.add_argument("--repo", "--root", dest="repo", required=True)
     team_go.add_argument("--home", default=None)
     team_go.add_argument("--team", default=None)
     team_go.add_argument("--run-dir", default=None)
@@ -425,7 +434,7 @@ def _build_parser() -> argparse.ArgumentParser:
     team_go.set_defaults(func=_cli_handler("team_go", "_cmd_team_go"))
 
     team_run = team_sub.add_parser("run", help="emit team fan-in evidence")
-    team_run.add_argument("--repo", required=True)
+    team_run.add_argument("--repo", "--root", dest="repo", required=True)
     team_run.add_argument("--out", required=True)
     team_run.add_argument("--keys-dir", default=None)
     team_run.add_argument("--state-root", default=None)
@@ -451,7 +460,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "plan-run", help="plan a goal and run the resulting team lanes"
     )
     team_plan_run.add_argument("goal")
-    team_plan_run.add_argument("--repo", required=True)
+    team_plan_run.add_argument("--repo", "--root", dest="repo", required=True)
     team_plan_run.add_argument("--out", required=True)
     team_plan_run.add_argument("--keys-dir", default=None)
     team_plan_run.add_argument("--seed", default="w11")
@@ -564,7 +573,7 @@ def _build_parser() -> argparse.ArgumentParser:
         install.add_argument("--config", required=True)
         install.add_argument("--shim-dir", required=True)
         install.add_argument("--version", required=True)
-        install.add_argument("--root", default=".")
+        install.add_argument("--root", "--repo", dest="root", default=".")
         install.add_argument("--runlog", default=None)
         install.set_defaults(func=_cli_handler("runtime_ops", "_cmd_install"))
 
@@ -621,7 +630,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _add_plan_args(plan: argparse.ArgumentParser) -> None:
     plan.add_argument("goal")
-    plan.add_argument("--root", default=".")
+    plan.add_argument("--root", "--repo", dest="root", default=".")
     plan.add_argument("--seed", default="w11")
     plan.add_argument(
         "--draft-adapter", choices=["codex", "claude", "agy", "gemini", "opencode"]
@@ -693,7 +702,7 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
 
 def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
     flowplan.add_argument("goal")
-    flowplan.add_argument("--root", default=".")
+    flowplan.add_argument("--root", "--repo", dest="root", default=".")
     flowplan.add_argument("--seed", default="w11")
     flowplan.add_argument("--profile", default=None)
     flowplan.add_argument(

@@ -2,8 +2,8 @@ import contextlib
 import io
 import unittest
 
-from orro.__main__ import main as orro_main
-from witnessd.__main__ import ORRO_COMMAND_MAP, _normalize_orro_argv
+from orro.__main__ import ORRO_HELP, main as orro_main
+from witnessd.__main__ import ORRO_COMMAND_MAP, _build_parser, _normalize_orro_argv
 
 
 class OrroCommandSurfaceTests(unittest.TestCase):
@@ -57,6 +57,31 @@ class OrroCommandSurfaceTests(unittest.TestCase):
                 _normalize_orro_argv(["orro", public_command]),
                 [witnessd_command],
             )
+
+    def test_repo_root_alias_spellings_reach_existing_handler_attributes(self) -> None:
+        parser = _build_parser()
+
+        flowplan_repo = parser.parse_args(
+            ["flowplan", "inspect aliases", "--repo", "/tmp/repo-alias"]
+        )
+        flowplan_root = parser.parse_args(
+            ["flowplan", "inspect aliases", "--root", "/tmp/repo-alias"]
+        )
+        scout_root = parser.parse_args(
+            ["scout", "inspect aliases", "--root", "/tmp/root-alias"]
+        )
+        scout_repo = parser.parse_args(
+            ["scout", "inspect aliases", "--repo", "/tmp/root-alias"]
+        )
+
+        self.assertEqual(flowplan_repo.root, flowplan_root.root)
+        self.assertIs(flowplan_repo.func, flowplan_root.func)
+        self.assertEqual(scout_root.repo, scout_repo.repo)
+        self.assertIs(scout_root.func, scout_repo.func)
+
+    def test_doctor_help_distinguishes_runlog_health_from_orro_readiness(self) -> None:
+        self.assertIn("runlog health", _build_parser().format_help())
+        self.assertIn("not runlog health", ORRO_HELP)
 
 
 if __name__ == "__main__":
