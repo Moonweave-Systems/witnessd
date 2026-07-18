@@ -95,11 +95,13 @@ class OrroWorkflowError(ValueError):
         super().__init__(message or code)
 
 
-def compile_workflow_plan(*, goal: str, profile: str) -> dict[str, Any]:
+def compile_workflow_plan(
+    *, goal: str, profile: str, lane_intent: str | None = None
+) -> dict[str, Any]:
     if profile not in PROFILE_NAMES:
         raise OrroWorkflowError(ERR_ORRO_WORKFLOW_PROFILE_UNKNOWN)
     spec = _profile_spec(profile)
-    return {
+    plan = {
         "kind": WORKFLOW_PLAN_KIND,
         "schema_version": WORKFLOW_PLAN_SCHEMA_VERSION,
         "goal": goal,
@@ -111,6 +113,16 @@ def compile_workflow_plan(*, goal: str, profile: str) -> dict[str, Any]:
         "forbidden_assurance_sources": list(FORBIDDEN_ASSURANCE_SOURCES),
         "boundary": dict(BOUNDARY),
     }
+    if lane_intent is not None:
+        if lane_intent not in VALID_LANE_INTENTS:
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_INTENT_INVALID,
+                "workflow plan lane_intent is invalid",
+            )
+        for role in plan["roles"]:
+            if role.get("phase") == "proofrun" and role.get("may_execute") is True:
+                role["lane_intent"] = lane_intent
+    return plan
 
 
 def load_workflow_plan(

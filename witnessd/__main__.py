@@ -904,7 +904,11 @@ def _cmd_plan(args: argparse.Namespace) -> int:
 
     if getattr(args, "profile", None):
         try:
-            workflow_plan = compile_workflow_plan(goal=args.goal, profile=args.profile)
+            workflow_plan = compile_workflow_plan(
+                goal=args.goal,
+                profile=args.profile,
+                lane_intent=getattr(args, "lane_intent", None),
+            )
         except OrroWorkflowError as exc:
             _emit_orro_error(
                 args,
@@ -973,7 +977,11 @@ def _cmd_plan(args: argparse.Namespace) -> int:
         payload["workflow_plan"] = workflow_plan
     if getattr(args, "role_lanes_out", None):
         if workflow_plan is None:
-            workflow_plan = compile_workflow_plan(goal=args.goal, profile="code-change")
+            workflow_plan = compile_workflow_plan(
+                goal=args.goal,
+                profile="code-change",
+                lane_intent=getattr(args, "lane_intent", None),
+            )
             payload["workflow_plan"] = workflow_plan
         rolepack: dict[str, object] | None = None
         try:
@@ -5292,6 +5300,11 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
     flowplan.add_argument("--root", default=".")
     flowplan.add_argument("--seed", default="w11")
     flowplan.add_argument("--profile", default=None)
+    flowplan.add_argument(
+        "--lane-intent",
+        choices=["implementation", "verification-only"],
+        default=None,
+    )
     flowplan.add_argument("--out", default=None)
     flowplan.add_argument("--role-lanes-out", default=None)
     flowplan.add_argument(
