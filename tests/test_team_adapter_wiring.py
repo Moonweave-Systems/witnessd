@@ -9,7 +9,8 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from witnessd.__main__ import _parse_team_lane, _parse_team_merge_group, main
+from witnessd.__main__ import main
+from witnessd.cli.team_ops import _parse_team_lane, _parse_team_merge_group
 from witnessd.eventlog import EventLog
 from witnessd.fanin import DEFAULT_STOP_RULE, _run_adapter_lane, run_team
 from witnessd.signing import gen_operator_keypair

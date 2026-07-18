@@ -8,7 +8,8 @@ import tempfile
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from witnessd.__main__ import _parse_team_lane, main
+from witnessd.__main__ import main
+from witnessd.cli.team_ops import _parse_team_lane
 from witnessd.canonical import canonical_hash
 from witnessd.planner import (
     PlannerError,
