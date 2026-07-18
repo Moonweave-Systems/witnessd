@@ -73,6 +73,7 @@
 ## Hard rules
 
 - Verbatim moves only. If a function turns out to need editing to move (hidden coupling), STOP that task and record it in `DEVIATIONS.md` with the exact coupling; do not improvise a redesign.
+- **Amendment (Task 4 deviation resolution, approved by the verifier):** when a function that STAYS in `__main__` calls a function that MOVES, the staying caller may gain exactly one in-function lazy import of the moved name at its call site (e.g. `_cmd_team_kill` gains `from witnessd.cli.runtime_ops import _cmd_kill` immediately before `return _cmd_kill(args)`). This matches the file's dominant lazy-import idiom, is behavior-identical, and is not a re-export. No other body edits become legal.
 - Never leave a re-export of a moved name in `__main__` (except the 8 `_output` names imported for `__main__`'s own remaining call sites).
 - `main`, `ORRO_COMMANDS`, `ORRO_COMMAND_MAP`, `_normalize_*` stay in `__main__` untouched.
 - No command renames, no output changes, no new features, no docstrings added to moved code.
