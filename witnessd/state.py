@@ -48,13 +48,37 @@ class StateNamespace:
             self._lock_handle.close()
             self._lock_handle = None
 
-    def codex_env(self, base_env: dict[str, str] | None = None) -> dict[str, str]:
+    def adapter_cache_env(
+        self, task_id: str, base_env: dict[str, str] | None = None
+    ) -> dict[str, str]:
         env = dict(base_env or os.environ)
+        cache_dir = self.state_dir / "adapter-cache" / task_id
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        pytest_cache_opt = f"-o cache_dir={cache_dir / 'pytest'}"
+        ambient_pytest_addopts = env.get("PYTEST_ADDOPTS", "").strip()
+        env.update(
+            {
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONPYCACHEPREFIX": str(cache_dir / "pycache"),
+                "RUFF_CACHE_DIR": str(cache_dir / "ruff"),
+                "MYPY_CACHE_DIR": str(cache_dir / "mypy"),
+                "PYTEST_ADDOPTS": " ".join(
+                    value for value in (ambient_pytest_addopts, pytest_cache_opt) if value
+                ),
+            }
+        )
+        return env
+
+    def codex_env(
+        self,
+        task_id: str = "codex",
+        base_env: dict[str, str] | None = None,
+    ) -> dict[str, str]:
+        env = self.adapter_cache_env(task_id, base_env=base_env)
         codex_home = self.state_dir / "codex-home"
         codex_home.mkdir(parents=True, exist_ok=True)
         _seed_codex_auth_from_ambient_home(codex_home, env)
         env["CODEX_HOME"] = str(codex_home)
-        env["PYTHONDONTWRITEBYTECODE"] = "1"
         return env
 
 
