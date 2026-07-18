@@ -175,6 +175,7 @@ def run_claude_critic_lane(
     review_receipt_path: str | None = None,
     log_path: str | None = None,
     timeout_seconds: int = 120,
+    env: dict[str, str] | None = None,
     model: str | None = None,
     role_id: str = "critic",
     lane_id: str = "critic",
@@ -243,6 +244,7 @@ def run_claude_critic_lane(
             capture_output=True,
             check=False,
             timeout=timeout_seconds,
+            env=env,
         )
         exit_code = completed.returncode
         raw_stdout = completed.stdout or b""
@@ -423,6 +425,7 @@ def run_claude_lane(
     transcript_path: str,
     log_path: str | None = None,
     timeout_seconds: int = 120,
+    env: dict[str, str] | None = None,
     model: str | None = None,
     tools: dict[str, Any] | None = None,
     role_id: str | None = None,
@@ -479,6 +482,7 @@ def run_claude_lane(
             capture_output=True,
             check=False,
             timeout=timeout_seconds,
+            env=env,
         )
         exit_code = completed.returncode
         raw_stdout = completed.stdout or b""

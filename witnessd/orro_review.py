@@ -24,11 +24,13 @@ from witnessd.model_declaration import (
     VERIFICATION_REQUESTED_UNCONFIRMED,
     build_model_declaration,
 )
+from witnessd.observer import assert_separated
 from witnessd.orro_workflow import (
     OrroWorkflowError,
     validate_role_lane_plan,
     write_role_lane_plan_binding,
 )
+from witnessd.state import StateNamespace
 
 ERR_ORRO_REVIEW_PLAN_LOAD_FAILED = "ERR_ORRO_REVIEW_PLAN_LOAD_FAILED"
 ERR_ORRO_REVIEW_PLAN_INVALID = "ERR_ORRO_REVIEW_PLAN_INVALID"
@@ -73,6 +75,8 @@ def run_review_role_lane_plan(
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     evidence_root = _review_adapter_evidence_root(repo=repo, run_dir=out_dir)
+    namespace = StateNamespace(str(evidence_root))
+    assert_separated(str(repo), str(namespace.state_dir))
     try:
         role_lane_plan_ref = write_role_lane_plan_binding(
             role_lane_plan=plan,
@@ -90,6 +94,7 @@ def run_review_role_lane_plan(
                 repo=repo,
                 run_dir=out_dir,
                 evidence_root=evidence_root,
+                adapter_env=namespace.adapter_cache_env(str(lane["lane_id"])),
                 claude_binary=claude_binary,
                 agy_binary=agy_binary,
                 gemini_binary=gemini_binary,
@@ -202,6 +207,7 @@ def _run_review_lane(
     repo: Path,
     run_dir: Path,
     evidence_root: Path,
+    adapter_env: dict[str, str],
     claude_binary: str,
     agy_binary: str,
     gemini_binary: str,
@@ -225,6 +231,7 @@ def _run_review_lane(
                 review_receipt_path=str(adapter_evidence_dir / "review-receipt.json"),
                 log_path=str(adapter_evidence_dir / "command-log.json"),
                 timeout_seconds=timeout_seconds,
+                env=adapter_env,
                 model=model_arg,
                 role_id=str(lane["role_id"]),
                 lane_id=lane_id,
@@ -238,6 +245,7 @@ def _run_review_lane(
                 review_receipt_path=str(adapter_evidence_dir / "review-receipt.json"),
                 log_path=str(adapter_evidence_dir / "command-log.json"),
                 timeout_seconds=timeout_seconds,
+                env=adapter_env,
                 model=model_arg,
             )
         elif adapter == "gemini":
@@ -249,6 +257,7 @@ def _run_review_lane(
                 review_receipt_path=str(adapter_evidence_dir / "review-receipt.json"),
                 log_path=str(adapter_evidence_dir / "command-log.json"),
                 timeout_seconds=timeout_seconds,
+                env=adapter_env,
             )
             if model_arg is not None:
                 result = _with_model_declaration(

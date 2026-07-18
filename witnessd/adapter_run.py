@@ -108,6 +108,7 @@ def _run_adapter(
     opencode_binary: str,
     timeout_seconds: int,
     codex_env: dict[str, str] | None = None,
+    adapter_env: dict[str, str] | None = None,
     allowed_touched_files: list[str] | None = None,
     approval_policy: str = "on-request",
     model: str | None = None,
@@ -142,6 +143,7 @@ def _run_adapter(
             transcript_path=transcript_path,
             log_path=log_path,
             timeout_seconds=timeout_seconds,
+            env=adapter_env,
             model=model,
             tools=tools,
             role_id=role_id,
@@ -159,6 +161,7 @@ def _run_adapter(
             ),
             log_path=log_path,
             timeout_seconds=timeout_seconds,
+            env=adapter_env,
             model=model,
         )
     if adapter == "gemini":
@@ -172,6 +175,7 @@ def _run_adapter(
             ),
             log_path=log_path,
             timeout_seconds=timeout_seconds,
+            env=adapter_env,
         )
     if adapter == "opencode":
         return run_opencode_lane(
@@ -181,6 +185,7 @@ def _run_adapter(
             transcript_path=transcript_path,
             log_path=log_path,
             timeout_seconds=timeout_seconds,
+            env=adapter_env,
         )
     raise LaneBlocked("preflight_blocked", f"unknown adapter: {adapter}")
 
@@ -343,7 +348,10 @@ def run_adapter_lane(
                 "allowed_touched_files are outside declared write_scope",
             )
         normalized_tools = normalize_tool_grant(tools) if tools is not None else None
-        codex_env = namespace.codex_env() if adapter == "codex" else None
+        codex_env = namespace.codex_env(task_id) if adapter == "codex" else None
+        adapter_env = (
+            namespace.adapter_cache_env(task_id) if adapter != "codex" else None
+        )
         redaction_context = None
         if capture_profile == CAPTURE_PROFILE_REDACTED:
             redaction_context = build_redaction_context(
@@ -427,6 +435,7 @@ def run_adapter_lane(
             opencode_binary=opencode_binary,
             timeout_seconds=timeout_seconds,
             codex_env=codex_env,
+            adapter_env=adapter_env,
             allowed_touched_files=allowed_touched_files,
             approval_policy=approval_policy,
             model=model,

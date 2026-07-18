@@ -205,6 +205,7 @@ def _run_cli_lane(
     transcript_path: str,
     log_path: str | None,
     timeout_seconds: int,
+    env: dict[str, str] | None = None,
     error_cls: type = AdapterExecutionError,
 ) -> AdapterResult:
     repo = str(Path(sandbox).resolve(strict=False))
@@ -225,6 +226,7 @@ def _run_cli_lane(
             capture_output=True,
             check=False,
             timeout=timeout_seconds,
+            env=env,
         )
         exit_code = completed.returncode
         stdout = completed.stdout

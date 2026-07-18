@@ -167,6 +167,14 @@ side-effect-free, and tool caches (`.pytest_cache`, `.ruff_cache`, and similar)
 should be covered by the target repo's `.gitignore` or redirected outside the
 worktree—any file a check writes is honestly falsified by Depone.
 
+AI adapter execution and review subprocesses receive per-lane Python cache
+shaping under witnessd state outside the worktree:
+`PYTHONDONTWRITEBYTECODE=1`, `PYTHONPYCACHEPREFIX`, `RUFF_CACHE_DIR`,
+`MYPY_CACHE_DIR`, and an appended pytest `-o cache_dir=` option. Snapshot
+observation remains ignore-blind, and review lanes still fail on any real
+touched file. This is best-effort coverage for Python development tools;
+caches from other toolchains remain observed and enforced.
+
 `python3 -m orro next <run-dir> --home .witnessd --json` reads persisted run
 artifacts and recommends the next safe action. It does not run proofcheck,
 launch workers, retry lanes, repair evidence, write handoff, verify evidence,

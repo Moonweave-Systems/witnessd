@@ -12,6 +12,27 @@ from witnessd.state import (
 
 
 class TestStateIsolation(unittest.TestCase):
+    def test_adapter_cache_env_redirects_five_vars_outside_worktree(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as worktree,
+        ):
+            with StateNamespace(root) as namespace:
+                env = namespace.adapter_cache_env(
+                    "lane-1", base_env={"PYTEST_ADDOPTS": "-q"}
+                )
+
+            cache_dir = Path(root) / ".witnessd" / "adapter-cache" / "lane-1"
+            self.assertTrue(cache_dir.is_dir())
+            self.assertEqual(env["PYTHONDONTWRITEBYTECODE"], "1")
+            self.assertEqual(env["PYTHONPYCACHEPREFIX"], str(cache_dir / "pycache"))
+            self.assertEqual(env["RUFF_CACHE_DIR"], str(cache_dir / "ruff"))
+            self.assertEqual(env["MYPY_CACHE_DIR"], str(cache_dir / "mypy"))
+            self.assertEqual(
+                env["PYTEST_ADDOPTS"], f"-q -o cache_dir={cache_dir / 'pytest'}"
+            )
+            self.assertNotIn(Path(worktree).resolve(), cache_dir.resolve().parents)
+
     def test_only_writes_own_namespace(self):
         with (
             tempfile.TemporaryDirectory() as root,
@@ -63,12 +84,22 @@ class TestStateIsolation(unittest.TestCase):
             )
 
             with StateNamespace(root) as namespace:
-                env = namespace.codex_env(base_env={"HOME": fake_home})
+                env = namespace.codex_env(
+                    "codex-lane", base_env={"HOME": fake_home}
+                )
 
             seeded = Path(env["CODEX_HOME"]) / "auth.json"
             self.assertTrue(seeded.exists())
             self.assertEqual(seeded.read_text(encoding="utf-8"), '{"tokens": "secret"}')
             self.assertEqual(stat.S_IMODE(seeded.stat().st_mode), 0o600)
+            cache_dir = Path(root) / ".witnessd" / "adapter-cache" / "codex-lane"
+            self.assertEqual(env["PYTHONDONTWRITEBYTECODE"], "1")
+            self.assertEqual(env["PYTHONPYCACHEPREFIX"], str(cache_dir / "pycache"))
+            self.assertEqual(env["RUFF_CACHE_DIR"], str(cache_dir / "ruff"))
+            self.assertEqual(env["MYPY_CACHE_DIR"], str(cache_dir / "mypy"))
+            self.assertEqual(
+                env["PYTEST_ADDOPTS"], f"-o cache_dir={cache_dir / 'pytest'}"
+            )
             # The ambient auth.json is only ever read, never mutated.
             self.assertEqual(
                 (ambient_codex_home / "auth.json").read_text(encoding="utf-8"),
