@@ -1155,6 +1155,94 @@ class OrroWorkflowTests(unittest.TestCase):
         self.assertEqual(specs[0]["allowed_touched_files"], ["frontend/**", "src/**"])
         self.assertEqual(specs[0]["write_scope"], ["frontend/**", "src/**"])
 
+    def test_declared_lane_intent_reaches_team_spec_and_absent_stays_absent(
+        self,
+    ) -> None:
+        import argparse
+
+        from witnessd.__main__ import _role_lane_plan_team_specs
+
+        workflow_plan = compile_workflow_plan(goal="run checks", profile="code-change")
+        runner = next(
+            role for role in workflow_plan["roles"] if role["role_id"] == "runner"
+        )
+        runner["lane_intent"] = "verification-only"
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan,
+            lane_adapter="codex",
+            rolepack=_runner_rolepack(adapters=["codex"], write_scope=["src/**"]),
+        )
+        args = argparse.Namespace(
+            codex_binary="codex",
+            claude_binary="claude",
+            agy_binary="agy",
+            gemini_binary="gemini",
+            opencode_binary="opencode",
+        )
+
+        self.assertEqual(
+            role_lane_plan["lanes"][0]["lane_intent"], "verification-only"
+        )
+        specs = _role_lane_plan_team_specs(role_lane_plan, args)
+        self.assertEqual(specs[0]["lane_intent"], "verification-only")
+
+        del role_lane_plan["lanes"][0]["lane_intent"]
+        specs = _role_lane_plan_team_specs(role_lane_plan, args)
+        self.assertNotIn("lane_intent", specs[0])
+
+    def test_invalid_lane_intent_fails_closed_during_plan_and_spec_compile(
+        self,
+    ) -> None:
+        import argparse
+
+        from witnessd.__main__ import _role_lane_plan_team_specs
+
+        workflow_plan = compile_workflow_plan(goal="run checks", profile="code-change")
+        runner = next(
+            role for role in workflow_plan["roles"] if role["role_id"] == "runner"
+        )
+        runner["lane_intent"] = "read-only"
+        with self.assertRaises(OrroWorkflowError) as plan_error:
+            compile_role_lane_plan(
+                workflow_plan=workflow_plan,
+                lane_adapter="codex",
+                rolepack=_runner_rolepack(
+                    adapters=["codex"], write_scope=["src/**"]
+                ),
+            )
+        self.assertEqual(
+            plan_error.exception.code, "ERR_ORRO_ROLE_LANE_INTENT_INVALID"
+        )
+
+        valid_workflow = compile_workflow_plan(
+            goal="run checks", profile="code-change"
+        )
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=valid_workflow,
+            lane_adapter="codex",
+            rolepack=_runner_rolepack(adapters=["codex"], write_scope=["src/**"]),
+        )
+        role_lane_plan["lanes"][0]["lane_intent"] = "read-only"
+        args = argparse.Namespace(
+            codex_binary="codex",
+            claude_binary="claude",
+            agy_binary="agy",
+            gemini_binary="gemini",
+            opencode_binary="opencode",
+        )
+        with self.assertRaises(OrroWorkflowError) as spec_error:
+            _role_lane_plan_team_specs(role_lane_plan, args)
+        self.assertEqual(
+            spec_error.exception.code, "ERR_ORRO_ROLE_LANE_INTENT_INVALID"
+        )
+
+        role_lane_plan["lanes"][0]["lane_intent"] = ["verification-only"]
+        with self.assertRaises(OrroWorkflowError) as typed_spec_error:
+            _role_lane_plan_team_specs(role_lane_plan, args)
+        self.assertEqual(
+            typed_spec_error.exception.code, "ERR_ORRO_ROLE_LANE_INTENT_INVALID"
+        )
+
     def test_compile_role_lane_plan_preserves_docs_only_code_change_write_scope(self) -> None:
         workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
         rolepack = _runner_rolepack(adapters=["shell", "codex"], write_scope=["docs/**"])

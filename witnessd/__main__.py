@@ -668,6 +668,23 @@ def _role_lane_plan_team_specs(
 
 
 def _attach_role_capability_team_fields(spec: dict, lane: dict) -> None:
+    from witnessd.orro_workflow import (
+        ERR_ORRO_ROLE_LANE_INTENT_INVALID,
+        VALID_LANE_INTENTS,
+        OrroWorkflowError,
+    )
+
+    lane_intent = lane.get("lane_intent")
+    if lane_intent is not None:
+        if (
+            not isinstance(lane_intent, str)
+            or lane_intent not in VALID_LANE_INTENTS
+        ):
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_INTENT_INVALID,
+                "role-lane lane_intent is invalid",
+            )
+        spec["lane_intent"] = lane_intent
     role_capability = lane.get("role_capability")
     if isinstance(role_capability, dict):
         spec["role_id"] = lane.get("role_id")

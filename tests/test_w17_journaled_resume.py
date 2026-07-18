@@ -96,6 +96,30 @@ class TestW17JournaledResume(unittest.TestCase):
         self.assertEqual(decisions["lane-b"]["attempt"], 2)
         self.assertEqual([item["attempt"] for item in decisions["lane-b"]["attempts"]], [1, 2])
 
+    def test_resume_rederivation_preserves_declared_lane_intent(self):
+        result = self._run_initial(
+            [
+                {
+                    "lane_id": "verification-lane",
+                    "lane_intent": "verification-only",
+                    "region": ["pkg/checked.py"],
+                    "commands": [["sh", "-c", "true"]],
+                }
+            ]
+        )
+
+        resumed = resume_team(
+            str(result["base_dir"]), run_id="team-run", max_parallel=1
+        )
+
+        lane = resumed["ledger"]["lanes"][0]
+        self.assertEqual(lane["lane_intent"], "verification-only")
+        self.assertEqual(lane["touched_files"], [])
+        verdict = build_team_ledger_verdict(
+            resumed["ledger"], base_dir=result["base_dir"]
+        )
+        self.assertEqual(verdict["decision"], "pass")
+
     def test_resume_reruns_tampered_completed_lane_instead_of_trusting_journal(self):
         result = self._run_initial(
             [
