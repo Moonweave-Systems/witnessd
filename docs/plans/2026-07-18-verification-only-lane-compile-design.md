@@ -23,9 +23,9 @@
 | 1 | Add a `check-runner` role to the `verification-only` profile: engine=`witnessd`, phase=`proofrun`, `may_execute=True`, `lane_intent="verification-only"`. Flow gains `proofrun` before `proofcheck`; `engine_calls` gains a proofrun call; `required_gates` gains check-execution gates. `_role` already accepts `lane_intent` (`orro_workflow.py:1484-1503`). | `orro_workflow.py:1366-1391` |
 | 2 | Extend `compile_role_lane_plan` so the `verification-only` profile compiles its proofrun role via a new `_verify_lane_from_role` factory (beside `_role_lane_from_role`/`_review_lane_from_role`/`_critic_lane_from_role`). The Depone `verifier` role (`may_verify=True`, no `may_execute`) is naturally excluded by the existing proofrun+`may_execute` filter. Lane fields: `adapter="shell"` (forced), `region=[]`, `lane_intent="verification-only"`, `may_execute=True`, `may_verify=False`, `raises_assurance=False`, plus `check_commands=[...]`. `summarize_executable_lanes` and `_validate_role_lane` admit the new shape. | `orro_workflow.py:249-278, 296-327, 1111-1148` |
 | 3 | Exempt the verification lane from the write-scope-required check (`ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED` stays for `code-change`; empty region is the *point* here). No auto-synthesized region (unlike docs-change). | `orro_workflow.py:935-941` |
-| 4 | Supply checks explicitly: `flowplan --profile verification-only --check "<cmd>"` (repeatable). **≥1 required** for this profile (fail closed: missing → new structured error); `--check` with any other profile → error. Threads `compile_workflow_plan(check_commands=...)` → plan → lane `check_commands` → team spec `commands`. In the spec builder's shell branch, declared checks replace `_default_team_lane_command` (which *writes* into the region — never used for this lane). | `__main__.py:5311` (flowplan args), `:625-687` (spec builder), `:4557-4566` (default cmd, bypassed) |
+| 4 | Supply checks explicitly: `flowplan --profile verification-only --role-lanes-out ... --check "<cmd>"` (repeatable). **≥1 required when compiling role lanes** for this profile (fail closed); `--check` with any other profile, or without `--role-lanes-out`, → error. Plain workflow-plan-only flowplan (no `--role-lanes-out`) stays valid without checks. Threads `compile_role_lane_plan(check_commands=...)` → lane `check_commands` → team spec `commands` (each check runs as `["sh", "-c", check]`). In the spec builder's shell branch, declared checks replace `_default_team_lane_command` (which *writes* into the region — never used for this lane). The workflow-plan schema itself gains no field. | `__main__.py:5311` (flowplan args), `:625-687` (spec builder), `:4557-4566` (default cmd, bypassed) |
 | 5 | **Core new mechanism:** `run_team` currently audit-and-skips any lane with empty `allowed_touched_files` (`read-only-lane-audit` + `continue`). For lanes whose spec **declares** `lane_intent="verification-only"`, execute instead: create the lane worktree, run the declared checks, seal receipts. Keyed on the declaration, never derived from observed emptiness (anti-circularity rule from the #70 wave). All other claimless lanes keep audit-and-skip byte-identically. | `fanin.py:136-143` |
-| 6 | Observable-work gate for the shell verification lane: the existing `ERR_TEAM_LANE_ZERO_OBSERVABLE_WORK` gate lives only on the adapter path (`fanin.py:1857-1861`; shell emits no `normalized_events`, `adapters/shell.py:133-137`). For a verification-only shell lane, "observable work" = **command receipts**: zero receipts → blocked with `ERR_TEAM_LANE_ZERO_OBSERVABLE_WORK`. `lane_intent` emission into ledger lanes already exists for all builders (#124). | `fanin.py` shell-lane result handling |
+| 6 | Observable work + failure on the shell path need **no new gate** — both are already discharged: (a) every declared check produces a command receipt (`adapters/shell.py:109-115`, even OS errors record exit 127), and check_commands are validated non-empty, so zero-receipt lanes are impossible by construction; (b) any receipt with non-zero exit already flips the lane to `blocked` + `ERR_TEAM_LANE_FAILED` (`fanin.py:1720-1726`). `lane_intent` emission into ledger lanes already exists for all builders (#124). | `fanin.py:1720-1726` (existing, unchanged) |
 
 ## Data flow
 
@@ -45,13 +45,20 @@ proofcheck (Depone, unchanged)
 
 ## Error handling / falsifiability
 
-- Declared check exits non-zero → the lane **fails**, following the existing shell-lane command-failure semantics (no new failure state is invented); verification honestly failing is a first-class outcome, evidence is still sealed, and the failure is visible in receipts and the Depone verdict path.
-- No checks declared → flowplan fails closed (structured error, no lane compiled).
+- Declared check exits non-zero → lane goes `blocked` + `blocked_reason=ERR_TEAM_LANE_FAILED` via the **existing** `_run_write_lane` failure path (`fanin.py:1720-1726`). The Depone contract has only `{"pass", "blocked"}` states (`team_ledger.py:51`) — no new state is invented. Verification honestly failing is a first-class outcome; evidence is still sealed and visible in receipts.
+- No checks declared when compiling role lanes → flowplan fails closed (structured error, no lane compiled). `--check` outside `verification-only`+`--role-lanes-out` → fail closed.
 - Checks mutate the worktree → `changed_files` non-empty → Depone falsification gate blocks (existing, untouched).
-- Nothing ran → zero receipts → `ERR_TEAM_LANE_ZERO_OBSERVABLE_WORK`.
-- AI adapter requested for this profile → fail closed at compile.
+- AI adapter requested for this profile → fail closed at compile. `--lane-intent implementation` combined with the `verification-only` profile → fail closed (contradictory declaration).
+- The lane's `prompt` is a real deterministic description of the declared checks (not the placeholder prefix), so `assert_role_lane_prompts_explicit` needs no exemption.
 
 Both falsifiability gates (witnessd zero-observable-work; Depone mutation) remain enforced; neither is weakened for any other lane kind.
+
+## Documented invariant flip (deliberate, spec-level)
+
+This design **reverses a documented product invariant**: "review-only, verification-only, and default release-readiness role-lane plans cannot launch proofrun." After this change, `verification-only` role-lane plans DO launch proofrun (as claimless deterministic check lanes); `review-only` and default `release-readiness` stay blocked. Every statement of the old invariant is revised in the same change:
+
+- `SPEC3.md:253-254` (SoT), `CLAUDE.md:160`, `SKILL.md:187`, `docs/README.md:120`
+- Pinned tests updated to the new contract: `tests/test_orro_workflow.py:138-154` (profile has no executes call), `:156-172` (phase gate rejects verification-only proofrun), `:410-429` (profile compiles zero lanes), `tests/test_orro_public_flow.py:1588+` (forbidden-profiles loop includes verification-only)
 
 ## Out of scope (v1, deliberate)
 
