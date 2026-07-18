@@ -248,6 +248,7 @@ def compile_role_lane_plan(
     workflow_plan: dict[str, Any],
     lane_adapter: str = "shell",
     tier: str = "quick",
+    lane_timeout_seconds: int | None = None,
     policy: dict[str, Any] | None = None,
     rolepack: dict[str, Any] | None = None,
     check_commands: list[str] | None = None,
@@ -257,6 +258,15 @@ def compile_role_lane_plan(
         raise OrroWorkflowError(
             ERR_ORRO_ROLE_LANE_ADAPTER_UNSUPPORTED,
             f"unsupported ORRO role lane adapter: {lane_adapter}",
+        )
+    if lane_timeout_seconds is not None and (
+        type(lane_timeout_seconds) is not int
+        or lane_timeout_seconds < 1
+        or lane_timeout_seconds > 3600
+    ):
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+            "lane timeout override must be an integer from 1 to 3600",
         )
     profile = str(workflow_plan["profile"])
     if check_commands is not None and profile != "verification-only":
@@ -300,7 +310,13 @@ def compile_role_lane_plan(
             ):
                 lanes.append(
                     _role_lane_from_role(
-                        role, workflow_plan, lane_adapter, tier, policy, rolepack
+                        role,
+                        workflow_plan,
+                        lane_adapter,
+                        tier,
+                        lane_timeout_seconds,
+                        policy,
+                        rolepack,
                     )
                 )
     elif profile == "review-only" and (
@@ -997,6 +1013,7 @@ def _role_lane_from_role(
     workflow_plan: dict[str, Any],
     lane_adapter: str,
     tier: str,
+    lane_timeout_seconds: int | None,
     policy: dict[str, Any] | None,
     rolepack: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -1046,7 +1063,11 @@ def _role_lane_from_role(
         "engine": "witnessd",
         "adapter": resolved_adapter,
         "tier": tier,
-        "timeout_seconds": ROLE_LANE_TIMEOUT_SECONDS_BY_TIER[tier],
+        "timeout_seconds": (
+            lane_timeout_seconds
+            if lane_timeout_seconds is not None
+            else ROLE_LANE_TIMEOUT_SECONDS_BY_TIER[tier]
+        ),
         "region": region,
         "prompt": (
             f"{ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX}{role_id} "

@@ -156,6 +156,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                 workflow_plan=workflow_plan,
                 lane_adapter=args.lane_adapter,
                 tier=args.role_lane_tier,
+                lane_timeout_seconds=getattr(args, "lane_timeout_seconds", None),
                 policy=DEFAULT_MODEL_POLICY if args.model_policy == "default" else None,
                 rolepack=rolepack,
                 check_commands=getattr(args, "check", None),

@@ -1524,6 +1524,65 @@ class OrroWorkflowTests(unittest.TestCase):
             )
             self.assertEqual(runner_lane["lane_intent"], "verification-only")
 
+    def test_flowplan_lane_timeout_override_reaches_execution_lane(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            try:
+                code, _payload = self._flowplan(
+                    [
+                        "fix parser",
+                        "--root",
+                        tmp,
+                        "--profile",
+                        "code-change",
+                        "--role-lanes-out",
+                        str(out),
+                        "--rolepack",
+                        "developer",
+                        "--model-policy",
+                        "default",
+                        "--role-lane-tier",
+                        "agentic",
+                        "--lane-timeout-seconds",
+                        "900",
+                        "--json",
+                    ]
+                )
+            except SystemExit as exc:
+                self.fail(f"flowplan rejected --lane-timeout-seconds: {exc}")
+
+            self.assertEqual(code, 0)
+            role_lane_plan = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(role_lane_plan["lanes"][0]["timeout_seconds"], 900)
+
+    def test_flowplan_lane_timeout_override_fails_closed_out_of_range(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            code, payload = self._flowplan(
+                [
+                    "fix parser",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(out),
+                    "--rolepack",
+                    "developer",
+                    "--model-policy",
+                    "default",
+                    "--lane-timeout-seconds",
+                    "3601",
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(
+                payload["error"]["code"], "ERR_ORRO_ROLE_LANE_PLAN_INVALID"
+            )
+            self.assertFalse(out.exists())
+
     def test_compile_role_lane_plan_preserves_docs_only_code_change_write_scope(self) -> None:
         workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
         rolepack = _runner_rolepack(adapters=["shell", "codex"], write_scope=["docs/**"])
@@ -1554,6 +1613,21 @@ class OrroWorkflowTests(unittest.TestCase):
                 self.assertEqual(
                     role_lane_plan["lanes"][0]["timeout_seconds"], timeout_seconds
                 )
+
+    def test_compile_role_lane_plan_rejects_out_of_range_timeout_override(self) -> None:
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+
+        with self.assertRaises(OrroWorkflowError) as error:
+            compile_role_lane_plan(
+                workflow_plan=workflow_plan,
+                lane_adapter="codex",
+                lane_timeout_seconds=3601,
+                rolepack=_runner_rolepack(
+                    adapters=["codex"], write_scope=["witnessd/**"]
+                ),
+            )
+
+        self.assertEqual(error.exception.code, "ERR_ORRO_ROLE_LANE_PLAN_INVALID")
 
     def test_validate_role_lane_plan_rejects_review_only_vendor_in_execution_lane(
         self,

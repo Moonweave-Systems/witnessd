@@ -731,6 +731,12 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
         help="tier stamped on each compiled role lane (also the model-policy lookup key)",
     )
     flowplan.add_argument(
+        "--lane-timeout-seconds",
+        type=int,
+        default=None,
+        help="override the tier-derived execution lane timeout (1..3600 seconds)",
+    )
+    flowplan.add_argument(
         "--model-policy",
         default="off",
         choices=["off", "default"],
