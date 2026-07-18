@@ -608,6 +608,11 @@ def _role_lane_plan_packets(role_lane_plan: dict[str, object] | None) -> list[di
     for lane in lanes:
         if not isinstance(lane, dict):
             continue
+        if (
+            lane.get("lane_intent") == "verification-only"
+            and not list(lane.get("region") or [])
+        ):
+            continue
         packets.append(
             {
                 "lane_id": lane["lane_id"],
