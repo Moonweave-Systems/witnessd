@@ -3397,6 +3397,8 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
         str(rolepack_path),
         "--json",
     ]
+    if args.verification_only:
+        flowplan_argv += ["--lane-intent", "verification-only"]
     flowplan_code, flowplan_payload, flowplan_error = _invoke_orro_flow_phase(
         flowplan_argv
     )
@@ -4930,6 +4932,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_flow.add_argument("--run-dir", default=None)
     orro_flow.add_argument("--allow-reference-adapter", action="store_true")
     orro_flow.add_argument("--json", action="store_true")
+    orro_flow.add_argument("--verification-only", action="store_true")
     orro_flow.set_defaults(func=_cmd_orro_flow)
 
     isolation = sub.add_parser("isolation", help="isolation contract checks")
