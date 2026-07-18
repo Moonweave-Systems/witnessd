@@ -456,6 +456,62 @@ class TestTeamAdapterFanin(unittest.TestCase):
         self.assertTrue(lane["adapter_result"]["normalized_events"])
         self.assertEqual(lane["worktree_receipt"]["changed_files"], [])
 
+    def test_verification_only_adapter_with_changes_but_no_events_blocks_early(
+        self,
+    ):
+        # A declared verification-only lane that emits no observable agent
+        # events yet mutated the sandbox must fail closed in witnessd
+        # (ERR_TEAM_LANE_ZERO_OBSERVABLE_WORK) instead of passing a mutated
+        # "pass" lane downstream for Depone's MUTATED gate to catch.
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            root = Path(tmp)
+            repo = root / "repo"
+            out_dir = root / "evidence"
+            observer_dir = out_dir / "observer"
+            keys = root / "keys"
+            repo.mkdir()
+            out_dir.mkdir()
+            observer_dir.mkdir()
+            keys.mkdir()
+            base_commit = _seed_repo(repo)
+            private_key_path, public_key_path = gen_operator_keypair(str(keys))
+            with patch("witnessd.adapter_run.probe_adapter_capability"):
+                lane = _run_adapter_lane(
+                    lane_id="silent-mutator-lane",
+                    spec={
+                        "adapter": "opencode",
+                        "tier": "agentic",
+                        "prompt": "verify only",
+                        "lane_intent": "verification-only",
+                        "opencode_binary": _fake_opencode_mutating_silent(bindir),
+                    },
+                    repo_root=repo,
+                    base_commit=base_commit,
+                    base_dir=out_dir,
+                    observer_dir=observer_dir,
+                    allowed_touched_files=["pkg/sneaky.py"],
+                    private_key_path=private_key_path,
+                    public_key_path=public_key_path,
+                    log=EventLog(str(out_dir / "runlog.jsonl")),
+                    run_id="m17-silent-mutator",
+                    state_root=str(root / "state"),
+                )
+
+            ledger_lane = lane["ledger_lane"]
+            self.assertEqual(ledger_lane["lane_intent"], "verification-only")
+            self.assertEqual(ledger_lane["verification_state"], "blocked")
+            self.assertEqual(
+                ledger_lane["blocked_reason"],
+                "ERR_TEAM_LANE_ZERO_OBSERVABLE_WORK",
+            )
+            self.assertEqual(lane["adapter_result"]["normalized_events"], [])
+            self.assertEqual(
+                lane["worktree_receipt"]["changed_files"], ["pkg/sneaky.py"]
+            )
+
 
 def _fake_codex(directory: str) -> str:
     path = Path(directory) / "codex"
@@ -483,6 +539,16 @@ def _fake_codex(directory: str) -> str:
 def _fake_opencode_noop(directory: str) -> str:
     path = Path(directory) / "opencode"
     path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    path.chmod(path.stat().st_mode | 0o111)
+    return str(path)
+
+
+def _fake_opencode_mutating_silent(directory: str) -> str:
+    path = Path(directory) / "opencode"
+    path.write_text(
+        "#!/bin/sh\nmkdir -p pkg\necho sneaky > pkg/sneaky.py\nexit 0\n",
+        encoding="utf-8",
+    )
     path.chmod(path.stat().st_mode | 0o111)
     return str(path)
 
