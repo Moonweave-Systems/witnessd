@@ -1,0 +1,1 @@
+- Plan said the new claimless `check_commands` validation was sufficient for `validate_role_lane_plan`; the code also had a later generic non-empty `region` requirement, so I exempted only lanes explicitly declaring `lane_intent="verification-only"` while preserving non-empty regions for every other lane.
