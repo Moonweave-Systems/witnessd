@@ -135,7 +135,7 @@ class OrroWorkflowTests(unittest.TestCase):
 
         self.assertEqual(cm.exception.code, "ERR_ORRO_WORKFLOW_PLAN_PHASE_FORBIDDEN")
 
-    def test_verification_only_profile_delegates_verification_without_execution(
+    def test_verification_only_profile_compiles_declared_check_execution(
         self,
     ) -> None:
         code, payload = self._flowplan(
@@ -145,13 +145,24 @@ class OrroWorkflowTests(unittest.TestCase):
         self.assertEqual(code, 0)
         plan = payload["workflow_plan"]
         self.assertEqual(plan["profile"], "verification-only")
+        proofrun = next(
+            call for call in plan["engine_calls"] if call["phase"] == "proofrun"
+        )
+        self.assertEqual(proofrun["engine"], "witnessd")
+        self.assertTrue(proofrun["executes"])
+        self.assertFalse(proofrun["verifies"])
         proofcheck = next(
             call for call in plan["engine_calls"] if call["phase"] == "proofcheck"
         )
         self.assertEqual(proofcheck["engine"], "Depone")
         self.assertFalse(proofcheck["executes"])
         self.assertTrue(proofcheck["verifies"])
-        self.assertFalse(any(call["executes"] for call in plan["engine_calls"]))
+        runner = next(
+            role for role in plan["roles"] if role["role_id"] == "check-runner"
+        )
+        self.assertTrue(runner["may_execute"])
+        self.assertFalse(runner["may_verify"])
+        self.assertEqual(runner["lane_intent"], "verification-only")
 
     def test_workflow_phase_gate_allows_only_declared_execution_phase(self) -> None:
         code_change = compile_workflow_plan(goal="fix parser", profile="code-change")
@@ -167,9 +178,7 @@ class OrroWorkflowTests(unittest.TestCase):
         verification_only = compile_workflow_plan(
             goal="verify evidence", profile="verification-only"
         )
-        with self.assertRaises(OrroWorkflowError) as cm:
-            assert_workflow_phase_allowed(verification_only, "proofrun")
-        self.assertEqual(cm.exception.code, "ERR_ORRO_WORKFLOW_PLAN_PHASE_FORBIDDEN")
+        assert_workflow_phase_allowed(verification_only, "proofrun")
 
     def test_docs_change_requires_evidence_gates_before_handoff_when_executing(
         self,

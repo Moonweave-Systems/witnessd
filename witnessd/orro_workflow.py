@@ -1366,6 +1366,15 @@ def _profile_spec(profile: str) -> dict[str, Any]:
         "verification-only": {
             "roles": [
                 _role(
+                    "check-runner",
+                    "run declared verification checks under observation "
+                    "without a write region",
+                    "witnessd",
+                    "proofrun",
+                    may_execute=True,
+                    lane_intent="verification-only",
+                ),
+                _role(
                     "verifier",
                     "verify existing persisted evidence bytes",
                     "Depone",
@@ -1379,12 +1388,15 @@ def _profile_spec(profile: str) -> dict[str, Any]:
                     "handoff",
                 ),
             ],
-            "flow": ["proofcheck", "handoff"],
+            "flow": ["proofrun", "proofcheck", "handoff"],
             "engine_calls": [
+                _call("proofrun", "orro proofrun", "witnessd", executes=True),
                 _call("proofcheck", "orro proofcheck", "Depone", verifies=True),
                 _call("handoff", "orro handoff", "ORRO"),
             ],
             "required_gates": [
+                "verification-only lane runs declared checks with an empty write region",
+                "verification-only lane mutation is falsified by Depone",
                 "proofcheck writes proofcheck-verdict.json",
                 "handoff requires passing bound proofcheck verdict",
             ],
