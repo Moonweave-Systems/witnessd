@@ -19,11 +19,6 @@ def build_evidence_next_verdict(
     }
 
 
-def classify_lane_kind(*, touched_files: list[Any]) -> str:
-    touched = [item for item in touched_files if isinstance(item, str) and item]
-    return "write" if touched else "read-only"
-
-
 def build_team_ledger(
     *,
     leader_objective: str,
@@ -76,7 +71,6 @@ def _self_test() -> None:
     verdict = build_evidence_next_verdict()
     assert verdict["command"] == "evidence-next"
     assert verdict["decision"] == "continue"
-    assert classify_lane_kind(touched_files=[]) == "read-only"
     assert build_team_ledger(
         leader_objective="x",
         leader_id="leader",
