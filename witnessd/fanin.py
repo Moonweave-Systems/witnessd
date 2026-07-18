@@ -836,6 +836,7 @@ def _read_lane_exec_result(
         reason=ERR_TEAM_LANE_EXEC_FAILED
         if exit_code
         else ERR_TEAM_LANE_INDETERMINATE_PARENT_CRASH,
+        lane_intent=job["spec"].get("lane_intent"),
     )
 
 
@@ -883,6 +884,7 @@ def _cancelled_lane(
         adapter=str(spec.get("adapter", "shell")),
         base_commit=base_commit,
         reason=ERR_TEAM_LANE_CANCELLED_FAIL_FAST,
+        lane_intent=spec.get("lane_intent"),
     )
 
 
@@ -1012,6 +1014,7 @@ def run_lane_exec_from_spec(spec_json: str, result_json: str) -> int:
                 write_scope=spec.get("write_scope"),
                 role_id=spec.get("role_id"),
                 role_capability=spec.get("role_capability"),
+                lane_intent=spec.get("lane_intent"),
             )
         exit_code = 0 if not _lane_failed(lane) else 1
     except LaneBlocked as exc:
@@ -1021,6 +1024,7 @@ def run_lane_exec_from_spec(spec_json: str, result_json: str) -> int:
             base_commit=str(payload["base_commit"]),
             reason=exc.reason,
             message=exc.message,
+            lane_intent=spec.get("lane_intent"),
         )
         exit_code = 1
     except Exception as exc:
@@ -1030,6 +1034,7 @@ def run_lane_exec_from_spec(spec_json: str, result_json: str) -> int:
             base_commit=str(payload["base_commit"]),
             reason=ERR_TEAM_LANE_EXEC_FAILED,
             message=str(exc),
+            lane_intent=spec.get("lane_intent"),
         )
         exit_code = 1
     result_path = Path(result_json)
@@ -1619,6 +1624,7 @@ def _run_write_lane(
     write_scope: list[str] | None = None,
     role_id: str | None = None,
     role_capability: str | None = None,
+    lane_intent: str | None = None,
 ) -> dict[str, Any]:
     if write_scope is not None and not write_scope_allows_paths(
         allowed_touched_files, list(write_scope)
@@ -1709,6 +1715,8 @@ def _run_write_lane(
         "worktree_receipt": f"{lane_id}/worktree-lane-receipt.json",
         "evidence_next_verdict": f"{lane_id}/evidence-next-verdict.json",
     }
+    if lane_intent is not None:
+        ledger_lane["lane_intent"] = lane_intent
     if any(
         int(command.get("exit_code", 0)) != 0
         for command in lane_result.get("command_receipts", [])
@@ -1819,6 +1827,7 @@ def _run_adapter_lane(
     )
 
     adapter = str(spec["adapter"])
+    lane_intent = spec.get("lane_intent")
     ledger_lane = {
         "lane_id": lane_id,
         "objective": f"{lane_id} objective",
@@ -1832,6 +1841,8 @@ def _run_adapter_lane(
         "touched_files": receipt["changed_files"],
         "worktree_receipt": f"{lane_id}/worktree-lane-receipt.json",
     }
+    if lane_intent is not None:
+        ledger_lane["lane_intent"] = lane_intent
     verdict = None
     if adapter_command_failed:
         ledger_lane["verification_state"] = "blocked"
@@ -1843,7 +1854,9 @@ def _run_adapter_lane(
             if adapter_timed_out and committed_changes
             else ERR_TEAM_LANE_FAILED
         )
-    elif not result.get("normalized_events") and not receipt["changed_files"]:
+    elif not result.get("normalized_events") and (
+        lane_intent == "verification-only" or not receipt["changed_files"]
+    ):
         ledger_lane["verification_state"] = "blocked"
         ledger_lane["blocked_reason"] = ERR_TEAM_LANE_ZERO_OBSERVABLE_WORK
     else:
@@ -1900,6 +1913,7 @@ def _blocked_adapter_lane(
     base_commit: str,
     reason: str,
     message: str = "",
+    lane_intent: str | None = None,
 ) -> dict[str, Any]:
     ledger_lane = {
         "lane_id": lane_id,
@@ -1914,6 +1928,8 @@ def _blocked_adapter_lane(
         "blocked_reason": reason,
         "touched_files": [],
     }
+    if lane_intent is not None:
+        ledger_lane["lane_intent"] = lane_intent
     if message:
         ledger_lane["blocked_message"] = message
     return {

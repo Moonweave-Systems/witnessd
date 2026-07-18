@@ -119,6 +119,35 @@ class TestTeamFanin(unittest.TestCase):
             self.assertNotIn("role_capability_write_scope", contract)
         self.assertEqual(verify_runlog(result["runlog"])["ok"], True)
 
+    def test_shell_lane_emits_only_declared_lane_intent(self):
+        result = self._run(
+            [
+                {
+                    "lane_id": "declared-lane",
+                    "lane_intent": "verification-only",
+                    "region": ["pkg/declared.py"],
+                    "commands": [["sh", "-c", "true"]],
+                },
+                {
+                    "lane_id": "undeclared-lane",
+                    "region": ["pkg/undeclared.py"],
+                    "commands": [
+                        [
+                            "sh",
+                            "-c",
+                            "mkdir -p pkg && echo implementation > pkg/undeclared.py",
+                        ]
+                    ],
+                },
+            ]
+        )
+
+        lanes = {lane["lane_id"]: lane for lane in result["ledger"]["lanes"]}
+        self.assertEqual(
+            lanes["declared-lane"]["lane_intent"], "verification-only"
+        )
+        self.assertNotIn("lane_intent", lanes["undeclared-lane"])
+
     def test_w3_companion_artifacts_are_audited_in_team_runlog(self):
         result = self._run(
             [

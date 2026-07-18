@@ -36,6 +36,7 @@ ERR_ORRO_ROLE_LANE_PLAN_EMPTY = "ERR_ORRO_ROLE_LANE_PLAN_EMPTY"
 ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT = "ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT"
 ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED = "ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED"
 ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED = "ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED"
+ERR_ORRO_ROLE_LANE_INTENT_INVALID = "ERR_ORRO_ROLE_LANE_INTENT_INVALID"
 ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED = "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED"
 ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION = "ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION"
 
@@ -59,6 +60,7 @@ CLAUDE_CRITIC_CONTRACT = "claude-critic-v2.1"
 EXECUTION_LANE_ADAPTERS = tuple(
     adapter for adapter in ROLE_LANE_ADAPTERS if adapter not in REVIEW_ONLY_ADAPTERS
 )
+VALID_LANE_INTENTS = frozenset({"implementation", "verification-only"})
 
 FORBIDDEN_ASSURANCE_SOURCES = [
     "skill text",
@@ -189,6 +191,15 @@ def validate_workflow_plan(plan: dict[str, Any]) -> None:
             raise OrroWorkflowError(
                 ERR_ORRO_WORKFLOW_PLAN_INVALID,
                 "workflow plan role must not claim assurance",
+            )
+        lane_intent = role.get("lane_intent")
+        if lane_intent is not None and (
+            not isinstance(lane_intent, str)
+            or lane_intent not in VALID_LANE_INTENTS
+        ):
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_INTENT_INVALID,
+                "workflow plan role lane_intent is invalid",
             )
     for call in engine_calls:
         if not isinstance(call, dict):
@@ -947,6 +958,11 @@ def _role_lane_from_role(
         "may_execute": True,
         "may_verify": False,
         "raises_assurance": False,
+        **(
+            {"lane_intent": role["lane_intent"]}
+            if role.get("lane_intent") is not None
+            else {}
+        ),
         **role_capability,
         **extra,
     }
@@ -1003,6 +1019,11 @@ def _review_lane_from_role(
         "may_execute": False,
         "may_verify": False,
         "raises_assurance": False,
+        **(
+            {"lane_intent": role["lane_intent"]}
+            if role.get("lane_intent") is not None
+            else {}
+        ),
         **role_capability,
         **extra,
     }
@@ -1116,6 +1137,14 @@ def _validate_role_lane(lane: Any, *, workflow_profile: str) -> None:
     if lane.get("raises_assurance") is not False:
         raise OrroWorkflowError(
             ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane must not claim assurance"
+        )
+    lane_intent = lane.get("lane_intent")
+    if lane_intent is not None and (
+        not isinstance(lane_intent, str) or lane_intent not in VALID_LANE_INTENTS
+    ):
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_INTENT_INVALID,
+            "role-lane lane_intent is invalid",
         )
     if "model" in lane and (not isinstance(lane["model"], str) or not lane["model"]):
         raise OrroWorkflowError(
@@ -1448,6 +1477,7 @@ def _role(
     *,
     may_execute: bool = False,
     may_verify: bool = False,
+    lane_intent: str | None = None,
 ) -> dict[str, Any]:
     return {
         "role_id": role_id,
@@ -1457,6 +1487,7 @@ def _role(
         "may_execute": may_execute,
         "may_verify": may_verify,
         "raises_assurance": False,
+        **({"lane_intent": lane_intent} if lane_intent is not None else {}),
     }
 
 
