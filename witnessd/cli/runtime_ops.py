@@ -4,11 +4,27 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
-from witnessd.__main__ import _count_pending, _derive_runlog_liveness
 from witnessd.cli._output import _emit_orro_error, _read_runlog
 from witnessd.status import render_status
+
+
+def _count_pending(evidence_dir: str) -> int:
+    if not os.path.isdir(evidence_dir):
+        return 0
+    count = 0
+    for root, _dirs, files in os.walk(evidence_dir):
+        count += sum(1 for name in files if name == "capture-manifest.json")
+    return count
+
+
+def _derive_runlog_liveness(path: str) -> dict[str, str]:
+    from witnessd.liveness import derive_liveness
+
+    records = _read_runlog(path)
+    return derive_liveness(records, now_monotonic=time.monotonic())
 
 
 def _cmd_status(args: argparse.Namespace) -> int:
