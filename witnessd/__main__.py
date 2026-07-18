@@ -4024,6 +4024,13 @@ def _team_go_reference_adapter_lanes(
             and lane.get("may_execute") is True
             and lane.get("adapter") == "shell"
         ):
+            checks = lane.get("check_commands")
+            if (
+                lane.get("lane_intent") == "verification-only"
+                and isinstance(checks, list)
+                and checks
+            ):
+                continue
             reference_lanes.append(
                 {
                     "lane_id": lane.get("lane_id"),
