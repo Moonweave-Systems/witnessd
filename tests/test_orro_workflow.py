@@ -1261,6 +1261,33 @@ class OrroWorkflowTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, "ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED")
 
+    def test_verification_lane_spec_runs_declared_checks_not_default_write(self) -> None:
+        import argparse
+
+        from witnessd.__main__ import _role_lane_plan_team_specs
+
+        plan = compile_workflow_plan(goal="run checks", profile="verification-only")
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=plan, check_commands=["/usr/bin/true", "echo observed"]
+        )
+        args = argparse.Namespace(
+            codex_binary="codex",
+            claude_binary="claude",
+            agy_binary="agy",
+            gemini_binary="gemini",
+            opencode_binary="opencode",
+        )
+
+        specs = _role_lane_plan_team_specs(role_lane_plan, args)
+
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(specs[0]["region"], [])
+        self.assertEqual(specs[0]["lane_intent"], "verification-only")
+        self.assertEqual(
+            specs[0]["commands"],
+            [["sh", "-c", "/usr/bin/true"], ["sh", "-c", "echo observed"]],
+        )
+
     def test_role_lane_plan_team_specs_preserves_glob_write_scope_region(self) -> None:
         import argparse
 

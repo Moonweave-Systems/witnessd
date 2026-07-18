@@ -638,10 +638,21 @@ def _role_lane_plan_team_specs(
         adapter = str(lane["adapter"])
         region = list(lane["region"])
         if adapter == "shell":
+            checks = lane.get("check_commands")
+            if (
+                lane.get("lane_intent") == "verification-only"
+                and isinstance(checks, list)
+                and checks
+            ):
+                commands = [["sh", "-c", str(check)] for check in checks]
+            else:
+                commands = [
+                    _default_team_lane_command(str(lane["lane_id"]), region)
+                ]
             spec = {
                 "lane_id": lane["lane_id"],
                 "region": region,
-                "commands": [_default_team_lane_command(str(lane["lane_id"]), region)],
+                "commands": commands,
             }
             _attach_role_capability_team_fields(spec, lane)
             specs.append(spec)
