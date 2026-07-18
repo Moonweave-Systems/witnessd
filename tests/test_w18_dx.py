@@ -10,6 +10,7 @@ from pathlib import Path
 
 import witnessd.__main__ as witnessd_cli
 import witnessd.cli.runtime_ops as runtime_ops
+from witnessd.cli import run
 import witnessd.distribution as distribution
 from witnessd.__main__ import main
 from witnessd.distribution import ERR_WITNESSD_DEPONE_PIN_MISMATCH
@@ -118,7 +119,7 @@ class W18DxCliTests(unittest.TestCase):
         runtime_sources = "\n".join(
             inspect.getsource(obj)
             for obj in (
-                witnessd_cli._cmd_run_goal,
+                run._cmd_run_goal,
                 runtime_ops._cmd_verify,
                 distribution.run_depone_team_ledger,
             )

@@ -1264,7 +1264,7 @@ class OrroWorkflowTests(unittest.TestCase):
     def test_verification_lane_spec_runs_declared_checks_not_default_write(self) -> None:
         import argparse
 
-        from witnessd.__main__ import _role_lane_plan_team_specs
+        from witnessd.cli.run import _role_lane_plan_team_specs
 
         plan = compile_workflow_plan(goal="run checks", profile="verification-only")
         role_lane_plan = compile_role_lane_plan(
@@ -1291,7 +1291,7 @@ class OrroWorkflowTests(unittest.TestCase):
     def test_role_lane_plan_team_specs_preserves_glob_write_scope_region(self) -> None:
         import argparse
 
-        from witnessd.__main__ import _role_lane_plan_team_specs
+        from witnessd.cli.run import _role_lane_plan_team_specs
 
         workflow_plan = compile_workflow_plan(goal="fix frontend", profile="code-change")
         rolepack = {
@@ -1337,7 +1337,7 @@ class OrroWorkflowTests(unittest.TestCase):
     ) -> None:
         import argparse
 
-        from witnessd.__main__ import _role_lane_plan_team_specs
+        from witnessd.cli.run import _role_lane_plan_team_specs
 
         workflow_plan = compile_workflow_plan(
             goal="run checks",
@@ -1393,7 +1393,7 @@ class OrroWorkflowTests(unittest.TestCase):
     ) -> None:
         import argparse
 
-        from witnessd.__main__ import _role_lane_plan_team_specs
+        from witnessd.cli.run import _role_lane_plan_team_specs
 
         with self.assertRaises(OrroWorkflowError) as producer_error:
             compile_workflow_plan(
@@ -1525,7 +1525,7 @@ class OrroWorkflowTests(unittest.TestCase):
     def test_role_lane_plan_team_specs_carries_policy_model_through(self) -> None:
         import argparse
 
-        from witnessd.__main__ import _role_lane_plan_team_specs
+        from witnessd.cli.run import _role_lane_plan_team_specs
 
         workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
         role_lane_plan = compile_role_lane_plan(
@@ -1553,7 +1553,7 @@ class OrroWorkflowTests(unittest.TestCase):
     def test_role_lane_plan_team_specs_carries_granted_tools(self) -> None:
         import argparse
 
-        from witnessd.__main__ import _role_lane_plan_team_specs
+        from witnessd.cli.run import _role_lane_plan_team_specs
         from witnessd.role_capability import DEFAULT_DEVELOPER_ROLEPACK
 
         workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
@@ -1580,7 +1580,7 @@ class OrroWorkflowTests(unittest.TestCase):
     ) -> None:
         import argparse
 
-        from witnessd.__main__ import _role_lane_plan_team_specs
+        from witnessd.cli.run import _role_lane_plan_team_specs
 
         workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
         role_lane_plan = compile_role_lane_plan(
