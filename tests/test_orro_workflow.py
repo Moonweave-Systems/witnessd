@@ -12,6 +12,7 @@ from witnessd.__main__ import main
 from witnessd.model_policy import DEFAULT_MODEL_POLICY
 from witnessd.orro_workflow import (
     REVIEW_ONLY_ADAPTERS,
+    ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX,
     OrroWorkflowError,
     assert_workflow_phase_allowed,
     compile_role_lane_plan,
@@ -135,7 +136,7 @@ class OrroWorkflowTests(unittest.TestCase):
 
         self.assertEqual(cm.exception.code, "ERR_ORRO_WORKFLOW_PLAN_PHASE_FORBIDDEN")
 
-    def test_verification_only_profile_delegates_verification_without_execution(
+    def test_verification_only_profile_compiles_declared_check_execution(
         self,
     ) -> None:
         code, payload = self._flowplan(
@@ -145,13 +146,24 @@ class OrroWorkflowTests(unittest.TestCase):
         self.assertEqual(code, 0)
         plan = payload["workflow_plan"]
         self.assertEqual(plan["profile"], "verification-only")
+        proofrun = next(
+            call for call in plan["engine_calls"] if call["phase"] == "proofrun"
+        )
+        self.assertEqual(proofrun["engine"], "witnessd")
+        self.assertTrue(proofrun["executes"])
+        self.assertFalse(proofrun["verifies"])
         proofcheck = next(
             call for call in plan["engine_calls"] if call["phase"] == "proofcheck"
         )
         self.assertEqual(proofcheck["engine"], "Depone")
         self.assertFalse(proofcheck["executes"])
         self.assertTrue(proofcheck["verifies"])
-        self.assertFalse(any(call["executes"] for call in plan["engine_calls"]))
+        runner = next(
+            role for role in plan["roles"] if role["role_id"] == "check-runner"
+        )
+        self.assertTrue(runner["may_execute"])
+        self.assertFalse(runner["may_verify"])
+        self.assertEqual(runner["lane_intent"], "verification-only")
 
     def test_workflow_phase_gate_allows_only_declared_execution_phase(self) -> None:
         code_change = compile_workflow_plan(goal="fix parser", profile="code-change")
@@ -167,9 +179,7 @@ class OrroWorkflowTests(unittest.TestCase):
         verification_only = compile_workflow_plan(
             goal="verify evidence", profile="verification-only"
         )
-        with self.assertRaises(OrroWorkflowError) as cm:
-            assert_workflow_phase_allowed(verification_only, "proofrun")
-        self.assertEqual(cm.exception.code, "ERR_ORRO_WORKFLOW_PLAN_PHASE_FORBIDDEN")
+        assert_workflow_phase_allowed(verification_only, "proofrun")
 
     def test_docs_change_requires_evidence_gates_before_handoff_when_executing(
         self,
@@ -407,26 +417,166 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertFalse(lane["may_verify"])
             self.assertEqual(lane["phase"], "review")
 
-    def test_flowplan_role_lanes_profiles_block_non_execution_profiles(self) -> None:
-        for profile in ("verification-only", "release-readiness"):
-            with self.subTest(profile=profile), tempfile.TemporaryDirectory() as tmp:
-                out = Path(tmp) / "role-lane-plan.json"
-                code, _payload = self._flowplan(
-                    [
-                        "review safely",
-                        "--root",
-                        tmp,
-                        "--profile",
-                        profile,
-                        "--role-lanes-out",
-                        str(out),
-                    ]
-                )
+    def test_flowplan_role_lanes_release_readiness_stays_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            code, _payload = self._flowplan(
+                [
+                    "review safely",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "release-readiness",
+                    "--role-lanes-out",
+                    str(out),
+                ]
+            )
 
-                self.assertEqual(code, 0)
-                role_lanes = json.loads(out.read_text(encoding="utf-8"))
-                self.assertFalse(role_lanes["execution_allowed"])
-                self.assertEqual(role_lanes["lanes"], [])
+            self.assertEqual(code, 0)
+            role_lanes = json.loads(out.read_text(encoding="utf-8"))
+            self.assertFalse(role_lanes["execution_allowed"])
+            self.assertEqual(role_lanes["lanes"], [])
+
+    def test_verification_only_role_lanes_compile_claimless_check_lane(self) -> None:
+        plan = compile_workflow_plan(goal="run checks", profile="verification-only")
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=plan,
+            check_commands=["/usr/bin/true", "echo observed"],
+        )
+
+        self.assertTrue(role_lane_plan["execution_allowed"])
+        self.assertEqual(len(role_lane_plan["lanes"]), 1)
+        lane = role_lane_plan["lanes"][0]
+        self.assertEqual(lane["role_id"], "check-runner")
+        self.assertEqual(lane["adapter"], "shell")
+        self.assertEqual(lane["region"], [])
+        self.assertEqual(lane["lane_intent"], "verification-only")
+        self.assertEqual(lane["check_commands"], ["/usr/bin/true", "echo observed"])
+        self.assertTrue(lane["may_execute"])
+        self.assertFalse(lane["may_verify"])
+        self.assertFalse(lane["raises_assurance"])
+        self.assertFalse(
+            lane["prompt"].startswith(ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX)
+        )
+
+    def test_verification_only_role_lanes_require_checks(self) -> None:
+        plan = compile_workflow_plan(goal="run checks", profile="verification-only")
+        with self.assertRaises(OrroWorkflowError) as cm:
+            compile_role_lane_plan(workflow_plan=plan)
+        self.assertEqual(cm.exception.code, "ERR_ORRO_VERIFICATION_CHECK_REQUIRED")
+
+        with self.assertRaises(OrroWorkflowError) as cm:
+            compile_role_lane_plan(workflow_plan=plan, check_commands=["  "])
+        self.assertEqual(cm.exception.code, "ERR_ORRO_VERIFICATION_CHECK_REQUIRED")
+
+    def test_verification_only_role_lanes_reject_ai_adapters(self) -> None:
+        plan = compile_workflow_plan(goal="run checks", profile="verification-only")
+        with self.assertRaises(OrroWorkflowError) as cm:
+            compile_role_lane_plan(
+                workflow_plan=plan,
+                lane_adapter="codex",
+                check_commands=["/usr/bin/true"],
+            )
+        self.assertEqual(cm.exception.code, "ERR_ORRO_ROLE_LANE_ADAPTER_UNSUPPORTED")
+
+    def test_check_commands_rejected_outside_verification_only(self) -> None:
+        plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        with self.assertRaises(OrroWorkflowError) as cm:
+            compile_role_lane_plan(
+                workflow_plan=plan, check_commands=["/usr/bin/true"]
+            )
+        self.assertEqual(cm.exception.code, "ERR_ORRO_VERIFICATION_CHECK_UNSUPPORTED")
+
+    def test_verification_only_profile_rejects_implementation_intent(self) -> None:
+        with self.assertRaises(OrroWorkflowError) as cm:
+            compile_workflow_plan(
+                goal="run checks",
+                profile="verification-only",
+                lane_intent="implementation",
+            )
+        self.assertEqual(cm.exception.code, "ERR_ORRO_ROLE_LANE_INTENT_INVALID")
+
+    def test_claimless_verification_lane_survives_write_and_load(self) -> None:
+        plan = compile_workflow_plan(goal="run checks", profile="verification-only")
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=plan, check_commands=["/usr/bin/true"]
+        )
+        validate_role_lane_plan(role_lane_plan)
+
+        stripped = deepcopy(role_lane_plan)
+        del stripped["lanes"][0]["check_commands"]
+        with self.assertRaises(OrroWorkflowError) as cm:
+            validate_role_lane_plan(stripped)
+        self.assertEqual(cm.exception.code, "ERR_ORRO_VERIFICATION_CHECK_REQUIRED")
+
+    def test_flowplan_check_flag_compiles_verification_lane(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            code, _payload = self._flowplan(
+                [
+                    "run checks",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "verification-only",
+                    "--role-lanes-out",
+                    str(out),
+                    "--check",
+                    "/usr/bin/true",
+                    "--check",
+                    "echo observed",
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            role_lanes = json.loads(out.read_text(encoding="utf-8"))
+            self.assertTrue(role_lanes["execution_allowed"])
+            self.assertEqual(
+                role_lanes["lanes"][0]["check_commands"],
+                ["/usr/bin/true", "echo observed"],
+            )
+
+    def test_flowplan_verification_only_role_lanes_require_check_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            code, payload = self._flowplan(
+                [
+                    "run checks",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "verification-only",
+                    "--role-lanes-out",
+                    str(out),
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(
+                payload["error"]["code"], "ERR_ORRO_VERIFICATION_CHECK_REQUIRED"
+            )
+            self.assertFalse(out.exists())
+
+    def test_flowplan_check_flag_requires_verification_role_lanes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            code, payload = self._flowplan(
+                [
+                    "run checks",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "verification-only",
+                    "--check",
+                    "/usr/bin/true",
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 2)
+            self.assertEqual(
+                payload["error"]["code"], "ERR_ORRO_VERIFICATION_CHECK_UNSUPPORTED"
+            )
 
     def test_flowplan_role_lanes_docs_change_is_executable_plan_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1110,6 +1260,33 @@ class OrroWorkflowTests(unittest.TestCase):
             compile_role_lane_plan(workflow_plan=workflow_plan, rolepack=rolepack)
 
         self.assertEqual(ctx.exception.code, "ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED")
+
+    def test_verification_lane_spec_runs_declared_checks_not_default_write(self) -> None:
+        import argparse
+
+        from witnessd.__main__ import _role_lane_plan_team_specs
+
+        plan = compile_workflow_plan(goal="run checks", profile="verification-only")
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=plan, check_commands=["/usr/bin/true", "echo observed"]
+        )
+        args = argparse.Namespace(
+            codex_binary="codex",
+            claude_binary="claude",
+            agy_binary="agy",
+            gemini_binary="gemini",
+            opencode_binary="opencode",
+        )
+
+        specs = _role_lane_plan_team_specs(role_lane_plan, args)
+
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(specs[0]["region"], [])
+        self.assertEqual(specs[0]["lane_intent"], "verification-only")
+        self.assertEqual(
+            specs[0]["commands"],
+            [["sh", "-c", "/usr/bin/true"], ["sh", "-c", "echo observed"]],
+        )
 
     def test_role_lane_plan_team_specs_preserves_glob_write_scope_region(self) -> None:
         import argparse

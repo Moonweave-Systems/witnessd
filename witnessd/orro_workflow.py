@@ -37,6 +37,8 @@ ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT = "ERR_ORRO_ROLE_LANE_PLACEHOLDER_PROMPT"
 ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED = "ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED"
 ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED = "ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED"
 ERR_ORRO_ROLE_LANE_INTENT_INVALID = "ERR_ORRO_ROLE_LANE_INTENT_INVALID"
+ERR_ORRO_VERIFICATION_CHECK_REQUIRED = "ERR_ORRO_VERIFICATION_CHECK_REQUIRED"
+ERR_ORRO_VERIFICATION_CHECK_UNSUPPORTED = "ERR_ORRO_VERIFICATION_CHECK_UNSUPPORTED"
 ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED = "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED"
 ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION = "ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION"
 
@@ -118,6 +120,11 @@ def compile_workflow_plan(
             raise OrroWorkflowError(
                 ERR_ORRO_ROLE_LANE_INTENT_INVALID,
                 "workflow plan lane_intent is invalid",
+            )
+        if lane_intent == "implementation" and profile == "verification-only":
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_INTENT_INVALID,
+                "verification-only profile cannot declare implementation lane intent",
             )
         for role in plan["roles"]:
             if role.get("phase") == "proofrun" and role.get("may_execute") is True:
@@ -238,6 +245,7 @@ def compile_role_lane_plan(
     tier: str = "quick",
     policy: dict[str, Any] | None = None,
     rolepack: dict[str, Any] | None = None,
+    check_commands: list[str] | None = None,
 ) -> dict[str, Any]:
     validate_workflow_plan(workflow_plan)
     if lane_adapter not in ROLE_LANE_ADAPTERS:
@@ -246,9 +254,39 @@ def compile_role_lane_plan(
             f"unsupported ORRO role lane adapter: {lane_adapter}",
         )
     profile = str(workflow_plan["profile"])
-    execution_allowed = profile in {"code-change", "docs-change"}
+    if check_commands is not None and profile != "verification-only":
+        raise OrroWorkflowError(
+            ERR_ORRO_VERIFICATION_CHECK_UNSUPPORTED,
+            "check commands are only supported by the verification-only profile",
+        )
+    execution_allowed = profile in {
+        "code-change",
+        "docs-change",
+        "verification-only",
+    }
     lanes: list[dict[str, Any]] = []
-    if execution_allowed:
+    if profile == "verification-only":
+        if lane_adapter != "shell":
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_ADAPTER_UNSUPPORTED,
+                "verification-only lanes are deterministic shell lanes only",
+            )
+        checks = _normalized_check_commands(check_commands)
+        if not checks:
+            raise OrroWorkflowError(
+                ERR_ORRO_VERIFICATION_CHECK_REQUIRED,
+                "verification-only role lanes require at least one check command",
+            )
+        for role in workflow_plan["roles"]:
+            if (
+                isinstance(role, dict)
+                and role.get("phase") == "proofrun"
+                and role.get("may_execute") is True
+            ):
+                lanes.append(
+                    _verify_lane_from_role(role, workflow_plan, tier, checks)
+                )
+    elif execution_allowed:
         for role in workflow_plan["roles"]:
             if (
                 isinstance(role, dict)
@@ -907,6 +945,48 @@ def _role_capability_lane_fields(grant: RoleCapabilityGrant) -> dict[str, Any]:
     }
 
 
+def _normalized_check_commands(check_commands: list[str] | None) -> list[str]:
+    if check_commands is None:
+        return []
+    return [
+        check
+        for check in check_commands
+        if isinstance(check, str) and check.strip()
+    ]
+
+
+def _verify_lane_from_role(
+    role: dict[str, Any],
+    workflow_plan: dict[str, Any],
+    tier: str,
+    check_commands: list[str],
+) -> dict[str, Any]:
+    role_id = str(role["role_id"])
+    digest = hashlib.sha256(
+        f"{workflow_plan['goal']}:verification-only:{role_id}:shell".encode("utf-8")
+    ).hexdigest()[:12]
+    return {
+        "lane_id": f"{role_id}-{digest}",
+        "role_id": role_id,
+        "role_purpose": role.get("purpose", ""),
+        "phase": "proofrun",
+        "engine": "witnessd",
+        "adapter": "shell",
+        "tier": tier,
+        "region": [],
+        "prompt": (
+            "Run declared verification checks under observation: "
+            + "; ".join(check_commands)
+        ),
+        "budget": {"max_tokens": 0, "max_usd": 0.0, "max_depth": 1},
+        "may_execute": True,
+        "may_verify": False,
+        "raises_assurance": False,
+        "lane_intent": "verification-only",
+        "check_commands": list(check_commands),
+    }
+
+
 def _role_lane_from_role(
     role: dict[str, Any],
     workflow_plan: dict[str, Any],
@@ -1158,6 +1238,19 @@ def _validate_role_lane(lane: Any, *, workflow_profile: str) -> None:
             ERR_ORRO_ROLE_LANE_INTENT_INVALID,
             "role-lane lane_intent is invalid",
         )
+    if lane_intent == "verification-only" and not list(lane.get("region") or []):
+        checks = lane.get("check_commands")
+        if (
+            not isinstance(checks, list)
+            or not checks
+            or not all(
+                isinstance(check, str) and check.strip() for check in checks
+            )
+        ):
+            raise OrroWorkflowError(
+                ERR_ORRO_VERIFICATION_CHECK_REQUIRED,
+                "claimless verification-only lane requires non-empty check_commands",
+            )
     if "model" in lane and (not isinstance(lane["model"], str) or not lane["model"]):
         raise OrroWorkflowError(
             ERR_ORRO_ROLE_LANE_PLAN_INVALID,
@@ -1220,7 +1313,7 @@ def _validate_role_lane(lane: Any, *, workflow_profile: str) -> None:
     region = lane.get("region")
     if (
         not isinstance(region, list)
-        or not region
+        or (lane_intent != "verification-only" and not region)
         or not all(isinstance(item, str) and item for item in region)
     ):
         raise OrroWorkflowError(
@@ -1366,6 +1459,15 @@ def _profile_spec(profile: str) -> dict[str, Any]:
         "verification-only": {
             "roles": [
                 _role(
+                    "check-runner",
+                    "run declared verification checks under observation "
+                    "without a write region",
+                    "witnessd",
+                    "proofrun",
+                    may_execute=True,
+                    lane_intent="verification-only",
+                ),
+                _role(
                     "verifier",
                     "verify existing persisted evidence bytes",
                     "Depone",
@@ -1379,12 +1481,15 @@ def _profile_spec(profile: str) -> dict[str, Any]:
                     "handoff",
                 ),
             ],
-            "flow": ["proofcheck", "handoff"],
+            "flow": ["proofrun", "proofcheck", "handoff"],
             "engine_calls": [
+                _call("proofrun", "orro proofrun", "witnessd", executes=True),
                 _call("proofcheck", "orro proofcheck", "Depone", verifies=True),
                 _call("handoff", "orro handoff", "ORRO"),
             ],
             "required_gates": [
+                "verification-only lane runs declared checks with an empty write region",
+                "verification-only lane mutation is falsified by Depone",
                 "proofcheck writes proofcheck-verdict.json",
                 "handoff requires passing bound proofcheck verdict",
             ],

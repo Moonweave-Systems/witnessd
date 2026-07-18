@@ -134,13 +134,20 @@ def run_team(
             claimed_lanes.append(lane_id)
 
             if not allowed_touched_files:
+                if spec.get("lane_intent") != "verification-only":
+                    append_runlog(
+                        log,
+                        run_id,
+                        "read-only-lane-audit",
+                        payload={"lane_id": lane_id, "commands": commands},
+                    )
+                    continue
                 append_runlog(
                     log,
                     run_id,
-                    "read-only-lane-audit",
+                    "verification-only-claimless-lane",
                     payload={"lane_id": lane_id, "commands": commands},
                 )
-                continue
 
             runnable.append(
                 {

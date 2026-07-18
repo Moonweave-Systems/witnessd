@@ -608,6 +608,11 @@ def _role_lane_plan_packets(role_lane_plan: dict[str, object] | None) -> list[di
     for lane in lanes:
         if not isinstance(lane, dict):
             continue
+        if (
+            lane.get("lane_intent") == "verification-only"
+            and not list(lane.get("region") or [])
+        ):
+            continue
         packets.append(
             {
                 "lane_id": lane["lane_id"],
@@ -638,10 +643,21 @@ def _role_lane_plan_team_specs(
         adapter = str(lane["adapter"])
         region = list(lane["region"])
         if adapter == "shell":
+            checks = lane.get("check_commands")
+            if (
+                lane.get("lane_intent") == "verification-only"
+                and isinstance(checks, list)
+                and checks
+            ):
+                commands = [["sh", "-c", str(check)] for check in checks]
+            else:
+                commands = [
+                    _default_team_lane_command(str(lane["lane_id"]), region)
+                ]
             spec = {
                 "lane_id": lane["lane_id"],
                 "region": region,
-                "commands": [_default_team_lane_command(str(lane["lane_id"]), region)],
+                "commands": commands,
             }
             _attach_role_capability_team_fields(spec, lane)
             specs.append(spec)
@@ -917,6 +933,16 @@ def _cmd_plan(args: argparse.Namespace) -> int:
             )
             return 2
 
+    if getattr(args, "check", None) and not getattr(args, "role_lanes_out", None):
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_VERIFICATION_CHECK_UNSUPPORTED",
+            message=(
+                "--check requires --role-lanes-out with --profile verification-only"
+            ),
+        )
+        return 2
+
     if args.draft_adapter:
         draft_root = f"{root.rstrip(os.sep)}-witnessd-plan-draft"
         draft_out = args.draft_out or os.path.join(draft_root, "evidence")
@@ -1018,6 +1044,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                 tier=args.role_lane_tier,
                 policy=DEFAULT_MODEL_POLICY if args.model_policy == "default" else None,
                 rolepack=rolepack,
+                check_commands=getattr(args, "check", None),
             )
             role_lane_plan_ref = write_role_lane_plan(
                 Path(args.role_lanes_out).resolve(strict=False),
@@ -3997,6 +4024,13 @@ def _team_go_reference_adapter_lanes(
             and lane.get("may_execute") is True
             and lane.get("adapter") == "shell"
         ):
+            checks = lane.get("check_commands")
+            if (
+                lane.get("lane_intent") == "verification-only"
+                and isinstance(checks, list)
+                and checks
+            ):
+                continue
             reference_lanes.append(
                 {
                     "lane_id": lane.get("lane_id"),
@@ -5312,6 +5346,13 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
         "--lane-intent",
         choices=["implementation", "verification-only"],
         default=None,
+    )
+    flowplan.add_argument(
+        "--check",
+        action="append",
+        default=None,
+        help="declared verification check command for verification-only role "
+        "lanes (repeatable; requires --role-lanes-out)",
     )
     flowplan.add_argument("--out", default=None)
     flowplan.add_argument("--role-lanes-out", default=None)

@@ -250,8 +250,12 @@ hash binding, the workflow phase gate, and `execution_allowed` before any run
 directory is created, then executes through existing witnessd team machinery.
 The resulting run may contain `role-lane-plan.json` and
 `role-lane-plan-binding.json`; proofcheck and handoff preserve those references
-for review context only. `review-only`, `verification-only`, and default
-`release-readiness` role-lane plans cannot launch proofrun.
+for review context only. `review-only` and default `release-readiness` role-lane
+plans cannot launch proofrun. `verification-only` role-lane plans compile
+declared shell check lanes (`flowplan --check`, repeatable) with an empty write
+region; proofrun executes those checks under observation, a non-zero check exit
+blocks the lane, and any mutation is falsified by Depone
+(`ERR_TEAM_LEDGER_VERIFICATION_LANE_MUTATED`).
 
 `orro next <run-dir> --home <home> --json` is the non-executing continuation
 gate before future `orro auto`. It reads persisted artifacts and reports the

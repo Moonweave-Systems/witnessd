@@ -116,8 +116,13 @@ formal `orro handoff` still requires a passing bound proofcheck verdict.
 `flowplan --role-lanes-out <path>` also writes an `orro-role-lane-plan` that
 maps executable roles to witnessd team lanes. `proofrun --role-lane-plan <path>`
 validates the hash binding and execution gate, then reuses existing witnessd
-team execution. Role-lane plans are executable intent, not proof; review-only
-and verification-only plans cannot launch proofrun.
+team execution. Role-lane plans are executable intent, not proof. `review-only`
+and default `release-readiness` role-lane plans cannot launch proofrun.
+`verification-only` role-lane plans compile declared shell check lanes
+(`flowplan --check`, repeatable) with an empty write region; proofrun executes
+those checks under observation, a non-zero check exit blocks the lane, and any
+mutation is falsified by Depone
+(`ERR_TEAM_LEDGER_VERIFICATION_LANE_MUTATED`).
 
 See [`orro-role-lane-plan.md`](orro-role-lane-plan.md) for the artifact
 contract.

@@ -182,6 +182,7 @@ class OrroPublicFlowTests(unittest.TestCase):
         profile: str = "code-change",
         explicit_prompt: bool = True,
         lane_adapter: str = "shell",
+        checks: list[str] | None = None,
     ) -> Path:
         out = root / "role-lane-plan.json"
         rolepack = None
@@ -194,6 +195,9 @@ class OrroPublicFlowTests(unittest.TestCase):
         rolepack_args = (
             ["--rolepack-file", str(rolepack)] if rolepack is not None else []
         )
+        check_args = [
+            item for check in checks or [] for item in ("--check", check)
+        ]
         stdout = io.StringIO()
         with redirect_stdout(stdout):
             code = main(
@@ -209,6 +213,7 @@ class OrroPublicFlowTests(unittest.TestCase):
                     lane_adapter,
                     "--role-lanes-out",
                     str(out),
+                    *check_args,
                     *rolepack_args,
                 ]
             )
@@ -1586,7 +1591,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertFalse((run_dir / "proofcheck-verdict.json").exists())
 
     def test_proofrun_role_lane_plan_forbidden_profiles_fail_before_run_dir(self) -> None:
-        for profile in ("critic-only", "review-only", "verification-only"):
+        for profile in ("critic-only", "review-only"):
             with self.subTest(profile=profile), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 repo, home = self._init_home(root)
@@ -1619,6 +1624,62 @@ class OrroPublicFlowTests(unittest.TestCase):
                     "ERR_ORRO_ROLE_LANE_PLAN_EXECUTION_FORBIDDEN",
                 )
                 self.assertFalse((home / "runs").exists())
+
+    def test_verification_only_flow_runs_checks_and_passes_depone(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            goal = "write two proof files"
+            plan_path = self._flowplan_out(
+                root, goal, profile="verification-only"
+            )
+            role_lane_path = self._role_lane_plan_out(
+                root,
+                goal,
+                profile="verification-only",
+                checks=["true"],
+            )
+
+            _home, run_dir, _payload = self._proofrun(
+                root,
+                workflow_plan=plan_path,
+                role_lane_plan=role_lane_path,
+            )
+
+            ledger = json.loads(
+                (run_dir / "team-ledger.json").read_text(encoding="utf-8")
+            )
+            lane = ledger["lanes"][0]
+            self.assertEqual(lane["lane_intent"], "verification-only")
+            self.assertEqual(lane["verification_state"], "pass")
+            self.assertEqual(lane["touched_files"], [])
+            verdict_path = run_dir / "team-ledger-verdict.json"
+            self.assertTrue(verdict_path.exists())
+            verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+            self.assertEqual(verdict["decision"], "pass")
+
+    def test_verification_only_proofrun_needs_no_reference_adapter_optin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            goal = "write two proof files"
+            plan_path = self._flowplan_out(root, goal, profile="verification-only")
+            role_lane_path = self._role_lane_plan_out(
+                root,
+                goal,
+                profile="verification-only",
+                checks=["true"],
+            )
+
+            _home, run_dir, _payload = self._proofrun(
+                root,
+                workflow_plan=plan_path,
+                role_lane_plan=role_lane_path,
+                allow_reference_adapter=False,
+            )
+
+            verdict = json.loads(
+                (run_dir / "team-ledger-verdict.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(verdict["decision"], "pass")
 
     def test_proofrun_role_lane_plan_mismatch_or_malformed_fails_before_run_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1752,7 +1813,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertFalse((home / "runs").exists())
 
     def test_proofrun_workflow_plan_phase_forbidden_fails_before_execution(self) -> None:
-        for profile in ("critic-only", "review-only", "verification-only"):
+        for profile in ("critic-only", "review-only"):
             with self.subTest(profile=profile), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 repo, home = self._init_home(root)

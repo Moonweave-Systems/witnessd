@@ -271,6 +271,73 @@ class TestTeamFanin(unittest.TestCase):
         )
         self.assertEqual(verdict["decision"], "pass")
 
+    def test_claimless_verification_lane_executes_and_passes(self):
+        result = self._run(
+            [
+                {
+                    "lane_id": "check-runner-abc",
+                    "region": [],
+                    "commands": [["sh", "-c", "true"]],
+                    "lane_intent": "verification-only",
+                }
+            ]
+        )
+
+        lane = next(
+            entry
+            for entry in result["ledger"]["lanes"]
+            if entry["lane_id"] == "check-runner-abc"
+        )
+        self.assertEqual(lane["verification_state"], "pass")
+        self.assertEqual(lane["lane_intent"], "verification-only")
+        self.assertEqual(lane["touched_files"], [])
+
+        verdict = build_team_ledger_verdict(
+            result["ledger"], base_dir=result["base_dir"]
+        )
+        self.assertEqual(verdict["decision"], "pass")
+
+    def test_claimless_verification_lane_mutation_is_falsified_by_depone(self):
+        result = self._run(
+            [
+                {
+                    "lane_id": "check-runner-mut",
+                    "region": [],
+                    "commands": [["sh", "-c", "echo x > mutated.txt"]],
+                    "lane_intent": "verification-only",
+                }
+            ]
+        )
+
+        verdict = build_team_ledger_verdict(
+            result["ledger"], base_dir=result["base_dir"]
+        )
+        self.assertEqual(verdict["decision"], "blocked")
+        self.assertIn(
+            "ERR_TEAM_LEDGER_VERIFICATION_LANE_MUTATED",
+            {error["code"] for error in verdict["errors"]},
+        )
+
+    def test_claimless_verification_lane_check_failure_blocks(self):
+        result = self._run(
+            [
+                {
+                    "lane_id": "check-runner-fail",
+                    "region": [],
+                    "commands": [["sh", "-c", "exit 3"]],
+                    "lane_intent": "verification-only",
+                }
+            ]
+        )
+
+        lane = next(
+            entry
+            for entry in result["ledger"]["lanes"]
+            if entry["lane_id"] == "check-runner-fail"
+        )
+        self.assertEqual(lane["verification_state"], "blocked")
+        self.assertEqual(lane["blocked_reason"], "ERR_TEAM_LANE_FAILED")
+
 
 if __name__ == "__main__":
     unittest.main()
