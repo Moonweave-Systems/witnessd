@@ -79,6 +79,11 @@ class OrroFlowTests(unittest.TestCase):
         for key in ("message", "reason", "required_input_or_grant", "next_command"):
             self.assertTrue(payload["error"][key])
         self.assertIn("--write-scope", payload["error"]["next_command"])
+        # advisory next_command must be a runnable form and preserve the
+        # user's verification-only declaration (not the invalid -m witnessd flow).
+        self.assertIn("python3 -m orro flow", payload["error"]["next_command"])
+        self.assertNotIn("python3 -m witnessd flow", payload["error"]["next_command"])
+        self.assertIn("--verification-only", payload["error"]["next_command"])
         self.assertNotIn("Traceback", stdout.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
 
@@ -435,6 +440,59 @@ class OrroFlowTests(unittest.TestCase):
                 ["init", "scout"],
             )
             self.assertFalse((run_dir / "team-ledger.json").exists())
+            self.assertNotIn("Traceback", stdout.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_risky_change_advisory_preserves_verification_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            run_dir = root / "observer" / "run"
+            runner_sandbox = root / "runner"
+            repo.mkdir()
+            runner_sandbox.mkdir()
+            _seed_repo(repo)
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with (
+                patch("witnessd.__main__.Path.cwd", return_value=repo),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                code = main(
+                    [
+                        "orro",
+                        "flow",
+                        "rotate secret auth token",
+                        "--write-scope",
+                        "pkg/**",
+                        "--adapter",
+                        "codex",
+                        "--runner-sandbox",
+                        str(runner_sandbox),
+                        "--home",
+                        str(home),
+                        "--run-dir",
+                        str(run_dir),
+                        "--verification-only",
+                        "--json",
+                    ]
+                )
+
+            self.assertNotEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(
+                payload["error"]["code"],
+                "ERR_ORRO_FLOW_RISKY_CHANGE_REVIEW_REQUIRED",
+            )
+            next_command = payload["error"]["next_command"]
+            # the risky-change advisory rebuilds a flowplan command; under
+            # --verification-only it must carry the declaration so a copy-paste
+            # reproduces the same intent, not a silently-implementation lane.
+            self.assertIn("flowplan", next_command)
+            self.assertIn("--lane-intent verification-only", next_command)
             self.assertNotIn("Traceback", stdout.getvalue())
             self.assertNotIn("Traceback", stderr.getvalue())
 
