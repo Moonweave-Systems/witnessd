@@ -25,10 +25,10 @@
 
 ### Task 3: plan/flowplan cluster → `witnessd/cli/plan.py`
 
-- [ ] Move verbatim: `_cmd_plan` (851), `_draft_prompt` (1049), `_flowplan_role_lane_error_details` (1071).
-- [ ] `plan.py` module scope: stdlib per grep + `from witnessd.cli._output import _emit_orro_error` (grep exact subset).
-- [ ] Rewire: `plan` (2150), `flowplan` (2157) → `_cli_handler("plan", "_cmd_plan")`.
-- [ ] `$RUN discover -s tests` → 821 OK. Commit: `refactor(cli): move plan/flowplan compiler surface to witnessd.cli.plan`
+- [x] Move verbatim: `_cmd_plan` (851), `_draft_prompt` (1049), `_flowplan_role_lane_error_details` (1071).
+- [x] `plan.py` module scope: stdlib per grep + `from witnessd.cli._output import _emit_orro_error` (grep exact subset).
+- [x] Rewire: `plan` (2150), `flowplan` (2157) → `_cli_handler("plan", "_cmd_plan")`.
+- [x] `$RUN discover -s tests` → 821 OK. Commit: `refactor(cli): move plan/flowplan compiler surface to witnessd.cli.plan`
 
 ### Task 4: self-test + stranded runtime_ops helpers
 
