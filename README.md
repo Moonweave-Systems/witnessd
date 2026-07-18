@@ -317,10 +317,13 @@ is deterministic `shell`; live model adapters are not used by default.
 role-lane plan is bound to the workflow plan, that proofrun is allowed, and that
 execution is explicitly allowed before creating a run directory. It then reuses
 existing witnessd team execution, fan-in, observer, and ledger machinery.
-Role-lane plans are executable intent, not proof. `review-only`,
-`verification-only`, and `release-readiness` role-lane plans do not launch
-proofrun. Formal `orro handoff` still requires a passing bound
-`proofcheck-verdict.json`.
+Role-lane plans are executable intent, not proof. `review-only` and default
+`release-readiness` role-lane plans cannot launch proofrun. `verification-only`
+role-lane plans compile declared shell check lanes (`flowplan --check`,
+repeatable) with an empty write region; proofrun executes those checks under
+observation, a non-zero check exit blocks the lane, and any mutation is
+falsified by Depone (`ERR_TEAM_LEDGER_VERIFICATION_LANE_MUTATED`). Formal `orro
+handoff` still requires a passing bound `proofcheck-verdict.json`.
 
 `orro next <run-dir> --home .witnessd --json` is the non-executing continuation
 gate before future `orro auto`. It reads persisted artifacts such as workflow

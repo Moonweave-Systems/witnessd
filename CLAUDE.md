@@ -156,8 +156,12 @@ writes executable role-lane intent. `python3 -m orro proofrun "<goal>" --repo
 <repo> --home .witnessd --workflow-plan workflow-plan.json --role-lane-plan
 role-lane-plan.json` validates the role-lane plan against the workflow hash and
 executes allowed lanes through existing witnessd team machinery. Role-lane plans
-are not proof, approval, or assurance. `review-only`, `verification-only`, and
-default `release-readiness` role-lane plans cannot launch proofrun.
+are not proof, approval, or assurance. `review-only` and default
+`release-readiness` role-lane plans cannot launch proofrun. `verification-only`
+role-lane plans compile declared shell check lanes (`flowplan --check`,
+repeatable) with an empty write region; proofrun executes those checks under
+observation, a non-zero check exit blocks the lane, and any mutation is
+falsified by Depone (`ERR_TEAM_LEDGER_VERIFICATION_LANE_MUTATED`).
 
 `python3 -m orro next <run-dir> --home .witnessd --json` reads persisted run
 artifacts and recommends the next safe action. It does not run proofcheck,
