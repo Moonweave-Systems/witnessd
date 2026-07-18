@@ -19,7 +19,8 @@ from depone.agent_fabric.team_ledger import (
 from witnessd.eventlog import EventLog
 from witnessd.fanin import _read_lane_exec_result, run_team
 from witnessd.killswitch import active_targets_from_runlog
-from witnessd.__main__ import _codex_specs_are_isolated, main
+from witnessd.__main__ import main
+from witnessd.cli.team_ops import _codex_specs_are_isolated
 from witnessd.signing import gen_operator_keypair
 
 

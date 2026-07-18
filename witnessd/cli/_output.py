@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import io
 import hashlib
 import json
 import os
 import subprocess
 import sys
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 def _read_runlog(path: str) -> list[dict]:
@@ -129,3 +131,16 @@ def _json_or_text(text: str) -> object:
         return json.loads(text)
     except json.JSONDecodeError:
         return {"text": text}
+
+
+def _invoke_cli_capture(argv: list[str]) -> tuple[int, str, str]:
+    from witnessd.__main__ import main
+
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        try:
+            code = main(argv)
+        except SystemExit as exc:
+            code = int(exc.code) if isinstance(exc.code, int) else 1
+    return code, stdout.getvalue(), stderr.getvalue()
