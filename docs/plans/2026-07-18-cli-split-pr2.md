@@ -6,9 +6,18 @@
 
 **Extraction order matters** (new-module dependency graph is acyclic: flow→{team_go,team_ops}, team_ops→team_go): Task 1 team_go → Task 2 team_ops → Task 3 flow. Cross-module names between NEW cli modules use plain module-scope imports (they load lazily at dispatch anyway); only callers that STAY in `__main__` use the amendment's in-function import.
 
+**Amendments after the Task 1 stop (verifier-approved):**
+1. **Import lists below are descriptive, not exhaustive** — the authoritative rule is: each new module imports at module scope exactly the stdlib names its moved bodies reference (grep the bodies; e.g. `team_go.py` also needs `time`).
+2. **Symmetric call-site rule:** `_invoke_cli_capture` calls the staying `main(argv)`. It moves to `witnessd/cli/_output.py` (not team_go — both flow and team_go use it, and `_output` is the shared module) and gains exactly one in-function lazy import as its first body line: `from witnessd.__main__ import main`. Call-time import, so no import cycle with `__main__`'s eager `_output` import. No other moved body may import from `__main__`.
+3. **Interim boundary imports:** during Task 1, three functions that move LATER still live in `__main__` and call Task-1-moved names. Give each an amendment-style in-function lazy import at the call site; the line then travels verbatim when the function itself moves (same precedent as `_cmd_team_kill` in PR1):
+   - `_cmd_team_run` (:1914) → `from witnessd.cli.team_go import _apply_lane_prompt_files`
+   - `_cmd_team_init` (:1980) → `from witnessd.cli.team_go import _fill_interactive_team_init_args`
+   - `_invoke_orro_flow_phase` (:2497) → `from witnessd.cli._output import _invoke_cli_capture`
+4. Consequential edits to Tasks 1/3: `_invoke_cli_capture` leaves the team_go move list and joins `_output.py`; `flow.py` imports it from `witnessd.cli._output` instead of team_go.
+
 ### Task 1: team-go cluster → `witnessd/cli/team_go.py`
 
-- [ ] Move verbatim: `_fill_interactive_team_init_args` (2584), `_cmd_team_go` (2593), `_team_go_reference_adapter_lanes` (2952), `_team_go_reference_adapter_warning` (2988), `_team_go_routing_decision` (3012), `_invoke_cli_capture` (3046), `_load_json_if_exists` (3059), `_write_team_go_report` (3066), `_emit_team_go_result` (3084), `_apply_lane_prompt_files` (3148).
+- [ ] Move verbatim to `team_go.py`: `_fill_interactive_team_init_args` (2584), `_cmd_team_go` (2593), `_team_go_reference_adapter_lanes` (2952), `_team_go_reference_adapter_warning` (2988), `_team_go_routing_decision` (3012), `_load_json_if_exists` (3059), `_write_team_go_report` (3066), `_emit_team_go_result` (3084), `_apply_lane_prompt_files` (3148). Move `_invoke_cli_capture` (3046) to `witnessd/cli/_output.py` per Amendment 2 (with its single `from witnessd.__main__ import main` first body line).
 - [ ] `team_go.py` module scope: stdlib `argparse, io, json, os, shlex, sys`, `from contextlib import redirect_stderr, redirect_stdout`, `from pathlib import Path`; plus `from witnessd.cli._output import _json_or_text, _structured_error, _write_json_file` (only names actually referenced — grep the bodies).
 - [ ] Rewire parser: `team_go.set_defaults(func=_cmd_team_go)` (4003) → `_cli_handler("team_go", "_cmd_team_go")`.
 - [ ] Amendment call-site imports in STAYING code (in-function, immediately before first use):
@@ -36,7 +45,7 @@
 ### Task 3: orro-flow cluster → `witnessd/cli/flow.py`
 
 - [ ] Move verbatim: `_cmd_orro_flow` (2019), `_run_orro_flow` (2041, ~450 lines), `_invoke_orro_flow_phase` (2495), `_orro_flow_phase_error` (2503), `_emit_orro_flow_blocker` (2524), `_orro_flow_flowplan_command` (2544).
-- [ ] `flow.py` module scope: stdlib `argparse, json, os, shlex, sys, tempfile, time`, `from pathlib import Path`; `from witnessd.cli._output import _json_or_text, _structured_error` (grep for exact set); `from witnessd.cli.team_go import _invoke_cli_capture`; `from witnessd.cli.team_ops import _paths_overlap`.
+- [ ] `flow.py` module scope: stdlib `argparse, json, os, shlex, sys, tempfile, time`, `from pathlib import Path`; `from witnessd.cli._output import _json_or_text, _structured_error` (grep for exact set); `from witnessd.cli._output import _invoke_cli_capture` (per Amendment 2); `from witnessd.cli.team_ops import _paths_overlap`.
 - [ ] Rewire parser: `orro_flow.set_defaults(func=_cmd_orro_flow)` (3905) → `_cli_handler("flow", "_cmd_orro_flow")`.
 - [ ] `tests/test_orro_flow.py`'s six `patch("witnessd.__main__.Path.cwd")` sites (104, 181, 252, 347, 404, 460) patch the `cwd` attribute on the shared `pathlib.Path` class object, so they keep binding after the move as long as `__main__` retains `from pathlib import Path` (it does — staying code uses it). **Leave them untouched**, but run `$RUN tests.test_orro_flow` explicitly and confirm all its tests still exercise the moved flow (a wrong-namespace patch here would surface as a test failure, since `_run_orro_flow` calls `Path.cwd()` on every run).
 - [ ] Run `$RUN discover -s tests` → 821 OK. Commit: `refactor(cli): move orro-flow orchestration to witnessd.cli.flow`
