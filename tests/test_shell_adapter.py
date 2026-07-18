@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from witnessd.adapters.shell import run_shell_lane
 
@@ -57,6 +58,24 @@ class TestShell(unittest.TestCase):
                 sandbox=sandbox, commands=[["sh", "-c", "echo x > here.txt"]]
             )
             self.assertTrue(os.path.exists(os.path.join(sandbox, "here.txt")))
+
+    def test_extra_env_is_passed_to_commands(self):
+        ambient = dict(os.environ)
+        ambient.pop("WITNESSD_TEST_MARKER", None)
+        with mock.patch.dict(os.environ, ambient, clear=True):
+            with tempfile.TemporaryDirectory() as sandbox:
+                shaped = run_shell_lane(
+                    sandbox=sandbox,
+                    commands=[["sh", "-c", "echo $WITNESSD_TEST_MARKER"]],
+                    extra_env={"WITNESSD_TEST_MARKER": "42"},
+                )
+                inherited = run_shell_lane(
+                    sandbox=sandbox,
+                    commands=[["sh", "-c", "echo $WITNESSD_TEST_MARKER"]],
+                )
+
+        self.assertEqual(shaped["command_receipts"][0]["stdout"], "42\n")
+        self.assertEqual(inherited["command_receipts"][0]["stdout"].strip(), "")
 
 
 if __name__ == "__main__":

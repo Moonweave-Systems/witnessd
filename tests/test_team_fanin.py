@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from depone.agent_fabric.capture_bridge import validate_capture_manifest
 from depone.agent_fabric.team_ledger import build_team_ledger_verdict
@@ -60,7 +61,12 @@ def _evidence_context_from_dir(
 
 @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
 class TestTeamFanin(unittest.TestCase):
-    def _run(self, lane_specs: list[dict]):
+    def _run(
+        self,
+        lane_specs: list[dict],
+        *,
+        repo_files: dict[str, str] | None = None,
+    ):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
@@ -69,6 +75,10 @@ class TestTeamFanin(unittest.TestCase):
         keys = root / "keys"
         repo.mkdir()
         keys.mkdir()
+        for relative_path, content in (repo_files or {}).items():
+            path = repo / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
         base_commit = _seed_repo(repo)
         private_key_path, public_key_path = gen_operator_keypair(str(keys))
         result = run_team(
@@ -297,13 +307,95 @@ class TestTeamFanin(unittest.TestCase):
         )
         self.assertEqual(verdict["decision"], "pass")
 
+    def test_claimless_verification_lane_injects_no_bytecode_env(self):
+        ambient = dict(os.environ)
+        ambient.pop("PYTHONDONTWRITEBYTECODE", None)
+        with mock.patch.dict(os.environ, ambient, clear=True):
+            result = self._run(
+                [
+                    {
+                        "lane_id": "check-runner-env",
+                        "region": [],
+                        "commands": [
+                            [
+                                "sh",
+                                "-c",
+                                "echo bytecode=$PYTHONDONTWRITEBYTECODE",
+                            ]
+                        ],
+                        "lane_intent": "verification-only",
+                    }
+                ]
+            )
+
+        self.assertIn(
+            "bytecode=1",
+            result["lanes"][0]["lane_result"]["command_receipts"][0]["stdout"],
+        )
+
+    def test_write_lane_does_not_inject_no_bytecode_env(self):
+        ambient = dict(os.environ)
+        ambient.pop("PYTHONDONTWRITEBYTECODE", None)
+        with mock.patch.dict(os.environ, ambient, clear=True):
+            result = self._run(
+                [
+                    {
+                        "lane_id": "write-runner-env",
+                        "region": ["pkg/output.txt"],
+                        "commands": [
+                            [
+                                "sh",
+                                "-c",
+                                "echo bytecode=$PYTHONDONTWRITEBYTECODE",
+                            ]
+                        ],
+                    }
+                ]
+            )
+
+        stdout = result["lanes"][0]["lane_result"]["command_receipts"][0][
+            "stdout"
+        ]
+        self.assertEqual(stdout, "bytecode=\n")
+        self.assertNotIn("bytecode=1", stdout)
+
+    def test_claimless_verification_lane_import_does_not_mutate_worktree(self):
+        ambient = dict(os.environ)
+        ambient.pop("PYTHONDONTWRITEBYTECODE", None)
+        with mock.patch.dict(os.environ, ambient, clear=True):
+            result = self._run(
+                [
+                    {
+                        "lane_id": "check-runner-import",
+                        "region": [],
+                        "commands": [
+                            [
+                                "/usr/bin/python3",
+                                "-c",
+                                "import sys; sys.path.insert(0, '.'); import pkg.mod",
+                            ]
+                        ],
+                        "lane_intent": "verification-only",
+                    }
+                ],
+                repo_files={"pkg/mod.py": "VALUE = 42\n"},
+            )
+
+        lane = result["ledger"]["lanes"][0]
+        self.assertEqual(lane["verification_state"], "pass")
+        self.assertEqual(lane["touched_files"], [])
+        verdict = build_team_ledger_verdict(
+            result["ledger"], base_dir=result["base_dir"]
+        )
+        self.assertEqual(verdict["decision"], "pass")
+
     def test_claimless_verification_lane_mutation_is_falsified_by_depone(self):
         result = self._run(
             [
                 {
                     "lane_id": "check-runner-mut",
                     "region": [],
-                    "commands": [["sh", "-c", "echo x > mutated.txt"]],
+                    "commands": [["sh", "-c", "echo x > seed.txt"]],
                     "lane_intent": "verification-only",
                 }
             ]

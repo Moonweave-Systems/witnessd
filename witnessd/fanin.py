@@ -1651,10 +1651,16 @@ def _run_write_lane(
         runner_sandbox=worktree, out_path=str(evidence_dir / "capture-manifest.json")
     )
 
+    shell_lane_kwargs = (
+        {"extra_env": {"PYTHONDONTWRITEBYTECODE": "1"}}
+        if lane_intent == "verification-only"
+        else {}
+    )
     lane_result = run_shell_lane(
         sandbox=worktree,
         commands=commands,
         test_command=["sh", "-c", "true"],
+        **shell_lane_kwargs,
     )
     _commit_lane(worktree, lane_id)
 

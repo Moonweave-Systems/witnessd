@@ -14,6 +14,7 @@ this lane leaves a no-op scan hook so the wiring point already exists.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -69,7 +70,11 @@ CommandRunner = Callable[[list[str], str], dict[str, Any]]
 
 
 def _run_one(
-    command: list[str], sandbox: str, *, command_runner: CommandRunner | None = None
+    command: list[str],
+    sandbox: str,
+    *,
+    command_runner: CommandRunner | None = None,
+    env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     _scan_argv(command)
     if command_runner is not None:
@@ -80,6 +85,7 @@ def _run_one(
             cwd=sandbox,
             capture_output=True,
             text=True,
+            env=env,
         )
     except OSError as exc:
         return {
@@ -103,22 +109,26 @@ def run_shell_lane(
     test_command: list[str] | None = None,
     argv_scanner: Callable[[list[str]], None] | None = None,
     command_runner: CommandRunner | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     before = _snapshot(sandbox)
+    env = {**os.environ, **extra_env} if extra_env is not None else None
 
     command_receipts: list[dict[str, Any]] = []
     for command in commands:
         if argv_scanner is not None:
             argv_scanner(command)
         command_receipts.append(
-            _run_one(command, sandbox, command_runner=command_runner)
+            _run_one(command, sandbox, command_runner=command_runner, env=env)
         )
 
     test_output: dict[str, Any] = {"status": TEST_STATUS_NOT_RUN}
     if test_command is not None:
         if argv_scanner is not None:
             argv_scanner(test_command)
-        test_receipt = _run_one(test_command, sandbox, command_runner=command_runner)
+        test_receipt = _run_one(
+            test_command, sandbox, command_runner=command_runner, env=env
+        )
         command_receipts.append(test_receipt)
         if test_receipt["exit_code"] == 127:
             test_output = {"status": TEST_STATUS_ERROR}
