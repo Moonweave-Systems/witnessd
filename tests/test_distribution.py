@@ -23,10 +23,10 @@ from witnessd.distribution import (
 
 
 class DistributionInitTests(unittest.TestCase):
-    def test_default_depone_ref_pins_v109_combined_contract_support(self) -> None:
+    def test_default_depone_ref_pins_v022_lane_intent_support(self) -> None:
         self.assertEqual(
             DEFAULT_DEPONE_REF,
-            "6123fc50c1f3c2d27b057b06fb2c71574ea80ffa",
+            "1100de44a90495265bb60b04709c6c0b8b9c4870",
         )
         self.assertRegex(DEFAULT_DEPONE_REF, r"^[0-9a-f]{40}$")
 
