@@ -8,8 +8,94 @@ import subprocess
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from witnessd.cli._output import _emit_orro_error, _run_depone_json
+from witnessd.cli._output import (
+    _emit_orro_error as _base_emit_orro_error,
+    _run_depone_json,
+    _with_structured_error,
+)
 from witnessd.__main__ import main
+
+
+ADVISORY_REMEDIATION = {
+    "orro-next": (
+        "continuation needs a readable run directory with valid persisted ORRO artifacts",
+        "an existing ORRO run directory",
+        "python3 -m orro next <run-dir> --home .witnessd --json",
+    ),
+    "orro-advise": (
+        "workstyle advice needs a concrete goal and a writable output path when requested",
+        "a non-empty goal and an accessible repository",
+        "python3 -m orro advise \"<goal>\" --repo <repo> --home .witnessd --json",
+    ),
+    "orro-sketch": (
+        "sketch needs a concrete goal and valid advisory inputs before it can seal a direction",
+        "a non-empty goal, accessible repository, and valid decision file when supplied",
+        "python3 -m orro sketch \"<goal>\" --repo <repo> --home .witnessd --json",
+    ),
+    "orro-trace": (
+        "trace needs a concrete symptom and valid advisory inputs before it can seal a root-cause record",
+        "a non-empty symptom, accessible repository, and valid decision file when supplied",
+        "python3 -m orro trace \"<symptom>\" --repo <repo> --home .witnessd --json",
+    ),
+    "orro-report": (
+        "report needs a readable run directory with internally consistent persisted artifacts",
+        "an existing ORRO run directory",
+        "python3 -m orro report <run-dir> --home .witnessd --json",
+    ),
+    "orro-review": (
+        "review needs a valid review-only role-lane plan and available read-only adapter",
+        "an accessible repository and a valid --role-lane-plan",
+        "python3 -m orro review --repo <repo> --home .witnessd --role-lane-plan <plan.json> --json",
+    ),
+    "orro-auto": (
+        "auto can continue only from a valid persisted state and one explicitly selected mode",
+        "an existing ORRO run directory and exactly one auto mode",
+        "python3 -m orro auto --dry-run <run-dir> --home .witnessd --json",
+    ),
+}
+
+
+def _advisory_remediation(args: argparse.Namespace) -> tuple[str, str, str]:
+    return ADVISORY_REMEDIATION.get(
+        str(getattr(args, "cmd", "")),
+        (
+            "the advisory command is blocked by missing or invalid input",
+            "valid advisory command input",
+            "python3 -m orro --help",
+        ),
+    )
+
+
+def _emit_orro_error(
+    args: argparse.Namespace, *, code: str, message: str
+) -> None:
+    reason, required_input_or_grant, next_command = _advisory_remediation(args)
+    _base_emit_orro_error(
+        args,
+        code=code,
+        message=message,
+        reason=reason,
+        required_input_or_grant=required_input_or_grant,
+        next_command=next_command,
+    )
+
+
+def _with_advisory_error(
+    args: argparse.Namespace,
+    payload: dict[str, object],
+    *,
+    default_code: str,
+    default_message: str,
+) -> dict[str, object]:
+    reason, required_input_or_grant, next_command = _advisory_remediation(args)
+    return _with_structured_error(
+        payload,
+        default_code=default_code,
+        default_message=default_message,
+        reason=reason,
+        required_input_or_grant=required_input_or_grant,
+        next_command=next_command,
+    )
 
 def _cmd_orro_next(args: argparse.Namespace) -> int:
     from witnessd.orro_next import OrroNextError, decide_next, write_decision
@@ -30,6 +116,13 @@ def _cmd_orro_next(args: argparse.Namespace) -> int:
         except OrroNextError as exc:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 1
+    if code != 0:
+        payload = _with_advisory_error(
+            args,
+            payload,
+            default_code="ERR_ORRO_NEXT_BLOCKED",
+            default_message="ORRO continuation is blocked",
+        )
     print(json.dumps(payload, sort_keys=True))
     return code
 
@@ -186,6 +279,13 @@ def _cmd_orro_report(args: argparse.Namespace) -> int:
     except OrroReportError as exc:
         _emit_orro_error(args, code=exc.code, message=str(exc))
         return 1
+    if code != 0:
+        payload = _with_advisory_error(
+            args,
+            payload,
+            default_code="ERR_ORRO_REPORT_BLOCKED",
+            default_message="ORRO report cannot summarize this run as continuable",
+        )
     if args.json:
         print(json.dumps(payload, sort_keys=True))
     else:
@@ -222,6 +322,13 @@ def _cmd_orro_review(args: argparse.Namespace) -> int:
     except OrroReviewError as exc:
         _emit_orro_error(args, code=exc.code, message=exc.message)
         return 1
+    if code != 0:
+        payload = _with_advisory_error(
+            args,
+            payload,
+            default_code="ERR_ORRO_REVIEW_BLOCKED",
+            default_message="ORRO review did not complete",
+        )
     print(json.dumps(payload, sort_keys=True))
     return code
 
@@ -285,6 +392,13 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 1
     if args.dry_run:
+        if code != 0:
+            payload = _with_advisory_error(
+                args,
+                payload,
+                default_code="ERR_ORRO_AUTO_BLOCKED",
+                default_message="ORRO auto planning is blocked",
+            )
         print(json.dumps(payload, sort_keys=True))
         return code
 
@@ -381,6 +495,13 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
             except OrroAutoError as exc:
                 _emit_orro_error(args, code=exc.code, message=str(exc))
                 return 1
+        if not complete:
+            session = _with_advisory_error(
+                args,
+                session,
+                default_code="ERR_ORRO_AUTO_BLOCKED",
+                default_message="ORRO auto did not reach complete state",
+            )
         print(json.dumps(session, sort_keys=True))
         if complete:
             return 0
@@ -411,6 +532,13 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
             except OrroAutoError as exc:
                 _emit_orro_error(args, code=exc.code, message=str(exc))
                 return 1
+        if decision_before != "complete":
+            receipt = _with_advisory_error(
+                args,
+                receipt,
+                default_code="ERR_ORRO_AUTO_BLOCKED",
+                default_message="ORRO auto cannot execute from the current continuation state",
+            )
         print(json.dumps(receipt, sort_keys=True))
         if decision_before == "complete":
             return 0
@@ -426,6 +554,13 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
         except OrroAutoError as exc:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 1
+    if child_code != 0:
+        receipt = _with_advisory_error(
+            args,
+            receipt,
+            default_code="ERR_ORRO_AUTO_BLOCKED",
+            default_message="ORRO auto step did not complete",
+        )
     print(json.dumps(receipt, sort_keys=True))
     return child_code
 

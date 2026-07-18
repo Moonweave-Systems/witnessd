@@ -84,6 +84,43 @@ def _structured_error(
     return error
 
 
+def _with_structured_error(
+    payload: dict[str, object],
+    *,
+    default_code: str,
+    default_message: str,
+    reason: str,
+    required_input_or_grant: str,
+    next_command: str,
+) -> dict[str, object]:
+    existing = payload.get("error")
+    existing_error = existing if isinstance(existing, dict) else {}
+    code = existing_error.get("code", default_code)
+    message = existing_error.get("message", default_message)
+    extra = {
+        key: value
+        for key, value in existing_error.items()
+        if key
+        not in {
+            "code",
+            "message",
+            "reason",
+            "required_input_or_grant",
+            "next_command",
+        }
+    }
+    result = dict(payload)
+    result["error"] = _structured_error(
+        code=str(code),
+        message=str(message),
+        reason=reason,
+        required_input_or_grant=required_input_or_grant,
+        next_command=next_command,
+        extra=extra,
+    )
+    return result
+
+
 def _emit_orro_error(
     args: argparse.Namespace,
     *,

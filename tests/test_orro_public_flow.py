@@ -1008,6 +1008,25 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertIn(payload["decision"], {"blocked", "evidence-pending"})
             self.assertNotIn(payload["decision"], {"ready-for-handoff", "complete"})
 
+    def test_advisory_family_library_failure_includes_structured_remediation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _repo, home = self._init_home(root)
+
+            code, payload = self._orro_next(root / "missing-run", home)
+
+            self.assertEqual(code, 2)
+            self.assertEqual(
+                set(payload["error"]),
+                {
+                    "code",
+                    "message",
+                    "reason",
+                    "required_input_or_grant",
+                    "next_command",
+                },
+            )
+
     def test_orro_next_out_writes_same_decision_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2998,6 +3017,23 @@ class OrroPublicFlowTests(unittest.TestCase):
                 json.loads(stdout.getvalue())["error"]["code"],
                 "ERR_WITNESSD_DEPONE_PIN_MISSING",
             )
+
+    def test_verify_family_failure_includes_structured_remediation(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(["orro", "proofcheck", "--json"])
+
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            set(json.loads(stdout.getvalue())["error"]),
+            {
+                "code",
+                "message",
+                "reason",
+                "required_input_or_grant",
+                "next_command",
+            },
+        )
 
     def test_orro_doctor_reports_readiness_not_verifier_refutation(self) -> None:
         stdout = io.StringIO()
