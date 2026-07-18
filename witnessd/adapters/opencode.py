@@ -41,6 +41,7 @@ def run_opencode_lane(
     transcript_path: str,
     log_path: str | None = None,
     timeout_seconds: int = 120,
+    env: dict[str, str] | None = None,
 ) -> AdapterResult:
     if not prompt.strip():
         raise OpenCodeAdapterError(
@@ -55,5 +56,6 @@ def run_opencode_lane(
         transcript_path=transcript_path,
         log_path=log_path,
         timeout_seconds=timeout_seconds,
+        env=env,
         error_cls=OpenCodeAdapterError,
     )

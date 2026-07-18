@@ -71,6 +71,7 @@ def _fake_codex(directory: str) -> str:
     path.write_text(
         "#!/bin/sh\n"
         'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
+        'if [ -n "$ADAPTER_ENV_CAPTURE" ]; then printf \'%s\\n%s\\n\' "$PYTHONPYCACHEPREFIX" "$RUFF_CACHE_DIR" > "$ADAPTER_ENV_CAPTURE"; fi\n'
         "while [ $# -gt 0 ]; do shift; done\n"
         "cat >/dev/null\n"
         'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T1"}\'\n'
@@ -149,6 +150,8 @@ def _fake_claude(directory: str) -> str:
     path = pathlib.Path(directory) / "claude"
     path.write_text(
         "#!/bin/sh\n"
+        'if [ -n "$ADAPTER_ENV_CAPTURE" ]; then printf \'%s\\n%s\\n\' "$PYTHONPYCACHEPREFIX" "$RUFF_CACHE_DIR" > "$ADAPTER_ENV_CAPTURE"; fi\n'
+        'if [ "$ADAPTER_WRITE_CACHE" = "1" ]; then mkdir -p "$RUFF_CACHE_DIR" "$PYTHONPYCACHEPREFIX/pkg"; printf cache > "$RUFF_CACHE_DIR/cache.bin"; printf bytecode > "$PYTHONPYCACHEPREFIX/pkg/mod.pyc"; fi\n'
         'printf \'%s\\n\' \'{"type":"session.started","session_id":"S1"}\'\n'
         'printf \'%s\\n\' \'{"type":"assistant.message","message_id":"M1","text":"done"}\'\n'
         "exit 0\n",
@@ -184,6 +187,7 @@ def _fake_gemini(directory: str) -> str:
     path = pathlib.Path(directory) / "gemini"
     path.write_text(
         "#!/bin/sh\n"
+        'if [ -n "$ADAPTER_ENV_CAPTURE" ]; then printf \'%s\\n%s\\n\' "$PYTHONPYCACHEPREFIX" "$RUFF_CACHE_DIR" > "$ADAPTER_ENV_CAPTURE"; fi\n'
         'printf \'%s\\n\' \'{"type":"message","content":"review start"}\'\n'
         'printf \'%s\\n\' \'{"type":"result","text":"[{\\"severity\\":\\"low\\",\\"file\\":\\"seed.txt\\",\\"line\\":1,\\"summary\\":\\"review note\\"}]"}\'\n'
         "exit 0\n",
@@ -207,8 +211,12 @@ def _fake_agy(directory: str, *, stale_context: bool = False) -> str:
         "#!/usr/bin/python3\n"
         "import json\n"
         "import os\n"
+        "import pathlib\n"
         "import subprocess\n"
         "import sys\n"
+        "capture = os.environ.get('ADAPTER_ENV_CAPTURE')\n"
+        "if capture:\n"
+        "    pathlib.Path(capture).write_text(os.environ['PYTHONPYCACHEPREFIX'] + '\\n' + os.environ['RUFF_CACHE_DIR'] + '\\n', encoding='utf-8')\n"
         "if sys.stdout.isatty():\n"
         f"    observed_root = {observed_root}\n"
         f"    observed_head = {observed_head}\n"
@@ -216,6 +224,18 @@ def _fake_agy(directory: str, *, stale_context: bool = False) -> str:
         "    print('Review findings:')\n"
         "    print('low seed.txt:1 review note')\n"
         "    print('WITNESSD_AGY_COMPLETE ' + json.dumps({'status': 'complete'}, sort_keys=True))\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
+def _fake_opencode(directory: str) -> str:
+    path = pathlib.Path(directory) / "opencode"
+    path.write_text(
+        "#!/bin/sh\n"
+        'if [ -n "$ADAPTER_ENV_CAPTURE" ]; then printf \'%s\\n%s\\n\' "$PYTHONPYCACHEPREFIX" "$RUFF_CACHE_DIR" > "$ADAPTER_ENV_CAPTURE"; fi\n'
+        "printf 'done\\n'\n",
         encoding="utf-8",
     )
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
@@ -235,6 +255,100 @@ def _init_repo(path: str) -> None:
 
 @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
 class TestAdapterRun(unittest.TestCase):
+    def test_each_adapter_process_receives_isolated_cache_env(self):
+        adapters = (
+            ("codex", "codex_binary", _fake_codex),
+            ("claude", "claude_binary", _fake_claude),
+            ("agy", "agy_binary", _fake_agy),
+            ("gemini", "gemini_binary", _fake_gemini),
+            ("opencode", "opencode_binary", _fake_opencode),
+        )
+        for adapter, binary_arg, fake_binary in adapters:
+            with (
+                self.subTest(adapter=adapter),
+                tempfile.TemporaryDirectory() as root,
+                tempfile.TemporaryDirectory() as bindir,
+            ):
+                sandbox = os.path.join(root, "repo")
+                _init_repo(sandbox)
+                task_id = f"{adapter}-cache-env"
+                capture = pathlib.Path(root) / f"{adapter}-env.txt"
+                kwargs = {
+                    "root": root,
+                    "sandbox": sandbox,
+                    "adapter": adapter,
+                    "task_id": task_id,
+                    "prompt": "do X",
+                    "arm": "direct",
+                    "tier": "agentic",
+                    "is_supported": lambda _model: True,
+                    "budget": {
+                        "max_tokens": 10**9,
+                        "max_usd": 10**9,
+                        "max_depth": 3,
+                    },
+                    binary_arg: fake_binary(bindir),
+                    "capture_profile": "full",
+                    "allowed_touched_files": ["noop.txt"],
+                }
+                with patch.dict(
+                    os.environ, {"ADAPTER_ENV_CAPTURE": str(capture)}, clear=False
+                ):
+                    if adapter == "opencode":
+                        with patch("witnessd.adapter_run.probe_adapter_capability"):
+                            run_adapter_lane(**kwargs)
+                    else:
+                        run_adapter_lane(**kwargs)
+
+                cache_dir = (
+                    pathlib.Path(root)
+                    / ".witnessd"
+                    / "adapter-cache"
+                    / task_id
+                )
+                self.assertEqual(
+                    capture.read_text(encoding="utf-8").splitlines(),
+                    [str(cache_dir / "pycache"), str(cache_dir / "ruff")],
+                )
+
+    def test_redirected_adapter_cache_stays_out_of_observed_worktree(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            _init_repo(sandbox)
+            with patch.dict(os.environ, {"ADAPTER_WRITE_CACHE": "1"}, clear=False):
+                out = run_adapter_lane(
+                    root=root,
+                    sandbox=sandbox,
+                    adapter="claude",
+                    task_id="cache-redirect",
+                    prompt="run tools",
+                    arm="direct",
+                    tier="agentic",
+                    is_supported=lambda _model: True,
+                    budget={
+                        "max_tokens": 10**9,
+                        "max_usd": 10**9,
+                        "max_depth": 3,
+                    },
+                    claude_binary=_fake_claude(bindir),
+                    capture_profile="full",
+                )
+
+            cache_dir = (
+                pathlib.Path(root)
+                / ".witnessd"
+                / "adapter-cache"
+                / "cache-redirect"
+            )
+            self.assertEqual(out["runner_receipt"]["touched_files"], [])
+            self.assertFalse((pathlib.Path(sandbox) / ".ruff_cache").exists())
+            self.assertFalse((pathlib.Path(sandbox) / "__pycache__").exists())
+            self.assertTrue((cache_dir / "ruff" / "cache.bin").is_file())
+            self.assertTrue((cache_dir / "pycache" / "pkg" / "mod.pyc").is_file())
+
     def test_happy_path_emits_valid_receipt(self):
         with (
             tempfile.TemporaryDirectory() as root,
