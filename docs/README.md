@@ -123,6 +123,10 @@ and default `release-readiness` role-lane plans cannot launch proofrun.
 those checks under observation, a non-zero check exit blocks the lane, and any
 mutation is falsified by Depone
 (`ERR_TEAM_LEDGER_VERIFICATION_LANE_MUTATED`).
+Checks run with `PYTHONDONTWRITEBYTECODE=1`; checks must otherwise be
+side-effect-free, and tool caches (`.pytest_cache`, `.ruff_cache`, and similar)
+should be covered by the target repo's `.gitignore` or redirected outside the
+worktree—any file a check writes is honestly falsified by Depone.
 
 See [`orro-role-lane-plan.md`](orro-role-lane-plan.md) for the artifact
 contract.

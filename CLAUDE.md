@@ -162,6 +162,10 @@ role-lane plans compile declared shell check lanes (`flowplan --check`,
 repeatable) with an empty write region; proofrun executes those checks under
 observation, a non-zero check exit blocks the lane, and any mutation is
 falsified by Depone (`ERR_TEAM_LEDGER_VERIFICATION_LANE_MUTATED`).
+Checks run with `PYTHONDONTWRITEBYTECODE=1`; checks must otherwise be
+side-effect-free, and tool caches (`.pytest_cache`, `.ruff_cache`, and similar)
+should be covered by the target repo's `.gitignore` or redirected outside the
+worktree—any file a check writes is honestly falsified by Depone.
 
 `python3 -m orro next <run-dir> --home .witnessd --json` reads persisted run
 artifacts and recommends the next safe action. It does not run proofcheck,
