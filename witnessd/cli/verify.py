@@ -9,9 +9,10 @@ from pathlib import Path
 
 from witnessd.cli._output import (
     _depone_subprocess_env,
-    _emit_orro_error,
+    _emit_orro_error as _base_emit_orro_error,
     _hash_file,
     _run_depone_json,
+    _with_structured_error,
 )
 
 
@@ -25,10 +26,82 @@ PROOFCHECK_WORKFLOW_ARTIFACTS = (
 )
 
 
+VERIFY_REMEDIATION = {
+    "proofcheck": (
+        "proofcheck needs valid persisted evidence and verifier readiness",
+        "an existing proofrun evidence directory and a pinned Depone provision",
+        "python3 -m orro proofcheck <run-dir> --home .witnessd --out <run-dir>/proofcheck-verdict.json --json",
+    ),
+    "handoff": (
+        "handoff is allowed only after a passing proofcheck verdict is bound to the current evidence",
+        "a run directory with a passing bound proofcheck-verdict.json",
+        "python3 -m orro handoff <run-dir> --home .witnessd --out <run-dir>/orro-handoff.json --json",
+    ),
+    "orro-doctor": (
+        "one or more ORRO readiness prerequisites are blocked",
+        "a provisioned witnessd home and the required local adapters",
+        "python3 -m orro doctor --home .witnessd --json",
+    ),
+    "engine-lock": (
+        "engine-lock needs a valid pinned engine provision and readable lock metadata",
+        "a provisioned witnessd home and, for checks, an existing engine-lock file",
+        "python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json",
+    ),
+    "advisory-provenance-check": (
+        "advisory provenance can be re-derived only from sealed artifacts with verifier readiness",
+        "a sealed advisory artifact directory and a provisioned witnessd home",
+        "python3 -m orro advisory-provenance-check <artifact-dir> --home .witnessd --json",
+    ),
+}
+
+
+def _verify_remediation(args: argparse.Namespace) -> tuple[str, str, str]:
+    return VERIFY_REMEDIATION.get(
+        str(getattr(args, "cmd", "")),
+        (
+            "the verification command is blocked by missing or invalid input",
+            "valid command input and verifier readiness",
+            "python3 -m orro --help",
+        ),
+    )
+
+
+def _emit_orro_error(
+    args: argparse.Namespace, *, code: str, message: str
+) -> None:
+    reason, required_input_or_grant, next_command = _verify_remediation(args)
+    _base_emit_orro_error(
+        args,
+        code=code,
+        message=message,
+        reason=reason,
+        required_input_or_grant=required_input_or_grant,
+        next_command=next_command,
+    )
+
+
+def _with_verify_error(
+    args: argparse.Namespace,
+    payload: dict[str, object],
+    *,
+    default_code: str,
+    default_message: str,
+) -> dict[str, object]:
+    reason, required_input_or_grant, next_command = _verify_remediation(args)
+    return _with_structured_error(
+        payload,
+        default_code=default_code,
+        default_message=default_message,
+        reason=reason,
+        required_input_or_grant=required_input_or_grant,
+        next_command=next_command,
+    )
+
+
 def _emit_orro_engine_lock_check_error(
     args: argparse.Namespace, *, code: str, message: str
 ) -> None:
-    payload = {
+    payload = _with_verify_error(args, {
         "command": "orro engine-lock check",
         "locked": False,
         "mismatches": [],
@@ -39,7 +112,7 @@ def _emit_orro_engine_lock_check_error(
             "verifies_evidence": False,
         },
         "error": {"code": code, "message": message},
-    }
+    }, default_code=code, default_message=message)
     if getattr(args, "json", False):
         print(json.dumps(payload, sort_keys=True))
         return
@@ -328,6 +401,13 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         result.update(_reference_adapter_markers(reference_warning))
         if out_path is not None and out_path.is_file():
             _stamp_reference_adapter_artifact(out_path, reference_warning)
+    if code != 0 or result["decision"] != "pass":
+        result = _with_verify_error(
+            args,
+            result,
+            default_code="ERR_ORRO_PROOFCHECK_BLOCKED",
+            default_message="proofcheck did not produce a passing verdict",
+        )
     print(json.dumps(result, sort_keys=True))
     return 0 if code == 0 and result["decision"] == "pass" else 1
 
@@ -378,6 +458,13 @@ def _cmd_advisory_provenance_check(args: argparse.Namespace) -> int:
         )
         return 2
     code, payload = _run_advisory_provenance_verify(evidence_dir, home=home)
+    if code != 0:
+        payload = _with_verify_error(
+            args,
+            payload,
+            default_code="ERR_ADVISORY_PROVENANCE_CHECK_BLOCKED",
+            default_message="advisory provenance re-derivation did not pass",
+        )
     print(json.dumps(payload, sort_keys=True))
     return code
 
@@ -452,7 +539,7 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
             if decision == "REFUTE"
             else "ERR_ORRO_HANDOFF_ADVISORY_PROVENANCE_BLOCKED"
         )
-        error_payload = {
+        error_payload = _with_verify_error(args, {
             "error": {
                 "code": error_code,
                 "message": (
@@ -460,7 +547,7 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
                 ),
             },
             "advisory_provenance": advisory_provenance,
-        }
+        }, default_code=error_code, default_message="advisory provenance re-derivation must pass before handoff")
         if args.json:
             print(json.dumps(error_payload, sort_keys=True))
         else:
@@ -663,6 +750,13 @@ def _cmd_orro_doctor(args: argparse.Namespace) -> int:
             "raises_assurance": False,
         },
     }
+    if decision != "pass":
+        payload = _with_verify_error(
+            args,
+            payload,
+            default_code="ERR_ORRO_DOCTOR_READINESS_BLOCKED",
+            default_message="ORRO readiness checks are blocked",
+        )
     print(json.dumps(payload, sort_keys=True))
     return 0 if decision == "pass" else 1
 
@@ -703,9 +797,16 @@ def _cmd_orro_engine_lock(args: argparse.Namespace) -> int:
                 message="ORRO engine lock cannot be checked against the current provision",
             )
             return 2
-        print(json.dumps(check_payload, sort_keys=True))
         if check_payload["locked"]:
+            print(json.dumps(check_payload, sort_keys=True))
             return 0
+        check_payload = _with_verify_error(
+            args,
+            check_payload,
+            default_code="ERR_ORRO_ENGINE_LOCK_CHECK_BLOCKED",
+            default_message="ORRO engine lock check did not match the current provision",
+        )
+        print(json.dumps(check_payload, sort_keys=True))
         if check_payload.get("error", {}).get("code") == ERR_ORRO_ENGINE_LOCK_MISMATCH:
             return 1
         return 2
