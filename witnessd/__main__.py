@@ -3100,9 +3100,10 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
                 ),
                 required_input_or_grant="--write-scope '<glob>' (repeatable)",
                 next_command=(
-                    "python3 -m witnessd flow "
+                    "python3 -m orro flow "
                     f"{shlex.quote(str(args.goal))} --write-scope '<glob>' "
                     f"--adapter {shlex.quote(str(args.adapter))} --json"
+                    + (" --verification-only" if args.verification_only else "")
                 ),
             ),
         )
@@ -3120,13 +3121,14 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
                     "--adapter codex|claude|agy|gemini|opencode"
                 ),
                 next_command=(
-                    "python3 -m witnessd flow "
+                    "python3 -m orro flow "
                     f"{shlex.quote(str(args.goal))} "
                     + " ".join(
                         f"--write-scope {shlex.quote(scope)}"
                         for scope in args.write_scope
                     )
                     + " --adapter <adapter> --json"
+                    + (" --verification-only" if args.verification_only else "")
                 ),
             ),
         )
@@ -3359,6 +3361,7 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
             rolepack_path=rolepack_path,
             adapter=str(args.adapter),
             tier=str(args.role_lane_tier),
+            verification_only=args.verification_only,
         )
         return _emit_orro_flow_blocker(
             args,
@@ -3580,33 +3583,35 @@ def _orro_flow_flowplan_command(
     rolepack_path: Path,
     adapter: str,
     tier: str,
+    verification_only: bool = False,
 ) -> str:
-    return shlex.join(
-        [
-            "python3",
-            "-m",
-            "witnessd",
-            "flowplan",
-            goal,
-            "--root",
-            str(repo),
-            "--profile",
-            "code-change",
-            "--out",
-            str(workflow_plan_path),
-            "--role-lanes-out",
-            str(role_lane_plan_path),
-            "--lane-adapter",
-            adapter,
-            "--role-lane-tier",
-            tier,
-            "--model-policy",
-            "default",
-            "--rolepack-file",
-            str(rolepack_path),
-            "--json",
-        ]
-    )
+    argv = [
+        "python3",
+        "-m",
+        "witnessd",
+        "flowplan",
+        goal,
+        "--root",
+        str(repo),
+        "--profile",
+        "code-change",
+        "--out",
+        str(workflow_plan_path),
+        "--role-lanes-out",
+        str(role_lane_plan_path),
+        "--lane-adapter",
+        adapter,
+        "--role-lane-tier",
+        tier,
+        "--model-policy",
+        "default",
+        "--rolepack-file",
+        str(rolepack_path),
+        "--json",
+    ]
+    if verification_only:
+        argv += ["--lane-intent", "verification-only"]
+    return shlex.join(argv)
 
 
 def _fill_interactive_team_init_args(args: argparse.Namespace) -> None:
