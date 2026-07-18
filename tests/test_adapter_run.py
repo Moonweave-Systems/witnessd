@@ -83,6 +83,22 @@ def _fake_codex(directory: str) -> str:
     return str(path)
 
 
+def _fake_codex_with_usage(directory: str) -> str:
+    path = pathlib.Path(directory) / "codex-with-usage"
+    path.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
+        "while [ $# -gt 0 ]; do shift; done\n"
+        "cat >/dev/null\n"
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T1"}\'\n'
+        'printf \'%s\\n\' \'{"type":"turn.completed","usage":{"input_tokens":41,"output_tokens":13}}\'\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
 def _fake_codex_with_secrets(directory: str) -> str:
     path = pathlib.Path(directory) / "codex"
     started = json.dumps({"type": "thread.started", "thread_id": "T1"})
@@ -154,6 +170,19 @@ def _fake_claude(directory: str) -> str:
         'if [ "$ADAPTER_WRITE_CACHE" = "1" ]; then mkdir -p "$RUFF_CACHE_DIR" "$PYTHONPYCACHEPREFIX/pkg"; printf cache > "$RUFF_CACHE_DIR/cache.bin"; printf bytecode > "$PYTHONPYCACHEPREFIX/pkg/mod.pyc"; fi\n'
         'printf \'%s\\n\' \'{"type":"session.started","session_id":"S1"}\'\n'
         'printf \'%s\\n\' \'{"type":"assistant.message","message_id":"M1","text":"done"}\'\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
+def _fake_claude_with_usage(directory: str) -> str:
+    path = pathlib.Path(directory) / "claude-with-usage"
+    path.write_text(
+        "#!/bin/sh\n"
+        'printf \'%s\\n\' \'{"type":"session.started","session_id":"S1"}\'\n'
+        'printf \'%s\\n\' \'{"type":"result","usage":{"input_tokens":29,"output_tokens":7}}\'\n'
         "exit 0\n",
         encoding="utf-8",
     )
@@ -255,6 +284,116 @@ def _init_repo(path: str) -> None:
 
 @unittest.skipIf(shutil.which("openssl") is None, "openssl unavailable")
 class TestAdapterRun(unittest.TestCase):
+    def test_usage_transcripts_record_measured_token_spend(self):
+        adapters = (
+            ("codex", "codex_binary", _fake_codex_with_usage, 54),
+            ("claude", "claude_binary", _fake_claude_with_usage, 36),
+        )
+        for adapter, binary_arg, fake_binary, expected_tokens in adapters:
+            with (
+                self.subTest(adapter=adapter),
+                tempfile.TemporaryDirectory() as root,
+                tempfile.TemporaryDirectory() as bindir,
+            ):
+                sandbox = os.path.join(root, "repo")
+                _init_repo(sandbox)
+                run_adapter_lane(
+                    root=root,
+                    sandbox=sandbox,
+                    adapter=adapter,
+                    task_id=f"{adapter}-measured-spend",
+                    prompt="do X",
+                    arm="direct",
+                    tier="agentic",
+                    is_supported=lambda _model: True,
+                    budget={
+                        "max_tokens": 10**9,
+                        "max_usd": 10**9,
+                        "max_depth": 3,
+                    },
+                    capture_profile="full",
+                    allowed_touched_files=["noop.txt"],
+                    **{binary_arg: fake_binary(bindir)},
+                )
+
+                events = [
+                    event
+                    for event in map(
+                        json.loads,
+                        pathlib.Path(root, ".witnessd", "runlog.jsonl")
+                        .read_text(encoding="utf-8")
+                        .splitlines(),
+                    )
+                    if event["event"] == "spend_measured"
+                ]
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0]["payload"]["tokens"], expected_tokens)
+                self.assertEqual(events[0]["payload"]["adapter"], adapter)
+                self.assertEqual(events[0]["payload"]["status"], "measured")
+                self.assertEqual(events[0]["payload"]["usd"], 0.0)
+                self.assertEqual(
+                    events[0]["payload"]["usd_status"], "not-measured"
+                )
+                self.assertEqual(
+                    events[0]["payload"]["usd_basis"], "estimated-or-none"
+                )
+                self.assertFalse(
+                    events[0]["payload"]["can_change_evidence_verdict"]
+                )
+
+    def test_adapter_without_usage_records_unmeasured_not_zero_charge(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            _init_repo(sandbox)
+            run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="agy",
+                task_id="agy-unmeasured-spend",
+                prompt="review seed.txt",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={
+                    "max_tokens": 10**9,
+                    "max_usd": 10**9,
+                    "max_depth": 3,
+                },
+                agy_binary=_fake_agy(bindir),
+                capture_profile="full",
+            )
+
+            events = list(
+                map(
+                    json.loads,
+                    pathlib.Path(root, ".witnessd", "runlog.jsonl")
+                    .read_text(encoding="utf-8")
+                    .splitlines(),
+                )
+            )
+            self.assertFalse(
+                any(event["event"] == "spend_measured" for event in events)
+            )
+            unmeasured = [
+                event for event in events if event["event"] == "spend_unmeasured"
+            ]
+            self.assertEqual(len(unmeasured), 1)
+            self.assertEqual(unmeasured[0]["payload"]["adapter"], "agy")
+            self.assertEqual(unmeasured[0]["payload"]["status"], "unmeasured")
+            self.assertNotIn("tokens", unmeasured[0]["payload"])
+            self.assertEqual(
+                unmeasured[0]["payload"]["usd_status"], "not-measured"
+            )
+            self.assertEqual(
+                unmeasured[0]["payload"]["usd_basis"], "estimated-or-none"
+            )
+            self.assertFalse(
+                unmeasured[0]["payload"]["can_change_evidence_verdict"]
+            )
+
     def test_each_adapter_process_receives_isolated_cache_env(self):
         adapters = (
             ("codex", "codex_binary", _fake_codex),

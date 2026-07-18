@@ -13,16 +13,21 @@ class TestBudget(unittest.TestCase):
             **kwargs,
         )
 
-    def test_charge_records_measured_spend(self):
+    def test_charge_records_measured_tokens_without_measured_usd(self):
         with tempfile.TemporaryDirectory() as directory:
             breaker = self._mk(
                 directory, max_tokens=1000, max_usd=1.0, max_depth=3
             )
 
-            breaker.charge(task_id="t", tokens=100, usd=0.1)
+            breaker.charge(task_id="t", adapter="codex", tokens=100, usd=0.0)
 
             self.assertEqual(breaker.spent_tokens, 100)
-            self.assertEqual(breaker.spent_usd, 0.1)
+            self.assertEqual(breaker.spent_usd, 0.0)
+            spend = breaker.log.read()[-1]
+            self.assertEqual(spend["payload"]["usd_status"], "not-measured")
+            self.assertEqual(
+                spend["payload"]["usd_basis"], "estimated-or-none"
+            )
 
     def test_predict_over_hard_cap_blocks_before_spawn(self):
         with tempfile.TemporaryDirectory() as directory:

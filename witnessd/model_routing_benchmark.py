@@ -20,6 +20,7 @@ from typing import Any
 
 from witnessd.adapter_run import LaneBlocked, run_adapter_lane
 from witnessd.model_policy import DEFAULT_MODEL_POLICY, resolve_policy_route
+from witnessd.usage import usage_from_transcript
 
 MODEL_ROUTING_BENCHMARK_KIND = "moonweave-model-routing-measurement"
 MODEL_ROUTING_BENCHMARK_SCHEMA_VERSION = "0.2"
@@ -374,38 +375,6 @@ def _task_outcome(
             and relevant_finding
         )
     return False
-
-
-def _usage_from_transcript(path: Path) -> dict[str, int | None]:
-    input_tokens = 0
-    output_tokens = 0
-    usage_seen = False
-    try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        lines = []
-    for line in lines:
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(payload, dict):
-            continue
-        usage = payload.get("usage")
-        if not isinstance(usage, dict):
-            continue
-        observed_input = usage.get("input_tokens")
-        observed_output = usage.get("output_tokens")
-        if isinstance(observed_input, int):
-            input_tokens += observed_input
-            usage_seen = True
-        if isinstance(observed_output, int):
-            output_tokens += observed_output
-            usage_seen = True
-    return {
-        "input": input_tokens if usage_seen else None,
-        "output": output_tokens if usage_seen else None,
-    }
 
 
 def _turn_count(events: list[dict[str, Any]]) -> int:
@@ -865,7 +834,7 @@ def run_live_measurements(
         )
         runner_receipt = result.get("runner_receipt", {}) if result else {}
         normalized_events = list(result.get("normalized_events", [])) if result else []
-        usage = _usage_from_transcript(task_dir / "adapter-transcript.txt")
+        usage = usage_from_transcript(task_dir / "adapter-transcript.txt")
         estimated_cost = _estimated_cost_usd(
             task,
             input_tokens=usage["input"],

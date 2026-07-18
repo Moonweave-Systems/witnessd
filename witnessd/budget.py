@@ -1,4 +1,9 @@
-"""W4 hard-stop cost circuit breaker."""
+"""Per-lane budget preflight and measured-token recording.
+
+The breaker gates a lane before spawn using predicted values, then records
+adapter-reported token usage after that lane returns. It is not cumulative
+cross-lane enforcement and does not measure dollar spend.
+"""
 
 from __future__ import annotations
 
@@ -66,14 +71,38 @@ class CostBreaker:
                 observed=float(predicted_total_usd),
             )
 
-    def charge(self, *, task_id: str, tokens: int, usd: float) -> None:
+    def charge(
+        self, *, task_id: str, adapter: str, tokens: int, usd: float
+    ) -> None:
         self.spent_tokens += tokens
         self.spent_usd += usd
         append_runlog(
             self.log,
             run_id=task_id,
             event="spend_measured",
-            payload={"tokens": tokens, "usd": usd},
+            payload={
+                "adapter": adapter,
+                "status": "measured",
+                "tokens": tokens,
+                "usd": usd,
+                "usd_status": "not-measured",
+                "usd_basis": "estimated-or-none",
+                "can_change_evidence_verdict": False,
+            },
+        )
+
+    def record_unmeasured(self, *, task_id: str, adapter: str) -> None:
+        append_runlog(
+            self.log,
+            run_id=task_id,
+            event="spend_unmeasured",
+            payload={
+                "adapter": adapter,
+                "status": "unmeasured",
+                "usd_status": "not-measured",
+                "usd_basis": "estimated-or-none",
+                "can_change_evidence_verdict": False,
+            },
         )
 
     def _exceeded(
