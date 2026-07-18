@@ -44,7 +44,7 @@
 
 ### Task 6: docs + full verification
 
-- [ ] Update `docs/plans/2026-07-18-cli-monolith-split-design.md`: record the team_specs fold-into-run decision and the realistic ~830-line end state (parser intact, decomposition not needed).
-- [ ] `$RUN discover -s tests` → 821 OK, 17 skipped; `self-test --all` → 24/24; `python3 -m compileall witnessd` clean.
-- [ ] `wc -l witnessd/__main__.py witnessd/cli/*.py`; expect `__main__` ≈ 830.
-- [ ] Print summary: commits, suite tail, line counts. Commit: `docs(plan): mark CLI split PR3 complete`
+- [x] Update `docs/plans/2026-07-18-cli-monolith-split-design.md`: record the team_specs fold-into-run decision and the realistic ~830-line end state (parser intact, decomposition not needed).
+- [x] `$RUN discover -s tests` → 821 OK, 17 skipped; `self-test --all` → 24/24; `python3 -m compileall witnessd` clean.
+- [x] `wc -l witnessd/__main__.py witnessd/cli/*.py`; expect `__main__` ≈ 830.
+- [x] Print summary: commits, suite tail, line counts. Commit: `docs(plan): mark CLI split PR3 complete`
