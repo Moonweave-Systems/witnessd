@@ -170,7 +170,7 @@ class OrroReportTests(unittest.TestCase):
     def test_report_after_proofrun_recommends_proofcheck_without_executing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home, run_dir = self._proofrun(Path(tmp))
-            with patch("witnessd.__main__._run_depone_json", side_effect=AssertionError("report ran proofcheck")):
+            with patch("witnessd.cli.advisory._run_depone_json", side_effect=AssertionError("report ran proofcheck")):
                 code, payload = self._report(run_dir, home)
 
             self.assertEqual(code, 0)

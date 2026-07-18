@@ -9,6 +9,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 import witnessd.__main__ as witnessd_cli
+import witnessd.cli.runtime_ops as runtime_ops
 import witnessd.distribution as distribution
 from witnessd.__main__ import main
 from witnessd.distribution import ERR_WITNESSD_DEPONE_PIN_MISMATCH
@@ -118,7 +119,7 @@ class W18DxCliTests(unittest.TestCase):
             inspect.getsource(obj)
             for obj in (
                 witnessd_cli._cmd_run_goal,
-                witnessd_cli._cmd_verify,
+                runtime_ops._cmd_verify,
                 distribution.run_depone_team_ledger,
             )
         )

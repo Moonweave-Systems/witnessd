@@ -29,9 +29,29 @@ import time
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
+from witnessd.cli._output import (
+    _depone_subprocess_env,
+    _emit_orro_error,
+    _hash_file,
+    _json_or_text,
+    _read_runlog,
+    _run_depone_json,
+    _structured_error,
+    _write_json_file,
+)
+
 from witnessd.observer import ObserverSeparationError, assert_separated
 from witnessd.status import render_status
 from witnessd.trust_anchor import TrustAnchor
+
+
+def _cli_handler(module: str, name: str):
+    def _invoke(args: argparse.Namespace) -> int:
+        import importlib
+
+        return getattr(importlib.import_module(f"witnessd.cli.{module}"), name)(args)
+
+    return _invoke
 
 
 DEFAULT_TEAM_PLAN_RUN_LANE_TIMEOUT_SECONDS = 900
@@ -809,90 +829,14 @@ def _count_pending(evidence_dir: str) -> int:
     return count
 
 
-def _cmd_status(args: argparse.Namespace) -> int:
-    if args.runlog:
-        states = _derive_runlog_liveness(args.runlog)
-        for lane_id in sorted(states):
-            print(f"lane {lane_id}: {states[lane_id]}")
-        return 0
-    evidence_dir = os.path.abspath(args.evidence_dir)
-    pending = _count_pending(evidence_dir)
-    print(
-        f"{pending} capture(s) pending Depone verification "
-        f"({render_status(pending=pending, verdict=None)})"
-    )
-    return 0
 
 
-def _cmd_pilot_init(args: argparse.Namespace) -> int:
-    from witnessd.pilot import write_deployment_record
-
-    deployed_runtime = bool(args.deployed_runtime and args.not_dogfood and args.not_ci)
-    record_path = write_deployment_record(
-        operator=args.operator,
-        team_scope=args.team_scope,
-        out_dir=args.out,
-        deployed_runtime=deployed_runtime,
-        local_dogfood=not deployed_runtime,
-        ci_only=not deployed_runtime,
-        repo_root=args.deployment_root,
-    )
-    print(f"deployment_record: {record_path}")
-    return 0
 
 
-def _cmd_pilot_close(args: argparse.Namespace) -> int:
-    from witnessd.pilot import close_deployment_record
-
-    digest = close_deployment_record(args.record)
-    print(f"deployment_record_sha256: {digest}")
-    return 0
 
 
-def _cmd_pilot_rotation_record(args: argparse.Namespace) -> int:
-    from witnessd.pilot import write_rotation_record
-
-    record_path = write_rotation_record(
-        archive_path=args.archive,
-        out_dir=args.out,
-        retired_key_id=args.retired_key_id,
-    )
-    print(f"rotation_record: {record_path}")
-    return 0
 
 
-def _cmd_pilot_canary(args: argparse.Namespace) -> int:
-    from witnessd.pilot import emit_canary_bundle
-
-    bundle_path = emit_canary_bundle(keys_dir=args.keys_dir, out_dir=args.out)
-    print(f"canary_bundle: {bundle_path}")
-    return 0
-
-
-def _cmd_pilot_archive_evidence(args: argparse.Namespace) -> int:
-    from witnessd.pilot import record_archive_evidence
-
-    artifacts: dict[str, str | Path] = {}
-    for entry in args.artifact:
-        if "=" not in entry:
-            print("ERR_ARCHIVE_ARTIFACT_FORMAT", file=sys.stderr)
-            return 2
-        evidence_id, path = entry.split("=", 1)
-        if not evidence_id or not path:
-            print("ERR_ARCHIVE_ARTIFACT_FORMAT", file=sys.stderr)
-            return 2
-        artifacts[evidence_id] = path
-    try:
-        archive_path = record_archive_evidence(
-            archive_path=args.archive,
-            artifacts=artifacts,
-            out_path=args.out,
-        )
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    print(f"operator_key_archive: {archive_path}")
-    return 0
 
 
 def _cmd_plan(args: argparse.Namespace) -> int:
@@ -1100,13 +1044,6 @@ def _draft_prompt(goal: str) -> str:
     )
 
 
-def _read_runlog(path: str) -> list[dict]:
-    records = []
-    with open(path, "r", encoding="utf-8") as handle:
-        for line in handle:
-            if line.strip():
-                records.append(json.loads(line))
-    return records
 
 
 def _derive_runlog_liveness(path: str) -> dict[str, str]:
@@ -1116,114 +1053,10 @@ def _derive_runlog_liveness(path: str) -> dict[str, str]:
     return derive_liveness(records, now_monotonic=time.monotonic())
 
 
-def _cmd_verify(args: argparse.Namespace) -> int:
-    if getattr(args, "run_dir", None):
-        from witnessd.distribution import ProvisionError, run_depone_team_ledger
-
-        run_dir = Path(args.run_dir).resolve(strict=False)
-        home = Path(
-            args.home or os.environ.get("WITNESSD_HOME") or run_dir.parent.parent
-        ).resolve(strict=False)
-        ledger_path = run_dir / "team-ledger.json"
-        verdict_path = run_dir / "team-ledger-verdict.json"
-        from witnessd.trust_anchor import resolve_trust_anchor
-
-        trust_anchor = resolve_trust_anchor(home=home)
-        try:
-            verdict = run_depone_team_ledger(
-                home=home,
-                ledger_path=ledger_path,
-                verdict_path=verdict_path,
-                trusted_observer_public_key_file=trust_anchor.public_key_path,
-            )
-        except ProvisionError as exc:
-            print(exc.code, file=sys.stderr)
-            return 2
-        payload = {
-            "decision": verdict["decision"],
-            "team_ledger": str(ledger_path),
-            "team_ledger_verdict": str(verdict_path),
-            "trust_anchor": trust_anchor.trust_anchor,
-            "independent_trust_anchor": trust_anchor.independent,
-        }
-        print(json.dumps(payload, sort_keys=True))
-        return 0 if verdict["decision"] == "pass" else 1
-    if not args.runlog:
-        print("ERR_VERIFY_RUN_DIR_OR_RUNLOG_REQUIRED", file=sys.stderr)
-        return 2
-    from witnessd.runlog import verify_runlog
-
-    result = verify_runlog(_read_runlog(args.runlog))
-    if result["ok"]:
-        print("runlog: ok")
-        return 0
-    print(f"runlog: broken_at={result['broken_at']}", file=sys.stderr)
-    return 1
 
 
-def _depone_subprocess_env(home: Path | None = None) -> dict[str, str]:
-    env = os.environ.copy()
-    if home is None:
-        return env
-    from witnessd.distribution import validate_depone_pin
-
-    provision = validate_depone_pin(home)
-    depone_root = Path(str(provision["depone"]["root"])).resolve(strict=False)
-    current_pythonpath = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = (
-        str(depone_root)
-        if not current_pythonpath
-        else f"{depone_root}{os.pathsep}{current_pythonpath}"
-    )
-    return env
 
 
-def _run_depone_json(command: list[str], *, env: dict[str, str]) -> tuple[int, dict]:
-    completed = subprocess.run(
-        [sys.executable, "-m", "depone", *command, "--json"],
-        text=True,
-        capture_output=True,
-        check=False,
-        env=env,
-    )
-    if not completed.stdout.strip():
-        return completed.returncode, {
-            "error": {
-                "code": "ERR_ORRO_DEPONE_DELEGATION_FAILED",
-                "message": completed.stderr.strip()
-                or "Depone verifier produced no JSON output",
-            }
-        }
-    try:
-        return completed.returncode, json.loads(completed.stdout)
-    except json.JSONDecodeError:
-        return completed.returncode, {
-            "error": {
-                "code": "ERR_ORRO_DEPONE_DELEGATION_INVALID_JSON",
-                "message": completed.stdout,
-            }
-        }
-
-
-def _structured_error(
-    *,
-    code: str,
-    message: str,
-    reason: str | None = None,
-    required_input_or_grant: str | None = None,
-    next_command: str | None = None,
-    extra: dict[str, object] | None = None,
-) -> dict[str, object]:
-    error: dict[str, object] = {"code": code, "message": message}
-    if reason is not None:
-        error["reason"] = reason
-    if required_input_or_grant is not None:
-        error["required_input_or_grant"] = required_input_or_grant
-    if next_command is not None:
-        error["next_command"] = next_command
-    if extra:
-        error.update(extra)
-    return error
 
 
 def _flowplan_role_lane_error_details(
@@ -1328,30 +1161,6 @@ def _flowplan_role_lane_error_details(
     }
 
 
-def _emit_orro_error(
-    args: argparse.Namespace,
-    *,
-    code: str,
-    message: str,
-    reason: str | None = None,
-    required_input_or_grant: str | None = None,
-    next_command: str | None = None,
-    extra: dict[str, object] | None = None,
-) -> None:
-    error = _structured_error(
-        code=code,
-        message=message,
-        reason=reason,
-        required_input_or_grant=required_input_or_grant,
-        next_command=next_command,
-        extra=extra,
-    )
-    if getattr(args, "json", False):
-        print(json.dumps({"error": error}, sort_keys=True))
-        return
-    print(code, file=sys.stderr)
-    if next_command is not None:
-        print(f"{message} Next: {next_command}", file=sys.stderr)
 
 
 def _emit_orro_engine_lock_check_error(
@@ -1707,12 +1516,6 @@ def _cmd_advisory_provenance_check(args: argparse.Namespace) -> int:
     return code
 
 
-def _hash_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _cmd_handoff(args: argparse.Namespace) -> int:
@@ -2071,891 +1874,28 @@ def _cmd_orro_engine_lock(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_orro_next(args: argparse.Namespace) -> int:
-    from witnessd.orro_next import OrroNextError, decide_next, write_decision
 
-    if not args.run_dir:
-        _emit_orro_error(
-            args,
-            code="ERR_ORRO_NEXT_INPUT_REQUIRED",
-            message="run directory is required",
-        )
-        return 2
-    run_dir = Path(args.run_dir).resolve(strict=False)
-    home = Path(args.home).resolve(strict=False) if args.home else None
-    code, payload = decide_next(run_dir, home=home)
-    if args.out:
-        try:
-            write_decision(Path(args.out).resolve(strict=False), payload)
-        except OrroNextError as exc:
-            _emit_orro_error(args, code=exc.code, message=str(exc))
-            return 1
-    print(json.dumps(payload, sort_keys=True))
-    return code
 
 
-def _cmd_orro_advise(args: argparse.Namespace) -> int:
-    from witnessd.orro_workstyle import (
-        OrroWorkstyleError,
-        advise_workstyle,
-        write_workstyle_decision,
-    )
 
-    if not args.goal or not str(args.goal).strip():
-        _emit_orro_error(
-            args,
-            code="ERR_ORRO_ADVISE_INPUT_REQUIRED",
-            message="goal is required",
-        )
-        return 2
-    repo = Path(args.repo).resolve(strict=False)
-    home = Path(args.home).resolve(strict=False) if args.home else None
-    payload = advise_workstyle(str(args.goal), repo=repo, home=home)
-    if args.out:
-        try:
-            write_workstyle_decision(Path(args.out).resolve(strict=False), payload)
-        except OrroWorkstyleError as exc:
-            _emit_orro_error(args, code=exc.code, message=str(exc))
-            return 1
-    print(json.dumps(payload, sort_keys=True))
-    return 0
 
 
-def _cmd_orro_sketch(args: argparse.Namespace) -> int:
-    from witnessd.advisory_provenance import emit_advisory_provenance
-    from witnessd.orro_advisory import (
-        OrroAdvisoryError,
-        build_sketch_decision,
-        read_agent_decision,
-        write_advisory_decision,
-    )
-    from witnessd.signing import DsseSigningError
 
-    if not args.goal or not str(args.goal).strip():
-        _emit_orro_error(
-            args,
-            code="ERR_ORRO_SKETCH_INPUT_REQUIRED",
-            message="goal is required",
-        )
-        return 2
-    repo = Path(args.repo).resolve(strict=False)
-    home = Path(args.home).resolve(strict=False) if args.home else None
-    try:
-        decision = read_agent_decision(Path(args.decision)) if args.decision else None
-        payload = build_sketch_decision(
-            str(args.goal), repo=repo, home=home, decision=decision
-        )
-        if args.out:
-            out_path = Path(args.out).resolve(strict=False)
-            write_advisory_decision(out_path, payload)
-            seal_home = home or (out_path.parent.parent / ".witnessd")
-            payload = emit_advisory_provenance(
-                payload,
-                decision_path=out_path,
-                home=seal_home,
-                repo=repo,
-            )
-    except OrroAdvisoryError as exc:
-        _emit_orro_error(args, code=exc.code, message=str(exc))
-        return 1
-    except (DsseSigningError, OSError) as exc:
-        _emit_orro_error(
-            args,
-            code=getattr(exc, "code", "ERR_ORRO_ADVISORY_WRITE_FAILED"),
-            message=str(exc),
-        )
-        return 1
-    print(json.dumps(payload, sort_keys=True))
-    return 0
 
 
-def _cmd_orro_trace(args: argparse.Namespace) -> int:
-    from witnessd.advisory_provenance import emit_advisory_provenance
-    from witnessd.orro_advisory import (
-        OrroAdvisoryError,
-        build_trace_decision,
-        read_agent_decision,
-        write_advisory_decision,
-    )
-    from witnessd.signing import DsseSigningError
 
-    if not args.goal or not str(args.goal).strip():
-        _emit_orro_error(
-            args,
-            code="ERR_ORRO_TRACE_INPUT_REQUIRED",
-            message="goal or symptom is required",
-        )
-        return 2
-    repo = Path(args.repo).resolve(strict=False)
-    home = Path(args.home).resolve(strict=False) if args.home else None
-    try:
-        decision = read_agent_decision(Path(args.decision)) if args.decision else None
-        payload = build_trace_decision(
-            str(args.goal), repo=repo, home=home, decision=decision
-        )
-        if args.out:
-            out_path = Path(args.out).resolve(strict=False)
-            write_advisory_decision(out_path, payload)
-            seal_home = home or (out_path.parent.parent / ".witnessd")
-            payload = emit_advisory_provenance(
-                payload,
-                decision_path=out_path,
-                home=seal_home,
-                repo=repo,
-            )
-    except OrroAdvisoryError as exc:
-        _emit_orro_error(args, code=exc.code, message=str(exc))
-        return 1
-    except (DsseSigningError, OSError) as exc:
-        _emit_orro_error(
-            args,
-            code=getattr(exc, "code", "ERR_ORRO_ADVISORY_WRITE_FAILED"),
-            message=str(exc),
-        )
-        return 1
-    print(json.dumps(payload, sort_keys=True))
-    return 0
 
 
-def _cmd_orro_report(args: argparse.Namespace) -> int:
-    from witnessd.orro_report import (
-        OrroReportError,
-        build_report,
-        render_text_report,
-        write_report,
-    )
 
-    if not args.run_dir:
-        _emit_orro_error(
-            args,
-            code="ERR_ORRO_REPORT_INPUT_REQUIRED",
-            message="run directory is required",
-        )
-        return 2
-    run_dir = Path(args.run_dir).resolve(strict=False)
-    home = Path(args.home).resolve(strict=False) if args.home else None
-    workstyle = (
-        Path(args.workstyle_decision).resolve(strict=False)
-        if args.workstyle_decision
-        else None
-    )
-    try:
-        code, payload = build_report(run_dir, home=home, workstyle_decision=workstyle)
-        if args.out:
-            write_report(Path(args.out).resolve(strict=False), payload)
-    except OrroReportError as exc:
-        _emit_orro_error(args, code=exc.code, message=str(exc))
-        return 1
-    if args.json:
-        print(json.dumps(payload, sort_keys=True))
-    else:
-        print(render_text_report(payload), end="")
-    return code
 
 
-def _cmd_orro_review(args: argparse.Namespace) -> int:
-    from witnessd.orro_review import OrroReviewError, run_review_role_lane_plan
 
-    if not args.role_lane_plan:
-        _emit_orro_error(
-            args,
-            code="ERR_ORRO_REVIEW_ROLE_LANE_PLAN_REQUIRED",
-            message="--role-lane-plan is required",
-        )
-        return 2
-    repo = Path(args.repo).resolve(strict=False)
-    home = Path(
-        args.home or os.environ.get("WITNESSD_HOME") or (repo / ".witnessd")
-    ).resolve(strict=False)
-    run_dir = Path(args.run_dir).resolve(strict=False) if args.run_dir else None
-    try:
-        code, payload = run_review_role_lane_plan(
-            repo=repo,
-            home=home,
-            role_lane_plan_path=Path(args.role_lane_plan).resolve(strict=False),
-            run_dir=run_dir,
-            claude_binary=args.claude_binary,
-            agy_binary=args.agy_binary,
-            gemini_binary=args.gemini_binary,
-            timeout_seconds=args.timeout_seconds,
-        )
-    except OrroReviewError as exc:
-        _emit_orro_error(args, code=exc.code, message=exc.message)
-        return 1
-    print(json.dumps(payload, sort_keys=True))
-    return code
 
 
-def _cmd_orro_auto(args: argparse.Namespace) -> int:
-    from witnessd.orro_auto import (
-        OrroAutoError,
-        build_auto_plan,
-        build_auto_receipt,
-        build_auto_session,
-        write_auto_plan,
-        write_auto_receipt,
-        write_auto_session,
-    )
 
-    mode_count = sum(
-        bool(mode) for mode in (args.dry_run, args.once, args.until_complete)
-    )
-    if mode_count > 1:
-        _emit_orro_error(
-            args,
-            code="ERR_ORRO_AUTO_MODE_CONFLICT",
-            message="choose exactly one of --dry-run, --once, or --until-complete",
-        )
-        return 2
-    if mode_count == 0:
-        _emit_orro_error(
-            args,
-            code="ERR_ORRO_AUTO_DRY_RUN_REQUIRED",
-            message="orro auto requires --dry-run, --once, or --until-complete",
-        )
-        return 2
-    if args.until_complete and args.max_steps is None:
-        _emit_orro_error(
-            args,
-            code="ERR_ORRO_AUTO_MAX_STEPS_REQUIRED",
-            message="orro auto --until-complete requires --max-steps",
-        )
-        return 2
-    if args.until_complete and args.max_steps not in {1, 2}:
-        _emit_orro_error(
-            args,
-            code="ERR_ORRO_AUTO_MAX_STEPS_INVALID",
-            message="orro auto --until-complete supports --max-steps 1 or 2 in v0",
-        )
-        return 2
-    if not args.run_dir:
-        _emit_orro_error(
-            args,
-            code="ERR_ORRO_AUTO_INPUT_REQUIRED",
-            message="run directory is required",
-        )
-        return 2
-    run_dir = Path(args.run_dir).resolve(strict=False)
-    home = Path(args.home).resolve(strict=False) if args.home else None
-    code, payload = build_auto_plan(run_dir, home=home)
-    if args.dry_run and args.out:
-        try:
-            write_auto_plan(Path(args.out).resolve(strict=False), payload)
-        except OrroAutoError as exc:
-            _emit_orro_error(args, code=exc.code, message=str(exc))
-            return 1
-    if args.dry_run:
-        print(json.dumps(payload, sort_keys=True))
-        return code
 
-    if args.until_complete:
-        max_steps = int(args.max_steps)
-        decision_initial = str(payload.get("decision", "blocked"))
-        current_code = code
-        current_payload = payload
-        steps: list[dict[str, object]] = []
-        error = None
-        reasons: list[str] = []
 
-        while len(steps) < max_steps:
-            decision = str(current_payload.get("decision", "blocked"))
-            if decision == "complete":
-                break
-            would_run = current_payload.get("would_run", [])
-            if current_code != 0 or not would_run:
-                payload_reasons = current_payload.get("reasons", [])
-                reasons = (
-                    list(payload_reasons) if isinstance(payload_reasons, list) else []
-                )
-                maybe_error = current_payload.get("error")
-                error = maybe_error if isinstance(maybe_error, dict) else None
-                break
-            child_code, receipt, after_code, after_payload = _run_orro_auto_step(
-                run_dir,
-                home=home,
-            )
-            steps.append(
-                {
-                    "step_index": len(steps) + 1,
-                    "decision_before": receipt["decision_before"],
-                    "executed_phase": receipt["executed_phase"],
-                    "command": receipt["command"],
-                    "exit_code": receipt["exit_code"],
-                    "decision_after": receipt["decision_after"],
-                    "wrote": receipt["wrote"],
-                    "launches_workers": False,
-                    "executes_proofrun": False,
-                    "raises_assurance": False,
-                }
-            )
-            current_code = after_code
-            current_payload = after_payload
-            if child_code != 0:
-                maybe_error = receipt.get("error")
-                error = maybe_error if isinstance(maybe_error, dict) else None
-                break
 
-        decision_final = str(current_payload.get("decision", "blocked"))
-        complete = decision_final == "complete"
-        blocked = not complete
-        if blocked and error is None:
-            if len(steps) >= max_steps and decision_final in {
-                "needs-proofcheck",
-                "ready-for-handoff",
-            }:
-                error = {
-                    "code": "ERR_ORRO_AUTO_MAX_STEPS_REACHED",
-                    "message": "orro auto --until-complete stopped before complete because --max-steps was reached",
-                }
-                reasons = [*reasons, "max steps reached before completion"]
-            else:
-                maybe_error = current_payload.get("error")
-                error = (
-                    maybe_error
-                    if isinstance(maybe_error, dict)
-                    else {
-                        "code": "ERR_ORRO_AUTO_BLOCKED",
-                        "message": "ORRO auto until-complete is blocked by continuation state",
-                    }
-                )
-                payload_reasons = current_payload.get("reasons", reasons)
-                reasons = (
-                    list(payload_reasons)
-                    if isinstance(payload_reasons, list)
-                    else reasons
-                )
-        session = build_auto_session(
-            run_dir,
-            max_steps=max_steps,
-            steps=steps,
-            decision_initial=decision_initial,
-            decision_final=decision_final,
-            complete=complete,
-            blocked=blocked,
-            reasons=reasons,
-            error=error,
-        )
-        if args.out:
-            try:
-                write_auto_session(Path(args.out).resolve(strict=False), session)
-            except OrroAutoError as exc:
-                _emit_orro_error(args, code=exc.code, message=str(exc))
-                return 1
-        print(json.dumps(session, sort_keys=True))
-        if complete:
-            return 0
-        if decision_final == "invalid-run-dir":
-            return 2
-        return 1
-
-    decision_before = str(payload.get("decision", "blocked"))
-    would_run = payload.get("would_run", [])
-    if not would_run:
-        receipt = build_auto_receipt(
-            run_dir,
-            decision_before=decision_before,
-            executed=False,
-            executed_phase=None,
-            command=[],
-            exit_code=0 if decision_before == "complete" else code,
-            decision_after=decision_before,
-            wrote=[],
-            reasons=list(payload.get("reasons", [])),
-            error=payload.get("error")
-            if isinstance(payload.get("error"), dict)
-            else None,
-        )
-        if args.out:
-            try:
-                write_auto_receipt(Path(args.out).resolve(strict=False), receipt)
-            except OrroAutoError as exc:
-                _emit_orro_error(args, code=exc.code, message=str(exc))
-                return 1
-        print(json.dumps(receipt, sort_keys=True))
-        if decision_before == "complete":
-            return 0
-        return code
-
-    child_code, receipt, _after_code, _after_payload = _run_orro_auto_step(
-        run_dir,
-        home=home,
-    )
-    if args.out:
-        try:
-            write_auto_receipt(Path(args.out).resolve(strict=False), receipt)
-        except OrroAutoError as exc:
-            _emit_orro_error(args, code=exc.code, message=str(exc))
-            return 1
-    print(json.dumps(receipt, sort_keys=True))
-    return child_code
-
-
-def _run_orro_auto_step(
-    run_dir: Path,
-    *,
-    home: Path | None,
-) -> tuple[int, dict[str, object], int, dict[str, object]]:
-    from witnessd.orro_auto import build_auto_plan, build_auto_receipt
-
-    before_code, before_payload = build_auto_plan(run_dir, home=home)
-    decision_before = str(before_payload.get("decision", "blocked"))
-    would_run = before_payload.get("would_run", [])
-    step = would_run[0] if isinstance(would_run, list) and would_run else None
-    command = list(step.get("command", [])) if isinstance(step, dict) else []
-    phase = str(step.get("phase", "")) if isinstance(step, dict) else ""
-    if phase not in {"proofcheck", "handoff"} or not command:
-        receipt = build_auto_receipt(
-            run_dir,
-            decision_before=decision_before,
-            executed=False,
-            executed_phase=None,
-            command=[],
-            exit_code=1,
-            decision_after=decision_before,
-            wrote=[],
-            reasons=["unsupported auto continuation decision"],
-            error={
-                "code": "ERR_ORRO_AUTO_UNSUPPORTED_DECISION",
-                "message": "orro auto execution only supports proofcheck and handoff",
-            },
-        )
-        return 1, receipt, before_code, before_payload
-
-    child_stdout = io.StringIO()
-    with redirect_stdout(child_stdout):
-        child_code = main(command)
-    after_code, after_payload = build_auto_plan(run_dir, home=home)
-    decision_after = str(after_payload.get("decision", "blocked"))
-    wrote = []
-    if phase == "proofcheck" and (run_dir / "proofcheck-verdict.json").is_file():
-        wrote.append("proofcheck-verdict.json")
-    if phase == "handoff" and (run_dir / "orro-handoff.json").is_file():
-        wrote.append("orro-handoff.json")
-    error = None
-    if child_code != 0:
-        error = {
-            "code": "ERR_ORRO_AUTO_BLOCKED",
-            "message": child_stdout.getvalue(),
-        }
-    receipt = build_auto_receipt(
-        run_dir,
-        decision_before=decision_before,
-        executed=True,
-        executed_phase=phase,
-        command=command,
-        exit_code=child_code,
-        decision_after=decision_after,
-        wrote=wrote,
-        error=error,
-    )
-    return (
-        child_code,
-        receipt,
-        after_code if before_code == 0 or child_code == 0 else before_code,
-        after_payload,
-    )
-
-
-def _cmd_doctor(args: argparse.Namespace) -> int:
-    if args.external_worktree:
-        from witnessd.state import detect_state_contention
-
-        errors = detect_state_contention(
-            witnessd_worktree=os.path.abspath(args.root),
-            external_active_worktrees=[
-                os.path.abspath(path) for path in args.external_worktree
-            ],
-        )
-        for error in errors:
-            print(error, file=sys.stderr)
-        return 3 if errors else 0
-    if not args.runlog:
-        return 0
-    states = _derive_runlog_liveness(args.runlog)
-    bad = {lane_id: state for lane_id, state in states.items() if state != "active"}
-    for lane_id in sorted(states):
-        print(f"lane {lane_id}: {states[lane_id]}")
-    return 1 if bad else 0
-
-
-def _cmd_isolation(args: argparse.Namespace) -> int:
-    if args.self_test:
-        from witnessd.isolation import isolation_self_test
-
-        isolation_self_test()
-        return 0
-    print("ERR_ISOLATION_COMMAND_REQUIRED", file=sys.stderr)
-    return 2
-
-
-def _cmd_faultkit(args: argparse.Namespace) -> int:
-    if args.fault == "budget-blowout":
-        from witnessd.adapter_run import LaneBlocked, run_adapter_lane
-
-        if not args.runner_sandbox:
-            _emit_orro_error(
-                args,
-                code="ERR_WITNESSD_RUNNER_SANDBOX_REQUIRED",
-                message="faultkit adapter execution requires --runner-sandbox <dir>",
-                reason=(
-                    "the codex/claude runner executes inside an isolated sandbox dir"
-                ),
-                required_input_or_grant="--runner-sandbox <dir>",
-                next_command=(
-                    "python3 -m witnessd faultkit budget-blowout "
-                    "--root <repo> --runner-sandbox <dir>"
-                ),
-            )
-            return 2
-
-        try:
-            run_adapter_lane(
-                root=os.path.abspath(args.root),
-                sandbox=os.path.abspath(args.runner_sandbox),
-                adapter="codex",
-                task_id=args.task_id,
-                prompt=args.prompt,
-                arm="direct",
-                tier="agentic",
-                is_supported=lambda _model: True,
-                budget={
-                    "max_tokens": args.max_tokens,
-                    "max_usd": args.max_usd,
-                    "max_depth": args.max_depth,
-                },
-                predicted_tokens=args.max_tokens + 1,
-                predicted_usd=0.0,
-                codex_binary=args.codex_binary,
-            )
-        except LaneBlocked as exc:
-            print(exc.reason)
-            return 1 if exc.reason == "budget_exceeded" else 2
-        print("budget_blowout_not_reproduced", file=sys.stderr)
-        return 2
-    if args.fault == "zombie-hang":
-        from witnessd.faultkit import zombie_hang
-
-        zombie_hang(args.runlog)
-        print(f"faultkit zombie-hang: {args.runlog}")
-        return 0
-    if args.fault == "crash-mid-toolcall":
-        from witnessd.faultkit import crash_mid_toolcall
-
-        state = crash_mid_toolcall(
-            runlog_before_path=args.runlog_before,
-            runlog_after_path=args.runlog_after,
-            session_path=args.session,
-        )
-        print(
-            "faultkit crash-mid-toolcall: "
-            f"{state['run_state']} cursor={state['tool_call_cursor']} "
-            f"reapplied={state['idempotency_reapplied']}"
-        )
-        return 0
-    if args.fault == "pause-race":
-        from witnessd.eventlog import EventLog
-        from witnessd.faultkit import pause_race
-
-        log = EventLog(args.runlog)
-        pause_race(log, run_id=args.run_id)
-        print(f"faultkit pause-race: {args.runlog}")
-        return 0
-    print(f"ERR_UNKNOWN_FAULT: {args.fault}", file=sys.stderr)
-    return 2
-
-
-def _cmd_pause(args: argparse.Namespace) -> int:
-    from witnessd.eventlog import EventLog
-    from witnessd.pause import PauseError, append_user_pause
-
-    try:
-        append_user_pause(EventLog(args.runlog), args.run_id, source="cli")
-    except PauseError as exc:
-        print(exc.code, file=sys.stderr)
-        return 2
-    print(render_status(pending=1, verdict=None))
-    return 0
-
-
-def _cmd_resume_pause(args: argparse.Namespace) -> int:
-    from witnessd.eventlog import EventLog
-    from witnessd.pause import PauseError, append_user_resume
-
-    try:
-        append_user_resume(EventLog(args.runlog), args.run_id, confirm=args.confirm)
-    except PauseError as exc:
-        print(exc.code, file=sys.stderr)
-        return 2
-    print(render_status(pending=1, verdict=None))
-    return 0
-
-
-def _cmd_kill(args: argparse.Namespace) -> int:
-    if not args.all:
-        print("ERR_KILL_SCOPE_REQUIRED", file=sys.stderr)
-        return 2
-    from witnessd.eventlog import EventLog, EventLogIntegrityError
-    from witnessd.killswitch import active_targets_from_runlog, kill_all
-    from witnessd.runlog import verify_runlog
-    from witnessd.supervisor import WorkerSupervisor
-
-    try:
-        log = EventLog(args.runlog)
-        records = log.read()
-    except EventLogIntegrityError as exc:
-        print(f"runlog: broken_at={exc.broken_at}", file=sys.stderr)
-        return 1
-    verification = verify_runlog(records)
-    if not verification["ok"]:
-        print(f"runlog: broken_at={verification['broken_at']}", file=sys.stderr)
-        return 1
-    supervisor = WorkerSupervisor(log, run_id=args.run_id)
-    result = kill_all(
-        supervisor,
-        log,
-        args.run_id,
-        targets=active_targets_from_runlog(records),
-    )
-    print(json.dumps(result, sort_keys=True))
-    return 0 if result["all_confirmed_dead"] else 1
-
-
-def _cmd_learn(args: argparse.Namespace) -> int:
-    if args.learn_cmd != "promote":
-        print("ERR_LEARN_COMMAND_REQUIRED", file=sys.stderr)
-        return 2
-    from witnessd.eventlog import EventLog
-    from witnessd.learning import promote_learning_delta
-
-    with open(args.delta, encoding="utf-8") as handle:
-        delta = json.load(handle)
-    committed_captures = []
-    for path in args.capture:
-        with open(path, encoding="utf-8") as handle:
-            committed_captures.append(json.load(handle))
-    approval_events = []
-    for path in args.approval_log:
-        approval_events.extend(_read_runlog(path))
-    result = promote_learning_delta(
-        delta,
-        log=EventLog(args.runlog),
-        run_id=args.run_id,
-        priv=args.private_key,
-        pub=args.public_key,
-        committed_captures=committed_captures,
-        approval_events=approval_events,
-        evidence_dir=args.evidence_dir,
-    )
-    print(
-        json.dumps({k: v for k, v in result.items() if k != "bundle"}, sort_keys=True)
-    )
-    if not result["promoted"]:
-        return 1
-    bundle_path = args.bundle_out
-    if bundle_path:
-        with open(bundle_path, "w", encoding="utf-8") as handle:
-            json.dump(result["bundle"], handle, sort_keys=True, indent=2)
-            handle.write("\n")
-    return 0
-
-
-def _cmd_install(args: argparse.Namespace) -> int:
-    from witnessd.installer import InstallerError, atomic_install, atomic_upgrade
-    from witnessd.pause import PauseError, assert_not_paused
-    from witnessd.state import StateNamespace
-
-    try:
-        from witnessd.eventlog import EventLog
-
-        runlog = args.runlog or StateNamespace(args.root).runlog_path
-        assert_not_paused(EventLog(runlog).read())
-        if args.cmd == "install":
-            result = atomic_install(
-                payload_path=args.payload,
-                dest_dir=args.dest,
-                config_path=args.config,
-                shim_dir=args.shim_dir,
-                version=args.version,
-            )
-        else:
-            result = atomic_upgrade(
-                payload_path=args.payload,
-                dest_dir=args.dest,
-                config_path=args.config,
-                shim_dir=args.shim_dir,
-                version=args.version,
-            )
-    except (InstallerError, PauseError) as exc:
-        print(exc.code, file=sys.stderr)
-        return 1
-    print(json.dumps(result, sort_keys=True))
-    return 0
-
-
-def _cmd_init(args: argparse.Namespace) -> int:
-    from witnessd.distribution import InitConfig, ProvisionError, init_witnessd_home
-    from witnessd.role_capability import RolepackError
-
-    home = Path(
-        args.home
-        or os.environ.get("WITNESSD_HOME")
-        or (Path(args.repo).resolve(strict=False) / ".witnessd")
-    )
-    depone_root = Path(args.depone_root).expanduser() if args.depone_root else None
-    try:
-        result = init_witnessd_home(
-            InitConfig(
-                home=home,
-                witnessd_root=Path(__file__).resolve().parents[1],
-                depone_root=depone_root,
-                network_allowed=args.allow_network,
-                depone_repository=args.depone_repository,
-                depone_ref=args.depone_ref,
-                team_path=Path(args.team).expanduser() if args.team else None,
-            )
-        )
-    except ProvisionError as exc:
-        print(exc.code, file=sys.stderr)
-        return 2
-    except RolepackError as exc:
-        print(exc.code, file=sys.stderr)
-        return 2
-    print(json.dumps(result, sort_keys=True))
-    return 0
-
-
-def _cmd_orro_setup(args: argparse.Namespace) -> int:
-    from witnessd.distribution import (
-        InitConfig,
-        ProvisionError,
-        build_orro_engine_lock,
-        init_witnessd_home,
-        validate_orro_setup_depone_pin,
-    )
-
-    home = Path(args.home or os.environ.get("WITNESSD_HOME") or ".witnessd")
-    if not home.is_absolute():
-        home = home.resolve(strict=False)
-    depone_root = Path(args.depone_root).expanduser() if args.depone_root else None
-    try:
-        init_result = init_witnessd_home(
-            InitConfig(
-                home=home,
-                witnessd_root=Path(__file__).resolve().parents[1],
-                depone_root=depone_root,
-                network_allowed=True,
-                depone_repository=args.depone_repository,
-                depone_ref=args.depone_ref,
-            )
-        )
-        provision = validate_orro_setup_depone_pin(
-            home=home,
-            depone_ref=args.depone_ref,
-        )
-        engine_lock = build_orro_engine_lock(
-            home=home,
-            witnessd_root=Path(__file__).resolve().parents[1],
-        )
-        engine_lock_path = home / "orro-engine-lock.json"
-        engine_lock_path.write_text(
-            json.dumps(engine_lock, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-    except ProvisionError as exc:
-        _emit_orro_error(
-            args,
-            code=exc.code,
-            message="ORRO setup could not provision a pinned Depone verifier",
-        )
-        return 2
-    except OSError as exc:
-        _emit_orro_error(
-            args,
-            code="ERR_ORRO_SETUP_WRITE_FAILED",
-            message=str(exc),
-        )
-        return 1
-
-    depone = provision["depone"]
-    payload = {
-        "kind": "orro-setup-result",
-        "schema_version": "0.1",
-        "command": "orro setup",
-        "home": str(home),
-        "config": init_result["config"],
-        "provision": init_result["provision"],
-        "keys_dir": init_result["keys_dir"],
-        "depone_root": str(depone["root"]),
-        "depone_commit": str(depone["commit"]),
-        "depone_source": str(depone["source"]),
-        "depone_network_used": bool(depone["network_used"]),
-        "engine_lock": str(engine_lock_path),
-        "engine_lock_commit": str(engine_lock["depone"]["commit"]),
-        "next_steps": [
-            f"python3 -m orro doctor --home {shlex.quote(str(home))} --json",
-            "python3 -m orro team init --template developer --yes",
-            f'python3 -m orro team go "<goal>" --repo <repo> --home {shlex.quote(str(home))} --json',
-        ],
-        "boundary": {
-            "setup_may_use_network": True,
-            "runtime_may_use_network": False,
-            "verify_may_use_network": False,
-            "verifies_evidence": False,
-            "raises_assurance": False,
-            "approves_merge": False,
-        },
-    }
-    if args.json:
-        print(json.dumps(payload, sort_keys=True))
-        return 0
-    print("ORRO setup complete")
-    print(f"home: {payload['home']}")
-    print(f"depone_root: {payload['depone_root']}")
-    print(f"depone_commit: {payload['depone_commit']}")
-    print(f"engine_lock: {payload['engine_lock']}")
-    print("next:")
-    for step in payload["next_steps"]:
-        print(f"  {step}")
-    return 0
-
-
-def _cmd_scout(args: argparse.Namespace) -> int:
-    from witnessd.superflow import run_scout
-
-    home = Path(
-        args.home
-        or os.environ.get("WITNESSD_HOME")
-        or (Path(args.repo).resolve(strict=False) / ".witnessd")
-    )
-    out_dir = Path(args.out_dir) if args.out_dir else None
-    result = run_scout(args.goal, repo=Path(args.repo), home=home, out_dir=out_dir)
-    print(json.dumps(result, sort_keys=True))
-    return 0
-
-
-def _cmd_route(args: argparse.Namespace) -> int:
-    from witnessd.eventlog import EventLog
-    from witnessd.router import RouteExhaustedError, route_model
-
-    root = Path(args.root).resolve()
-    runlog_path = (
-        Path(args.runlog) if args.runlog else root / ".witnessd" / "route-runlog.jsonl"
-    )
-    runlog_path.parent.mkdir(parents=True, exist_ok=True)
-    unsupported = set(args.unsupported_model or [])
-    log = EventLog(str(runlog_path))
-    try:
-        decision = route_model(
-            task_id=args.task_id,
-            tier=args.tier,
-            log=log,
-            is_supported=lambda model: model not in unsupported,
-        )
-    except RouteExhaustedError as exc:
-        print(exc.code, file=sys.stderr)
-        return 1
-    print(json.dumps(decision, sort_keys=True))
-    return 0
 
 
 def _cmd_team_run(args: argparse.Namespace) -> int:
@@ -4101,12 +3041,6 @@ def _team_go_routing_decision(
     }
 
 
-def _write_json_file(path: Path, payload: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
 
 
 def _invoke_cli_capture(argv: list[str]) -> tuple[int, str, str]:
@@ -4120,11 +3054,6 @@ def _invoke_cli_capture(argv: list[str]) -> tuple[int, str, str]:
     return code, stdout.getvalue(), stderr.getvalue()
 
 
-def _json_or_text(text: str) -> object:
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return {"text": text}
 
 
 def _load_json_if_exists(path: Path) -> object | None:
@@ -4536,6 +3465,7 @@ def _cmd_team_kill(args: argparse.Namespace) -> int:
         print("ERR_TEAM_KILL_RUNLOG_REQUIRED", file=sys.stderr)
         return 2
     args.runlog = runlog
+    from witnessd.cli.runtime_ops import _cmd_kill
     return _cmd_kill(args)
 
 
@@ -4696,7 +3626,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="allow setup-time network provisioning when no local Depone root is supplied",
     )
-    init.set_defaults(func=_cmd_init)
+    init.set_defaults(func=_cli_handler("bootstrap", "_cmd_init"))
 
     orro_setup = sub.add_parser(
         "orro-setup",
@@ -4712,14 +3642,14 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="acknowledge setup-time provisioning without prompting",
     )
-    orro_setup.set_defaults(func=_cmd_orro_setup)
+    orro_setup.set_defaults(func=_cli_handler("bootstrap", "_cmd_orro_setup"))
 
     scout = sub.add_parser("scout", help="run read-only ORRO repo scout")
     scout.add_argument("goal")
     scout.add_argument("--repo", default=".")
     scout.add_argument("--home", default=None)
     scout.add_argument("--out-dir", default=None)
-    scout.set_defaults(func=_cmd_scout)
+    scout.set_defaults(func=_cli_handler("bootstrap", "_cmd_scout"))
 
     run = sub.add_parser("run", help="observe a lane and emit signed evidence")
     _add_run_args(run)
@@ -4783,13 +3713,13 @@ def _build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="render evidence-pending status")
     status.add_argument("--evidence-dir", default=".")
     status.add_argument("--runlog", default=None)
-    status.set_defaults(func=_cmd_status)
+    status.set_defaults(func=_cli_handler("runtime_ops", "_cmd_status"))
 
     verify = sub.add_parser("verify", help="verify a run directory or runlog integrity")
     verify.add_argument("run_dir", nargs="?")
     verify.add_argument("--home", default=None)
     verify.add_argument("--runlog", default=None)
-    verify.set_defaults(func=_cmd_verify)
+    verify.set_defaults(func=_cli_handler("runtime_ops", "_cmd_verify"))
 
     proofcheck = sub.add_parser(
         "proofcheck",
@@ -4830,13 +3760,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--tier", required=True, choices=["quick", "agentic", "frontier"]
     )
     route.add_argument("--unsupported-model", action="append", default=[])
-    route.set_defaults(func=_cmd_route)
+    route.set_defaults(func=_cli_handler("bootstrap", "_cmd_route"))
 
     doctor = sub.add_parser("doctor", help="report runlog-derived lane health")
     doctor.add_argument("--runlog", default=None)
     doctor.add_argument("--root", default=".")
     doctor.add_argument("--external-worktree", action="append", default=[])
-    doctor.set_defaults(func=_cmd_doctor)
+    doctor.set_defaults(func=_cli_handler("runtime_ops", "_cmd_doctor"))
 
     orro_doctor = sub.add_parser("orro-doctor", help=argparse.SUPPRESS)
     orro_doctor.add_argument("--home", default=None)
@@ -4865,7 +3795,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_next.add_argument("--home", default=None)
     orro_next.add_argument("--out", default=None)
     orro_next.add_argument("--json", action="store_true")
-    orro_next.set_defaults(func=_cmd_orro_next)
+    orro_next.set_defaults(func=_cli_handler("advisory", "_cmd_orro_next"))
 
     orro_advise = sub.add_parser("orro-advise", help=argparse.SUPPRESS)
     orro_advise.add_argument("goal", nargs="?")
@@ -4873,7 +3803,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_advise.add_argument("--home", default=None)
     orro_advise.add_argument("--out", default=None)
     orro_advise.add_argument("--json", action="store_true")
-    orro_advise.set_defaults(func=_cmd_orro_advise)
+    orro_advise.set_defaults(func=_cli_handler("advisory", "_cmd_orro_advise"))
 
     orro_sketch = sub.add_parser(
         "orro-sketch",
@@ -4889,7 +3819,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_sketch.add_argument("--decision", default=None)
     orro_sketch.add_argument("--out", default=None)
     orro_sketch.add_argument("--json", action="store_true")
-    orro_sketch.set_defaults(func=_cmd_orro_sketch)
+    orro_sketch.set_defaults(func=_cli_handler("advisory", "_cmd_orro_sketch"))
 
     orro_trace = sub.add_parser(
         "orro-trace",
@@ -4905,7 +3835,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_trace.add_argument("--decision", default=None)
     orro_trace.add_argument("--out", default=None)
     orro_trace.add_argument("--json", action="store_true")
-    orro_trace.set_defaults(func=_cmd_orro_trace)
+    orro_trace.set_defaults(func=_cli_handler("advisory", "_cmd_orro_trace"))
 
     orro_report = sub.add_parser("orro-report", help=argparse.SUPPRESS)
     orro_report.add_argument("run_dir", nargs="?")
@@ -4913,7 +3843,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_report.add_argument("--out", default=None)
     orro_report.add_argument("--workstyle-decision", default=None)
     orro_report.add_argument("--json", action="store_true")
-    orro_report.set_defaults(func=_cmd_orro_report)
+    orro_report.set_defaults(func=_cli_handler("advisory", "_cmd_orro_report"))
 
     orro_review = sub.add_parser(
         "orro-review",
@@ -4932,7 +3862,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_review.add_argument("--gemini-binary", default="gemini")
     orro_review.add_argument("--timeout-seconds", type=int, default=120)
     orro_review.add_argument("--json", action="store_true")
-    orro_review.set_defaults(func=_cmd_orro_review)
+    orro_review.set_defaults(func=_cli_handler("advisory", "_cmd_orro_review"))
 
     orro_auto = sub.add_parser("orro-auto", help=argparse.SUPPRESS)
     orro_auto.add_argument("run_dir", nargs="?")
@@ -4943,7 +3873,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_auto.add_argument("--home", default=None)
     orro_auto.add_argument("--out", default=None)
     orro_auto.add_argument("--json", action="store_true")
-    orro_auto.set_defaults(func=_cmd_orro_auto)
+    orro_auto.set_defaults(func=_cli_handler("advisory", "_cmd_orro_auto"))
 
     orro_flow = sub.add_parser(
         "orro-flow",
@@ -4976,22 +3906,22 @@ def _build_parser() -> argparse.ArgumentParser:
 
     isolation = sub.add_parser("isolation", help="isolation contract checks")
     isolation.add_argument("--self-test", action="store_true")
-    isolation.set_defaults(func=_cmd_isolation)
+    isolation.set_defaults(func=_cli_handler("runtime_ops", "_cmd_isolation"))
 
     faultkit = sub.add_parser("faultkit", help="deterministic fault injection")
     faultkit_sub = faultkit.add_subparsers(dest="fault", required=True)
     zombie = faultkit_sub.add_parser("zombie-hang")
     zombie.add_argument("--runlog", required=True)
-    zombie.set_defaults(func=_cmd_faultkit)
+    zombie.set_defaults(func=_cli_handler("runtime_ops", "_cmd_faultkit"))
     crash = faultkit_sub.add_parser("crash-mid-toolcall")
     crash.add_argument("--runlog-before", required=True)
     crash.add_argument("--runlog-after", required=True)
     crash.add_argument("--session", required=True)
-    crash.set_defaults(func=_cmd_faultkit)
+    crash.set_defaults(func=_cli_handler("runtime_ops", "_cmd_faultkit"))
     pause_race = faultkit_sub.add_parser("pause-race")
     pause_race.add_argument("--runlog", required=True)
     pause_race.add_argument("--run-id", default="faultkit-pause-run")
-    pause_race.set_defaults(func=_cmd_faultkit)
+    pause_race.set_defaults(func=_cli_handler("runtime_ops", "_cmd_faultkit"))
     budget = faultkit_sub.add_parser("budget-blowout")
     budget.add_argument("--root", required=True)
     budget.add_argument("--runner-sandbox", required=True)
@@ -5001,7 +3931,7 @@ def _build_parser() -> argparse.ArgumentParser:
     budget.add_argument("--max-tokens", type=int, default=1)
     budget.add_argument("--max-usd", type=float, default=10**9)
     budget.add_argument("--max-depth", type=int, default=3)
-    budget.set_defaults(func=_cmd_faultkit)
+    budget.set_defaults(func=_cli_handler("runtime_ops", "_cmd_faultkit"))
 
     team = sub.add_parser("team", help="run a local team fan-in")
     team_sub = team.add_subparsers(dest="team_cmd", required=True)
@@ -5172,19 +4102,19 @@ def _build_parser() -> argparse.ArgumentParser:
     pause = sub.add_parser("pause", help="append a user pause event")
     pause.add_argument("run_id")
     pause.add_argument("--runlog", required=True)
-    pause.set_defaults(func=_cmd_pause)
+    pause.set_defaults(func=_cli_handler("runtime_ops", "_cmd_pause"))
 
     resume = sub.add_parser("resume", help="append an explicit user resume event")
     resume.add_argument("run_id")
     resume.add_argument("--runlog", required=True)
     resume.add_argument("--confirm", action="store_true")
-    resume.set_defaults(func=_cmd_resume_pause)
+    resume.set_defaults(func=_cli_handler("runtime_ops", "_cmd_resume_pause"))
 
     kill = sub.add_parser("kill", help="kill all supervised children")
     kill.add_argument("--all", action="store_true")
     kill.add_argument("--runlog", required=True)
     kill.add_argument("--run-id", default="witnessd-kill")
-    kill.set_defaults(func=_cmd_kill)
+    kill.set_defaults(func=_cli_handler("runtime_ops", "_cmd_kill"))
 
     learn = sub.add_parser("learn", help="learning delta commands")
     learn_sub = learn.add_subparsers(dest="learn_cmd", required=True)
@@ -5198,7 +4128,7 @@ def _build_parser() -> argparse.ArgumentParser:
     promote.add_argument("--public-key", required=True)
     promote.add_argument("--evidence-dir", required=True)
     promote.add_argument("--bundle-out", default=None)
-    promote.set_defaults(func=_cmd_learn)
+    promote.set_defaults(func=_cli_handler("runtime_ops", "_cmd_learn"))
 
     for name, help_text in (
         ("install", "atomically install witnessd payload"),
@@ -5212,7 +4142,7 @@ def _build_parser() -> argparse.ArgumentParser:
         install.add_argument("--version", required=True)
         install.add_argument("--root", default=".")
         install.add_argument("--runlog", default=None)
-        install.set_defaults(func=_cmd_install)
+        install.set_defaults(func=_cli_handler("runtime_ops", "_cmd_install"))
 
     self_test = sub.add_parser("self-test", help="run module self-tests")
     self_test.add_argument("--all", action="store_true")
@@ -5233,11 +4163,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="repo path of the deployed runtime whose git SHA is recorded (default: this tree)",
     )
-    pilot_init.set_defaults(func=_cmd_pilot_init)
+    pilot_init.set_defaults(func=_cli_handler("pilot", "_cmd_pilot_init"))
 
     pilot_close = pilot_sub.add_parser("close", help="close a pilot deployment record")
     pilot_close.add_argument("--record", required=True)
-    pilot_close.set_defaults(func=_cmd_pilot_close)
+    pilot_close.set_defaults(func=_cli_handler("pilot", "_cmd_pilot_close"))
 
     pilot_rotation = pilot_sub.add_parser(
         "rotation-record", help="create an operator key rotation record"
@@ -5245,14 +4175,14 @@ def _build_parser() -> argparse.ArgumentParser:
     pilot_rotation.add_argument("--archive", required=True)
     pilot_rotation.add_argument("--out", required=True)
     pilot_rotation.add_argument("--retired-key-id", default="witnessd-operator")
-    pilot_rotation.set_defaults(func=_cmd_pilot_rotation_record)
+    pilot_rotation.set_defaults(func=_cli_handler("pilot", "_cmd_pilot_rotation_record"))
 
     pilot_canary = pilot_sub.add_parser(
         "canary", help="emit a signed operator key-rotation canary bundle"
     )
     pilot_canary.add_argument("--keys-dir", required=True)
     pilot_canary.add_argument("--out", required=True)
-    pilot_canary.set_defaults(func=_cmd_pilot_canary)
+    pilot_canary.set_defaults(func=_cli_handler("pilot", "_cmd_pilot_canary"))
 
     pilot_archive = pilot_sub.add_parser(
         "archive-evidence", help="record pilot evidence paths and hashes"
@@ -5260,7 +4190,7 @@ def _build_parser() -> argparse.ArgumentParser:
     pilot_archive.add_argument("--archive", required=True)
     pilot_archive.add_argument("--out", default=None)
     pilot_archive.add_argument("--artifact", action="append", required=True)
-    pilot_archive.set_defaults(func=_cmd_pilot_archive_evidence)
+    pilot_archive.set_defaults(func=_cli_handler("pilot", "_cmd_pilot_archive_evidence"))
 
     return parser
 
