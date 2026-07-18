@@ -50,6 +50,15 @@ def _fake_agy(directory: Path) -> str:
         "capture = os.environ.get('AGY_ARGV_CAPTURE')\n"
         "if capture:\n"
         "    pathlib.Path(capture).write_text('\\n'.join(sys.argv[1:]) + '\\n', encoding='utf-8')\n"
+        "cache_capture = os.environ.get('ORRO_CACHE_CAPTURE')\n"
+        "if cache_capture:\n"
+        "    pathlib.Path(cache_capture).write_text(os.environ['PYTHONPYCACHEPREFIX'] + '\\n' + os.environ['RUFF_CACHE_DIR'] + '\\n', encoding='utf-8')\n"
+        "if os.environ.get('AGY_WRITE_CACHE') == '1':\n"
+        "    pathlib.Path(os.environ['RUFF_CACHE_DIR']).mkdir(parents=True, exist_ok=True)\n"
+        "    pathlib.Path(os.environ['RUFF_CACHE_DIR'], 'cache.bin').write_text('cache', encoding='utf-8')\n"
+        "    pycache = pathlib.Path(os.environ['PYTHONPYCACHEPREFIX'], 'pkg')\n"
+        "    pycache.mkdir(parents=True, exist_ok=True)\n"
+        "    pathlib.Path(pycache, 'mod.pyc').write_text('bytecode', encoding='utf-8')\n"
         "if os.environ.get('AGY_WRITE') == '1':\n"
         "    pathlib.Path('reviewed.txt').write_text('changed\\n', encoding='utf-8')\n"
         "if sys.stdout.isatty():\n"
@@ -99,6 +108,84 @@ def _fake_claude_critic(directory: Path) -> str:
 
 
 class OrroReviewTests(unittest.TestCase):
+    def test_orro_review_redirects_adapter_cache_outside_repo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = repo / ".witnessd"
+            repo.mkdir()
+            _seed_repo(repo)
+            role_lanes_out = root / "role-lane-plan.json"
+            with redirect_stdout(io.StringIO()) as flow_stdout:
+                flow_code = main(
+                    [
+                        "orro",
+                        "flowplan",
+                        "review the readme",
+                        "--root",
+                        str(repo),
+                        "--profile",
+                        "review-only",
+                        "--role-lanes-out",
+                        str(role_lanes_out),
+                        "--model-policy",
+                        "default",
+                        "--role-lane-tier",
+                        "frontier",
+                    ]
+                )
+            self.assertEqual(flow_code, 0, flow_stdout.getvalue())
+
+            bindir = root / "bin"
+            bindir.mkdir()
+            cache_capture = root / "cache-env.txt"
+            stdout = io.StringIO()
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "ORRO_CACHE_CAPTURE": str(cache_capture),
+                        "AGY_WRITE_CACHE": "1",
+                    },
+                ),
+                redirect_stdout(stdout),
+            ):
+                code = main(
+                    [
+                        "orro",
+                        "review",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--role-lane-plan",
+                        str(role_lanes_out),
+                        "--agy-binary",
+                        _fake_agy(bindir),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0, stdout.getvalue())
+            payload = json.loads(stdout.getvalue())
+            lane = payload["lanes"][0]
+            evidence_root = Path(lane["review_receipt_path"]).parent.parent
+            cache_dir = (
+                evidence_root
+                / ".witnessd"
+                / "adapter-cache"
+                / lane["lane_id"]
+            )
+            self.assertEqual(lane["touched_files"], [])
+            self.assertEqual(
+                cache_capture.read_text(encoding="utf-8").splitlines(),
+                [str(cache_dir / "pycache"), str(cache_dir / "ruff")],
+            )
+            self.assertFalse((repo / ".ruff_cache").exists())
+            self.assertFalse((repo / "__pycache__").exists())
+            self.assertTrue((cache_dir / "ruff" / "cache.bin").is_file())
+            self.assertTrue((cache_dir / "pycache" / "pkg" / "mod.pyc").is_file())
+
     def test_orro_review_runs_exactly_one_dedicated_claude_critic_lane(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
