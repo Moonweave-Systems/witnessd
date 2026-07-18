@@ -45,6 +45,7 @@ class OrroFlowTests(unittest.TestCase):
             "--role-lane-tier",
             "--run-dir",
             "--allow-reference-adapter",
+            "--verification-only",
             "--json",
         ):
             self.assertIn(option, help_text)
@@ -61,6 +62,7 @@ class OrroFlowTests(unittest.TestCase):
                     "create pkg/output.txt",
                     "--adapter",
                     "codex",
+                    "--verification-only",
                     "--json",
                 ]
             )
@@ -188,6 +190,7 @@ class OrroFlowTests(unittest.TestCase):
                         str(runner_sandbox),
                         "--rolepack-file",
                         str(rolepack_path),
+                        "--verification-only",
                         "--home",
                         str(home),
                         "--run-dir",
@@ -204,6 +207,103 @@ class OrroFlowTests(unittest.TestCase):
             )
             self.assertIn("exactly match", payload["error"]["reason"])
             self.assertFalse((run_dir / "workflow-plan.json").exists())
+
+    def test_verification_only_flow_declares_runner_intent_with_write_scope(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            run_dir = root / "observer" / "run"
+            runner_sandbox = root / "runner"
+            rolepack_path = root / "rolepack.json"
+            repo.mkdir()
+            runner_sandbox.mkdir()
+            _seed_repo(repo)
+            rolepack_path.write_text(
+                json.dumps(
+                    {
+                        "kind": "moonweave-rolepack",
+                        "schema_version": "0.2",
+                        "name": "shell-reference",
+                        "grants": [
+                            {
+                                "role_id": "runner",
+                                "capability": "execute",
+                                "adapters": ["shell"],
+                                "model": "reference-shell",
+                                "write_scope": ["pkg/output.txt"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with (
+                patch("witnessd.__main__.Path.cwd", return_value=repo),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                code = main(
+                    [
+                        "orro",
+                        "flow",
+                        "create pkg/output.txt",
+                        "--write-scope",
+                        "pkg/output.txt",
+                        "--adapter",
+                        "shell",
+                        "--runner-sandbox",
+                        str(runner_sandbox),
+                        "--rolepack-file",
+                        str(rolepack_path),
+                        "--home",
+                        str(home),
+                        "--run-dir",
+                        str(run_dir),
+                        "--allow-reference-adapter",
+                        "--verification-only",
+                        "--json",
+                    ]
+                )
+
+            self.assertNotEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["blocked_phase"], "proofrun")
+            self.assertEqual(
+                payload["error"]["code"], "ERR_ORRO_FLOW_PROOFRUN_BLOCKED"
+            )
+            role_lane_plan = json.loads(
+                (run_dir / "role-lane-plan.json").read_text(encoding="utf-8")
+            )
+            runner_lane = next(
+                lane for lane in role_lane_plan["lanes"] if lane["role_id"] == "runner"
+            )
+            self.assertEqual(runner_lane["lane_intent"], "verification-only")
+            self.assertEqual(runner_lane["region"], ["pkg/output.txt"])
+            team_ledger = json.loads(
+                (run_dir / "team-ledger.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                team_ledger["lanes"][0]["lane_intent"], "verification-only"
+            )
+            self.assertEqual(
+                team_ledger["lanes"][0]["touched_files"], ["pkg/output.txt"]
+            )
+            team_ledger_verdict = json.loads(
+                (run_dir / "team-ledger-verdict.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(team_ledger_verdict["decision"], "blocked")
+            self.assertEqual(
+                team_ledger_verdict["errors"][0]["code"],
+                "ERR_TEAM_LEDGER_VERIFICATION_LANE_MUTATED",
+            )
+            self.assertNotIn("Traceback", stdout.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_reference_shell_flow_can_complete_with_explicit_opt_in(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
