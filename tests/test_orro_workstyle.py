@@ -99,7 +99,7 @@ class OrroWorkstyleTests(unittest.TestCase):
             with self.subTest(adapter=adapter):
                 stdout = io.StringIO()
                 with patch(
-                    "witnessd.__main__.subprocess.run",
+                    "witnessd.cli.verify.subprocess.run",
                     return_value=subprocess.CompletedProcess(
                         args=[], returncode=0, stdout="depone doctor: pass", stderr=""
                     ),

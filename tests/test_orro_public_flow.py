@@ -2331,7 +2331,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             out = evidence_dir / "proofcheck-verdict.json"
 
             with patch(
-                "witnessd.__main__._run_depone_json",
+                "witnessd.cli.verify._run_depone_json",
                 return_value=(
                     0,
                     {
@@ -2374,7 +2374,7 @@ class OrroPublicFlowTests(unittest.TestCase):
                             },
                         )
 
-                    with patch("witnessd.__main__._run_depone_json", side_effect=fake_depone):
+                    with patch("witnessd.cli.verify._run_depone_json", side_effect=fake_depone):
                         stdout = io.StringIO()
                         with redirect_stdout(stdout):
                             code = main(["proofcheck", str(evidence_dir), "--out", str(out)])
@@ -2404,7 +2404,7 @@ class OrroPublicFlowTests(unittest.TestCase):
                 out.write_text(json.dumps(verdict) + "\n", encoding="utf-8")
                 return 1, {**verdict, "out": str(out)}
 
-            with patch("witnessd.__main__._run_depone_json", side_effect=fake_depone):
+            with patch("witnessd.cli.verify._run_depone_json", side_effect=fake_depone):
                 stdout = io.StringIO()
                 with redirect_stdout(stdout):
                     code = main(
