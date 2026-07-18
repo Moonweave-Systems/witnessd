@@ -51,6 +51,7 @@ from witnessd.write_scope_declaration import (
     write_scope_allows_paths,
 )
 from witnessd.tool_declaration import normalize_tool_grant
+from witnessd.usage import usage_from_transcript
 
 
 class LaneBlocked(RuntimeError):
@@ -444,6 +445,18 @@ def run_adapter_lane(
             role_capability=role_capability,
             lane_id=task_id,
         )
+        usage = usage_from_transcript(transcript_path)
+        if adapter in {"codex", "claude"} and (
+            usage["input"] is not None or usage["output"] is not None
+        ):
+            breaker.charge(
+                task_id=task_id,
+                adapter=adapter,
+                tokens=int(usage["input"] or 0) + int(usage["output"] or 0),
+                usd=0.0,
+            )
+        else:
+            breaker.record_unmeasured(task_id=task_id, adapter=adapter)
         diff_patch = _git_diff_patch(worktree, adapter_result.touched_files)
         provider_artifacts = {}
         invalid_agy_context = (
