@@ -54,9 +54,9 @@
 
 ### Task 4: lifecycle cluster → `witnessd/cli/runtime_ops.py`
 
-- [ ] Move verbatim: `_cmd_status` (812), `_cmd_verify` (1119), `_cmd_doctor` (2559), `_cmd_isolation` (2581), `_cmd_faultkit` (2591), `_cmd_pause` (2667), `_cmd_resume_pause` (2680), `_cmd_kill` (2693), `_cmd_learn` (2723), `_cmd_install` (2762). (NOT `_cmd_orro_doctor` — that is the Depone-dispatch cluster, PR3.) `_cmd_status` uses the eager `from witnessd.status import render_status` — move that import to `runtime_ops.py` module scope and delete it from `__main__` if no remaining `__main__` code uses it (grep first).
-- [ ] Rewire parsers: `status` 4783, `verify` 4788, `doctor` 4835, `isolation` 4977, `faultkit` 4981+, `pause` 5172, `resume` 5177, `kill` 5183, `learn promote` 5189, `install`/`upgrade` 5203.
-- [ ] Patch/import migration: `grep -rn "witnessd.__main__" tests/ | grep -E "status|verify|doctor|isolation|faultkit|pause|resume|kill|learn|install"` → migrate hits whose handlers moved. Run those modules + full suite. Commit: `refactor(cli): move lifecycle/runtime handlers to witnessd.cli.runtime_ops`
+- [x] Move verbatim: `_cmd_status` (812), `_cmd_verify` (1119), `_cmd_doctor` (2559), `_cmd_isolation` (2581), `_cmd_faultkit` (2591), `_cmd_pause` (2667), `_cmd_resume_pause` (2680), `_cmd_kill` (2693), `_cmd_learn` (2723), `_cmd_install` (2762). (NOT `_cmd_orro_doctor` — that is the Depone-dispatch cluster, PR3.) `_cmd_status` uses the eager `from witnessd.status import render_status` — move that import to `runtime_ops.py` module scope and delete it from `__main__` if no remaining `__main__` code uses it (grep first).
+- [x] Rewire parsers: `status` 4783, `verify` 4788, `doctor` 4835, `isolation` 4977, `faultkit` 4981+, `pause` 5172, `resume` 5177, `kill` 5183, `learn promote` 5189, `install`/`upgrade` 5203.
+- [x] Patch/import migration: `grep -rn "witnessd.__main__" tests/ | grep -E "status|verify|doctor|isolation|faultkit|pause|resume|kill|learn|install"` → migrate hits whose handlers moved. Run those modules + full suite. Commit: `refactor(cli): move lifecycle/runtime handlers to witnessd.cli.runtime_ops`
 
 ### Task 5: bootstrap cluster → `witnessd/cli/bootstrap.py`
 
