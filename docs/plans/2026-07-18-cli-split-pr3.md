@@ -32,9 +32,9 @@
 
 ### Task 4: self-test + stranded runtime_ops helpers
 
-- [ ] Move `_cmd_self_test` (1979) verbatim → new `witnessd/cli/self_test.py`; rewire `self-test` (2597) → `_cli_handler("self_test", "_cmd_self_test")`.
-- [ ] Move `_count_pending` (832) and `_derive_runlog_liveness` (1058) verbatim → `witnessd/cli/runtime_ops.py` (their ONLY callers live there), then **delete** `witnessd/cli/runtime_ops.py:9`'s `from witnessd.__main__ import _count_pending, _derive_runlog_liveness` back-import. `_derive_runlog_liveness` needs `_read_runlog` — already imported in runtime_ops from `_output`.
-- [ ] `$RUN discover -s tests` → 821 OK. Commit: `refactor(cli): move self-test and stranded runlog helpers out of __main__`
+- [x] Move `_cmd_self_test` (1979) verbatim → new `witnessd/cli/self_test.py`; rewire `self-test` (2597) → `_cli_handler("self_test", "_cmd_self_test")`.
+- [x] Move `_count_pending` (832) and `_derive_runlog_liveness` (1058) verbatim → `witnessd/cli/runtime_ops.py` (their ONLY callers live there), then **delete** `witnessd/cli/runtime_ops.py:9`'s `from witnessd.__main__ import _count_pending, _derive_runlog_liveness` back-import. `_derive_runlog_liveness` needs `_read_runlog` — already imported in runtime_ops from `_output`.
+- [x] `$RUN discover -s tests` → 821 OK. Commit: `refactor(cli): move self-test and stranded runlog helpers out of __main__`
 
 ### Task 5: patch-target migration THEN dead-import prune (order matters)
 
