@@ -639,6 +639,8 @@ def _role_lane_plan_team_specs(
                 "commands": commands,
             }
             _attach_role_capability_team_fields(spec, lane)
+            if lane.get("timeout_seconds") is not None:
+                spec["timeout_seconds"] = lane["timeout_seconds"]
             specs.append(spec)
             continue
         spec = {
@@ -656,6 +658,8 @@ def _role_lane_plan_team_specs(
             "opencode_binary": args.opencode_binary,
         }
         _attach_role_capability_team_fields(spec, lane)
+        if lane.get("timeout_seconds") is not None:
+            spec["timeout_seconds"] = lane["timeout_seconds"]
         if lane.get("model") is not None:
             spec["model"] = lane["model"]
         specs.append(spec)
