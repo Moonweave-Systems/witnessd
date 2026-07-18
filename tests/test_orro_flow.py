@@ -101,7 +101,7 @@ class OrroFlowTests(unittest.TestCase):
             stderr = io.StringIO()
 
             with (
-                patch("witnessd.__main__.Path.cwd", return_value=repo),
+                patch("witnessd.cli.flow.Path.cwd", return_value=repo),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
@@ -178,7 +178,7 @@ class OrroFlowTests(unittest.TestCase):
             stdout = io.StringIO()
 
             with (
-                patch("witnessd.__main__.Path.cwd", return_value=repo),
+                patch("witnessd.cli.flow.Path.cwd", return_value=repo),
                 redirect_stdout(stdout),
                 redirect_stderr(io.StringIO()),
             ):
@@ -249,7 +249,7 @@ class OrroFlowTests(unittest.TestCase):
             stderr = io.StringIO()
 
             with (
-                patch("witnessd.__main__.Path.cwd", return_value=repo),
+                patch("witnessd.cli.flow.Path.cwd", return_value=repo),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
@@ -344,7 +344,7 @@ class OrroFlowTests(unittest.TestCase):
             stderr = io.StringIO()
 
             with (
-                patch("witnessd.__main__.Path.cwd", return_value=repo),
+                patch("witnessd.cli.flow.Path.cwd", return_value=repo),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
@@ -401,7 +401,7 @@ class OrroFlowTests(unittest.TestCase):
             stderr = io.StringIO()
 
             with (
-                patch("witnessd.__main__.Path.cwd", return_value=repo),
+                patch("witnessd.cli.flow.Path.cwd", return_value=repo),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
@@ -457,7 +457,7 @@ class OrroFlowTests(unittest.TestCase):
             stderr = io.StringIO()
 
             with (
-                patch("witnessd.__main__.Path.cwd", return_value=repo),
+                patch("witnessd.cli.flow.Path.cwd", return_value=repo),
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):

@@ -38,9 +38,9 @@
 
 ### Task 5: patch-target migration THEN dead-import prune (order matters)
 
-- [ ] FIRST migrate the six `patch("witnessd.__main__.Path.cwd", ...)` sites in `tests/test_orro_flow.py` (104, 181, 252, 347, 404, 460) → `patch("witnessd.cli.flow.Path.cwd", ...)` — the real `Path.cwd()` call is `witnessd/cli/flow.py:42`; today these pass only because `__main__.Path` is the shared `pathlib.Path` class object. Run `$RUN tests.test_orro_flow` → green.
-- [ ] THEN prune `__main__`'s now-dead module-scope imports: everything except `argparse` and `sys` should be deletable — grep each name (`hashlib, io, json, os, subprocess, shutil, shlex, tempfile, time, redirect_*, Path`, the whole `from witnessd.cli._output import (...)` block, `ObserverSeparationError/assert_separated`, `render_status`) against the staying code and delete the unused ones. `DEFAULT_TEAM_PLAN_RUN_LANE_TIMEOUT_SECONDS` stays (parser :2499).
-- [ ] `$RUN discover -s tests` → 821 OK (a wrong prune surfaces here as AttributeError in the migrated patches or NameError in staying code). Commit: `refactor(cli): migrate flow patch targets and prune dead __main__ imports`
+- [x] FIRST migrate the six `patch("witnessd.__main__.Path.cwd", ...)` sites in `tests/test_orro_flow.py` (104, 181, 252, 347, 404, 460) → `patch("witnessd.cli.flow.Path.cwd", ...)` — the real `Path.cwd()` call is `witnessd/cli/flow.py:42`; today these pass only because `__main__.Path` is the shared `pathlib.Path` class object. Run `$RUN tests.test_orro_flow` → green.
+- [x] THEN prune `__main__`'s now-dead module-scope imports: everything except `argparse` and `sys` should be deletable — grep each name (`hashlib, io, json, os, subprocess, shutil, shlex, tempfile, time, redirect_*, Path`, the whole `from witnessd.cli._output import (...)` block, `ObserverSeparationError/assert_separated`, `render_status`) against the staying code and delete the unused ones. `DEFAULT_TEAM_PLAN_RUN_LANE_TIMEOUT_SECONDS` stays (parser :2499).
+- [x] `$RUN discover -s tests` → 821 OK (a wrong prune surfaces here as AttributeError in the migrated patches or NameError in staying code). Commit: `refactor(cli): migrate flow patch targets and prune dead __main__ imports`
 
 ### Task 6: docs + full verification
 

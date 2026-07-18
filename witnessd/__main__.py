@@ -16,32 +16,7 @@ Depone verification returns a verdict.
 from __future__ import annotations
 
 import argparse
-import hashlib
-import io
-import json
-import os
-import subprocess
-import shutil
-import shlex
 import sys
-import tempfile
-import time
-from contextlib import redirect_stderr, redirect_stdout
-from pathlib import Path
-
-from witnessd.cli._output import (
-    _depone_subprocess_env,
-    _emit_orro_error,
-    _hash_file,
-    _json_or_text,
-    _read_runlog,
-    _run_depone_json,
-    _structured_error,
-    _write_json_file,
-)
-
-from witnessd.observer import ObserverSeparationError, assert_separated
-from witnessd.status import render_status
 
 
 def _cli_handler(module: str, name: str):
