@@ -10,7 +10,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-import witnessd.__main__ as witnessd_cli
+import witnessd.cli.bootstrap as witnessd_cli
 from witnessd.__main__ import main
 from witnessd.distribution import (
     DEFAULT_DEPONE_REF,
