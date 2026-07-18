@@ -509,6 +509,75 @@ class OrroWorkflowTests(unittest.TestCase):
             validate_role_lane_plan(stripped)
         self.assertEqual(cm.exception.code, "ERR_ORRO_VERIFICATION_CHECK_REQUIRED")
 
+    def test_flowplan_check_flag_compiles_verification_lane(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            code, _payload = self._flowplan(
+                [
+                    "run checks",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "verification-only",
+                    "--role-lanes-out",
+                    str(out),
+                    "--check",
+                    "/usr/bin/true",
+                    "--check",
+                    "echo observed",
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            role_lanes = json.loads(out.read_text(encoding="utf-8"))
+            self.assertTrue(role_lanes["execution_allowed"])
+            self.assertEqual(
+                role_lanes["lanes"][0]["check_commands"],
+                ["/usr/bin/true", "echo observed"],
+            )
+
+    def test_flowplan_verification_only_role_lanes_require_check_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "role-lane-plan.json"
+            code, payload = self._flowplan(
+                [
+                    "run checks",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "verification-only",
+                    "--role-lanes-out",
+                    str(out),
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(
+                payload["error"]["code"], "ERR_ORRO_VERIFICATION_CHECK_REQUIRED"
+            )
+            self.assertFalse(out.exists())
+
+    def test_flowplan_check_flag_requires_verification_role_lanes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            code, payload = self._flowplan(
+                [
+                    "run checks",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "verification-only",
+                    "--check",
+                    "/usr/bin/true",
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 2)
+            self.assertEqual(
+                payload["error"]["code"], "ERR_ORRO_VERIFICATION_CHECK_UNSUPPORTED"
+            )
+
     def test_flowplan_role_lanes_docs_change_is_executable_plan_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "role-lane-plan.json"

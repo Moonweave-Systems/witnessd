@@ -917,6 +917,16 @@ def _cmd_plan(args: argparse.Namespace) -> int:
             )
             return 2
 
+    if getattr(args, "check", None) and not getattr(args, "role_lanes_out", None):
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_VERIFICATION_CHECK_UNSUPPORTED",
+            message=(
+                "--check requires --role-lanes-out with --profile verification-only"
+            ),
+        )
+        return 2
+
     if args.draft_adapter:
         draft_root = f"{root.rstrip(os.sep)}-witnessd-plan-draft"
         draft_out = args.draft_out or os.path.join(draft_root, "evidence")
@@ -1018,6 +1028,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                 tier=args.role_lane_tier,
                 policy=DEFAULT_MODEL_POLICY if args.model_policy == "default" else None,
                 rolepack=rolepack,
+                check_commands=getattr(args, "check", None),
             )
             role_lane_plan_ref = write_role_lane_plan(
                 Path(args.role_lanes_out).resolve(strict=False),
@@ -5312,6 +5323,13 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
         "--lane-intent",
         choices=["implementation", "verification-only"],
         default=None,
+    )
+    flowplan.add_argument(
+        "--check",
+        action="append",
+        default=None,
+        help="declared verification check command for verification-only role "
+        "lanes (repeatable; requires --role-lanes-out)",
     )
     flowplan.add_argument("--out", default=None)
     flowplan.add_argument("--role-lanes-out", default=None)
