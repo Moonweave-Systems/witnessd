@@ -1288,6 +1288,32 @@ class OrroWorkflowTests(unittest.TestCase):
             [["sh", "-c", "/usr/bin/true"], ["sh", "-c", "echo observed"]],
         )
 
+    def test_shell_role_lane_team_spec_carries_declared_timeout(self) -> None:
+        import argparse
+
+        from witnessd.cli.run import _role_lane_plan_team_specs
+
+        workflow_plan = compile_workflow_plan(
+            goal="run checks", profile="verification-only"
+        )
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan,
+            check_commands=["/usr/bin/true"],
+        )
+        role_lane_plan["lanes"][0]["timeout_seconds"] = 600
+        validate_role_lane_plan(role_lane_plan)
+        args = argparse.Namespace(
+            codex_binary="codex",
+            claude_binary="claude",
+            agy_binary="agy",
+            gemini_binary="gemini",
+            opencode_binary="opencode",
+        )
+
+        specs = _role_lane_plan_team_specs(role_lane_plan, args)
+
+        self.assertEqual(specs[0]["timeout_seconds"], 600)
+
     def test_role_lane_plan_team_specs_preserves_glob_write_scope_region(self) -> None:
         import argparse
 
@@ -1508,6 +1534,27 @@ class OrroWorkflowTests(unittest.TestCase):
 
         self.assertEqual(role_lane_plan["lanes"][0]["region"], ["docs/**"])
 
+    def test_execution_role_lane_timeout_defaults_follow_tier(self) -> None:
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        rolepack = _runner_rolepack(adapters=["codex"], write_scope=["witnessd/**"])
+
+        for tier, timeout_seconds in (
+            ("quick", 120),
+            ("agentic", 1800),
+            ("frontier", 3600),
+        ):
+            with self.subTest(tier=tier):
+                role_lane_plan = compile_role_lane_plan(
+                    workflow_plan=workflow_plan,
+                    lane_adapter="codex",
+                    tier=tier,
+                    rolepack=rolepack,
+                )
+
+                self.assertEqual(
+                    role_lane_plan["lanes"][0]["timeout_seconds"], timeout_seconds
+                )
+
     def test_validate_role_lane_plan_rejects_review_only_vendor_in_execution_lane(
         self,
     ) -> None:
@@ -1521,6 +1568,26 @@ class OrroWorkflowTests(unittest.TestCase):
 
         with self.assertRaises(OrroWorkflowError):
             validate_role_lane_plan(role_lane_plan)
+
+    def test_validate_role_lane_plan_rejects_invalid_timeout_seconds(self) -> None:
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan,
+            lane_adapter="codex",
+            rolepack=_runner_rolepack(adapters=["codex"], write_scope=["witnessd/**"]),
+        )
+
+        for invalid_timeout in (0, 3601, True, "120"):
+            with self.subTest(timeout_seconds=invalid_timeout):
+                invalid_plan = deepcopy(role_lane_plan)
+                invalid_plan["lanes"][0]["timeout_seconds"] = invalid_timeout
+
+                with self.assertRaises(OrroWorkflowError) as error:
+                    validate_role_lane_plan(invalid_plan)
+
+                self.assertEqual(
+                    error.exception.code, "ERR_ORRO_ROLE_LANE_PLAN_INVALID"
+                )
 
     def test_role_lane_plan_team_specs_carries_policy_model_through(self) -> None:
         import argparse
@@ -1549,6 +1616,55 @@ class OrroWorkflowTests(unittest.TestCase):
         self.assertEqual(len(specs), 1)
         self.assertEqual(specs[0]["adapter"], "codex")
         self.assertEqual(specs[0]["model"], "gpt-5.6-sol")
+
+    def test_role_lane_plan_team_specs_carries_execution_timeout(self) -> None:
+        import argparse
+
+        from witnessd.cli.run import _role_lane_plan_team_specs
+
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan,
+            lane_adapter="codex",
+            tier="agentic",
+            rolepack=_runner_rolepack(adapters=["codex"], write_scope=["witnessd/**"]),
+        )
+        args = argparse.Namespace(
+            codex_binary="codex",
+            claude_binary="claude",
+            agy_binary="agy",
+            gemini_binary="gemini",
+            opencode_binary="opencode",
+        )
+
+        specs = _role_lane_plan_team_specs(role_lane_plan, args)
+
+        self.assertEqual(specs[0]["timeout_seconds"], 1800)
+
+    def test_role_lane_plan_team_specs_omits_absent_timeout(self) -> None:
+        import argparse
+
+        from witnessd.cli.run import _role_lane_plan_team_specs
+
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan,
+            lane_adapter="codex",
+            rolepack=_runner_rolepack(adapters=["codex"], write_scope=["witnessd/**"]),
+        )
+        role_lane_plan["lanes"][0].pop("timeout_seconds")
+        validate_role_lane_plan(role_lane_plan)
+        args = argparse.Namespace(
+            codex_binary="codex",
+            claude_binary="claude",
+            agy_binary="agy",
+            gemini_binary="gemini",
+            opencode_binary="opencode",
+        )
+
+        specs = _role_lane_plan_team_specs(role_lane_plan, args)
+
+        self.assertNotIn("timeout_seconds", specs[0])
 
     def test_role_lane_plan_team_specs_carries_granted_tools(self) -> None:
         import argparse

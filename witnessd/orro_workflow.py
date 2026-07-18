@@ -63,6 +63,11 @@ EXECUTION_LANE_ADAPTERS = tuple(
     adapter for adapter in ROLE_LANE_ADAPTERS if adapter not in REVIEW_ONLY_ADAPTERS
 )
 VALID_LANE_INTENTS = frozenset({"implementation", "verification-only"})
+ROLE_LANE_TIMEOUT_SECONDS_BY_TIER = {
+    "quick": 120,
+    "agentic": 1800,
+    "frontier": 3600,
+}
 
 FORBIDDEN_ASSURANCE_SOURCES = [
     "skill text",
@@ -1041,6 +1046,7 @@ def _role_lane_from_role(
         "engine": "witnessd",
         "adapter": resolved_adapter,
         "tier": tier,
+        "timeout_seconds": ROLE_LANE_TIMEOUT_SECONDS_BY_TIER[tier],
         "region": region,
         "prompt": (
             f"{ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX}{role_id} "
@@ -1255,6 +1261,15 @@ def _validate_role_lane(lane: Any, *, workflow_profile: str) -> None:
         raise OrroWorkflowError(
             ERR_ORRO_ROLE_LANE_PLAN_INVALID,
             "role-lane model must be a non-empty string",
+        )
+    if "timeout_seconds" in lane and (
+        type(lane["timeout_seconds"]) is not int
+        or lane["timeout_seconds"] < 1
+        or lane["timeout_seconds"] > 3600
+    ):
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+            "role-lane timeout_seconds must be an integer from 1 to 3600",
         )
     if "granted_adapters" in lane:
         granted_adapters = lane["granted_adapters"]
