@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
+from pathlib import Path
 
-from witnessd.cli._output import _structured_error
+from witnessd.cli._output import (
+    _hash_file,
+    _invoke_cli_capture,
+    _structured_error,
+    _write_json_file,
+)
 
 
 def _emit_blocker(error: dict[str, object]) -> int:
@@ -20,6 +27,58 @@ def _emit_blocker(error: dict[str, object]) -> int:
     return 2
 
 
+def _invoke_phase(argv: list[str]) -> tuple[int, object, str]:
+    try:
+        code, stdout, stderr = _invoke_cli_capture(argv)
+    except Exception as exc:  # noqa: BLE001 - never leak a phase traceback
+        return 1, {}, str(exc)
+    try:
+        payload = json.loads(stdout) if stdout.strip() else {}
+    except json.JSONDecodeError:
+        payload = {}
+    return code, payload, stderr.strip()
+
+
+def _resolve_base(repo: Path, base: str | None) -> str:
+    if base:
+        return base
+    try:
+        ref = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "symbolic-ref",
+                "--quiet",
+                "refs/remotes/origin/HEAD",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        name = ref.stdout.strip().rsplit("/", 1)[-1]
+        return name or "main"
+    except Exception:  # noqa: BLE001 - fallback is intentionally deterministic
+        return "main"
+
+
+def _assert_no_execution_adapter(role_lane_plan_path: Path) -> None:
+    plan = json.loads(role_lane_plan_path.read_text(encoding="utf-8"))
+    for lane in plan.get("lanes", []):
+        if not isinstance(lane, dict):
+            continue
+        if str(lane.get("adapter")) != "shell":
+            raise RuntimeError(
+                "ERR_ORRO_CHECK_EXECUTION_LANE_FORBIDDEN: lane "
+                f"{lane.get('lane_id')!r} has non-shell adapter "
+                f"{lane.get('adapter')!r}"
+            )
+
+
+def _print_human_summary(manifest: dict[str, object]) -> None:
+    pass
+
+
 def _cmd_orro_check(args: argparse.Namespace) -> int:
     checks = list(getattr(args, "check", None) or [])
     if not checks:
@@ -32,4 +91,171 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                 next_command="python3 -m orro check --check '<cmd>' --repo <repo>",
             )
         )
-    raise NotImplementedError
+
+    repo = Path(args.repo).resolve(strict=False) if args.repo else Path.cwd()
+    home = Path(args.home).resolve(strict=False) if args.home else repo / ".witnessd"
+    run_dir = (
+        Path(args.run_dir).resolve(strict=False)
+        if args.run_dir
+        else home / "companion-run"
+    )
+    run_dir.mkdir(parents=True, exist_ok=True)
+    sandbox = run_dir / "sandbox"
+    base = _resolve_base(repo, args.base)
+    goal = f"Review the changes on HEAD relative to {base} without editing files"
+
+    code, _, err = _invoke_phase(
+        ["init", "--home", str(home), "--repo", str(repo)]
+    )
+    if code != 0:
+        return _emit_blocker(
+            _structured_error(
+                code="ERR_ORRO_CHECK_INIT_BLOCKED",
+                message="companion could not provision home",
+                reason=err or "init returned nonzero",
+                required_input_or_grant=(
+                    "ensure the pinned Depone is provisionable (see orro init)"
+                ),
+                next_command="python3 -m orro init --home <home> --repo <repo>",
+            )
+        )
+
+    verify_wp = run_dir / "verify-workflow-plan.json"
+    verify_rlp = run_dir / "verify-role-lane-plan.json"
+    verdict_path = run_dir / "proofcheck-verdict.json"
+    flowplan_argv = [
+        "flowplan",
+        goal,
+        "--root",
+        str(repo),
+        "--profile",
+        "verification-only",
+        "--out",
+        str(verify_wp),
+        "--role-lanes-out",
+        str(verify_rlp),
+        "--lane-adapter",
+        "shell",
+    ]
+    for check in checks:
+        flowplan_argv.extend(["--check", check])
+    flowplan_argv.append("--json")
+    code, _, err = _invoke_phase(flowplan_argv)
+    if code != 0:
+        return _emit_blocker(
+            _structured_error(
+                code="ERR_ORRO_CHECK_FLOWPLAN_BLOCKED",
+                message="verification flowplan failed",
+                reason=err or "flowplan returned nonzero",
+                required_input_or_grant="resolve the reported flowplan blocker",
+                next_command=(
+                    "python3 -m orro flowplan ... --profile verification-only"
+                ),
+            )
+        )
+
+    _assert_no_execution_adapter(verify_rlp)
+
+    team_ledger = run_dir / "team-ledger.json"
+    _, _, proofrun_err = _invoke_phase(
+        [
+            "proofrun",
+            goal,
+            "--repo",
+            str(repo),
+            "--home",
+            str(home),
+            "--workflow-plan",
+            str(verify_wp),
+            "--role-lane-plan",
+            str(verify_rlp),
+            "--adapter",
+            "shell",
+            "--runner-sandbox",
+            str(sandbox),
+            "--run-dir",
+            str(run_dir),
+            "--json",
+        ]
+    )
+    if not team_ledger.is_file():
+        return _emit_blocker(
+            _structured_error(
+                code="ERR_ORRO_CHECK_PROOFRUN_BLOCKED",
+                message="verification proofrun sealed no evidence",
+                reason=(
+                    proofrun_err
+                    or "proofrun returned nonzero without sealing team-ledger.json"
+                ),
+                required_input_or_grant="resolve the reported proofrun blocker",
+                next_command="python3 -m orro proofrun ...",
+            )
+        )
+
+    _, verdict_payload, verdict_err = _invoke_phase(
+        [
+            "proofcheck",
+            "--evidence-dir",
+            str(run_dir),
+            "--home",
+            str(home),
+            "--out",
+            str(verdict_path),
+            "--json",
+        ]
+    )
+    decision = (
+        verdict_payload.get("decision")
+        if isinstance(verdict_payload, dict)
+        else None
+    )
+    if (
+        decision not in {"pass", "blocked", "blocked-explicit"}
+        or not verdict_path.is_file()
+    ):
+        return _emit_blocker(
+            _structured_error(
+                code="ERR_ORRO_CHECK_PROOFCHECK_BLOCKED",
+                message="Depone produced no usable verdict",
+                reason=(
+                    verdict_err
+                    or f"proofcheck returned an unusable decision: {decision!r}"
+                ),
+                required_input_or_grant=(
+                    "resolve the reported Depone/proofcheck blocker"
+                ),
+                next_command="python3 -m orro proofcheck ...",
+            )
+        )
+
+    review_ref = None
+    manifest: dict[str, object] = {
+        "kind": "orro-companion-manifest",
+        "scope": (
+            "state-verified-and-reviewed" if not args.no_review else "state-verified"
+        ),
+        "reviewed_work_execution_observed": False,
+        "verification_checks_executed_observed": True,
+        "execution_adapter_lanes_spawned": 0,
+        "verdict_ref": {
+            "path": str(verdict_path),
+            "sha256": _hash_file(verdict_path),
+            "decision": decision,
+        },
+        "boundary": {
+            "reviewed_work_execution_observed": False,
+            "raises_assurance": False,
+            "approves_merge": False,
+            "review_is_advisory": True,
+        },
+    }
+    if review_ref is not None:
+        manifest["review_ref"] = review_ref
+    manifest_path = run_dir / "companion-manifest.json"
+    _write_json_file(manifest_path, manifest)
+
+    if args.json:
+        print(json.dumps(manifest, sort_keys=True))
+    else:
+        _print_human_summary(manifest)
+    return 0 if decision == "pass" else 2

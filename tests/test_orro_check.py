@@ -52,5 +52,66 @@ class OrroCheckBlockerTest(unittest.TestCase):
             self.assertIn("next_command", payload["error"])
 
 
+class OrroCheckVerifyTest(unittest.TestCase):
+    def _run_check(
+        self, tmp: str, checks: list[str]
+    ) -> tuple[tuple[int, object, str], Path]:
+        root = Path(tmp)
+        repo = root / "repo"
+        repo.mkdir()
+        _seed_repo(repo)
+        argv = [
+            "orro",
+            "check",
+            "--repo",
+            str(repo),
+            "--home",
+            str(root / "home"),
+            "--run-dir",
+            str(root / "run"),
+            "--no-review",
+            "--json",
+        ]
+        for check in checks:
+            argv += ["--check", check]
+        return _run(argv), root
+
+    def test_passing_check_yields_pass_and_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            (code, payload, err), root = self._run_check(tmp, ["true"])
+            self.assertEqual(code, 0, err)
+            self.assertNotIn("Traceback", err)
+            self.assertIsInstance(payload, dict)
+            assert isinstance(payload, dict)
+            self.assertEqual(payload["kind"], "orro-companion-manifest")
+            self.assertEqual(payload["scope"], "state-verified")
+            self.assertIs(payload["reviewed_work_execution_observed"], False)
+            self.assertIs(payload["verification_checks_executed_observed"], True)
+            self.assertEqual(payload["execution_adapter_lanes_spawned"], 0)
+            self.assertEqual(payload["verdict_ref"]["decision"], "pass")
+            self.assertNotIn("review_ref", payload)
+            manifest = json.loads(
+                (root / "run" / "companion-manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(manifest["verdict_ref"]["decision"], "pass")
+
+    def test_failing_check_yields_blocked_verdict_exit_2(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            (code, payload, err), root = self._run_check(tmp, ["false"])
+            self.assertEqual(code, 2, err)
+            self.assertNotIn("Traceback", err)
+            self.assertIsInstance(payload, dict)
+            assert isinstance(payload, dict)
+            self.assertEqual(payload["kind"], "orro-companion-manifest")
+            self.assertIn(
+                payload["verdict_ref"]["decision"],
+                {"blocked", "blocked-explicit"},
+            )
+            self.assertIs(payload["reviewed_work_execution_observed"], False)
+            self.assertTrue((root / "run" / "companion-manifest.json").is_file())
+
+
 if __name__ == "__main__":
     unittest.main()
