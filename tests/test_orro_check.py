@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -30,6 +31,46 @@ def _run(argv: list[str]) -> tuple[int, object, str]:
     except json.JSONDecodeError:
         payload = {"_raw": stdout}
     return code, payload, err.getvalue()
+
+
+def _fake_agy(directory: Path) -> str:
+    path = directory / "agy"
+    path.write_text(
+        "#!/usr/bin/python3\n"
+        "import json\n"
+        "import os\n"
+        "import pathlib\n"
+        "import subprocess\n"
+        "import sys\n"
+        "capture = os.environ.get('AGY_ARGV_CAPTURE')\n"
+        "if capture:\n"
+        "    pathlib.Path(capture).write_text('\\n'.join(sys.argv[1:]) + '\\n', encoding='utf-8')\n"
+        "cache_capture = os.environ.get('ORRO_CACHE_CAPTURE')\n"
+        "if cache_capture:\n"
+        "    pathlib.Path(cache_capture).write_text(os.environ['PYTHONPYCACHEPREFIX'] + '\\n' + os.environ['RUFF_CACHE_DIR'] + '\\n', encoding='utf-8')\n"
+        "if os.environ.get('AGY_WRITE_CACHE') == '1':\n"
+        "    pathlib.Path(os.environ['RUFF_CACHE_DIR']).mkdir(parents=True, exist_ok=True)\n"
+        "    pathlib.Path(os.environ['RUFF_CACHE_DIR'], 'cache.bin').write_text('cache', encoding='utf-8')\n"
+        "    pycache = pathlib.Path(os.environ['PYTHONPYCACHEPREFIX'], 'pkg')\n"
+        "    pycache.mkdir(parents=True, exist_ok=True)\n"
+        "    pathlib.Path(pycache, 'mod.pyc').write_text('bytecode', encoding='utf-8')\n"
+        "if os.environ.get('AGY_WRITE') == '1':\n"
+        "    pathlib.Path('reviewed.txt').write_text('changed\\n', encoding='utf-8')\n"
+        "if sys.stdout.isatty():\n"
+        "    observed_root = os.environ.get('AGY_OBSERVED_REPO', os.getcwd())\n"
+        "    observed_head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=observed_root, check=True, capture_output=True, text=True).stdout.strip()\n"
+        "    print('WITNESSD_AGY_CONTEXT ' + json.dumps({'repo_root': observed_root, 'git_head': observed_head}, sort_keys=True))\n"
+        "    if os.environ.get('AGY_REVIEW_MODE') == 'intent-only':\n"
+        "        print('I will inspect the requested files now.')\n"
+        "    else:\n"
+        "        print('Review findings:')\n"
+        "        print('low README.md:1 review-only smoke finding')\n"
+        "    if os.environ.get('AGY_COMPLETION_MODE', 'correct') != 'missing':\n"
+        "        print('WITNESSD_AGY_COMPLETE ' + json.dumps({'status': 'complete'}, sort_keys=True))\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
 
 
 class OrroCheckBlockerTest(unittest.TestCase):
@@ -155,6 +196,46 @@ class ZeroExecutionInvariantTest(unittest.TestCase):
                 encoding="utf-8",
             )
             _assert_no_execution_adapter(plan)
+
+
+class OrroCheckReviewTest(unittest.TestCase):
+    def test_review_attaches_advisory_ref_without_changing_verdict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            bindir = root / "bin"
+            bindir.mkdir()
+            fake_agy = _fake_agy(bindir)
+            code, payload, err = _run(
+                [
+                    "orro",
+                    "check",
+                    "--repo",
+                    str(repo),
+                    "--home",
+                    str(root / "home"),
+                    "--run-dir",
+                    str(root / "run"),
+                    "--check",
+                    "true",
+                    "--reviewer",
+                    "agy",
+                    "--reviewer-binary",
+                    str(fake_agy),
+                    "--json",
+                ]
+            )
+            self.assertEqual(code, 0, err)
+            self.assertNotIn("Traceback", err)
+            self.assertIsInstance(payload, dict)
+            assert isinstance(payload, dict)
+            self.assertEqual(payload["scope"], "state-verified-and-reviewed")
+            self.assertEqual(payload["verdict_ref"]["decision"], "pass")
+            self.assertIn("review_ref", payload)
+            self.assertIs(payload["review_ref"]["advisory"], True)
+            self.assertTrue((root / "run" / "orro-review-summary.json").is_file())
 
 
 if __name__ == "__main__":
