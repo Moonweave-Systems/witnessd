@@ -186,6 +186,30 @@ class TestW15ParallelExecution(unittest.TestCase):
         self.addCleanup(_kill_marker_processes, marker)
         self.assertEqual(_marker_pids(marker), [])
 
+    def test_normal_completion_kills_lane_grandchild_processes(self):
+        marker = f"W15_COMPLETION_ORPHAN_CHECK_{os.getpid()}"
+        self.addCleanup(_kill_marker_processes, marker)
+        result = self._run(
+            [
+                {
+                    "lane_id": "complete-lane",
+                    "region": ["pkg/complete.py"],
+                    "commands": [
+                        [
+                            "sh",
+                            "-c",
+                            f"/usr/bin/python3 -c 'import time; time.sleep(30)' {marker} "
+                            "</dev/null >/dev/null 2>&1 & exit 0",
+                        ]
+                    ],
+                }
+            ],
+            max_parallel=1,
+        )
+
+        self.assertEqual(_marker_pids(marker), [])
+        self.assertEqual(len(result["supervisor_handles"]), 0)
+
     def test_parent_refuses_stale_lane_exec_result_bytes(self):
         with tempfile.TemporaryDirectory() as tmp:
             result_path = Path(tmp) / "lane-result.json"

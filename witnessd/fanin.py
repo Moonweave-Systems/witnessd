@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import secrets
+import signal
 import subprocess
 import sys
 import tempfile
@@ -28,7 +29,12 @@ from witnessd.lock import ClaimConflictError, OwnershipRegistry
 from witnessd.observer import assert_separated
 from witnessd.privacy import CAPTURE_PROFILE_REDACTED
 from witnessd.runlog import append_runlog
-from witnessd.killswitch import kill_all
+from witnessd.killswitch import (
+    KillTarget,
+    _process_group_confirmed_dead,
+    _signal_target,
+    kill_all,
+)
 from witnessd.process_identity import read_pid_start_time
 from witnessd.substrate import build_bundle
 from witnessd.supervisor import WorkerHandle, WorkerSupervisor
@@ -283,6 +289,7 @@ def _run_claimed_lanes_parallel(
             for handle in completed:
                 job = active.pop(handle)
                 exit_code = supervisor.wait(handle)
+                _sweep_completed_lane_group(handle)
                 schedule = job["schedule"]
                 _finish_schedule_lane(schedule, exit_code)
                 schedule_lanes.append(schedule)
@@ -788,8 +795,6 @@ def _cancel_active_lanes(
 
 
 def _kill_target_from_handle(handle: WorkerHandle):
-    from witnessd.killswitch import KillTarget
-
     return KillTarget(
         lane_id=handle.lane_id,
         pid=handle.pid,
@@ -797,6 +802,30 @@ def _kill_target_from_handle(handle: WorkerHandle):
         popen=handle.popen,
         pgid=getattr(handle, "pgid", None),
     )
+
+
+def _sweep_completed_lane_group(handle) -> None:
+    # The lane-exec (group leader) is already reaped by supervisor.wait(); anything
+    # left in its process group is a leaked orphan (e.g. an MCP stdio server). Sweep
+    # it without runlog events because the lane's evidence is already sealed.
+    # pgid == leader pid, and a live orphan keeps that pgid from being recycled.
+    pgid = getattr(handle, "pgid", None)
+    if pgid is None or _process_group_confirmed_dead(pgid):
+        return
+    target = KillTarget(
+        lane_id=handle.lane_id,
+        pid=handle.pid,
+        runner_uid=handle.runner_uid,
+        popen=None,
+        pgid=pgid,
+    )
+    _signal_target(target, signal.SIGTERM)
+    # Give the group a brief grace period, then escalate if it is still alive.
+    deadline = time.monotonic() + 0.2
+    while time.monotonic() < deadline and not _process_group_confirmed_dead(pgid):
+        time.sleep(0.02)
+    if not _process_group_confirmed_dead(pgid):
+        _signal_target(target, signal.SIGKILL)
 
 
 def _reap_remaining(supervisor: WorkerSupervisor, log: EventLog, run_id: str) -> None:
