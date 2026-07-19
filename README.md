@@ -192,6 +192,7 @@ witnessd runtime code or Depone verifier logic.
 | `orro next` | non-executing continuation gate over persisted run artifacts |
 | `orro report` | human-facing summary of observed ORRO artifacts and next safe action |
 | `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
+| `orro check` | companion: deterministic verify (Depone verdict) + read-only review (advisory); spawns zero execution-adapter lanes; does not claim observed execution |
 | `orro auto --dry-run` | non-executing automation planner that recommends the next command |
 | `orro auto --once` | one-step executor for proofcheck or handoff only |
 | `orro auto --until-complete` | bounded post-run loop over proofcheck and handoff only |
