@@ -43,7 +43,7 @@ ROLE_CAPABILITY_EVIDENCE_CONTRACT_SCHEMA_VERSION = "v109.role_capability_write_s
 ROLE_CAPABILITY_TOOL_CALLS_EVIDENCE_CONTRACT_SCHEMA_VERSION = (
     "v107.role_capability_tool_calls"
 )
-GIT_DIFF_NAME_ONLY_SUBJECT_NAME = "git-diff-name-only.txt"
+OBSERVED_TOUCHED_FILES_SUBJECT_NAME = "observed-touched-files.txt"
 EVIDENCE_MODE_CONTEMPORANEOUS = "contemporaneous"
 EVIDENCE_MODE_POST_HOC = "post_hoc"
 DEFAULT_EPOCH_SECONDS = 300
@@ -307,7 +307,7 @@ def build_evidence_contract(
     name_only = "".join(f"{name}\n" for name in touched_files)
     return {
         "evidence-contract.json": json.dumps(contract, indent=2),
-        GIT_DIFF_NAME_ONLY_SUBJECT_NAME: name_only,
+        OBSERVED_TOUCHED_FILES_SUBJECT_NAME: name_only,
         "git-diff.patch": diff_patch,
         "exit-code.txt": f"{exit_code}\n",
     }

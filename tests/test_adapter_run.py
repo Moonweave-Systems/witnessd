@@ -833,8 +833,8 @@ class TestAdapterRun(unittest.TestCase):
                     "write-scope-declaration": str(
                         evidence_root / "write-scope-declaration.json"
                     ),
-                    "git-diff-name-only.txt": str(
-                        evidence_root / "git-diff-name-only.txt"
+                    "observed-touched-files.txt": str(
+                        evidence_root / "observed-touched-files.txt"
                     ),
                 },
                 otel_spans=out["bundle"]["otel_spans"],
@@ -1219,7 +1219,7 @@ class TestAdapterRun(unittest.TestCase):
                 for item in out["bundle"]["statement"]["predicate"]["artifact_index"]
             ]
             self.assertIn("write-scope-declaration", subject_names)
-            self.assertIn("git-diff-name-only.txt", subject_names)
+            self.assertIn("observed-touched-files.txt", subject_names)
 
             declaration = json.loads(
                 (pathlib.Path(evidence_dir) / "write-scope-declaration.json").read_text(
@@ -1293,8 +1293,8 @@ class TestAdapterRun(unittest.TestCase):
                     "write-scope-declaration": str(
                         evidence_root / "write-scope-declaration.json"
                     ),
-                    "git-diff-name-only.txt": str(
-                        evidence_root / "git-diff-name-only.txt"
+                    "observed-touched-files.txt": str(
+                        evidence_root / "observed-touched-files.txt"
                     ),
                 },
                 otel_spans=out["bundle"]["otel_spans"],
@@ -1336,13 +1336,13 @@ class TestAdapterRun(unittest.TestCase):
             self.assertEqual(
                 contract["schema_version"], BOUND_OBSERVATION_SCHEMA_VERSION
             )
-            observation_path = evidence_root / "git-diff-name-only.txt"
+            observation_path = evidence_root / "observed-touched-files.txt"
             subjects = {
                 item["name"]: item["digest"]["sha256"]
                 for item in out["bundle"]["statement"]["subject"]
             }
             self.assertEqual(
-                subjects["git-diff-name-only.txt"],
+                subjects["observed-touched-files.txt"],
                 hashlib.sha256(observation_path.read_bytes()).hexdigest(),
             )
             errors = validate_evidence_contract(
@@ -1382,7 +1382,7 @@ class TestAdapterRun(unittest.TestCase):
             )
 
             evidence_root = pathlib.Path(evidence_dir)
-            observation_path = evidence_root / "git-diff-name-only.txt"
+            observation_path = evidence_root / "observed-touched-files.txt"
             observation_path.write_text(
                 observation_path.read_text(encoding="utf-8") + "\n",
                 encoding="utf-8",

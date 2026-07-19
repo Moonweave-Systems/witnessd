@@ -130,7 +130,7 @@ def _read_role_capability_evidence(evidence_dir: Path) -> EvidenceContext:
         "bundle.json",
         "evidence-contract.json",
         "exit-code.txt",
-        "git-diff-name-only.txt",
+        "observed-touched-files.txt",
         "run-intent.json",
     }
     evidence.files = [

@@ -52,7 +52,7 @@ from witnessd.runintent import (
 )
 from witnessd.signing import DEFAULT_OPERATOR_KEY_ID, derive_public_key_id
 from witnessd.substrate import (
-    GIT_DIFF_NAME_ONLY_SUBJECT_NAME,
+    OBSERVED_TOUCHED_FILES_SUBJECT_NAME,
     build_bundle,
     build_evidence_contract,
     build_otel_spans,
@@ -436,9 +436,9 @@ def emit_lane_evidence(
         ),
     )
     if write_scope is not None:
-        artifacts[GIT_DIFF_NAME_ONLY_SUBJECT_NAME] = _emit_artifact(
-            GIT_DIFF_NAME_ONLY_SUBJECT_NAME,
-            contract_files.pop(GIT_DIFF_NAME_ONLY_SUBJECT_NAME),
+        artifacts[OBSERVED_TOUCHED_FILES_SUBJECT_NAME] = _emit_artifact(
+            OBSERVED_TOUCHED_FILES_SUBJECT_NAME,
+            contract_files.pop(OBSERVED_TOUCHED_FILES_SUBJECT_NAME),
         )
     bundle = build_bundle(
         manifest,

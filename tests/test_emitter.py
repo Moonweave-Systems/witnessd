@@ -22,7 +22,7 @@ ARTIFACT_NAMES = {
     "run-intent.json",
     "bundle.json",
     "evidence-contract.json",
-    "git-diff-name-only.txt",
+    "observed-touched-files.txt",
     "git-diff.patch",
     "exit-code.txt",
     "provenance.json",
