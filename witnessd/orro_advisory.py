@@ -12,6 +12,7 @@ as an explicitly degraded scaffold for headless compatibility.
 from __future__ import annotations
 
 import copy
+import errno
 import hashlib
 import json
 import os
@@ -39,7 +40,16 @@ ERR_ORRO_TRACE_CONFIRMED_UNBACKED = "ERR_ORRO_TRACE_CONFIRMED_UNBACKED"
 ERR_ORRO_TRACE_RECEIPT_INVALID = "ERR_ORRO_TRACE_RECEIPT_INVALID"
 ERR_ORRO_TRACE_RECEIPT_HASH_MISMATCH = "ERR_ORRO_TRACE_RECEIPT_HASH_MISMATCH"
 
-_IGNORED_DIRS = {".git", ".witnessd", ".omx", "__pycache__", "build", "dist"}
+# `.worktrees` contains non-current checkouts excluded from repository signals.
+_IGNORED_DIRS = {
+    ".git",
+    ".witnessd",
+    ".omx",
+    ".worktrees",
+    "__pycache__",
+    "build",
+    "dist",
+}
 _LANGUAGE_SUFFIXES = {
     ".c": "C",
     ".cpp": "C++",
@@ -64,7 +74,28 @@ class OrroAdvisoryError(ValueError):
 def read_agent_decision(path: Path) -> dict[str, Any]:
     """Read a bounded agent-authored decision object without repairing it."""
 
-    resolved_path = path.resolve(strict=False)
+    actionable_path_message = (
+        "--decision expects a path to a JSON file, not inline text. Provide a file "
+        "whose JSON has: frame, candidates[{axis, summary, benefits, risks, "
+        "tradeoff}]. Got a value that is not a readable file."
+    )
+    try:
+        resolved_path = path.resolve(strict=False)
+    except OSError as exc:
+        if exc.errno == errno.ENAMETOOLONG:
+            raise OrroAdvisoryError(
+                ERR_ORRO_ADVISORY_DECISION_READ_FAILED,
+                actionable_path_message,
+            ) from exc
+        raise OrroAdvisoryError(
+            ERR_ORRO_ADVISORY_DECISION_READ_FAILED,
+            f"cannot resolve agent-authored decision {path}: {exc}",
+        ) from exc
+    if not resolved_path.exists():
+        raise OrroAdvisoryError(
+            ERR_ORRO_ADVISORY_DECISION_READ_FAILED,
+            actionable_path_message,
+        )
     try:
         if resolved_path.stat().st_size > 262_144:
             raise OrroAdvisoryError(
@@ -74,7 +105,17 @@ def read_agent_decision(path: Path) -> dict[str, Any]:
         value = json.loads(resolved_path.read_text(encoding="utf-8"))
     except OrroAdvisoryError:
         raise
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    except OSError as exc:
+        if exc.errno == errno.ENAMETOOLONG:
+            raise OrroAdvisoryError(
+                ERR_ORRO_ADVISORY_DECISION_READ_FAILED,
+                actionable_path_message,
+            ) from exc
+        raise OrroAdvisoryError(
+            ERR_ORRO_ADVISORY_DECISION_READ_FAILED,
+            f"cannot read agent-authored decision {resolved_path}: {exc}",
+        ) from exc
+    except (UnicodeError, json.JSONDecodeError) as exc:
         raise OrroAdvisoryError(
             ERR_ORRO_ADVISORY_DECISION_READ_FAILED,
             f"cannot read agent-authored decision {resolved_path}: {exc}",
@@ -543,6 +584,12 @@ def build_sketch_decision(
         "authored_by": "heuristic-scaffold",
         "agent_authored": False,
         "degraded": True,
+        "scaffold_scope": "code-placement-only",
+        "degraded_note": (
+            "This degraded scaffold evaluates code-architecture placement only; it "
+            "does not preserve or answer non-code (product/ideation) goal categories. "
+            "Use --decision <file> for a real agent-authored frame."
+        ),
         "goal": normalized_goal,
         "repo": str(repo),
         "home": str(resolved_home) if resolved_home is not None else None,

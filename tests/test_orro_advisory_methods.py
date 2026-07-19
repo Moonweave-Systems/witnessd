@@ -178,6 +178,39 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
             )
             self.assertTrue(responsive_scoring)
 
+    def test_sketch_repo_signals_ignore_nested_worktrees(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+            baseline = build_sketch_decision("change app.py", repo=repo)[
+                "problem_frame"
+            ]["repo_signals"]
+            stale_test = repo / ".worktrees" / "old-branch" / "tests" / "x.py"
+            stale_test.parent.mkdir(parents=True)
+            stale_test.write_text("STALE = True\n", encoding="utf-8")
+
+            with_worktree = build_sketch_decision("change app.py", repo=repo)[
+                "problem_frame"
+            ]["repo_signals"]
+
+            for field in ("file_count", "matching_paths", "test_paths"):
+                with self.subTest(field=field):
+                    self.assertEqual(with_worktree[field], baseline[field])
+
+    def test_degraded_sketch_declares_code_placement_only_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = build_sketch_decision(
+                "imagine a product concept for neighborhood gardeners",
+                repo=Path(tmp),
+            )
+
+            self.assertTrue(payload["degraded"])
+            self.assertEqual(payload["scaffold_scope"], "code-placement-only")
+            self.assertIn(
+                "does not preserve or answer non-code", payload["degraded_note"]
+            )
+            self.assertIn("--decision <file>", payload["degraded_note"])
+
     def test_trace_is_read_only_and_blocks_fix_before_root_cause_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -524,14 +557,35 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as raised:
                 main(["orro", "sketch", "--help"])
         self.assertEqual(raised.exception.code, 0)
-        self.assertIn("advisory", stdout.getvalue().lower())
+        sketch_help = stdout.getvalue()
+        self.assertIn("advisory", sketch_help.lower())
+        self.assertIn("--decision DECISION_JSON_PATH", sketch_help)
+        self.assertIn("path to a JSON file", sketch_help)
+        self.assertIn("frame", sketch_help)
+        self.assertIn("candidates", sketch_help)
+        self.assertIn("tests/fixtures/orro-sketch-decision.json", sketch_help)
 
         stdout = io.StringIO()
         with redirect_stdout(stdout):
             with self.assertRaises(SystemExit) as raised:
                 main(["orro", "trace", "--help"])
         self.assertEqual(raised.exception.code, 0)
-        self.assertIn("root cause", stdout.getvalue().lower())
+        trace_help = stdout.getvalue()
+        self.assertIn("root cause", trace_help.lower())
+        self.assertIn("--decision DECISION_JSON_PATH", trace_help)
+        self.assertIn("path to a JSON file", trace_help)
+        for field in (
+            "check_the_plug",
+            "reproduction",
+            "localization",
+            "hypotheses",
+            "confirmation",
+            "fix_scope",
+            "root_cause",
+            "unconfirmed",
+        ):
+            with self.subTest(field=field):
+                self.assertIn(field, trace_help)
 
         stdout = io.StringIO()
         with redirect_stdout(stdout):
@@ -539,6 +593,47 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
                 main(["--help"])
         self.assertEqual(raised.exception.code, 0)
         self.assertIn("Depone v110", stdout.getvalue())
+
+    def test_sketch_decision_rejects_inline_prose_with_actionable_schema(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(
+                ["orro", "sketch", "goal", "--decision", "some prose", "--json"]
+            )
+
+        self.assertEqual(code, 1)
+        error = json.loads(stdout.getvalue())["error"]
+        self.assertEqual(error["code"], "ERR_ORRO_ADVISORY_DECISION_READ_FAILED")
+        self.assertEqual(
+            error["message"],
+            "--decision expects a path to a JSON file, not inline text. Provide a "
+            "file whose JSON has: frame, candidates[{axis, summary, benefits, risks, "
+            "tradeoff}]. Got a value that is not a readable file.",
+        )
+        self.assertNotIn("File name too long", error["message"])
+
+    def test_documented_sketch_decision_fixture_is_accepted(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "orro-sketch-decision.json"
+        with tempfile.TemporaryDirectory() as tmp:
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "sketch",
+                        "goal",
+                        "--repo",
+                        tmp,
+                        "--decision",
+                        str(fixture),
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["agent_authored"])
+        self.assertFalse(payload["degraded"])
 
     def test_product_help_keeps_scout_in_the_public_pipeline(self) -> None:
         stdout = io.StringIO()

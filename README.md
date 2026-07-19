@@ -261,8 +261,11 @@ it does not establish that the recommended workflow or diagnosis is correct.
 
 `orro sketch "<goal>" --decision sketch.json --repo . --home .witnessd --json`
 validates and seals the calling agent's own frame, candidates, choice, rejection
-reasons, no-gos, and rabbit holes. `orro trace "<symptom>" --decision trace.json
---repo . --home .witnessd --json` validates the agent's hypotheses and claimed
+reasons, no-gos, and rabbit holes. `--decision` is a path to a JSON file, not
+inline text; a minimal accepted sketch decision is documented at
+`tests/fixtures/orro-sketch-decision.json`.
+`orro trace "<symptom>" --decision trace.json --repo . --home .witnessd --json`
+validates the agent's hypotheses and claimed
 tier against the symptom-bound `orro-trace-reproduction.json` from a prior actual
 run. The decision may bind either the source-file SHA-256 or the canonical sealed
 receipt SHA-256. A claimed `confirmed` tier is refused unless the receipt binds a

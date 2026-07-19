@@ -1,0 +1,51 @@
+{
+  "frame": "Choose a bounded implementation direction without treating advice as proof.",
+  "criteria": [
+    "small reversible change",
+    "observable acceptance check"
+  ],
+  "candidates": [
+    {
+      "axis": "bounded-existing-seam",
+      "summary": "Extend the existing advisory seam.",
+      "benefits": [
+        "keeps lifecycle ownership in one place"
+      ],
+      "risks": [
+        "the existing seam may hide coupling"
+      ],
+      "tradeoff": "Prefer the smaller change while explicitly testing the seam."
+    },
+    {
+      "axis": "isolated-adapter",
+      "summary": "Add a narrow adapter around the existing advisory seam.",
+      "benefits": [
+        "isolates input validation"
+      ],
+      "risks": [
+        "can duplicate boundary logic"
+      ],
+      "tradeoffs": [
+        "More isolation in exchange for another maintained boundary."
+      ]
+    }
+  ],
+  "chosen": {
+    "direction": "bounded-existing-seam",
+    "reason": "It is the smallest reversible direction that preserves ownership.",
+    "confidence": "moderate",
+    "what_would_change_it": "A focused test showing the seam cannot validate the input safely."
+  },
+  "rejected": [
+    {
+      "option": "isolated-adapter",
+      "why_lost": "The additional boundary is not justified by current evidence."
+    }
+  ],
+  "no_gos": [
+    "do not treat this advisory record as proof or approval"
+  ],
+  "rabbit_holes": [
+    "do not build a second lifecycle"
+  ]
+}
