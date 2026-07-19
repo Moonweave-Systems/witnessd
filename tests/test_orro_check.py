@@ -238,5 +238,43 @@ class OrroCheckReviewTest(unittest.TestCase):
             self.assertTrue((root / "run" / "orro-review-summary.json").is_file())
 
 
+class ReviewerUnavailableTest(unittest.TestCase):
+    def test_missing_reviewer_binary_blocks_and_reports_verdict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            code, payload, err = _run(
+                [
+                    "orro",
+                    "check",
+                    "--repo",
+                    str(repo),
+                    "--home",
+                    str(root / "home"),
+                    "--run-dir",
+                    str(root / "run"),
+                    "--check",
+                    "true",
+                    "--reviewer",
+                    "agy",
+                    "--reviewer-binary",
+                    str(root / "does-not-exist-agy"),
+                    "--json",
+                ]
+            )
+            self.assertEqual(code, 2, err)
+            self.assertNotIn("Traceback", err)
+            self.assertIsInstance(payload, dict)
+            assert isinstance(payload, dict)
+            self.assertEqual(payload["decision"], "blocked")
+            self.assertEqual(
+                payload["error"]["code"],
+                "ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE",
+            )
+            self.assertEqual(payload["verdict_ref"]["decision"], "pass")
+
+
 if __name__ == "__main__":
     unittest.main()

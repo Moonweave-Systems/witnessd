@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -270,6 +271,30 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
     if not args.no_review:
         reviewer = args.reviewer
         reviewer_binary = args.reviewer_binary or reviewer
+        resolved = (
+            reviewer_binary
+            if Path(reviewer_binary).exists()
+            else shutil.which(reviewer_binary)
+        )
+        if not resolved:
+            return _emit_verdict_with_blocker(
+                manifest_partial(decision, verdict_path),
+                _structured_error(
+                    code="ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE",
+                    message=(
+                        f"reviewer '{reviewer}' binary not found: "
+                        f"{reviewer_binary}"
+                    ),
+                    reason=(
+                        "review was requested but the reviewer could not be located; "
+                        "silently skipping the review would misrepresent the result"
+                    ),
+                    required_input_or_grant=(
+                        f"install/authenticate {reviewer}, or pass --no-review"
+                    ),
+                    next_command="python3 -m orro check --no-review ...",
+                ),
+            )
         review_wp = run_dir / "review-workflow-plan.json"
         review_rlp = run_dir / "review-role-lane-plan.json"
         code, _, err = _invoke_phase(
