@@ -82,7 +82,7 @@ def _print_human_summary(manifest: dict[str, object]) -> None:
     verdict = verdict_ref["decision"]
     dot = "● pass" if verdict == "pass" else "● blocked"
     print("orro check — evidence & review for work you already drove\n")
-    print(f"  VERIFIED   (Depone verdict, deterministic)   {dot}")
+    print(f"  VERIFICATION   (Depone verdict, deterministic)   {dot}")
     review_ref = manifest.get("review_ref")
     if isinstance(review_ref, dict):
         print("  REVIEWED   (advisory — not part of verdict)")
@@ -158,9 +158,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
     base = _resolve_base(repo, args.base)
     goal = f"Review the changes on HEAD relative to {base} without editing files"
 
-    code, _, err = _invoke_phase(
-        ["init", "--home", str(home), "--repo", str(repo)]
-    )
+    code, _, err = _invoke_phase(["init", "--home", str(home), "--repo", str(repo)])
     if code != 0:
         return _emit_blocker(
             _structured_error(
@@ -259,9 +257,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
         ]
     )
     decision = (
-        verdict_payload.get("decision")
-        if isinstance(verdict_payload, dict)
-        else None
+        verdict_payload.get("decision") if isinstance(verdict_payload, dict) else None
     )
     if (
         decision not in {"pass", "blocked", "blocked-explicit"}
@@ -297,8 +293,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                 _structured_error(
                     code="ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE",
                     message=(
-                        f"reviewer '{reviewer}' binary not found: "
-                        f"{reviewer_binary}"
+                        f"reviewer '{reviewer}' binary not found: {reviewer_binary}"
                     ),
                     reason=(
                         "review was requested but the reviewer could not be located; "
@@ -338,9 +333,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     code="ERR_ORRO_CHECK_REVIEW_PLAN_BLOCKED",
                     message="review flowplan failed",
                     reason=err or "flowplan nonzero",
-                    required_input_or_grant=(
-                        "resolve the reported flowplan blocker"
-                    ),
+                    required_input_or_grant=("resolve the reported flowplan blocker"),
                     next_command="python3 -m orro check --no-review ...",
                 ),
             )

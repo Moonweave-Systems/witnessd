@@ -79,9 +79,7 @@ class OrroCheckBlockerTest(unittest.TestCase):
             repo = Path(tmp) / "repo"
             repo.mkdir()
             _seed_repo(repo)
-            code, payload, err = _run(
-                ["orro", "check", "--repo", str(repo), "--json"]
-            )
+            code, payload, err = _run(["orro", "check", "--repo", str(repo), "--json"])
             self.assertEqual(code, 2, err)
             self.assertNotIn("Traceback", err)
             self.assertEqual(payload["kind"], "orro-companion-result")
@@ -132,9 +130,7 @@ class OrroCheckVerifyTest(unittest.TestCase):
             self.assertEqual(payload["verdict_ref"]["decision"], "pass")
             self.assertNotIn("review_ref", payload)
             manifest = json.loads(
-                (root / "run" / "companion-manifest.json").read_text(
-                    encoding="utf-8"
-                )
+                (root / "run" / "companion-manifest.json").read_text(encoding="utf-8")
             )
             self.assertEqual(manifest["verdict_ref"]["decision"], "pass")
 
@@ -176,9 +172,7 @@ class ZeroExecutionInvariantTest(unittest.TestCase):
             )
             with self.assertRaises(RuntimeError) as ctx:
                 _assert_no_execution_adapter(plan)
-            self.assertIn(
-                "ERR_ORRO_CHECK_EXECUTION_LANE_FORBIDDEN", str(ctx.exception)
-            )
+            self.assertIn("ERR_ORRO_CHECK_EXECUTION_LANE_FORBIDDEN", str(ctx.exception))
 
     def test_shell_only_plan_passes(self) -> None:
         from witnessd.cli.companion import _assert_no_execution_adapter
@@ -187,11 +181,7 @@ class ZeroExecutionInvariantTest(unittest.TestCase):
             plan = Path(tmp) / "rlp.json"
             plan.write_text(
                 json.dumps(
-                    {
-                        "lanes": [
-                            {"lane_id": "x", "adapter": "shell", "region": []}
-                        ]
-                    }
+                    {"lanes": [{"lane_id": "x", "adapter": "shell", "region": []}]}
                 ),
                 encoding="utf-8",
             )
@@ -302,7 +292,7 @@ class OrroCheckHumanOutputTest(unittest.TestCase):
                 )
             text = out.getvalue()
             self.assertEqual(code, 0, errbuf.getvalue())
-            self.assertIn("VERIFIED", text)
+            self.assertIn("VERIFICATION", text)
             self.assertIn("NOT observed-executed", text)
             self.assertIn("0 execution-adapter lanes", text)
 
