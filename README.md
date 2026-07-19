@@ -96,6 +96,9 @@ default rolepack for that profile. Explicit `--profile` and `--team` always win.
 The run writes `moonweave-routing-decision.json` so the advisory routing choice,
 rule matches, selected profile, and selected rolepack are visible. That artifact
 cannot change the evidence verdict and is not proof, approval, or assurance.
+`--role-lane-tier auto` is the default: shell lanes run at `quick`/120s and
+AI-adapter lanes run at `agentic`/1800s. Override it explicitly with
+`quick|agentic|frontier`; an explicit `quick` keeps the 120s budget.
 
 The `proofrun` command prints JSON. Use its `run_dir` field for the proofcheck
 and handoff steps. A direct shell invocation (`orro proofrun --adapter shell --

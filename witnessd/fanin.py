@@ -1812,6 +1812,7 @@ def _run_adapter_lane(
         if state_root
         else str(repo_root)
     )
+    timeout_seconds = int(spec.get("timeout_seconds", 120))
     result = run_adapter_lane(
         root=adapter_state_root,
         sandbox=worktree,
@@ -1842,7 +1843,7 @@ def _run_adapter_lane(
         role_id=spec.get("role_id"),
         role_capability=spec.get("role_capability"),
         tools=spec.get("tools"),
-        timeout_seconds=int(spec.get("timeout_seconds", 120)),
+        timeout_seconds=timeout_seconds,
     )
     _commit_lane(worktree, lane_id)
 
@@ -1896,6 +1897,12 @@ def _run_adapter_lane(
             if adapter_timed_out and committed_changes
             else ERR_TEAM_LANE_FAILED
         )
+        if adapter_timed_out and committed_changes:
+            ledger_lane["guidance"] = (
+                f"lane '{lane_id}' timed out at the {spec['tier']} tier "
+                f"({timeout_seconds}s); raise --role-lane-tier to "
+                "agentic|frontier or narrow the goal."
+            )
     elif not result.get("normalized_events") and (
         lane_intent == "verification-only" or not receipt["changed_files"]
     ):

@@ -158,6 +158,13 @@ def render_text_report(payload: dict[str, Any]) -> str:
         "Do not treat as proof:",
         ]
     )
+    timeout_guidance = execution.get("timeout_guidance")
+    if isinstance(timeout_guidance, list):
+        lines.extend(
+            f"Timeout guidance: {item}"
+            for item in timeout_guidance
+            if isinstance(item, str)
+        )
     lines.extend(f"- {item}" for item in payload.get("do_not_trust", []))
     lines.extend(["", "Human review:"])
     focus = human_review.get("focus")
@@ -351,6 +358,13 @@ def _execution_summary(
             role
             for role in continuation.get("role_status", [])
             if isinstance(role, dict) and role.get("phase") == "proofrun"
+        ],
+        "timeout_guidance": [
+            str(lane["guidance"])
+            for lane in summary_lanes
+            if lane.get("blocked_reason")
+            == "ERR_TEAM_LANE_TIMEOUT_COMMITTED_EVIDENCE_PENDING"
+            and isinstance(lane.get("guidance"), str)
         ],
     }
 

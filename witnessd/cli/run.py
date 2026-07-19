@@ -522,6 +522,9 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
         "trust_anchor": trust_anchor.trust_anchor,
         "independent_trust_anchor": trust_anchor.independent,
     }
+    timeout_guidance = _team_ledger_timeout_guidance(out_dir / "team-ledger.json")
+    if timeout_guidance:
+        payload["timeout_guidance"] = timeout_guidance
     if reference_warning is not None:
         payload.update(_reference_adapter_markers(reference_warning))
     if workflow_plan_ref is not None:
@@ -539,6 +542,24 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
             return 1
     print(json.dumps(payload, sort_keys=True))
     return 0 if verdict["decision"] == "pass" else 1
+
+
+def _team_ledger_timeout_guidance(path: Path) -> list[str]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    lanes = payload.get("lanes") if isinstance(payload, dict) else None
+    if not isinstance(lanes, list):
+        return []
+    return [
+        str(lane["guidance"])
+        for lane in lanes
+        if isinstance(lane, dict)
+        and lane.get("blocked_reason")
+        == "ERR_TEAM_LANE_TIMEOUT_COMMITTED_EVIDENCE_PENDING"
+        and isinstance(lane.get("guidance"), str)
+    ]
 
 
 def _default_w18_packets(goal: str) -> list[dict]:

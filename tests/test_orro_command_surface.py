@@ -94,6 +94,32 @@ class OrroCommandSurfaceTests(unittest.TestCase):
         self.assertIn("runlog health", _build_parser().format_help())
         self.assertIn("not runlog health", ORRO_HELP)
 
+    def test_role_lane_tier_defaults_to_adapter_aware_auto_on_every_surface(self) -> None:
+        parser = _build_parser()
+        flowplan = parser.parse_args(["flowplan", "goal"])
+        guided_flow = parser.parse_args(["orro-flow", "goal"])
+        team_go = parser.parse_args(["team", "go", "goal", "--repo", "."])
+
+        self.assertEqual(flowplan.role_lane_tier, "auto")
+        self.assertEqual(guided_flow.role_lane_tier, "auto")
+        self.assertEqual(team_go.role_lane_tier, "auto")
+
+        expected_help = (
+            "auto (default): shell lanes run at quick/120s, AI-adapter lanes at "
+            "agentic/1800s; override with quick|agentic|frontier"
+        )
+        commands = parser._subparsers._group_actions[0].choices
+        team_commands = commands["team"]._subparsers._group_actions[0].choices
+        for help_text in (
+            commands["flowplan"].format_help(),
+            commands["orro-flow"].format_help(),
+            team_commands["go"].format_help(),
+        ):
+            self.assertIn("auto (default): shell lanes run at quick/120s", help_text)
+            self.assertIn("adapter lanes at agentic/1800s; override with", help_text)
+            self.assertIn("quick|agentic|frontier", help_text)
+        self.assertIn(expected_help, ORRO_HELP)
+
 
 if __name__ == "__main__":
     unittest.main()
