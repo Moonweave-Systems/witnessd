@@ -113,5 +113,49 @@ class OrroCheckVerifyTest(unittest.TestCase):
             self.assertTrue((root / "run" / "companion-manifest.json").is_file())
 
 
+class ZeroExecutionInvariantTest(unittest.TestCase):
+    def test_non_shell_adapter_is_rejected(self) -> None:
+        from witnessd.cli.companion import _assert_no_execution_adapter
+
+        with tempfile.TemporaryDirectory() as tmp:
+            plan = Path(tmp) / "rlp.json"
+            plan.write_text(
+                json.dumps(
+                    {
+                        "lanes": [
+                            {
+                                "lane_id": "x",
+                                "adapter": "codex",
+                                "region": ["."],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(RuntimeError) as ctx:
+                _assert_no_execution_adapter(plan)
+            self.assertIn(
+                "ERR_ORRO_CHECK_EXECUTION_LANE_FORBIDDEN", str(ctx.exception)
+            )
+
+    def test_shell_only_plan_passes(self) -> None:
+        from witnessd.cli.companion import _assert_no_execution_adapter
+
+        with tempfile.TemporaryDirectory() as tmp:
+            plan = Path(tmp) / "rlp.json"
+            plan.write_text(
+                json.dumps(
+                    {
+                        "lanes": [
+                            {"lane_id": "x", "adapter": "shell", "region": []}
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            _assert_no_execution_adapter(plan)
+
+
 if __name__ == "__main__":
     unittest.main()
