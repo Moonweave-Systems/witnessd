@@ -1071,6 +1071,76 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertEqual(lane["policy_role_kind"], "runner")
             self.assertEqual(lane["policy_tier"], "frontier")
 
+    def test_auto_tier_resolves_shell_lane_to_quick_timeout(self) -> None:
+        plan = compile_workflow_plan(goal="update docs", profile="docs-change")
+
+        role_lanes = compile_role_lane_plan(
+            workflow_plan=plan,
+            lane_adapter="shell",
+            tier="auto",
+        )
+
+        lane = role_lanes["lanes"][0]
+        self.assertEqual(lane["tier"], "quick")
+        self.assertEqual(lane["timeout_seconds"], 120)
+        self.assertNotEqual(lane["tier"], "auto")
+
+    def test_auto_tier_resolves_ai_lane_to_agentic_timeout_with_scope_advisory(
+        self,
+    ) -> None:
+        plan = compile_workflow_plan(goal="update docs", profile="docs-change")
+
+        role_lanes = compile_role_lane_plan(
+            workflow_plan=plan,
+            lane_adapter="codex",
+            tier="auto",
+        )
+
+        lane = role_lanes["lanes"][0]
+        self.assertEqual(lane["tier"], "agentic")
+        self.assertEqual(lane["timeout_seconds"], 1800)
+        self.assertNotEqual(lane["tier"], "auto")
+        self.assertEqual(
+            role_lanes["lane_scope_advisory"],
+            [
+                f"lane '{lane['role_id']}' covers the entire goal at the "
+                "agentic tier (1800s); narrow the goal or set "
+                "--role-lane-tier to change the budget."
+            ],
+        )
+
+    def test_explicit_quick_tier_overrides_ai_adapter_default(self) -> None:
+        plan = compile_workflow_plan(goal="update docs", profile="docs-change")
+
+        role_lanes = compile_role_lane_plan(
+            workflow_plan=plan,
+            lane_adapter="codex",
+            tier="quick",
+        )
+
+        lane = role_lanes["lanes"][0]
+        self.assertEqual(lane["tier"], "quick")
+        self.assertEqual(lane["timeout_seconds"], 120)
+
+    def test_auto_tier_uses_agentic_policy_route_for_default_runner(self) -> None:
+        plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+
+        role_lanes = compile_role_lane_plan(
+            workflow_plan=plan,
+            lane_adapter="shell",
+            tier="auto",
+            policy=DEFAULT_MODEL_POLICY,
+            rolepack=_runner_rolepack(
+                adapters=["shell", "codex"], write_scope=["orro/**"]
+            ),
+        )
+
+        lane = role_lanes["lanes"][0]
+        self.assertEqual(lane["adapter"], "codex")
+        self.assertEqual(lane["tier"], "agentic")
+        self.assertEqual(lane["timeout_seconds"], 1800)
+        self.assertEqual(lane["policy_tier"], "agentic")
+
     def test_flowplan_role_lanes_model_policy_default_resolves_reviewer_to_agy(
         self,
     ) -> None:
@@ -1095,7 +1165,7 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertEqual(len(role_lanes["lanes"]), 1)
             lane = role_lanes["lanes"][0]
             self.assertEqual(lane["role_id"], "reviewer")
-            self.assertEqual(lane["tier"], "quick")
+            self.assertEqual(lane["tier"], "agentic")
             self.assertEqual(lane["adapter"], "agy")
             self.assertEqual(lane["model"], "gemini-3.5-flash")
             self.assertTrue(lane["resolved_via_policy"])

@@ -103,6 +103,9 @@ report`. It threads intermediate plan/run paths automatically and uses the task
 text as the runner lane prompt instead of the generic role placeholder. It must
 report no-work lanes and Depone failures as blocked/non-zero rather than treating
 them as success.
+`--role-lane-tier auto` is the default: shell lanes run at `quick`/120s and
+AI-adapter lanes run at `agentic`/1800s. Override it explicitly with
+`quick|agentic|frontier`; an explicit `quick` keeps the 120s budget.
 
 `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
 writes distribution metadata for the pinned witnessd and Depone commits.

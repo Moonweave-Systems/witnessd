@@ -57,6 +57,28 @@ def _write_shell_rolepack(root: Path) -> Path:
 
 
 class OrroReportTests(unittest.TestCase):
+    def test_text_report_renders_actionable_lane_timeout_guidance(self) -> None:
+        text = render_text_report(
+            {
+                "goal": "fix parser",
+                "summary": {"state": "blocked"},
+                "workflow": {"profile": "code-change"},
+                "execution": {
+                    "timeout_guidance": [
+                        "lane 'runner' timed out at the quick tier (120s); raise "
+                        "--role-lane-tier to agentic|frontier or narrow the goal."
+                    ]
+                },
+                "verification": {},
+                "handoff": {},
+                "human_review": {},
+                "do_not_trust": [],
+            }
+        )
+
+        self.assertIn("Timeout guidance: lane 'runner' timed out", text)
+        self.assertIn("--role-lane-tier to agentic|frontier", text)
+
     def _init_home(self, root: Path) -> tuple[Path, Path]:
         repo = root / "repo"
         home = root / "home"

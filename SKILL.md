@@ -102,6 +102,9 @@ touch files, or Depone does not pass the evidence, report blocked/non-zero
 rather than upgrading a transcript to success. Shell reference lanes are blocked
 unless `--allow-reference-adapter` is passed; allowed reference runs are marked
 as not real AI work in the result and report.
+`--role-lane-tier auto` is the default: shell lanes run at `quick`/120s and
+AI-adapter lanes run at `agentic`/1800s. Override it explicitly with
+`quick|agentic|frontier`; an explicit `quick` keeps the 120s budget.
 
 `python3 -m orro engine-lock --home .witnessd --out .witnessd/orro-engine-lock.json`
 writes distribution metadata for the pinned witnessd and Depone commits.

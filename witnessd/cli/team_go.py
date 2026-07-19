@@ -285,6 +285,11 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
     proofrun_payload = _json_or_text(proofrun_stdout)
     if proofrun_code != 0:
         report_payload = _write_team_go_report(run_dir, home, report_path)
+        timeout_guidance = (
+            proofrun_payload.get("timeout_guidance", [])
+            if isinstance(proofrun_payload, dict)
+            else []
+        )
         no_work = verdict_has_no_work_error(
             _load_json_if_exists(run_dir / "team-ledger-verdict.json")
         ) or verdict_has_no_work_error(
@@ -310,10 +315,13 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
                 "reference_adapter_lanes": reference_adapter_lanes,
                 "reference_adapter_warning": reference_warning,
                 "no_work_detected": no_work,
+                "timeout_guidance": timeout_guidance,
                 **execution_summary,
                 "message": (
                     "proofrun lane did not touch files; execution evidence is blocked"
                     if no_work
+                    else str(timeout_guidance[0])
+                    if isinstance(timeout_guidance, list) and timeout_guidance
                     else "proofrun failed; proofcheck was not run"
                 ),
                 "stderr": proofrun_stderr,

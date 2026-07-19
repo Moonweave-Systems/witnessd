@@ -433,12 +433,15 @@ class OrroTeamUsableSurfaceTests(unittest.TestCase):
             role_lane_plan = json.loads((run_dir / "role-lane-plan.json").read_text(encoding="utf-8"))
             runner_lane = role_lane_plan["lanes"][0]
             self.assertEqual(runner_lane["role_id"], "runner")
-            self.assertEqual(runner_lane["tier"], "quick")
+            self.assertEqual(runner_lane["tier"], "agentic")
+            self.assertEqual(runner_lane["timeout_seconds"], 1800)
             self.assertEqual(runner_lane["adapter"], "codex")
-            self.assertEqual(runner_lane["model"], "gpt-5.6-luna")
+            self.assertEqual(runner_lane["model"], "gpt-5.6-sol")
             self.assertEqual(runner_lane["model_source"], "model-policy")
             self.assertEqual(runner_lane["role_capability"]["role_id"], "runner")
             self.assertEqual(runner_lane["role_capability"]["capability"], "execute")
+            self.assertEqual(len(role_lane_plan["lane_scope_advisory"]), 1)
+            self.assertIn("agentic tier (1800s)", role_lane_plan["lane_scope_advisory"][0])
 
             routing_path = run_dir / "moonweave-routing-decision.json"
             self.assertTrue(routing_path.is_file())

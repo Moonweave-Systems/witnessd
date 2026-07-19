@@ -398,8 +398,12 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_flow.add_argument("--rolepack-file", default=None)
     orro_flow.add_argument(
         "--role-lane-tier",
-        default="quick",
-        choices=["quick", "agentic", "frontier"],
+        default="auto",
+        choices=["auto", "quick", "agentic", "frontier"],
+        help=(
+            "auto (default): shell lanes run at quick/120s, AI-adapter lanes at "
+            "agentic/1800s; override with quick|agentic|frontier"
+        ),
     )
     orro_flow.add_argument("--run-dir", default=None)
     orro_flow.add_argument("--allow-reference-adapter", action="store_true")
@@ -487,8 +491,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     team_go.add_argument(
         "--role-lane-tier",
-        default="quick",
-        choices=["quick", "agentic", "frontier"],
+        default="auto",
+        choices=["auto", "quick", "agentic", "frontier"],
+        help=(
+            "auto (default): shell lanes run at quick/120s, AI-adapter lanes at "
+            "agentic/1800s; override with quick|agentic|frontier"
+        ),
     )
     team_go.add_argument("--max-parallel", type=int, default=1)
     team_go.add_argument("--fail-fast", action="store_true")
@@ -830,9 +838,12 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
     )
     flowplan.add_argument(
         "--role-lane-tier",
-        default="quick",
-        choices=["quick", "agentic", "frontier"],
-        help="tier stamped on each compiled role lane (also the model-policy lookup key)",
+        default="auto",
+        choices=["auto", "quick", "agentic", "frontier"],
+        help=(
+            "auto (default): shell lanes run at quick/120s, AI-adapter lanes at "
+            "agentic/1800s; override with quick|agentic|frontier"
+        ),
     )
     flowplan.add_argument(
         "--lane-timeout-seconds",

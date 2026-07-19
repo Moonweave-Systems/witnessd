@@ -346,6 +346,9 @@ def compile_role_lane_plan(
         **summarize_executable_lanes(lanes),
         "boundary": _role_lane_plan_boundary(),
     }
+    lane_scope_advisory = _whole_goal_lane_scope_advisory(lanes)
+    if lane_scope_advisory:
+        plan["lane_scope_advisory"] = lane_scope_advisory
     required_axes = _required_role_capability_axes(profile, lanes)
     if required_axes:
         plan["required_role_capability_axes"] = required_axes
@@ -384,6 +387,25 @@ def summarize_executable_lanes(lanes: list[dict[str, Any]]) -> dict[str, Any]:
         "multi_model_execution": lane_count > 1
         and (distinct_adapter_count > 1 or distinct_model_count > 1),
     }
+
+
+def _whole_goal_lane_scope_advisory(lanes: list[dict[str, Any]]) -> list[str]:
+    advisories = []
+    for lane in lanes:
+        prompt = lane.get("prompt")
+        if (
+            lane.get("phase") != "proofrun"
+            or lane.get("may_execute") is not True
+            or not isinstance(prompt, str)
+            or not prompt.startswith(ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX)
+        ):
+            continue
+        advisories.append(
+            f"lane '{lane['role_id']}' covers the entire goal at the "
+            f"{lane['tier']} tier ({lane['timeout_seconds']}s); narrow the goal "
+            "or set --role-lane-tier to change the budget."
+        )
+    return advisories
 
 
 def _required_role_capability_axes(
@@ -519,6 +541,17 @@ def validate_role_lane_plan(plan: dict[str, Any]) -> None:
     if not isinstance(lanes, list):
         raise OrroWorkflowError(
             ERR_ORRO_ROLE_LANE_PLAN_INVALID, "role-lane plan lanes must be a list"
+        )
+    lane_scope_advisory = plan.get("lane_scope_advisory")
+    if lane_scope_advisory is not None and (
+        not isinstance(lane_scope_advisory, list)
+        or not all(
+            isinstance(item, str) and item for item in lane_scope_advisory
+        )
+    ):
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+            "role-lane plan lane_scope_advisory must be a list of strings",
         )
     summary_keys = {
         "lane_count",
@@ -851,8 +884,8 @@ def _resolve_lane_adapter_and_model(
     lane_adapter: str,
     policy: dict[str, Any] | None,
     grant: RoleCapabilityGrant | None = None,
-) -> tuple[str, dict[str, Any]]:
-    """Return (adapter, extra_lane_fields) for a role lane.
+) -> tuple[str, str, dict[str, Any]]:
+    """Return (adapter, resolved_tier, extra_lane_fields) for a role lane.
 
     Without a policy this is the pre-existing uniform behavior: the caller's
     lane_adapter, no model field at all. With a policy, (role_kind, tier) must
@@ -869,23 +902,53 @@ def _resolve_lane_adapter_and_model(
                     "not declare exactly one adapter"
                 ),
             )
-        return grant.adapters[0], {"model": grant.model, "model_source": "rolepack"}
+        adapter = grant.adapters[0]
+        return (
+            adapter,
+            _resolve_role_lane_tier(tier, adapter=adapter),
+            {"model": grant.model, "model_source": "rolepack"},
+        )
     if policy is None:
-        return lane_adapter, {}
-    route = resolve_policy_route(policy, role_kind=role_kind, tier=tier)
+        return lane_adapter, _resolve_role_lane_tier(tier, adapter=lane_adapter), {}
+    policy_tier = tier
+    route = None
+    if tier == "auto":
+        for candidate_tier in ("agentic", "quick"):
+            candidate = resolve_policy_route(
+                policy, role_kind=role_kind, tier=candidate_tier
+            )
+            if candidate is not None and _resolve_role_lane_tier(
+                tier, adapter=str(candidate["adapter"])
+            ) == candidate_tier:
+                policy_tier = candidate_tier
+                route = candidate
+                break
+    else:
+        route = resolve_policy_route(policy, role_kind=role_kind, tier=tier)
     if route is None:
         raise OrroWorkflowError(
             ERR_ORRO_ROLE_LANE_POLICY_UNRESOLVED,
             f"no model policy route for role_kind={role_kind!r} tier={tier!r}",
         )
-    return route["adapter"], {
+    return route["adapter"], policy_tier, {
         "model": route["model"],
         "model_source": "model-policy",
         "budget": dict(route["budget"]),
         "resolved_via_policy": True,
         "policy_role_kind": role_kind,
-        "policy_tier": tier,
+        "policy_tier": policy_tier,
     }
+
+
+def _resolve_role_lane_tier(tier: str, *, adapter: str) -> str:
+    if tier == "auto":
+        return "quick" if adapter == "shell" else "agentic"
+    if tier not in ROLE_LANE_TIMEOUT_SECONDS_BY_TIER:
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+            f"unsupported ORRO role lane tier: {tier}",
+        )
+    return tier
 
 
 def _grant_for_lane(
@@ -983,6 +1046,7 @@ def _verify_lane_from_role(
     check_commands: list[str],
 ) -> dict[str, Any]:
     role_id = str(role["role_id"])
+    resolved_tier = _resolve_role_lane_tier(tier, adapter="shell")
     digest = hashlib.sha256(
         f"{workflow_plan['goal']}:verification-only:{role_id}:shell".encode("utf-8")
     ).hexdigest()[:12]
@@ -993,7 +1057,8 @@ def _verify_lane_from_role(
         "phase": "proofrun",
         "engine": "witnessd",
         "adapter": "shell",
-        "tier": tier,
+        "tier": resolved_tier,
+        "timeout_seconds": ROLE_LANE_TIMEOUT_SECONDS_BY_TIER[resolved_tier],
         "region": [],
         "prompt": (
             "Run declared verification checks under observation: "
@@ -1020,7 +1085,7 @@ def _role_lane_from_role(
     profile = str(workflow_plan["profile"])
     role_id = str(role["role_id"])
     grant = _grant_for_lane(rolepack=rolepack, role_id=role_id, phase="proofrun")
-    resolved_adapter, extra = _resolve_lane_adapter_and_model(
+    resolved_adapter, resolved_tier, extra = _resolve_lane_adapter_and_model(
         role_kind=role_id,
         tier=tier,
         lane_adapter=lane_adapter,
@@ -1062,11 +1127,11 @@ def _role_lane_from_role(
         "phase": "proofrun",
         "engine": "witnessd",
         "adapter": resolved_adapter,
-        "tier": tier,
+        "tier": resolved_tier,
         "timeout_seconds": (
             lane_timeout_seconds
             if lane_timeout_seconds is not None
-            else ROLE_LANE_TIMEOUT_SECONDS_BY_TIER[tier]
+            else ROLE_LANE_TIMEOUT_SECONDS_BY_TIER[resolved_tier]
         ),
         "region": region,
         "prompt": (
@@ -1104,7 +1169,7 @@ def _review_lane_from_role(
     profile = str(workflow_plan["profile"])
     role_id = str(role["role_id"])
     grant = _grant_for_lane(rolepack=rolepack, role_id=role_id, phase="review")
-    resolved_adapter, extra = _resolve_lane_adapter_and_model(
+    resolved_adapter, resolved_tier, extra = _resolve_lane_adapter_and_model(
         role_kind=role_id,
         tier=tier,
         lane_adapter=lane_adapter,
@@ -1131,7 +1196,7 @@ def _review_lane_from_role(
         "phase": "review",
         "engine": "witnessd",
         "adapter": resolved_adapter,
-        "tier": tier,
+        "tier": resolved_tier,
         "region": ["."],
         "prompt": f"Review ORRO goal without editing files: {workflow_plan['goal']}",
         "budget": {"max_tokens": 0, "max_usd": 0.0, "max_depth": 1},
@@ -1156,7 +1221,7 @@ def _critic_lane_from_role(
 ) -> dict[str, Any]:
     role_id = str(role["role_id"])
     grant = _grant_for_lane(rolepack=rolepack, role_id=role_id, phase="review")
-    resolved_adapter, extra = _resolve_lane_adapter_and_model(
+    resolved_adapter, resolved_tier, extra = _resolve_lane_adapter_and_model(
         role_kind=role_id,
         tier=tier,
         lane_adapter="claude",
@@ -1186,7 +1251,7 @@ def _critic_lane_from_role(
         "engine": "witnessd",
         "adapter": "claude",
         "critic_contract": CLAUDE_CRITIC_CONTRACT,
-        "tier": tier,
+        "tier": resolved_tier,
         "region": ["."],
         "prompt": (
             "Critique the ORRO goal without editing files or changing evidence "
@@ -1214,6 +1279,11 @@ def _validate_role_lane(lane: Any, *, workflow_profile: str) -> None:
     if lane["adapter"] not in ROLE_LANE_ADAPTERS:
         raise OrroWorkflowError(
             ERR_ORRO_ROLE_LANE_ADAPTER_UNSUPPORTED, "role-lane adapter is unsupported"
+        )
+    if lane["tier"] not in ROLE_LANE_TIMEOUT_SECONDS_BY_TIER:
+        raise OrroWorkflowError(
+            ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+            "role-lane tier must be resolved before emission",
         )
     if (
         lane.get("phase") not in {"proofrun", "review"}

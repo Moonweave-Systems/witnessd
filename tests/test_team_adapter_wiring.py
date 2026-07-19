@@ -253,6 +253,11 @@ class TestTeamAdapterFanin(unittest.TestCase):
             lane["blocked_reason"],
             "ERR_TEAM_LANE_TIMEOUT_COMMITTED_EVIDENCE_PENDING",
         )
+        self.assertEqual(
+            lane["guidance"],
+            "lane 'timeout-lane' timed out at the agentic tier (1s); raise "
+            "--role-lane-tier to agentic|frontier or narrow the goal.",
+        )
         self.assertNotEqual(lane["start_commit"], lane["end_commit"])
         self.assertEqual(lane["touched_files"], ["pkg/timeout.py"])
         self.assertNotIn("evidence_next_verdict", lane)
