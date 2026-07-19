@@ -109,6 +109,11 @@ def _sign(args: argparse.Namespace) -> None:
     trust_config = (
         ClientTrustConfig.staging() if args.staging else ClientTrustConfig.production()
     )
+    # Pin Rekor v1 (dsse 0.0.1 + signed entry timestamp) so Depone can re-derive
+    # the anchor offline. Rekor v2 (hashedrekord + RFC3161 timestamp + witnessed
+    # checkpoints) verification is a tracked follow-up; production public-good
+    # Rekor still defaults to v1, and this makes staging match.
+    trust_config.force_tlog_version = 1
     signing_context = SigningContext.from_trust_config(trust_config)
     if args.identity_token_stdin:
         token = IdentityToken(_identity_token_from_stdin())
