@@ -1,8 +1,9 @@
 """Opt-in adapter for Sigstore keyless DSSE attestations.
 
-This module is the only witnessd runtime surface that depends on the external
-``sigstore`` CLI.  All errors are returned as structured fail-closed results;
-the adapter never manufactures a Sigstore bundle or a keyless boundary.
+This module locates the external ``sigstore`` console script only to resolve its
+Sigstore-capable Python interpreter. The library import remains isolated in a
+standalone subprocess helper. All errors are returned as structured fail-closed
+results; the adapter never manufactures a Sigstore bundle or keyless boundary.
 """
 
 from __future__ import annotations
@@ -17,9 +18,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
-
 MINIMUM_SIGSTORE_VERSION = (4, 0, 0)
-DEFAULT_PREDICATE_TYPE = "https://depone.dev/attestations/evidence/v1"
+DEFAULT_PREDICATE_TYPE = "https://moonweave.dev/witnessd/keyless-evidence-anchor/v1"
 PUBLIC_LOG_WARNING = (
     "WARNING: KEYLESS SIGNING PERMANENTLY PUBLISHES YOUR IDENTITY AND THE "
     "EVIDENCE HASH TO THE PUBLIC REKOR TRANSPARENCY LOG; IT CANNOT BE DELETED."
@@ -51,6 +51,23 @@ def _parse_version(output: str) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in match.groups())
 
 
+def _read_sigstore_interpreter(console_script: str) -> str | None:
+    try:
+        with Path(console_script).open("rb") as script:
+            first_line = script.readline(4096)
+    except OSError:
+        return None
+    if not first_line.startswith(b"#!"):
+        return None
+    try:
+        interpreter = first_line[2:].decode("utf-8").strip()
+    except UnicodeDecodeError:
+        return None
+    if not interpreter or any(character.isspace() for character in interpreter):
+        return None
+    return interpreter
+
+
 def _env_enabled(value: str | None) -> bool:
     return value is not None and value.strip().lower() in {"1", "true", "yes", "on"}
 
@@ -62,7 +79,6 @@ def attest_keyless(
     identity_token: str | None = None,
     oauth_force_oob: bool = False,
     staging: bool = False,
-    predicate_type: str = DEFAULT_PREDICATE_TYPE,
     environ: Mapping[str, str] | None = None,
     timeout_seconds: int = 900,
 ) -> dict[str, Any]:
@@ -98,9 +114,20 @@ def attest_keyless(
             f"evidence file not found: {evidence}",
         )
 
+    interpreter = _read_sigstore_interpreter(resolved)
+    if interpreter is None:
+        return _error(
+            "ERR_WITNESSD_SIGSTORE_VERSION_CHECK_FAILED",
+            "sigstore version check failed",
+        )
+
     try:
         version = subprocess.run(
-            [resolved, "--version"],
+            [
+                interpreter,
+                "-c",
+                "import sigstore,sys;print(sigstore.__version__)",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -125,57 +152,44 @@ def attest_keyless(
 
     use_staging = staging or _env_enabled(environment.get("SIGSTORE_STAGING"))
     with tempfile.TemporaryDirectory(prefix="witnessd-keyless-") as tmp:
-        predicate_path = Path(tmp) / "predicate.json"
         bundle_path = Path(tmp) / "sigstore-bundle.json"
-        predicate_path.write_text(
-            json.dumps(
-                {
-                    "kind": "witnessd-keyless-emission",
-                    "schema_version": "1.0",
-                    "raises_assurance": False,
-                },
-                sort_keys=True,
-                separators=(",", ":"),
-            ),
-            encoding="utf-8",
-        )
+        helper_path = Path(__file__).with_name("_keyless_sign_helper.py")
         command = [
-            resolved,
-            *(["--staging"] if use_staging else []),
-            "attest",
+            interpreter,
+            str(helper_path),
+            "--evidence",
             str(evidence),
-            "--predicate",
-            str(predicate_path),
-            "--predicate-type",
-            predicate_type,
             "--bundle",
             str(bundle_path),
             "--oidc-disable-ambient-providers",
-            *(["--identity-token", token] if token is not None else []),
+            *(["--staging"] if use_staging else []),
+            *(["--identity-token-stdin"] if token is not None else []),
             *(["--oauth-force-oob"] if oauth_force_oob else []),
         ]
+        run_options: dict[str, Any] = {
+            "capture_output": token is not None,
+            "text": True,
+            "check": False,
+            "timeout": timeout_seconds,
+        }
+        if token is not None:
+            run_options["input"] = json.dumps({"identity_token": token})
         try:
-            completed = subprocess.run(
-                command,
-                capture_output=token is not None,
-                text=True,
-                check=False,
-                timeout=timeout_seconds,
-            )
+            completed = subprocess.run(command, **run_options)
         except subprocess.TimeoutExpired:
             return _error(
                 "ERR_WITNESSD_KEYLESS_ATTEST_TIMEOUT",
-                "sigstore attest timed out",
+                "sigstore keyless helper timed out",
             )
         except OSError:
             return _error(
                 "ERR_WITNESSD_KEYLESS_ATTEST_FAILED",
-                "sigstore attest could not be started",
+                "sigstore keyless helper could not be started",
             )
         if completed.returncode != 0:
             return _error(
                 "ERR_WITNESSD_KEYLESS_ATTEST_FAILED",
-                "sigstore attest failed; no keyless bundle was emitted",
+                "sigstore keyless helper failed; no keyless bundle was emitted",
             )
         try:
             bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
