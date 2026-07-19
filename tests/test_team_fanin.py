@@ -210,7 +210,7 @@ class TestTeamFanin(unittest.TestCase):
             ]["predicate"]["artifact_index"]
         ]
         self.assertIn("write-scope-declaration", subject_names)
-        self.assertIn("git-diff-name-only.txt", subject_names)
+        self.assertIn("observed-touched-files.txt", subject_names)
 
         contract = json.loads(
             (lane_dir / "evidence-contract.json").read_text(encoding="utf-8")
