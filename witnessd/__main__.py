@@ -295,6 +295,29 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_review.add_argument("--json", action="store_true")
     orro_review.set_defaults(func=_cli_handler("advisory", "_cmd_orro_review"))
 
+    orro_check = sub.add_parser(
+        "orro-check",
+        help=argparse.SUPPRESS,
+        description=(
+            "Companion: verify already-driven work with deterministic checks "
+            "(Depone verdict) and review it read-only (advisory). Spawns zero "
+            "execution-adapter lanes; does not claim observed execution."
+        ),
+    )
+    orro_check.add_argument("--repo", "--root", dest="repo", default=None)
+    orro_check.add_argument("--home", default=None)
+    orro_check.add_argument("--run-dir", default=None)
+    orro_check.add_argument("--check", action="append", default=None)
+    orro_check.add_argument(
+        "--reviewer", default="agy", choices=["agy", "gemini", "claude"]
+    )
+    orro_check.add_argument("--reviewer-binary", default=None)
+    orro_check.add_argument("--no-review", action="store_true")
+    orro_check.add_argument("--base", default=None)
+    orro_check.add_argument("--timeout-seconds", type=int, default=120)
+    orro_check.add_argument("--json", action="store_true")
+    orro_check.set_defaults(func=_cli_handler("companion", "_cmd_orro_check"))
+
     orro_auto = sub.add_parser("orro-auto", help=argparse.SUPPRESS)
     orro_auto.add_argument("run_dir", nargs="?")
     orro_auto.add_argument("--dry-run", action="store_true")
@@ -830,6 +853,7 @@ ORRO_COMMAND_MAP: dict[str, str] = {
     "trace": "orro-trace",
     "report": "orro-report",
     "review": "orro-review",
+    "check": "orro-check",
     "auto": "orro-auto",
     "flow": "orro-flow",
     "team": "team",

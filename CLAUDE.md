@@ -50,6 +50,7 @@ The cross-engine artifact boundary is summarized in
 | `orro next` | non-executing continuation gate over persisted run artifacts |
 | `orro report` | human-facing summary of observed artifacts and next safe action |
 | `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
+| `orro check` | companion: deterministic verify (Depone verdict) + read-only review (advisory); spawns zero execution-adapter lanes; does not claim observed execution |
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
 | `orro auto --until-complete` | bounded post-run proofcheck/handoff loop; orchestration metadata only |
@@ -59,6 +60,14 @@ The cross-engine artifact boundary is summarized in
 | `orro auto` | future broader resume/continuation loop behind evidence gates |
 
 `witnessd` is the engine name, not the main session skill name.
+
+`orro check` is the evidence and review layer for work already driven in the
+main session. It runs declared deterministic checks under observation and may
+attach an advisory read-only review, but it is not proof that the reviewed
+work's execution was observed: its manifest records
+`reviewed_work_execution_observed:false` and `review_is_advisory:true`. It does
+not approve merge or raise assurance, and formal ORRO handoff still requires a
+passing bound proofcheck verdict.
 
 ## Entrypoint and repository boundary
 

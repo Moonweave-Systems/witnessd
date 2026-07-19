@@ -15,7 +15,7 @@ DEPRECATION_WARNING = (
     "in the next major witnessd release."
 )
 
-ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,sketch,trace,flow,flowplan,proofrun,proofcheck,advisory-provenance-check,handoff,next,report,review,auto,team,doctor,engine-lock} ...
+ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,sketch,trace,flow,flowplan,proofrun,proofcheck,advisory-provenance-check,handoff,next,report,review,check,auto,team,doctor,engine-lock} ...
 
 ORRO - Observed Run & Review Orchestrator
 
@@ -39,6 +39,7 @@ public commands:
   next         non-executing continuation gate over persisted run artifacts
   report       human-facing summary of observed ORRO artifacts and next action
   review       advisory read-only reviewer lanes; not proof or assurance
+  check        companion: verify (Depone verdict) + read-only review; not observed execution
   auto         dry-run, one-step, or bounded post-run automation
   team         scaffold team config or run flowplan/proofrun/proofcheck/report
   doctor       ORRO engine/verifier readiness; not runlog health or evidence verification

@@ -40,6 +40,7 @@ The cross-engine artifact boundary is summarized in
 | `orro next` | non-executing continuation gate over persisted run artifacts |
 | `orro report` | human-facing summary of observed artifacts and next safe action |
 | `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
+| `orro check` | companion: deterministic verify (Depone verdict) + read-only review (advisory); spawns zero execution-adapter lanes; does not claim observed execution |
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
 | `orro auto --until-complete` | bounded post-run proofcheck/handoff loop; orchestration metadata only |

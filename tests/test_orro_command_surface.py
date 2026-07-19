@@ -47,6 +47,7 @@ class OrroCommandSurfaceTests(unittest.TestCase):
             "trace": "orro-trace",
             "report": "orro-report",
             "review": "orro-review",
+            "check": "orro-check",
             "auto": "orro-auto",
             "team": "team",
         }
