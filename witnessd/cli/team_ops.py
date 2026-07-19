@@ -420,7 +420,7 @@ def _print_trust_anchor_summary(
     print(f"operator public key: {trust_anchor.public_key_path}")
     if trust_anchor.independent:
         print(f"assurance (candidate, unverified): {candidate_assurance}")
-        print("independent trust anchor: operator-provided")
+        print(f"independent trust anchor: {trust_anchor.trust_anchor}")
     else:
         print("assurance claim: unavailable without an external operator key")
         print("independent trust anchor: false")

@@ -147,6 +147,8 @@ def emit_lane_evidence(
     role_capability: str | None = None,
     observer_output_path: str | None = None,
     transcript_path: str | None = None,
+    signing_profile: str | None = None,
+    keyless_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble and emit a lane's full evidence set through the runlog SoT.
 
@@ -447,6 +449,9 @@ def emit_lane_evidence(
         public_key_path,
         key_id=key_id,
         otel_spans=otel_spans,
+        signing_profile=signing_profile,
+        keyless_evidence_path=manifest_path,
+        keyless_options=keyless_options,
     )
     _emit_artifact("bundle.json", json.dumps(bundle))
 
@@ -509,6 +514,8 @@ def emit_supervised_lane(
     write_scope: list[str] | None = None,
     role_id: str | None = None,
     role_capability: str | None = None,
+    signing_profile: str | None = None,
+    keyless_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Emit supervised-lane evidence with per-spawn isolation facts.
 
@@ -559,6 +566,8 @@ def emit_supervised_lane(
         write_scope=write_scope,
         role_id=role_id,
         role_capability=role_capability,
+        signing_profile=signing_profile,
+        keyless_options=keyless_options,
     )
 
 

@@ -262,6 +262,8 @@ def run_adapter_lane(
     role_id: str | None = None,
     role_capability: str | None = None,
     tools: dict[str, Any] | None = None,
+    signing_profile: str | None = None,
+    keyless_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     capture_profile = validate_capture_profile(capture_profile)
     worktree = str(Path(sandbox or root).resolve(strict=False))
@@ -622,6 +624,8 @@ def run_adapter_lane(
             write_scope=redacted_write_scope,
             role_id=role_id,
             role_capability=role_capability,
+            signing_profile=signing_profile,
+            keyless_options=keyless_options,
         )
 
         return {

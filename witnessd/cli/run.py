@@ -16,8 +16,38 @@ from witnessd.status import render_status
 ERR_ORRO_REFERENCE_ADAPTER_REFUSED = "ERR_ORRO_REFERENCE_ADAPTER_REFUSED"
 
 
+def _requested_signing_profile(args: argparse.Namespace) -> str | None:
+    requested = getattr(args, "signing_profile", None)
+    if getattr(args, "keyless", False):
+        if requested not in {None, "keyless-fulcio-rekor"}:
+            raise ValueError("ERR_WITNESSD_SIGNING_PROFILE_CONFLICT")
+        return "keyless-fulcio-rekor"
+    return requested
+
+
+def _keyless_options(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "identity_token": getattr(args, "identity_token", None),
+        "oauth_force_oob": bool(getattr(args, "oauth_force_oob", False)),
+        "staging": bool(getattr(args, "staging", False)),
+    }
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
+    try:
+        signing_profile = _requested_signing_profile(args)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     if getattr(args, "goal", None):
+        if signing_profile == "keyless-fulcio-rekor":
+            print(
+                "ERR_WITNESSD_KEYLESS_TEAM_UNSUPPORTED: keyless signing is "
+                "available for direct run/proofrun emission only; no keyless "
+                "identity flow was started",
+                file=sys.stderr,
+            )
+            return 2
         return _cmd_run_goal(args)
 
     # A sealed workflow/role-lane plan carries its own lane prompts, so proofrun
@@ -25,6 +55,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     # reference-adapter/placeholder guard) instead of demanding an ad-hoc prompt
     # via the direct-adapter path.
     if getattr(args, "workflow_plan", None) or getattr(args, "role_lane_plan", None):
+        if signing_profile == "keyless-fulcio-rekor":
+            print(
+                "ERR_WITNESSD_KEYLESS_TEAM_UNSUPPORTED: keyless signing is "
+                "available for direct run/proofrun emission only; no keyless "
+                "identity flow was started",
+                file=sys.stderr,
+            )
+            return 2
         return _cmd_run_goal(args)
 
     if args.adapter != "shell":
@@ -81,7 +119,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
         for name in ("operator-ed25519.pem", "operator-ed25519.pub.pem")
     )
     private_key_path, public_key_path = gen_operator_keypair(keys_dir)
-    from witnessd.trust_anchor import resolve_trust_anchor
+    from witnessd.trust_anchor import (
+        resolve_bundle_trust_anchor,
+        resolve_trust_anchor,
+    )
 
     trust_anchor = resolve_trust_anchor(
         runtime_public_key=Path(public_key_path),
@@ -144,6 +185,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
             redaction_manifest=redaction_manifest,
             observer_output_path=out_path,
             transcript_path=log_path,
+            signing_profile=signing_profile,
+            keyless_options=_keyless_options(args),
         )
     except (EmitterError, OSError) as exc:
         print(f"ERR_OBSERVER_PERSIST_FAILED: {exc}", file=sys.stderr)
@@ -173,6 +216,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
     print(f"evidence_dir: {evidence_dir}")
     from witnessd.cli.team_ops import _print_trust_anchor_summary
 
+    trust_anchor = resolve_bundle_trust_anchor(
+        result["bundle"], fallback=trust_anchor
+    )
     _print_trust_anchor_summary(trust_anchor, candidate_assurance=result["assurance"])
     return 0
 
@@ -752,6 +798,8 @@ def _cmd_run_adapter(args: argparse.Namespace) -> int:
             opencode_binary=args.opencode_binary,
             allowed_touched_files=list(args.allow or []),
             capture_profile=args.capture_profile,
+            signing_profile=_requested_signing_profile(args),
+            keyless_options=_keyless_options(args),
         )
     except LaneBlocked as exc:
         print(exc.reason, file=sys.stderr)

@@ -769,6 +769,38 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
         choices=["full", "redacted"],
         default="redacted",
     )
+    run.add_argument(
+        "--keyless",
+        action="store_true",
+        help=(
+            "opt-in Sigstore keyless signing; permanently publishes identity and "
+            "evidence hash to public Rekor and fails closed if unavailable"
+        ),
+    )
+    run.add_argument(
+        "--signing-profile",
+        choices=["operator-key", "keyless-fulcio-rekor"],
+        default=None,
+        help=(
+            "signing profile; keyless is opt-in, publishes to public Rekor, and "
+            "fails closed if unavailable"
+        ),
+    )
+    run.add_argument(
+        "--oauth-force-oob",
+        action="store_true",
+        help="use Sigstore's headless-server out-of-band OAuth flow",
+    )
+    run.add_argument(
+        "--identity-token",
+        default=None,
+        help="explicit Sigstore identity token for non-interactive keyless signing",
+    )
+    run.add_argument(
+        "--staging",
+        action="store_true",
+        help="use Sigstore staging for an opt-in keyless test run",
+    )
     run.add_argument("command", nargs=argparse.REMAINDER)
 
 

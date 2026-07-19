@@ -818,10 +818,14 @@ Rules:
   but not sufficient for observer-signed/A2: the observer and runner must also
   be genuinely separated and the evidence path observer-owned.
 - Operator-key DSSE is report-level provenance; it does not create A3.
-- Keyless/transparency anchoring is a future optional enrichment of already-valid
-  evidence, not a dependency of capture. The reserved Fulcio/Rekor profile
-  remains unimplemented and fails closed with
-  `ERR_WITNESSD_KEYLESS_LIVE_UNIMPLEMENTED`.
+- Keyless/transparency anchoring is an opt-in optional enrichment of
+  already-valid evidence, not a dependency of capture. The Fulcio/Rekor profile
+  emits a real Sigstore keyless DSSE attestation as an additive sidecar via the
+  external `sigstore` CLI. It fails closed at runtime — never a faked keyless
+  boundary — when the CLI is absent, the run is non-interactive without an
+  identity token, or the flow errors. It adds an orthogonal transparency anchor,
+  never raises the A0/A1/A2 observation-assurance level, and Depone re-derives
+  the anchor offline.
 - Depone must be able to verify persisted anchor bytes offline.
 - Skill text, MCP output, and session transcripts are not trust roots unless a
   verifier-recognized receipt binds them to evidence.

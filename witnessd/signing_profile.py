@@ -1,9 +1,4 @@
-"""Signing profile selection for witnessd evidence bundles.
-
-W6a keeps operator-key signing as the only trusted runtime path. The keyless
-profile name is reserved, but live Fulcio/Rekor verification is W6b work, so
-selecting keyless fails closed even though the production gate is open.
-"""
+"""Signing profile selection for witnessd evidence bundles."""
 
 from __future__ import annotations
 
@@ -41,6 +36,21 @@ def operator_key_signature_boundary() -> dict[str, Any]:
     }
 
 
+def keyless_signature_boundary() -> dict[str, Any]:
+    return {
+        "scheme": "DSSE-Sigstore-Fulcio-Rekor",
+        "operator_key": False,
+        "public_verifiable": True,
+        "keyless_identity": True,
+        "transparency_logged": True,
+        "raises_assurance": False,
+        "note": (
+            "This orthogonal public signing anchor does not raise the "
+            "A0/A1/A2 observation-assurance level."
+        ),
+    }
+
+
 def select_signing_profile(requested: str | None) -> SigningProfile:
     profile = requested or OPERATOR_KEY_PROFILE
     if profile == OPERATOR_KEY_PROFILE:
@@ -50,5 +60,9 @@ def select_signing_profile(requested: str | None) -> SigningProfile:
             signature_boundary=operator_key_signature_boundary(),
         )
     if profile == KEYLESS_FULCIO_REKOR_PROFILE:
-        raise SigningProfileError("ERR_WITNESSD_KEYLESS_LIVE_UNIMPLEMENTED")
+        return SigningProfile(
+            name=KEYLESS_FULCIO_REKOR_PROFILE,
+            signing_status="signed-keyless-fulcio-rekor",
+            signature_boundary=keyless_signature_boundary(),
+        )
     raise SigningProfileError("ERR_WITNESSD_SIGNING_PROFILE_UNSUPPORTED")

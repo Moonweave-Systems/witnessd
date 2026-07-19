@@ -8,9 +8,9 @@ import unittest
 import venv
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 WITNESSD_ROOT = ROOT / "witnessd"
+KEYLESS_SIGN_HELPER = WITNESSD_ROOT / "adapters" / "_keyless_sign_helper.py"
 IGNORED_SCAN_DIRS = {
     ".git",
     ".omx",
@@ -22,7 +22,11 @@ IGNORED_SCAN_DIRS = {
 
 
 def _witnessd_python_files() -> list[Path]:
-    return sorted(path for path in WITNESSD_ROOT.rglob("*.py") if path.is_file())
+    return sorted(
+        path
+        for path in WITNESSD_ROOT.rglob("*.py")
+        if path.is_file() and path != KEYLESS_SIGN_HELPER
+    )
 
 
 def _source_python_files() -> list[Path]:
@@ -40,6 +44,29 @@ def _top_level(name: str) -> str:
 
 
 class TestRuntimeDeponeDecoupling(unittest.TestCase):
+    def test_sigstore_library_helper_is_subprocess_only(self):
+        self.assertTrue(KEYLESS_SIGN_HELPER.is_file())
+        offenders: list[str] = []
+        for path in _witnessd_python_files():
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name == "witnessd.adapters._keyless_sign_helper":
+                            offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}")
+                elif isinstance(node, ast.ImportFrom):
+                    imports_helper = (
+                        node.module == "witnessd.adapters._keyless_sign_helper"
+                        or node.module == "witnessd.adapters"
+                        and any(
+                            alias.name == "_keyless_sign_helper" for alias in node.names
+                        )
+                    )
+                    if imports_helper:
+                        offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}")
+
+        self.assertEqual(offenders, [])
+
     def test_witnessd_runtime_has_no_depone_imports(self):
         offenders: list[str] = []
         for path in _witnessd_python_files():

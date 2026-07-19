@@ -21,10 +21,20 @@ class TestSigningProfile(unittest.TestCase):
             select_signing_profile("unknown")
         self.assertEqual(cm.exception.code, "ERR_WITNESSD_SIGNING_PROFILE_UNSUPPORTED")
 
-    def test_keyless_profile_is_blocked_until_live_verifier_exists(self):
-        with self.assertRaises(SigningProfileError) as cm:
-            select_signing_profile(KEYLESS_FULCIO_REKOR_PROFILE)
-        self.assertEqual(cm.exception.code, "ERR_WITNESSD_KEYLESS_LIVE_UNIMPLEMENTED")
+    def test_keyless_profile_declares_orthogonal_public_anchor(self):
+        profile = select_signing_profile(KEYLESS_FULCIO_REKOR_PROFILE)
+
+        self.assertEqual(profile.name, KEYLESS_FULCIO_REKOR_PROFILE)
+        self.assertEqual(profile.signing_status, "signed-keyless-fulcio-rekor")
+        self.assertEqual(
+            profile.signature_boundary["scheme"],
+            "DSSE-Sigstore-Fulcio-Rekor",
+        )
+        self.assertFalse(profile.signature_boundary["operator_key"])
+        self.assertTrue(profile.signature_boundary["public_verifiable"])
+        self.assertTrue(profile.signature_boundary["keyless_identity"])
+        self.assertTrue(profile.signature_boundary["transparency_logged"])
+        self.assertFalse(profile.signature_boundary.get("raises_assurance", False))
 
 
 if __name__ == "__main__":
