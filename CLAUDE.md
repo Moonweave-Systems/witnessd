@@ -323,8 +323,11 @@ scripts/quickstart_check.sh
   observer-signed provenance, or A1/A2 from that runtime-chosen key.
 - `trust_anchor: "operator-provided"` requires an external public key via
   `DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE`. Observer-signed/A2 language also
-  requires real observer/runner separation. Fulcio/Rekor keyless anchoring
-  remains roadmap and selecting it fails closed with
-  `ERR_WITNESSD_KEYLESS_LIVE_UNIMPLEMENTED`.
+  requires real observer/runner separation. Fulcio/Rekor keyless anchoring is
+  opt-in (`--keyless`): it emits a real Sigstore keyless attestation as an
+  additive sidecar and fails closed at runtime — never a faked keyless boundary
+  — when the `sigstore` CLI is unavailable, the run is non-interactive without an
+  identity token, or the flow errors. It adds an orthogonal transparency anchor
+  and never raises A0/A1/A2.
 - Each wave's acceptance bar is a committed fixture plus a revalidator that
   Depone re-derives.
