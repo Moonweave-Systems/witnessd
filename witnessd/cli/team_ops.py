@@ -39,7 +39,19 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
         return 2
     state_root = _team_run_state_root(args, out_dir_path)
     if state_root is not None and _paths_overlap(Path(state_root), out_dir_path):
-        print("ERR_TEAM_RUN_STATE_ROOT_INSIDE_OUTPUT", file=sys.stderr)
+        _emit_orro_error(
+            args,
+            code="ERR_TEAM_RUN_STATE_ROOT_INSIDE_OUTPUT",
+            message="team runner state cannot overlap observer output",
+            reason="runner state inside --out would break observer/runner separation",
+            required_input_or_grant="--state-root <dir> outside --out",
+            next_command=(
+                "python3 -m witnessd team run "
+                f"--repo {shlex.quote(str(args.repo))} "
+                f"--out {shlex.quote(str(args.out))} "
+                "--state-root <separate-dir> --lane <lane-spec>"
+            ),
+        )
         return 2
     codex_specs = [spec for spec in lane_specs if spec.get("adapter") == "codex"]
     if (
@@ -47,7 +59,21 @@ def _cmd_team_run(args: argparse.Namespace) -> int:
         and state_root is None
         and not _codex_specs_are_isolated(codex_specs)
     ):
-        print("ERR_TEAM_RUN_MULTI_CODEX_UNISOLATED", file=sys.stderr)
+        _emit_orro_error(
+            args,
+            code="ERR_TEAM_RUN_MULTI_CODEX_UNISOLATED",
+            message="multiple Codex lanes require isolated state roots",
+            reason="the requested Codex lanes would otherwise share mutable runner state",
+            required_input_or_grant=(
+                "--state-root <dir> or a distinct state_root in every Codex lane"
+            ),
+            next_command=(
+                "python3 -m witnessd team run "
+                f"--repo {shlex.quote(str(args.repo))} "
+                f"--out {shlex.quote(str(args.out))} "
+                "--state-root <isolated-state-dir> --lane <lane-spec>"
+            ),
+        )
         return 2
     if state_root is not None and codex_specs:
         if len(codex_specs) > 1:
@@ -197,15 +223,52 @@ def _cmd_team_plan_run(args: argparse.Namespace) -> int:
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     if args.draft_adapter != "heuristic":
-        print("ERR_PLAN_RUN_DRAFT_ADAPTER_UNSUPPORTED", file=sys.stderr)
+        _emit_orro_error(
+            args,
+            code="ERR_PLAN_RUN_DRAFT_ADAPTER_UNSUPPORTED",
+            message="team plan-run supports only the deterministic heuristic drafter",
+            reason="the selected draft adapter is not implemented for this command",
+            required_input_or_grant="--draft-adapter heuristic",
+            next_command=(
+                "python3 -m witnessd team plan-run "
+                f"{shlex.quote(str(args.goal))} "
+                f"--repo {shlex.quote(str(args.repo))} "
+                f"--out {shlex.quote(str(args.out))} --draft-adapter heuristic"
+            ),
+        )
         return 2
     if args.lane_timeout < 1 or args.lane_timeout > 3600:
-        print("ERR_PLAN_RUN_LANE_TIMEOUT_INVALID", file=sys.stderr)
+        _emit_orro_error(
+            args,
+            code="ERR_PLAN_RUN_LANE_TIMEOUT_INVALID",
+            message="team plan-run lane timeout is outside the supported range",
+            reason="lane timeouts must be between 1 and 3600 seconds",
+            required_input_or_grant="--lane-timeout <1..3600>",
+            next_command=(
+                "python3 -m witnessd team plan-run "
+                f"{shlex.quote(str(args.goal))} "
+                f"--repo {shlex.quote(str(args.repo))} "
+                f"--out {shlex.quote(str(args.out))} --lane-timeout 900"
+            ),
+        )
         return 2
 
     state_root = _team_plan_state_root(args, out_dir)
     if state_root is not None and _paths_overlap(Path(state_root), out_dir):
-        print("ERR_PLAN_RUN_STATE_ROOT_INSIDE_OUTPUT", file=sys.stderr)
+        _emit_orro_error(
+            args,
+            code="ERR_PLAN_RUN_STATE_ROOT_INSIDE_OUTPUT",
+            message="planned team runner state cannot overlap observer output",
+            reason="runner state inside --out would break observer/runner separation",
+            required_input_or_grant="--state-root <dir> outside --out",
+            next_command=(
+                "python3 -m witnessd team plan-run "
+                f"{shlex.quote(str(args.goal))} "
+                f"--repo {shlex.quote(str(args.repo))} "
+                f"--out {shlex.quote(str(args.out))} "
+                "--state-root <separate-dir>"
+            ),
+        )
         return 2
 
     budget = {

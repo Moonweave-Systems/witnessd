@@ -203,7 +203,7 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     from witnessd.signing import gen_operator_keypair
     from witnessd.trust_anchor import resolve_trust_anchor
 
-    repo = Path(args.repo or ".").resolve(strict=False)
+    repo = Path(args.repo or args.root or ".").resolve(strict=False)
     home = Path(
         args.home or os.environ.get("WITNESSD_HOME") or (repo / ".witnessd")
     ).resolve(strict=False)

@@ -143,8 +143,14 @@ def _emit_orro_error(
         print(json.dumps({"error": error}, sort_keys=True))
         return
     print(code, file=sys.stderr)
-    if next_command is not None:
-        print(f"{message} Next: {next_command}", file=sys.stderr)
+    if any(
+        key in error
+        for key in ("reason", "required_input_or_grant", "next_command")
+    ):
+        print(f"message: {message}", file=sys.stderr)
+        for key in ("reason", "required_input_or_grant", "next_command"):
+            if key in error:
+                print(f"{key}: {error[key]}", file=sys.stderr)
 
 
 def _hash_file(path: Path) -> str:
