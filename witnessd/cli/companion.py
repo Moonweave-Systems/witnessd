@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from witnessd.cli._output import (
     _hash_file,
@@ -104,6 +105,13 @@ def _print_human_summary(
     verdict = verdict_ref["decision"]
     dot = "● pass" if verdict == "pass" else "● blocked"
     print("orro check — evidence & review for work you already drove\n")
+    declared_intent = manifest.get("declared_intent")
+    if isinstance(declared_intent, dict):
+        print(f"  DECLARED INTENT   {declared_intent['intent']}")
+        non_goals = declared_intent.get("non_goals")
+        if isinstance(non_goals, list) and non_goals:
+            print(f"    non-goals: {'; '.join(non_goals)}")
+        print()
     print(f"  VERIFICATION   (Depone verdict, deterministic)   {dot}")
     review_ref = manifest.get("review_ref")
     if isinstance(review_ref, dict):
@@ -167,6 +175,58 @@ def _emit_verdict_with_blocker(
     return 2
 
 
+def _review_summary_text(path: Path) -> str:
+    """Collect only review summary/finding text, excluding the injected goal."""
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return ""
+
+    parts: list[str] = []
+
+    def collect(value: Any) -> None:
+        if isinstance(value, str):
+            parts.append(value)
+        elif isinstance(value, list):
+            for item in value:
+                collect(item)
+        elif isinstance(value, dict):
+            for item in value.values():
+                collect(item)
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key in {"summary", "finding", "findings"}:
+                    collect(item)
+                else:
+                    visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    visit(payload)
+    return "\n".join(parts)
+
+
+def _review_goal(goal: str, declared_intent: dict[str, Any] | None) -> str:
+    if declared_intent is None:
+        return goal
+    lines = [
+        goal,
+        "",
+        "Declared human intent (verbatim):",
+        str(declared_intent["intent"]),
+    ]
+    non_goals = declared_intent.get("non_goals")
+    if isinstance(non_goals, list) and non_goals:
+        lines.extend(
+            ["Declared non-goals (verbatim):", *[f"- {item}" for item in non_goals]]
+        )
+    return "\n".join(lines)
+
+
 def _cmd_orro_check(args: argparse.Namespace) -> int:
     checks = list(getattr(args, "check", None) or [])
     if not checks:
@@ -180,6 +240,18 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             )
         )
 
+    declared_intent = None
+    if args.intent:
+        from witnessd.orro_advisory import OrroAdvisoryError
+        from witnessd.orro_intent import read_declared_intent
+
+        try:
+            declared_intent = read_declared_intent(Path(args.intent))
+        except OrroAdvisoryError as exc:
+            return _emit_blocker(
+                _structured_error(code=exc.code, message=str(exc))
+            )
+
     repo = Path(args.repo).resolve(strict=False) if args.repo else Path.cwd()
     home = Path(args.home).resolve(strict=False) if args.home else repo / ".witnessd"
     run_dir = (
@@ -188,9 +260,25 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
         else home / "companion-run"
     )
     run_dir.mkdir(parents=True, exist_ok=True)
+    intent_reference = None
+    if declared_intent is not None:
+        from witnessd.orro_intent import declared_intent_ref
+
+        intent_path = run_dir / "declared-intent.json"
+        try:
+            _write_json_file(intent_path, declared_intent)
+            intent_reference = declared_intent_ref(intent_path)
+        except OSError as exc:
+            return _emit_blocker(
+                _structured_error(
+                    code="ERR_ORRO_INTENT_READ_FAILED",
+                    message=f"cannot write declared intent sidecar: {exc}",
+                )
+            )
     sandbox = run_dir / "sandbox"
     base = _resolve_base(repo, args.base)
     goal = f"Review the changes on HEAD relative to {base} without editing files"
+    review_goal = _review_goal(goal, declared_intent)
 
     code, _, err = _invoke_phase(["init", "--home", str(home), "--repo", str(repo)])
     if code != 0:
@@ -333,7 +421,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             code, _, err = _invoke_phase(
                 [
                     "flowplan",
-                    goal,
+                    review_goal,
                     "--root",
                     str(repo),
                     "--profile",
@@ -388,9 +476,20 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     }
 
     manifest = manifest_partial(decision, verdict_path, team_ledger)
+    if declared_intent is not None and intent_reference is not None:
+        manifest["declared_intent"] = declared_intent
+        manifest["declared_intent_ref"] = intent_reference
     if review_ref is not None:
         manifest["scope"] = "state-verified-and-reviewed"
         manifest["review_ref"] = review_ref
+        if declared_intent is not None:
+            from witnessd.orro_intent import INTENT_ALIGNMENT_NOTE, screen_intent_drift
+
+            manifest["intent_drift_advisory"] = screen_intent_drift(
+                _review_summary_text(Path(str(review_ref["path"]))),
+                declared_intent.get("non_goals", []),
+            )
+            manifest["intent_alignment_note"] = INTENT_ALIGNMENT_NOTE
     if review_skipped is not None:
         manifest["review_skipped"] = review_skipped
     manifest_path = run_dir / "companion-manifest.json"

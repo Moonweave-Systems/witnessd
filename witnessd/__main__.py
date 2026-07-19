@@ -259,6 +259,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "tests/fixtures/orro-sketch-decision.json"
         ),
     )
+    orro_sketch.add_argument(
+        "--intent",
+        default=None,
+        metavar="INTENT_JSON_PATH",
+        help=(
+            "path to a JSON file; schema: {intent: str, non_goals?: [str], "
+            "constraints?: [str]}. Example: tests/fixtures/orro-declared-intent.json"
+        ),
+    )
     orro_sketch.add_argument("--out", default=None)
     orro_sketch.add_argument("--json", action="store_true")
     orro_sketch.set_defaults(func=_cli_handler("advisory", "_cmd_orro_sketch"))
@@ -294,6 +303,15 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_report.add_argument("--home", default=None)
     orro_report.add_argument("--out", default=None)
     orro_report.add_argument("--workstyle-decision", default=None)
+    orro_report.add_argument(
+        "--intent",
+        default=None,
+        metavar="INTENT_JSON_PATH",
+        help=(
+            "path to a JSON file; schema: {intent: str, non_goals?: [str], "
+            "constraints?: [str]}. Example: tests/fixtures/orro-declared-intent.json"
+        ),
+    )
     orro_report.add_argument("--json", action="store_true")
     orro_report.set_defaults(func=_cli_handler("advisory", "_cmd_orro_report"))
 
@@ -329,6 +347,15 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_check.add_argument("--home", default=None)
     orro_check.add_argument("--run-dir", default=None)
     orro_check.add_argument("--check", action="append", default=None)
+    orro_check.add_argument(
+        "--intent",
+        default=None,
+        metavar="INTENT_JSON_PATH",
+        help=(
+            "path to a JSON file; schema: {intent: str, non_goals?: [str], "
+            "constraints?: [str]}. Example: tests/fixtures/orro-declared-intent.json"
+        ),
+    )
     orro_check.add_argument(
         "--reviewer", default="agy", choices=["agy", "gemini", "claude"]
     )

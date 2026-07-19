@@ -107,7 +107,102 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
             self.assertTrue(
                 all(branch["recommended_answer"] for branch in payload["decision_branches"])
             )
+            self.assertNotIn("declared_intent", payload)
+            self.assertNotIn("declared_intent_ref", payload)
+            self.assertNotIn("intent_drift_advisory", payload)
+            self.assertNotIn("intent_alignment_note", payload)
             self._assert_advisory_boundary(payload)
+
+    def test_sketch_cites_and_seals_declared_intent_with_lexical_drift(self) -> None:
+        fixture = Path(__file__).parent / "fixtures" / "orro-sketch-decision.json"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            decision = json.loads(fixture.read_text(encoding="utf-8"))
+            decision["candidates"][0]["summary"] = "Add a paper-chat experience"
+            decision_path = root / "decision.json"
+            decision_path.write_text(json.dumps(decision), encoding="utf-8")
+            intent = {
+                "intent": "Keep the reading flow distinct.",
+                "non_goals": ["another paper-chat assistant"],
+                "constraints": ["No execution changes"],
+            }
+            intent_path = root / "intent.json"
+            intent_path.write_text(json.dumps(intent), encoding="utf-8")
+            out_path = root / "out" / "sketch.json"
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "orro",
+                        "sketch",
+                        "goal",
+                        "--repo",
+                        str(repo),
+                        "--decision",
+                        str(decision_path),
+                        "--intent",
+                        str(intent_path),
+                        "--out",
+                        str(out_path),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            sidecar = out_path.parent / "declared-intent.json"
+            self.assertEqual(payload["declared_intent"], intent)
+            self.assertEqual(json.loads(sidecar.read_text(encoding="utf-8")), intent)
+            self.assertEqual(payload["declared_intent_ref"]["path"], str(sidecar))
+            self.assertTrue(payload["declared_intent_ref"]["declared"])
+            self.assertEqual(
+                payload["intent_drift_advisory"][0]["method"],
+                "lexical-screening",
+            )
+            self.assertIs(
+                payload["intent_drift_advisory"][0]["can_change_evidence_verdict"],
+                False,
+            )
+            self.assertEqual(
+                payload["intent_alignment_note"],
+                "absence of drift warnings is lexical-screening absence only, not evidence of alignment",
+            )
+            self.assertEqual(json.loads(out_path.read_text(encoding="utf-8")), payload)
+
+    def test_degraded_sketch_cites_intent_and_screens_id_plus_summary(self) -> None:
+        from witnessd.orro_intent import declared_intent_ref, read_declared_intent
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            intent_path = root / "intent.json"
+            intent_path.write_text(
+                json.dumps(
+                    {
+                        "intent": "Reuse the current seam.",
+                        "non_goals": ["bounded-existing-seam"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            intent = read_declared_intent(intent_path)
+
+            payload = build_sketch_decision(
+                "change app.py",
+                repo=root,
+                declared_intent=intent,
+                declared_intent_reference=declared_intent_ref(intent_path),
+            )
+
+            self.assertTrue(payload["degraded"])
+            self.assertEqual(payload["declared_intent"], intent)
+            self.assertTrue(
+                any(
+                    warning["matched_token"] == "bounded-existing-seam"
+                    for warning in payload["intent_drift_advisory"]
+                )
+            )
 
     def test_sketch_emits_researched_controlled_convergence_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -564,6 +659,8 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
         self.assertIn("frame", sketch_help)
         self.assertIn("candidates", sketch_help)
         self.assertIn("tests/fixtures/orro-sketch-decision.json", sketch_help)
+        self.assertIn("--intent INTENT_JSON_PATH", sketch_help)
+        self.assertIn("tests/fixtures/orro-declared-intent.json", sketch_help)
 
         stdout = io.StringIO()
         with redirect_stdout(stdout):

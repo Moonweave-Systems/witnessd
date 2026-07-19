@@ -4,14 +4,14 @@ import argparse
 import io
 import json
 import os
-import subprocess
 from contextlib import redirect_stdout
 from pathlib import Path
 
 from witnessd.cli._output import (
     _emit_orro_error as _base_emit_orro_error,
-    _run_depone_json,
+    _run_depone_json,  # noqa: F401 - preserved report no-execution patch seam
     _with_structured_error,
+    _write_json_file,
 )
 from witnessd.__main__ import main
 
@@ -162,6 +162,7 @@ def _cmd_orro_sketch(args: argparse.Namespace) -> int:
         read_agent_decision,
         write_advisory_decision,
     )
+    from witnessd.orro_intent import declared_intent_ref, read_declared_intent
     from witnessd.signing import DsseSigningError
 
     if not args.goal or not str(args.goal).strip():
@@ -175,8 +176,27 @@ def _cmd_orro_sketch(args: argparse.Namespace) -> int:
     home = Path(args.home).resolve(strict=False) if args.home else None
     try:
         decision = read_agent_decision(Path(args.decision)) if args.decision else None
+        declared_intent = (
+            read_declared_intent(Path(args.intent)) if args.intent else None
+        )
+        intent_reference = None
+        if args.intent:
+            intent_path = Path(args.intent).resolve(strict=False)
+            if args.out:
+                intent_path = (
+                    Path(args.out).resolve(strict=False).parent
+                    / "declared-intent.json"
+                )
+                assert declared_intent is not None
+                _write_json_file(intent_path, declared_intent)
+            intent_reference = declared_intent_ref(intent_path)
         payload = build_sketch_decision(
-            str(args.goal), repo=repo, home=home, decision=decision
+            str(args.goal),
+            repo=repo,
+            home=home,
+            decision=decision,
+            declared_intent=declared_intent,
+            declared_intent_reference=intent_reference,
         )
         if args.out:
             out_path = Path(args.out).resolve(strict=False)
@@ -251,6 +271,8 @@ def _cmd_orro_trace(args: argparse.Namespace) -> int:
 
 
 def _cmd_orro_report(args: argparse.Namespace) -> int:
+    from witnessd.orro_advisory import OrroAdvisoryError
+    from witnessd.orro_intent import read_declared_intent
     from witnessd.orro_report import (
         OrroReportError,
         build_report,
@@ -273,10 +295,22 @@ def _cmd_orro_report(args: argparse.Namespace) -> int:
         else None
     )
     try:
-        code, payload = build_report(run_dir, home=home, workstyle_decision=workstyle)
+        declared_intent = (
+            read_declared_intent(Path(args.intent)) if args.intent else None
+        )
+        intent_source = (
+            Path(args.intent).resolve(strict=False) if args.intent else None
+        )
+        code, payload = build_report(
+            run_dir,
+            home=home,
+            workstyle_decision=workstyle,
+            declared_intent=declared_intent,
+            declared_intent_source=intent_source,
+        )
         if args.out:
             write_report(Path(args.out).resolve(strict=False), payload)
-    except OrroReportError as exc:
+    except (OrroAdvisoryError, OrroReportError) as exc:
         _emit_orro_error(args, code=exc.code, message=str(exc))
         return 1
     if code != 0:
