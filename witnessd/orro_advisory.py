@@ -134,6 +134,8 @@ def _agent_sketch_decision(
     repo: Path,
     home: Path | None,
     decision: dict[str, Any],
+    declared_intent: dict[str, Any] | None = None,
+    declared_intent_reference: dict[str, object] | None = None,
 ) -> dict[str, Any]:
     _require_present_frame(decision.get("frame"), field="frame")
     criteria = decision.get("criteria")
@@ -213,6 +215,25 @@ def _agent_sketch_decision(
             "status_note": _status_note(),
         }
     )
+    if declared_intent is not None and declared_intent_reference is not None:
+        from witnessd.orro_intent import INTENT_ALIGNMENT_NOTE, screen_intent_drift
+
+        drift: list[dict[str, object]] = []
+        non_goals = declared_intent.get("non_goals", [])
+        for candidate in payload["candidates"]:
+            drift.extend(
+                screen_intent_drift(
+                    f"{candidate['axis']} {candidate['summary']}", non_goals
+                )
+            )
+        payload.update(
+            {
+                "declared_intent": copy.deepcopy(declared_intent),
+                "declared_intent_ref": copy.deepcopy(declared_intent_reference),
+                "intent_drift_advisory": drift,
+                "intent_alignment_note": INTENT_ALIGNMENT_NOTE,
+            }
+        )
     return payload
 
 
@@ -512,6 +533,8 @@ def build_sketch_decision(
     repo: Path,
     home: Path | None = None,
     decision: dict[str, Any] | None = None,
+    declared_intent: dict[str, Any] | None = None,
+    declared_intent_reference: dict[str, object] | None = None,
 ) -> dict[str, Any]:
     """Validate an agent-authored sketch or emit a degraded scaffold."""
 
@@ -524,6 +547,8 @@ def build_sketch_decision(
             repo=repo,
             home=resolved_home,
             decision=decision,
+            declared_intent=declared_intent,
+            declared_intent_reference=declared_intent_reference,
         )
     signals = _repo_signals(repo, normalized_goal)
     constraints = _extract_constraints(normalized_goal)
@@ -578,7 +603,7 @@ def build_sketch_decision(
         ],
     }
 
-    return {
+    payload = {
         "kind": "orro-sketch",
         "schema_version": ORRO_ADVISORY_DECISION_SCHEMA_VERSION,
         "authored_by": "heuristic-scaffold",
@@ -691,6 +716,26 @@ def build_sketch_decision(
         "boundary": _advisory_boundary(),
         "status_note": _status_note(),
     }
+    if declared_intent is not None and declared_intent_reference is not None:
+        from witnessd.orro_intent import INTENT_ALIGNMENT_NOTE, screen_intent_drift
+
+        drift: list[dict[str, object]] = []
+        non_goals = declared_intent.get("non_goals", [])
+        for candidate in candidates:
+            drift.extend(
+                screen_intent_drift(
+                    f"{candidate['id']} {candidate['summary']}", non_goals
+                )
+            )
+        payload.update(
+            {
+                "declared_intent": copy.deepcopy(declared_intent),
+                "declared_intent_ref": copy.deepcopy(declared_intent_reference),
+                "intent_drift_advisory": drift,
+                "intent_alignment_note": INTENT_ALIGNMENT_NOTE,
+            }
+        )
+    return payload
 
 
 def build_trace_decision(

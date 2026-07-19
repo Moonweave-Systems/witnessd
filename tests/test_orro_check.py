@@ -131,6 +131,10 @@ class OrroCheckVerifyTest(unittest.TestCase):
             self.assertIs(payload["boundary"]["depone_verified"], False)
             self.assertEqual(payload["verdict_ref"]["decision"], "pass")
             self.assertNotIn("review_ref", payload)
+            self.assertNotIn("declared_intent", payload)
+            self.assertNotIn("declared_intent_ref", payload)
+            self.assertNotIn("intent_drift_advisory", payload)
+            self.assertNotIn("intent_alignment_note", payload)
             manifest = json.loads(
                 (root / "run" / "companion-manifest.json").read_text(encoding="utf-8")
             )
@@ -150,6 +154,64 @@ class OrroCheckVerifyTest(unittest.TestCase):
             )
             self.assertIs(payload["reviewed_work_execution_observed"], False)
             self.assertTrue((root / "run" / "companion-manifest.json").is_file())
+
+    def test_declared_intent_is_sealed_and_cited_without_review_drift_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            intent = {
+                "intent": "Verify the existing work in its human context.",
+                "non_goals": ["paper-chat"],
+            }
+            intent_path = root / "intent.json"
+            intent_path.write_text(json.dumps(intent), encoding="utf-8")
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            code, payload, err = _run(
+                [
+                    "orro",
+                    "check",
+                    "--repo",
+                    str(repo),
+                    "--home",
+                    str(root / "home-intent"),
+                    "--run-dir",
+                    str(root / "run-intent"),
+                    "--check",
+                    "true",
+                    "--intent",
+                    str(intent_path),
+                    "--no-review",
+                    "--json",
+                ]
+            )
+            self.assertEqual(code, 0, err)
+            sidecar = root / "run-intent" / "declared-intent.json"
+            self.assertEqual(payload["declared_intent"], intent)
+            self.assertEqual(payload["declared_intent_ref"]["path"], str(sidecar))
+            self.assertEqual(json.loads(sidecar.read_text(encoding="utf-8")), intent)
+            self.assertNotIn("intent_drift_advisory", payload)
+            self.assertNotIn("intent_alignment_note", payload)
+
+    def test_invalid_declared_intent_returns_structured_companion_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            code, payload, err = _run(
+                [
+                    "orro",
+                    "check",
+                    "--repo",
+                    str(root),
+                    "--check",
+                    "true",
+                    "--intent",
+                    "inline intent",
+                    "--json",
+                ]
+            )
+            self.assertEqual(code, 2, err)
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_INTENT_READ_FAILED")
+            self.assertIn("Schema:", payload["error"]["message"])
 
 
 class ZeroExecutionInvariantTest(unittest.TestCase):
@@ -255,6 +317,66 @@ class OrroCheckReviewTest(unittest.TestCase):
             self.assertIn("review_ref", payload)
             self.assertIs(payload["review_ref"]["advisory"], True)
             self.assertTrue((root / "run" / "orro-review-summary.json").is_file())
+
+    def test_review_goal_includes_intent_and_drift_stays_advisory(self) -> None:
+        from witnessd.cli import companion
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            bindir = root / "bin"
+            bindir.mkdir()
+            fake_agy = _fake_agy(bindir)
+            intent = {
+                "intent": "Review for reading-flow clarity.",
+                "non_goals": ["review-only chatbot"],
+            }
+            intent_path = root / "intent.json"
+            intent_path.write_text(json.dumps(intent), encoding="utf-8")
+            original = companion._invoke_phase
+            flowplan_goals: dict[str, str] = {}
+
+            def capture_goals(argv: list[str]) -> tuple[int, object, str]:
+                if argv[0] == "flowplan":
+                    profile = argv[argv.index("--profile") + 1]
+                    flowplan_goals[profile] = argv[1]
+                return original(argv)
+
+            with patch("witnessd.cli.companion._invoke_phase", side_effect=capture_goals):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--check",
+                        "true",
+                        "--intent",
+                        str(intent_path),
+                        "--reviewer",
+                        "agy",
+                        "--reviewer-binary",
+                        fake_agy,
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0, err)
+            self.assertNotIn(intent["intent"], flowplan_goals["verification-only"])
+            self.assertIn(intent["intent"], flowplan_goals["review-only"])
+            self.assertIn(intent["non_goals"][0], flowplan_goals["review-only"])
+            self.assertEqual(payload["intent_drift_advisory"][0]["matched_token"], "review-only")
+            self.assertIs(
+                payload["intent_drift_advisory"][0]["can_change_evidence_verdict"],
+                False,
+            )
+            self.assertIn("lexical-screening absence only", payload["intent_alignment_note"])
 
 
 class ReviewerUnavailableTest(unittest.TestCase):
@@ -415,6 +537,51 @@ class OrroCheckHumanOutputTest(unittest.TestCase):
             self.assertIn("VERIFICATION", text)
             self.assertIn("NOT observed-executed", text)
             self.assertIn("0 execution-adapter lanes", text)
+
+    def test_human_output_opens_with_declared_intent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            intent_path = root / "intent.json"
+            intent_path.write_text(
+                json.dumps(
+                    {
+                        "intent": "Verify the requested boundary.",
+                        "non_goals": ["paper-chat"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            out, errbuf = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(errbuf):
+                code = main(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--check",
+                        "true",
+                        "--intent",
+                        str(intent_path),
+                        "--no-review",
+                    ]
+                )
+            lines = out.getvalue().splitlines()
+            self.assertEqual(code, 0, errbuf.getvalue())
+            self.assertEqual(lines[0], "orro check — evidence & review for work you already drove")
+            self.assertIn("Verify the requested boundary.", lines[2])
+            self.assertIn("paper-chat", out.getvalue())
+            self.assertLess(
+                out.getvalue().index("Verify the requested boundary."),
+                out.getvalue().index("VERIFICATION"),
+            )
 
     def test_human_output_prominently_reports_skipped_review(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

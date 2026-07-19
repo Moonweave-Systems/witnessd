@@ -1,0 +1,9 @@
+{
+  "intent": "Preserve the reading flow while making the human decision context visible.",
+  "non_goals": [
+    "another paper-chat assistant"
+  ],
+  "constraints": [
+    "Keep execution lanes unchanged"
+  ]
+}

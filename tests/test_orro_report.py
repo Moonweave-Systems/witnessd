@@ -181,6 +181,93 @@ class OrroReportTests(unittest.TestCase):
             self.assertFalse(payload["handoff"]["ready_for_handoff"])
             self.assertFalse(payload["summary"]["complete"])
             self.assertFalse((run_dir / "proofcheck-verdict.json").exists())
+            self.assertNotIn("declared_intent", payload)
+            self.assertNotIn("declared_intent_ref", payload)
+
+    def test_report_cites_explicit_declared_intent_and_renders_it_after_goal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir = self._proofrun(root)
+            intent = {
+                "intent": "Keep the reading flow primary.",
+                "non_goals": ["paper-chat"],
+                "constraints": ["cite only"],
+            }
+            intent_path = root / "intent.json"
+            intent_path.write_text(json.dumps(intent), encoding="utf-8")
+
+            code, payload = self._report(run_dir, home, "--intent", str(intent_path))
+
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["declared_intent"], intent)
+            self.assertEqual(payload["declared_intent_ref"]["path"], str(intent_path))
+            text = render_text_report(payload)
+            self.assertLess(text.index("Goal:"), text.index("Declared intent:"))
+            self.assertLess(text.index("Declared intent:"), text.index("State:"))
+            self.assertIn("Non-goals: paper-chat", text)
+            self.assertNotIn("intent_drift_advisory", payload)
+
+    def test_report_auto_picks_up_only_hash_verified_companion_intent(self) -> None:
+        from witnessd.cli._output import _hash_file
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir = self._proofrun(root)
+            intent = {"intent": "Preserve human context.", "non_goals": ["paper-chat"]}
+            sidecar = run_dir / "declared-intent.json"
+            sidecar.write_text(json.dumps(intent) + "\n", encoding="utf-8")
+            manifest = {
+                "declared_intent_ref": {
+                    "path": str(sidecar),
+                    "sha256": _hash_file(sidecar),
+                    "declared": True,
+                }
+            }
+            (run_dir / "companion-manifest.json").write_text(
+                json.dumps(manifest) + "\n", encoding="utf-8"
+            )
+
+            code, payload = self._report(run_dir, home)
+
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["declared_intent"], intent)
+            self.assertEqual(payload["declared_intent_ref"], manifest["declared_intent_ref"])
+
+            manifest["declared_intent_ref"]["path"] = str(root / "spoofed.json")
+            (run_dir / "companion-manifest.json").write_text(
+                json.dumps(manifest) + "\n", encoding="utf-8"
+            )
+            code, mismatched_path = self._report(run_dir, home)
+            self.assertEqual(code, 0)
+            self.assertNotIn("declared_intent", mismatched_path)
+            self.assertNotIn("declared_intent_ref", mismatched_path)
+
+            manifest["declared_intent_ref"]["path"] = str(sidecar)
+            (run_dir / "companion-manifest.json").write_text(
+                json.dumps(manifest) + "\n", encoding="utf-8"
+            )
+            sidecar.write_text(
+                json.dumps({"intent": "planted replacement"}) + "\n",
+                encoding="utf-8",
+            )
+            code, corrupted = self._report(run_dir, home)
+            self.assertEqual(code, 0)
+            self.assertNotIn("declared_intent", corrupted)
+            self.assertNotIn("declared_intent_ref", corrupted)
+
+    def test_report_does_not_cite_unreferenced_planted_intent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir = self._proofrun(root)
+            (run_dir / "declared-intent.json").write_text(
+                json.dumps({"intent": "planted"}) + "\n", encoding="utf-8"
+            )
+
+            code, payload = self._report(run_dir, home)
+
+            self.assertEqual(code, 0)
+            self.assertNotIn("declared_intent", payload)
+            self.assertNotIn("declared_intent_ref", payload)
 
     def test_report_after_passing_proofcheck_is_ready_for_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

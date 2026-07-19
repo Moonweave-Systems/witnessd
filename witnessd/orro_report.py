@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from witnessd.cli._output import _hash_file as _output_hash_file
 from witnessd.orro_next import decide_next
 from witnessd.orro_workflow import (
     role_lane_plan_binding_ref,
@@ -49,6 +50,8 @@ def build_report(
     *,
     home: Path | None = None,
     workstyle_decision: Path | None = None,
+    declared_intent: dict[str, Any] | None = None,
+    declared_intent_source: Path | None = None,
 ) -> tuple[int, dict[str, Any]]:
     run_dir = run_dir.resolve(strict=False)
     home = home.resolve(strict=False) if home is not None else None
@@ -64,6 +67,15 @@ def build_report(
     handoff = _handoff_summary(run_dir, continuation, observed)
     reference_adapter = _reference_adapter_summary(run_dir)
     summary = _summary(continuation, verification, handoff, reference_adapter)
+    intent_reference = None
+    if declared_intent is not None and declared_intent_source is not None:
+        from witnessd.orro_intent import declared_intent_ref
+
+        intent_reference = declared_intent_ref(declared_intent_source)
+    elif declared_intent is None:
+        picked_up = _verified_declared_intent(run_dir)
+        if picked_up is not None:
+            declared_intent, intent_reference = picked_up
     report = {
         "kind": REPORT_KIND,
         "schema_version": REPORT_SCHEMA_VERSION,
@@ -98,6 +110,9 @@ def build_report(
             "orro_exposes_workflow": True,
         },
     }
+    if declared_intent is not None and intent_reference is not None:
+        report["declared_intent"] = declared_intent
+        report["declared_intent_ref"] = intent_reference
     if isinstance(continuation.get("error"), dict):
         report["error"] = continuation["error"]
     return next_code, report
@@ -121,6 +136,18 @@ def render_text_report(payload: dict[str, Any]) -> str:
     lines = [
         "ORRO Report",
         f"Goal: {payload.get('goal') or 'unknown'}",
+    ]
+    declared_intent = payload.get("declared_intent")
+    if isinstance(declared_intent, dict):
+        lines.append(f"Declared intent: {declared_intent['intent']}")
+        non_goals = declared_intent.get("non_goals")
+        if isinstance(non_goals, list) and non_goals:
+            lines.append(f"Non-goals: {'; '.join(non_goals)}")
+        constraints = declared_intent.get("constraints")
+        if isinstance(constraints, list) and constraints:
+            lines.append(f"Constraints: {'; '.join(constraints)}")
+    lines.extend(
+        [
         f"State: {summary.get('state', 'blocked')}",
         f"Profile: {workflow.get('profile') or 'unknown'}",
         _execution_line(execution),
@@ -129,7 +156,8 @@ def render_text_report(payload: dict[str, Any]) -> str:
         f"Next: {summary.get('recommended_next_action') or 'none'}",
         "",
         "Do not treat as proof:",
-    ]
+        ]
+    )
     lines.extend(f"- {item}" for item in payload.get("do_not_trust", []))
     lines.extend(["", "Human review:"])
     focus = human_review.get("focus")
@@ -138,6 +166,39 @@ def render_text_report(payload: dict[str, Any]) -> str:
     else:
         lines.append("- no specific reviewer focus recorded")
     return "\n".join(lines) + "\n"
+
+
+def _verified_declared_intent(
+    run_dir: Path,
+) -> tuple[dict[str, Any], dict[str, object]] | None:
+    manifest_path = run_dir / "companion-manifest.json"
+    intent_path = run_dir / "declared-intent.json"
+    if not manifest_path.is_file() or not intent_path.is_file():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(manifest, dict):
+        return None
+    reference = manifest.get("declared_intent_ref")
+    if (
+        not isinstance(reference, dict)
+        or reference.get("declared") is not True
+        or not isinstance(reference.get("path"), str)
+        or not isinstance(reference.get("sha256"), str)
+    ):
+        return None
+    try:
+        if Path(reference["path"]).resolve(strict=False) != intent_path:
+            return None
+        if _output_hash_file(intent_path) != reference["sha256"]:
+            return None
+        from witnessd.orro_intent import read_declared_intent
+
+        return read_declared_intent(intent_path), dict(reference)
+    except Exception:  # noqa: BLE001 - unverified pickup must not block report
+        return None
 
 
 def _execution_line(execution: dict[str, Any]) -> str:
