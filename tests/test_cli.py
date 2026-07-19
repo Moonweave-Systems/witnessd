@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from unittest.mock import patch
 
 from witnessd.__main__ import main
 
@@ -35,6 +36,101 @@ def _init_repo(path: str) -> str:
 
 
 class TestRunSeparation(unittest.TestCase):
+    def test_keyless_goal_team_flow_fails_closed_before_execution(self):
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            code = main(["run", "team goal", "--keyless"])
+
+        self.assertEqual(code, 2)
+        self.assertIn("ERR_WITNESSD_KEYLESS_TEAM_UNSUPPORTED", stderr.getvalue())
+
+    @unittest.skipUnless(_HAS_OPENSSL, "openssl required to sign emitted evidence")
+    def test_run_keyless_attaches_real_sidecar_and_reports_anchor(self):
+        fixture_dir = pathlib.Path(__file__).parent / "fixtures" / "sigstore-keyless"
+        real_bundle = json.loads((fixture_dir / "real-bundle.json").read_text())
+        with tempfile.TemporaryDirectory() as base:
+            sandbox = os.path.join(base, "sandbox")
+            evidence = os.path.join(base, "evidence")
+            os.makedirs(sandbox)
+            stdout = io.StringIO()
+            with patch(
+                "witnessd.adapters.sigstore_keyless.attest_keyless",
+                return_value=real_bundle,
+            ) as attest, redirect_stdout(stdout):
+                code = main(
+                    [
+                        "run",
+                        "--keyless",
+                        "--identity-token",
+                        "fixture-token",
+                        "--runner-sandbox",
+                        sandbox,
+                        "--out",
+                        os.path.join(evidence, "observer.json"),
+                        "--log",
+                        os.path.join(evidence, "verify.log"),
+                        "--keys-dir",
+                        os.path.join(base, "keys"),
+                        "--",
+                        "true",
+                    ]
+                )
+
+            emitted = json.loads(
+                pathlib.Path(evidence, "bundle.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(emitted["keyless_attestation"], real_bundle)
+        self.assertEqual(emitted["signing_status"], "signed-keyless-fulcio-rekor")
+        self.assertEqual(
+            pathlib.Path(attest.call_args.args[0]).name, "capture-manifest.json"
+        )
+        self.assertIn("trust_anchor: keyless-transparency-logged", stdout.getvalue())
+        self.assertIn(
+            "independent trust anchor: keyless-transparency-logged",
+            stdout.getvalue(),
+        )
+
+    @unittest.skipUnless(_HAS_OPENSSL, "openssl required to sign emitted evidence")
+    def test_run_keyless_tool_absent_falls_back_to_operator_without_fake(self):
+        with tempfile.TemporaryDirectory() as base:
+            sandbox = os.path.join(base, "sandbox")
+            evidence = os.path.join(base, "evidence")
+            os.makedirs(sandbox)
+            stderr = io.StringIO()
+            with patch(
+                "witnessd.adapters.sigstore_keyless._resolve_sigstore",
+                return_value=None,
+            ), redirect_stderr(stderr):
+                code = main(
+                    [
+                        "run",
+                        "--keyless",
+                        "--identity-token",
+                        "fixture-token",
+                        "--runner-sandbox",
+                        sandbox,
+                        "--out",
+                        os.path.join(evidence, "observer.json"),
+                        "--log",
+                        os.path.join(evidence, "verify.log"),
+                        "--keys-dir",
+                        os.path.join(base, "keys"),
+                        "--",
+                        "true",
+                    ]
+                )
+            emitted = json.loads(
+                pathlib.Path(evidence, "bundle.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(emitted["signing_status"], "signed-ed25519-operator-key")
+        self.assertNotIn("keyless_attestation", emitted)
+        self.assertFalse(emitted["signature_boundary"]["keyless_identity"])
+        self.assertIn("ERR_WITNESSD_SIGSTORE_UNAVAILABLE", stderr.getvalue())
+
     def test_proofrun_adapter_missing_sandbox_returns_actionable_error(self):
         stdout = io.StringIO()
         stderr = io.StringIO()

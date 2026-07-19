@@ -12,6 +12,7 @@ from typing import Mapping
 TRUSTED_OBSERVER_PUBLIC_KEY_ENV = "DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE"
 TRUST_ANCHOR_SELF_SIGNED = "self-signed"
 TRUST_ANCHOR_OPERATOR_PROVIDED = "operator-provided"
+TRUST_ANCHOR_KEYLESS_TRANSPARENCY_LOGGED = "keyless-transparency-logged"
 _RUNTIME_DEFAULT_PUBLIC_KEYS: dict[Path, str] = {}
 
 
@@ -22,7 +23,33 @@ class TrustAnchor:
 
     @property
     def independent(self) -> bool:
-        return self.trust_anchor == TRUST_ANCHOR_OPERATOR_PROVIDED
+        return self.trust_anchor in {
+            TRUST_ANCHOR_OPERATOR_PROVIDED,
+            TRUST_ANCHOR_KEYLESS_TRANSPARENCY_LOGGED,
+        }
+
+
+def resolve_bundle_trust_anchor(
+    bundle: Mapping[str, object], *, fallback: TrustAnchor
+) -> TrustAnchor:
+    """Classify an emitted real-bundle sidecar without changing verifier truth."""
+
+    boundary = bundle.get("signature_boundary")
+    attestation = bundle.get("keyless_attestation")
+    if (
+        bundle.get("signing_status") == "signed-keyless-fulcio-rekor"
+        and isinstance(boundary, dict)
+        and boundary.get("keyless_identity") is True
+        and boundary.get("transparency_logged") is True
+        and isinstance(attestation, dict)
+        and attestation.get("mediaType")
+        == "application/vnd.dev.sigstore.bundle.v0.3+json"
+    ):
+        return TrustAnchor(
+            fallback.public_key_path,
+            TRUST_ANCHOR_KEYLESS_TRANSPARENCY_LOGGED,
+        )
+    return fallback
 
 
 def resolve_trust_anchor(

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Revalidate W6a keyless readiness against the open production gate."""
+"""Revalidate keyless selection, legacy lint, and fail-closed emission guards."""
 
 from __future__ import annotations
 
@@ -24,14 +24,13 @@ from depone.agent_fabric.sign import verify_signed_bundle
 from scripts.revalidate_key_rotation import ARCHIVE, _load, validate_archive
 from witnessd.signing_profile import (
     KEYLESS_FULCIO_REKOR_PROFILE,
-    SigningProfileError,
     select_signing_profile,
 )
 
 
 SAFETY_MESSAGE = (
-    "gate open, but witnessd cannot emit keyless evidence and Depone does not "
-    "trust keyless metadata because live Fulcio/Rekor verification is W6b work"
+    "keyless emission is opt-in and orthogonal to A0/A1/A2; absent tooling or "
+    "identity fails closed without a fabricated keyless boundary"
 )
 
 
@@ -56,14 +55,22 @@ def _assert_open_gate() -> None:
         _fail("open production gate must have all five evidence records recorded")
 
 
-def _assert_keyless_profile_fails_closed() -> None:
-    try:
-        select_signing_profile(KEYLESS_FULCIO_REKOR_PROFILE)
-    except SigningProfileError as exc:
-        if exc.code != "ERR_WITNESSD_KEYLESS_LIVE_UNIMPLEMENTED":
-            raise
-    else:
-        _fail("keyless profile must remain fail-closed until W6b live verification")
+def _assert_keyless_profile_is_orthogonal() -> None:
+    profile = select_signing_profile(KEYLESS_FULCIO_REKOR_PROFILE)
+    boundary = profile.signature_boundary
+    if profile.signing_status != "signed-keyless-fulcio-rekor":
+        _fail("keyless profile signing status drifted")
+    expected = {
+        "scheme": "DSSE-Sigstore-Fulcio-Rekor",
+        "operator_key": False,
+        "public_verifiable": True,
+        "keyless_identity": True,
+        "transparency_logged": True,
+        "raises_assurance": False,
+    }
+    for key, value in expected.items():
+        if boundary.get(key) != value:
+            _fail(f"keyless profile boundary drifted at {key}")
 
 
 def _assert_linter_is_non_trusting(report: dict[str, Any]) -> None:
@@ -144,6 +151,7 @@ def _assert_witnessd_keyless_tests() -> None:
             "unittest",
             "tests.test_substrate_keyless_guard",
             "tests.test_signing_profile",
+            "tests.test_sigstore_keyless",
         ],
         cwd=str(ROOT),
         env=env,
@@ -159,11 +167,11 @@ def _assert_witnessd_keyless_tests() -> None:
 
 def main() -> int:
     _assert_open_gate()
-    _assert_keyless_profile_fails_closed()
+    _assert_keyless_profile_is_orthogonal()
     _assert_keyless_fixture_lint()
     _assert_witnessd_keyless_tests()
     print(SAFETY_MESSAGE)
-    print("W6a keyless readiness revalidate: PASS")
+    print("keyless emission readiness revalidate: PASS")
     return 0
 
 

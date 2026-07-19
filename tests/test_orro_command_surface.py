@@ -7,6 +7,16 @@ from witnessd.__main__ import ORRO_COMMAND_MAP, _build_parser, _normalize_orro_a
 
 
 class OrroCommandSurfaceTests(unittest.TestCase):
+    def test_run_and_proofrun_expose_honest_keyless_opt_in(self) -> None:
+        parser = _build_parser()
+        commands = parser._subparsers._group_actions[0].choices
+        for command in ("run", "proofrun"):
+            help_text = commands[command].format_help()
+            self.assertIn("--keyless", help_text)
+            self.assertIn("--signing-profile", help_text)
+            self.assertIn("public Rekor", help_text)
+            self.assertIn("fails closed", help_text)
+
     def test_unknown_command_names_token_and_valid_commands(self) -> None:
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):

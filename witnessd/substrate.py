@@ -20,13 +20,16 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
+from witnessd.adapters import sigstore_keyless
 from witnessd.canonical import canonical_hash
 from witnessd.signing import DEFAULT_OPERATOR_KEY_ID, derive_public_key_id, sign_dsse
 from witnessd.signing_profile import (
-    OPERATOR_KEY_PROFILE,
+    KEYLESS_FULCIO_REKOR_PROFILE,
+    keyless_signature_boundary,
     operator_key_signature_boundary,
     select_signing_profile,
 )
@@ -172,6 +175,8 @@ def build_bundle(
     key_id: str = DEFAULT_OPERATOR_KEY_ID,
     otel_spans: list[dict[str, Any]] | None = None,
     signing_profile: str | None = None,
+    keyless_evidence_path: str | None = None,
+    keyless_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Package on-disk artifacts as a signed in-toto/DSSE evidence bundle.
 
@@ -183,10 +188,6 @@ def build_bundle(
     """
     _ = public_key_path
     profile = select_signing_profile(signing_profile)
-    if profile.name != OPERATOR_KEY_PROFILE:
-        raise AssertionError(
-            "non-operator signing profile escaped fail-closed selection"
-        )
     assurance = _cap_assurance(manifest.get("assurance"))
     signed = private_key_path is not None
     evidence_mode = manifest.get("evidence_mode", EVIDENCE_MODE_CONTEMPORANEOUS)
@@ -255,6 +256,39 @@ def build_bundle(
         bundle["dsse_envelope"] = sign_dsse(envelope, private_key_path, key_id=key_id)
         bundle["signing_status"] = SIGNING_STATUS_OPERATOR_KEY
         bundle["signature_boundary"] = operator_key_signature_boundary()
+    if profile.name == KEYLESS_FULCIO_REKOR_PROFILE:
+        if not signed:
+            keyless_result: dict[str, Any] = {
+                "ok": False,
+                "keyless_identity": False,
+                "transparency_logged": False,
+                "error": {
+                    "code": "ERR_WITNESSD_KEYLESS_OPERATOR_SIGNATURE_REQUIRED",
+                    "message": "keyless signing is additive to operator-key DSSE",
+                },
+            }
+        elif keyless_evidence_path is None:
+            keyless_result: dict[str, Any] = {
+                "ok": False,
+                "keyless_identity": False,
+                "transparency_logged": False,
+                "error": {
+                    "code": "ERR_WITNESSD_KEYLESS_EVIDENCE_REQUIRED",
+                    "message": "keyless signing requires canonical evidence bytes",
+                },
+            }
+        else:
+            keyless_result = sigstore_keyless.attest_keyless(
+                keyless_evidence_path,
+                **(keyless_options or {}),
+            )
+        error = keyless_result.get("error")
+        if isinstance(error, dict):
+            print(json.dumps(keyless_result, sort_keys=True), file=sys.stderr)
+        else:
+            bundle["keyless_attestation"] = keyless_result
+            bundle["signing_status"] = profile.signing_status
+            bundle["signature_boundary"] = keyless_signature_boundary()
     return bundle
 
 
