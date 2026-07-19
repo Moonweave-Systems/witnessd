@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from witnessd.__main__ import main
 
@@ -127,6 +128,7 @@ class OrroCheckVerifyTest(unittest.TestCase):
             self.assertIs(payload["reviewed_work_execution_observed"], False)
             self.assertIs(payload["verification_checks_executed_observed"], True)
             self.assertEqual(payload["execution_adapter_lanes_spawned"], 0)
+            self.assertIs(payload["boundary"]["depone_verified"], False)
             self.assertEqual(payload["verdict_ref"]["decision"], "pass")
             self.assertNotIn("review_ref", payload)
             manifest = json.loads(
@@ -151,6 +153,33 @@ class OrroCheckVerifyTest(unittest.TestCase):
 
 
 class ZeroExecutionInvariantTest(unittest.TestCase):
+    def test_execution_adapter_count_is_derived_from_sealed_ledger(self) -> None:
+        from witnessd.cli.companion import _execution_adapter_lane_count
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "team-ledger.json"
+            ledger.write_text(
+                json.dumps(
+                    {
+                        "lanes": [
+                            {"lane_id": "check", "runner_adapter_kind": "shell"},
+                            {"lane_id": "worker", "runner_adapter_kind": "codex"},
+                            {"lane_id": "review", "runner_adapter_kind": "external"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(_execution_adapter_lane_count(ledger), 2)
+
+    def test_unreadable_ledger_falls_back_to_zero(self) -> None:
+        from witnessd.cli.companion import _execution_adapter_lane_count
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "team-ledger.json"
+            ledger.write_text("not-json", encoding="utf-8")
+            self.assertEqual(_execution_adapter_lane_count(ledger), 0)
+
     def test_non_shell_adapter_is_rejected(self) -> None:
         from witnessd.cli.companion import _assert_no_execution_adapter
 
@@ -229,7 +258,7 @@ class OrroCheckReviewTest(unittest.TestCase):
 
 
 class ReviewerUnavailableTest(unittest.TestCase):
-    def test_missing_reviewer_binary_blocks_and_reports_verdict(self) -> None:
+    def test_missing_reviewer_binary_skips_review_and_preserves_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo = root / "repo"
@@ -254,16 +283,107 @@ class ReviewerUnavailableTest(unittest.TestCase):
                     "--json",
                 ]
             )
-            self.assertEqual(code, 2, err)
+            self.assertEqual(code, 0, err)
             self.assertNotIn("Traceback", err)
             self.assertIsInstance(payload, dict)
             assert isinstance(payload, dict)
-            self.assertEqual(payload["decision"], "blocked")
+            self.assertEqual(payload["kind"], "orro-companion-manifest")
+            self.assertNotIn("decision", payload)
             self.assertEqual(
-                payload["error"]["code"],
+                payload["review_skipped"]["code"],
                 "ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE",
             )
             self.assertEqual(payload["verdict_ref"]["decision"], "pass")
+            self.assertNotIn("review_ref", payload)
+            manifest = json.loads(
+                (root / "run" / "companion-manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(manifest, payload)
+
+    def test_failed_reviewer_lane_skips_review_and_preserves_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            reviewer = root / "agy"
+            reviewer.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+            reviewer.chmod(reviewer.stat().st_mode | stat.S_IEXEC)
+            code, payload, err = _run(
+                [
+                    "orro",
+                    "check",
+                    "--repo",
+                    str(repo),
+                    "--home",
+                    str(root / "home"),
+                    "--run-dir",
+                    str(root / "run"),
+                    "--check",
+                    "true",
+                    "--reviewer",
+                    "agy",
+                    "--reviewer-binary",
+                    str(reviewer),
+                    "--json",
+                ]
+            )
+            self.assertEqual(code, 0, err)
+            self.assertEqual(payload["verdict_ref"]["decision"], "pass")
+            self.assertEqual(
+                payload["review_skipped"]["code"],
+                "ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE",
+            )
+
+    def test_failed_review_plan_skips_review_and_preserves_pass(self) -> None:
+        from witnessd.cli import companion
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            bindir = root / "bin"
+            bindir.mkdir()
+            fake_agy = _fake_agy(bindir)
+            invoke_phase = companion._invoke_phase
+
+            def fail_review_flowplan(argv: list[str]) -> tuple[int, object, str]:
+                if argv[0] == "flowplan" and "review-only" in argv:
+                    return 1, {}, "synthetic review flowplan failure"
+                return invoke_phase(argv)
+
+            with patch(
+                "witnessd.cli.companion._invoke_phase",
+                side_effect=fail_review_flowplan,
+            ):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--check",
+                        "true",
+                        "--reviewer",
+                        "agy",
+                        "--reviewer-binary",
+                        fake_agy,
+                        "--json",
+                    ]
+                )
+            self.assertEqual(code, 0, err)
+            self.assertEqual(payload["verdict_ref"]["decision"], "pass")
+            self.assertEqual(
+                payload["review_skipped"]["code"],
+                "ERR_ORRO_CHECK_REVIEW_PLAN_BLOCKED",
+            )
 
 
 class OrroCheckHumanOutputTest(unittest.TestCase):
@@ -295,6 +415,39 @@ class OrroCheckHumanOutputTest(unittest.TestCase):
             self.assertIn("VERIFICATION", text)
             self.assertIn("NOT observed-executed", text)
             self.assertIn("0 execution-adapter lanes", text)
+
+    def test_human_output_prominently_reports_skipped_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            out, errbuf = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(errbuf):
+                code = main(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--check",
+                        "true",
+                        "--reviewer",
+                        "agy",
+                        "--reviewer-binary",
+                        str(root / "missing-agy"),
+                    ]
+                )
+            text = out.getvalue()
+            self.assertEqual(code, 0, errbuf.getvalue())
+            self.assertIn("VERIFICATION", text)
+            self.assertIn("⚠ review skipped:", text)
+            self.assertIn("install agy, or pass --no-review", text)
+            self.assertIn("BOUNDARY", text)
 
 
 if __name__ == "__main__":

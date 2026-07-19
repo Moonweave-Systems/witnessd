@@ -453,7 +453,8 @@ witnessd owns:
 - git worktree creation and cleanup,
 - adapter invocation for shell, Codex, Claude Code, OpenCode, and future engines,
 - ownership-region enforcement,
-- budget, pause, kill, and lifecycle controls,
+- declared preflight budget (predicted-only; not a cumulative or enforced cap;
+  USD not measured), plus pause, kill, and lifecycle controls,
 - observer capture and evidence emission,
 - verification-recipe execution receipts,
 - MCP/tool receipt recording for declared tool bridges,

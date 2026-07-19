@@ -76,7 +76,29 @@ def _assert_no_execution_adapter(role_lane_plan_path: Path) -> None:
             )
 
 
-def _print_human_summary(manifest: dict[str, object]) -> None:
+def _execution_adapter_lane_count(team_ledger_path: Path) -> int:
+    try:
+        ledger = json.loads(team_ledger_path.read_text(encoding="utf-8"))
+        lanes = ledger.get("lanes", []) if isinstance(ledger, dict) else []
+        if not isinstance(lanes, list):
+            return 0
+        return sum(
+            1
+            for lane in lanes
+            if isinstance(lane, dict)
+            and (
+                lane.get("runner_adapter_kind")
+                or lane.get("team_adapter_kind")
+            )
+            not in {None, "shell"}
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return 0
+
+
+def _print_human_summary(
+    manifest: dict[str, object], *, reviewer: str | None = None
+) -> None:
     verdict_ref = manifest["verdict_ref"]
     assert isinstance(verdict_ref, dict)
     verdict = verdict_ref["decision"]
@@ -87,21 +109,32 @@ def _print_human_summary(manifest: dict[str, object]) -> None:
     if isinstance(review_ref, dict):
         print("  REVIEWED   (advisory — not part of verdict)")
         print(f"    → {review_ref['path']}")
+    review_skipped = manifest.get("review_skipped")
+    if isinstance(review_skipped, dict):
+        print(
+            f"  ⚠ review skipped: {review_skipped['reason']} "
+            f"(install {reviewer or 'the reviewer'}, or pass --no-review)"
+        )
     print("  BOUNDARY")
+    adapter_count = manifest["execution_adapter_lanes_spawned"]
     print(
         "    reviewed work was NOT observed-executed · "
-        "0 execution-adapter lanes · does not approve merge"
+        f"{adapter_count} execution-adapter lanes · does not approve merge"
     )
     print(f"\n  verdict: {verdict}")
 
 
-def manifest_partial(decision: str, verdict_path: Path) -> dict[str, object]:
+def manifest_partial(
+    decision: str, verdict_path: Path, team_ledger_path: Path
+) -> dict[str, object]:
     return {
         "kind": "orro-companion-manifest",
         "scope": "state-verified",
         "reviewed_work_execution_observed": False,
         "verification_checks_executed_observed": True,
-        "execution_adapter_lanes_spawned": 0,
+        "execution_adapter_lanes_spawned": _execution_adapter_lane_count(
+            team_ledger_path
+        ),
         "verdict_ref": {
             "path": str(verdict_path),
             "sha256": _hash_file(verdict_path),
@@ -109,6 +142,7 @@ def manifest_partial(decision: str, verdict_path: Path) -> dict[str, object]:
         },
         "boundary": {
             "reviewed_work_execution_observed": False,
+            "depone_verified": False,
             "raises_assurance": False,
             "approves_merge": False,
             "review_is_advisory": True,
@@ -279,6 +313,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
         )
 
     review_ref = None
+    review_skipped = None
     if not args.no_review:
         reviewer = args.reviewer
         reviewer_binary = args.reviewer_binary or reviewer
@@ -288,103 +323,81 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             else shutil.which(reviewer_binary)
         )
         if not resolved:
-            return _emit_verdict_with_blocker(
-                manifest_partial(decision, verdict_path),
-                _structured_error(
-                    code="ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE",
-                    message=(
-                        f"reviewer '{reviewer}' binary not found: {reviewer_binary}"
-                    ),
-                    reason=(
-                        "review was requested but the reviewer could not be located; "
-                        "silently skipping the review would misrepresent the result"
-                    ),
-                    required_input_or_grant=(
-                        f"install/authenticate {reviewer}, or pass --no-review"
-                    ),
-                    next_command="python3 -m orro check --no-review ...",
-                ),
+            review_skipped = {
+                "reason": f"reviewer '{reviewer}' binary not found: {reviewer_binary}",
+                "code": "ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE",
+            }
+        else:
+            review_wp = run_dir / "review-workflow-plan.json"
+            review_rlp = run_dir / "review-role-lane-plan.json"
+            code, _, err = _invoke_phase(
+                [
+                    "flowplan",
+                    goal,
+                    "--root",
+                    str(repo),
+                    "--profile",
+                    "review-only",
+                    "--out",
+                    str(review_wp),
+                    "--role-lanes-out",
+                    str(review_rlp),
+                    "--lane-adapter",
+                    reviewer,
+                    "--model-policy",
+                    "default",
+                    "--json",
+                ]
             )
-        review_wp = run_dir / "review-workflow-plan.json"
-        review_rlp = run_dir / "review-role-lane-plan.json"
-        code, _, err = _invoke_phase(
-            [
-                "flowplan",
-                goal,
-                "--root",
-                str(repo),
-                "--profile",
-                "review-only",
-                "--out",
-                str(review_wp),
-                "--role-lanes-out",
-                str(review_rlp),
-                "--lane-adapter",
-                reviewer,
-                "--model-policy",
-                "default",
-                "--json",
-            ]
-        )
-        if code != 0:
-            return _emit_verdict_with_blocker(
-                manifest_partial(decision, verdict_path),
-                _structured_error(
-                    code="ERR_ORRO_CHECK_REVIEW_PLAN_BLOCKED",
-                    message="review flowplan failed",
-                    reason=err or "flowplan nonzero",
-                    required_input_or_grant=("resolve the reported flowplan blocker"),
-                    next_command="python3 -m orro check --no-review ...",
-                ),
-            )
-        rc, _, review_err = _invoke_phase(
-            [
-                "orro-review",
-                "--repo",
-                str(repo),
-                "--home",
-                str(home),
-                "--role-lane-plan",
-                str(review_rlp),
-                "--run-dir",
-                str(run_dir),
-                f"--{reviewer}-binary",
-                reviewer_binary,
-                "--json",
-            ]
-        )
-        review_summary = run_dir / "orro-review-summary.json"
-        if rc != 0 or not review_summary.is_file():
-            return _emit_verdict_with_blocker(
-                manifest_partial(decision, verdict_path),
-                _structured_error(
-                    code="ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE",
-                    message=f"reviewer '{reviewer}' could not run",
-                    reason=(
-                        review_err
-                        or "review adapter returned nonzero or produced no summary"
-                    ),
-                    required_input_or_grant=(
-                        f"install/authenticate {reviewer}, or pass --no-review"
-                    ),
-                    next_command="python3 -m orro check --no-review ...",
-                ),
-            )
-        review_ref = {
-            "path": str(review_summary),
-            "sha256": _hash_file(review_summary),
-            "advisory": True,
-        }
+            if code != 0:
+                review_skipped = {
+                    "reason": err or "review flowplan returned nonzero",
+                    "code": "ERR_ORRO_CHECK_REVIEW_PLAN_BLOCKED",
+                }
+            else:
+                rc, _, review_err = _invoke_phase(
+                    [
+                        "orro-review",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--role-lane-plan",
+                        str(review_rlp),
+                        "--run-dir",
+                        str(run_dir),
+                        f"--{reviewer}-binary",
+                        reviewer_binary,
+                        "--json",
+                    ]
+                )
+                review_summary = run_dir / "orro-review-summary.json"
+                if rc != 0 or not review_summary.is_file():
+                    review_skipped = {
+                        "reason": (
+                            review_err
+                            or "review adapter returned nonzero or produced no summary"
+                        ),
+                        "code": "ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE",
+                    }
+                else:
+                    review_ref = {
+                        "path": str(review_summary),
+                        "sha256": _hash_file(review_summary),
+                        "advisory": True,
+                    }
 
-    manifest = manifest_partial(decision, verdict_path)
+    manifest = manifest_partial(decision, verdict_path, team_ledger)
     if review_ref is not None:
         manifest["scope"] = "state-verified-and-reviewed"
         manifest["review_ref"] = review_ref
+    if review_skipped is not None:
+        manifest["review_skipped"] = review_skipped
     manifest_path = run_dir / "companion-manifest.json"
     _write_json_file(manifest_path, manifest)
 
     if args.json:
         print(json.dumps(manifest, sort_keys=True))
     else:
-        _print_human_summary(manifest)
+        _print_human_summary(manifest, reviewer=args.reviewer)
     return 0 if decision == "pass" else 2
