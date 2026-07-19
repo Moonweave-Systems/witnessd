@@ -247,7 +247,18 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_sketch.add_argument("goal", nargs="?")
     orro_sketch.add_argument("--repo", "--root", dest="repo", default=".")
     orro_sketch.add_argument("--home", default=None)
-    orro_sketch.add_argument("--decision", default=None)
+    orro_sketch.add_argument(
+        "--decision",
+        default=None,
+        metavar="DECISION_JSON_PATH",
+        help=(
+            "path to a JSON file; required schema: frame, non-empty candidates[] "
+            "with axis, summary, benefits[], risks[], and tradeoff or tradeoffs, "
+            "chosen{direction, reason, confidence, what_would_change_it}, rejected[], "
+            "no_gos[], and rabbit_holes[]. Example: "
+            "tests/fixtures/orro-sketch-decision.json"
+        ),
+    )
     orro_sketch.add_argument("--out", default=None)
     orro_sketch.add_argument("--json", action="store_true")
     orro_sketch.set_defaults(func=_cli_handler("advisory", "_cmd_orro_sketch"))
@@ -263,7 +274,17 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_trace.add_argument("goal", nargs="?")
     orro_trace.add_argument("--repo", "--root", dest="repo", default=".")
     orro_trace.add_argument("--home", default=None)
-    orro_trace.add_argument("--decision", default=None)
+    orro_trace.add_argument(
+        "--decision",
+        default=None,
+        metavar="DECISION_JSON_PATH",
+        help=(
+            "path to a JSON file; required schema: check_the_plug{}, "
+            "reproduction{path, sha256}, localization, hypotheses[] with mechanism, "
+            "prediction, discriminating_probe, and confidence, confirmation{}, "
+            "fix_scope{}, and exactly one of root_cause{} or unconfirmed"
+        ),
+    )
     orro_trace.add_argument("--out", default=None)
     orro_trace.add_argument("--json", action="store_true")
     orro_trace.set_defaults(func=_cli_handler("advisory", "_cmd_orro_trace"))
