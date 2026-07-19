@@ -77,7 +77,22 @@ def _assert_no_execution_adapter(role_lane_plan_path: Path) -> None:
 
 
 def _print_human_summary(manifest: dict[str, object]) -> None:
-    pass
+    verdict_ref = manifest["verdict_ref"]
+    assert isinstance(verdict_ref, dict)
+    verdict = verdict_ref["decision"]
+    dot = "● pass" if verdict == "pass" else "● blocked"
+    print("orro check — evidence & review for work you already drove\n")
+    print(f"  VERIFIED   (Depone verdict, deterministic)   {dot}")
+    review_ref = manifest.get("review_ref")
+    if isinstance(review_ref, dict):
+        print("  REVIEWED   (advisory — not part of verdict)")
+        print(f"    → {review_ref['path']}")
+    print("  BOUNDARY")
+    print(
+        "    reviewed work was NOT observed-executed · "
+        "0 execution-adapter lanes · does not approve merge"
+    )
+    print(f"\n  verdict: {verdict}")
 
 
 def manifest_partial(decision: str, verdict_path: Path) -> dict[str, object]:

@@ -276,5 +276,36 @@ class ReviewerUnavailableTest(unittest.TestCase):
             self.assertEqual(payload["verdict_ref"]["decision"], "pass")
 
 
+class OrroCheckHumanOutputTest(unittest.TestCase):
+    def test_human_output_labels_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            out, errbuf = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(errbuf):
+                code = main(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--check",
+                        "true",
+                        "--no-review",
+                    ]
+                )
+            text = out.getvalue()
+            self.assertEqual(code, 0, errbuf.getvalue())
+            self.assertIn("VERIFIED", text)
+            self.assertIn("NOT observed-executed", text)
+            self.assertIn("0 execution-adapter lanes", text)
+
+
 if __name__ == "__main__":
     unittest.main()
