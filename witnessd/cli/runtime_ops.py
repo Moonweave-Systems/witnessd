@@ -75,7 +75,14 @@ def _cmd_verify(args: argparse.Namespace) -> int:
         print(json.dumps(payload, sort_keys=True))
         return 0 if verdict["decision"] == "pass" else 1
     if not args.runlog:
-        print("ERR_VERIFY_RUN_DIR_OR_RUNLOG_REQUIRED", file=sys.stderr)
+        _emit_orro_error(
+            args,
+            code="ERR_VERIFY_RUN_DIR_OR_RUNLOG_REQUIRED",
+            message="verify requires a run directory or runlog",
+            reason="no persisted run artifact was selected for verification",
+            required_input_or_grant="<run-dir> or --runlog <runlog.jsonl>",
+            next_command="python3 -m witnessd verify <run-dir> --home .witnessd",
+        )
         return 2
     from witnessd.runlog import verify_runlog
 
@@ -115,7 +122,14 @@ def _cmd_isolation(args: argparse.Namespace) -> int:
 
         isolation_self_test()
         return 0
-    print("ERR_ISOLATION_COMMAND_REQUIRED", file=sys.stderr)
+    _emit_orro_error(
+        args,
+        code="ERR_ISOLATION_COMMAND_REQUIRED",
+        message="isolation requires an explicit check",
+        reason="no isolation operation was selected",
+        required_input_or_grant="--self-test",
+        next_command="python3 -m witnessd isolation --self-test",
+    )
     return 2
 
 
@@ -161,7 +175,17 @@ def _cmd_faultkit(args: argparse.Namespace) -> int:
         except LaneBlocked as exc:
             print(exc.reason)
             return 1 if exc.reason == "budget_exceeded" else 2
-        print("budget_blowout_not_reproduced", file=sys.stderr)
+        _emit_orro_error(
+            args,
+            code="budget_blowout_not_reproduced",
+            message="faultkit did not reproduce the expected budget blocker",
+            reason="the adapter lane completed without raising a budget-exceeded block",
+            required_input_or_grant="a budget configuration that exceeds the lane limit",
+            next_command=(
+                "python3 -m witnessd faultkit budget-blowout "
+                f"--root {args.root} --runner-sandbox {args.runner_sandbox}"
+            ),
+        )
         return 2
     if args.fault == "zombie-hang":
         from witnessd.faultkit import zombie_hang
@@ -191,7 +215,16 @@ def _cmd_faultkit(args: argparse.Namespace) -> int:
         pause_race(log, run_id=args.run_id)
         print(f"faultkit pause-race: {args.runlog}")
         return 0
-    print(f"ERR_UNKNOWN_FAULT: {args.fault}", file=sys.stderr)
+    _emit_orro_error(
+        args,
+        code=f"ERR_UNKNOWN_FAULT: {args.fault}",
+        message="faultkit does not recognize the requested fault",
+        reason="the fault name is not one of the registered deterministic scenarios",
+        required_input_or_grant=(
+            "budget-blowout|zombie-hang|crash-mid-toolcall|pause-race"
+        ),
+        next_command="python3 -m witnessd faultkit --help",
+    )
     return 2
 
 
@@ -223,7 +256,17 @@ def _cmd_resume_pause(args: argparse.Namespace) -> int:
 
 def _cmd_kill(args: argparse.Namespace) -> int:
     if not args.all:
-        print("ERR_KILL_SCOPE_REQUIRED", file=sys.stderr)
+        _emit_orro_error(
+            args,
+            code="ERR_KILL_SCOPE_REQUIRED",
+            message="kill requires an explicit all-target scope",
+            reason="the kill switch will not infer which supervised targets to stop",
+            required_input_or_grant="--all",
+            next_command=(
+                "python3 -m witnessd kill "
+                f"--runlog {args.runlog} --run-id {args.run_id} --all"
+            ),
+        )
         return 2
     from witnessd.eventlog import EventLog, EventLogIntegrityError
     from witnessd.killswitch import active_targets_from_runlog, kill_all

@@ -38,6 +38,7 @@ class OrroFlowTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 0)
         help_text = stdout.getvalue()
         for option in (
+            "--repo",
             "--write-scope",
             "--adapter",
             "--runner-sandbox",
@@ -49,6 +50,59 @@ class OrroFlowTests(unittest.TestCase):
             "--json",
         ):
             self.assertIn(option, help_text)
+
+    def test_repo_flag_targets_the_requested_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "target-repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            run_dir = root / "run"
+            runner_sandbox = root / "runner"
+            stdout = io.StringIO()
+
+            with (
+                patch(
+                    "witnessd.cli.flow._invoke_orro_flow_phase",
+                    return_value=(
+                        2,
+                        {
+                            "error": {
+                                "code": "ERR_TEST_INIT_BLOCKED",
+                                "message": "stop after observing init argv",
+                            }
+                        },
+                        "",
+                    ),
+                ) as invoke,
+                redirect_stdout(stdout),
+            ):
+                code = main(
+                    [
+                        "orro",
+                        "flow",
+                        "make a change",
+                        "--repo",
+                        str(repo),
+                        "--write-scope",
+                        "pkg/**",
+                        "--adapter",
+                        "shell",
+                        "--run-dir",
+                        str(run_dir),
+                        "--runner-sandbox",
+                        str(runner_sandbox),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2)
+            init_argv = invoke.call_args.args[0]
+            self.assertEqual(init_argv[init_argv.index("--repo") + 1], str(repo.resolve()))
+            self.assertEqual(
+                json.loads(stdout.getvalue())["error"]["code"],
+                "ERR_TEST_INIT_BLOCKED",
+            )
 
     def test_missing_write_scope_is_a_structured_flowplan_blocker(self) -> None:
         stdout = io.StringIO()

@@ -338,6 +338,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     orro_flow.add_argument("goal")
+    orro_flow.add_argument("--repo", "--root", dest="repo", default=None)
     orro_flow.add_argument("--write-scope", action="append", default=[])
     orro_flow.add_argument(
         "--adapter",

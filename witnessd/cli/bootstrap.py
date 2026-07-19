@@ -33,10 +33,34 @@ def _cmd_init(args: argparse.Namespace) -> int:
             )
         )
     except ProvisionError as exc:
-        print(exc.code, file=sys.stderr)
+        _emit_orro_error(
+            args,
+            code=exc.code,
+            message="witnessd initialization could not provision Depone",
+            reason="the pinned Depone verifier was unavailable or failed validation",
+            required_input_or_grant=(
+                "--depone-root <depone-checkout> or --allow-network"
+            ),
+            next_command=(
+                "python3 -m witnessd init "
+                f"--repo {shlex.quote(str(args.repo))} "
+                "--depone-root <depone-checkout>"
+            ),
+        )
         return 2
     except RolepackError as exc:
-        print(exc.code, file=sys.stderr)
+        _emit_orro_error(
+            args,
+            code=exc.code,
+            message="witnessd initialization could not load the team rolepack",
+            reason="the supplied rolepack is missing, unreadable, or invalid",
+            required_input_or_grant="--team <valid-rolepack.json>",
+            next_command=(
+                "python3 -m witnessd init "
+                f"--repo {shlex.quote(str(args.repo))} "
+                "--team <valid-rolepack.json>"
+            ),
+        )
         return 2
     print(json.dumps(result, sort_keys=True))
     return 0
@@ -84,6 +108,13 @@ def _cmd_orro_setup(args: argparse.Namespace) -> int:
             args,
             code=exc.code,
             message="ORRO setup could not provision a pinned Depone verifier",
+            reason="the pinned Depone checkout was unavailable or failed validation",
+            required_input_or_grant="a valid --depone-root or setup-time network access",
+            next_command=(
+                "python3 -m orro setup "
+                f"--home {shlex.quote(str(home))} "
+                "--depone-root <depone-checkout> --json"
+            ),
         )
         return 2
     except OSError as exc:

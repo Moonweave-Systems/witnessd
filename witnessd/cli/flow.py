@@ -39,7 +39,11 @@ def _cmd_orro_flow(args: argparse.Namespace) -> int:
 
 
 def _run_orro_flow(args: argparse.Namespace) -> int:
-    repo = Path.cwd().resolve(strict=False)
+    repo = (
+        Path(args.repo).resolve(strict=False)
+        if args.repo
+        else Path.cwd().resolve(strict=False)
+    )
     home = Path(
         args.home or os.environ.get("WITNESSD_HOME") or (repo / ".witnessd")
     ).resolve(strict=False)
