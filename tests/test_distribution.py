@@ -17,6 +17,7 @@ from witnessd.distribution import (
     ERR_WITNESSD_DEPONE_PIN_MISMATCH,
     InitConfig,
     ProvisionError,
+    classify_depone_pin_state,
     init_witnessd_home,
     validate_depone_pin,
 )
@@ -51,6 +52,20 @@ class DistributionInitTests(unittest.TestCase):
             path.write_text(text, encoding="utf-8")
         subprocess.run(["git", "add", "-A"], cwd=root, check=True)
         subprocess.run(["git", "commit", "-qm", "seed"], cwd=root, check=True)
+
+    def _commit_file(self, root: Path, relative_path: str, text: str) -> str:
+        path = root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        subprocess.run(["git", "add", relative_path], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", f"update {relative_path}"], cwd=root, check=True)
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
 
     def test_init_records_config_keys_and_repo_hashes(self) -> None:
         witnessd_root = Path(__file__).resolve().parents[1]
@@ -138,6 +153,266 @@ class DistributionInitTests(unittest.TestCase):
                 validate_depone_pin(home)
 
             self.assertEqual(cm.exception.code, ERR_WITNESSD_DEPONE_PIN_MISMATCH)
+
+    def test_classify_depone_pin_distinguishes_stale_upgrade_from_forged(self) -> None:
+        witnessd_root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            depone_root = root / "depone"
+            depone_root.mkdir()
+            self._seed_git_repo(depone_root, {"depone/__init__.py": "old\n"})
+            old_commit = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=depone_root,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+            home = root / "home"
+            init_witnessd_home(
+                InitConfig(
+                    home=home,
+                    witnessd_root=witnessd_root,
+                    depone_root=depone_root,
+                    network_allowed=False,
+                )
+            )
+            self.assertEqual(classify_depone_pin_state(home)["state"], "ok")
+            new_commit = self._commit_file(
+                depone_root, "depone/__init__.py", "new\n"
+            )
+
+            with patch.dict(os.environ, {"WITNESSD_DEPONE_REF": new_commit}):
+                stale = classify_depone_pin_state(home)
+
+            self.assertEqual(
+                stale,
+                {
+                    "state": "stale-upgrade",
+                    "code": ERR_WITNESSD_DEPONE_PIN_MISMATCH,
+                    "depone_root": str(depone_root.resolve()),
+                    "recorded_commit": old_commit,
+                    "current_commit": new_commit,
+                    "expected_commit": new_commit,
+                },
+            )
+            with self.assertRaises(ProvisionError) as cm:
+                validate_depone_pin(home)
+            self.assertEqual(cm.exception.code, ERR_WITNESSD_DEPONE_PIN_MISMATCH)
+
+            provision_path = home / "provision.json"
+            provision = json.loads(provision_path.read_text(encoding="utf-8"))
+            provision["depone"]["commit"] = "0" * 40
+            provision_path.write_text(json.dumps(provision), encoding="utf-8")
+
+            with patch.dict(os.environ, {"WITNESSD_DEPONE_REF": new_commit}):
+                forged = classify_depone_pin_state(home)
+
+            self.assertEqual(forged["state"], "mismatch")
+            self.assertEqual(forged["recorded_commit"], "0" * 40)
+            self.assertEqual(forged["current_commit"], new_commit)
+            self.assertEqual(forged["expected_commit"], new_commit)
+            self.assertEqual(
+                classify_depone_pin_state(root / "missing-home")["state"],
+                "missing",
+            )
+
+    def test_doctor_guides_only_stale_upgrade_and_init_preserves_runs(self) -> None:
+        witnessd_root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            depone_root = root / "depone"
+            depone_root.mkdir()
+            self._seed_git_repo(depone_root, {"depone/__init__.py": "old\n"})
+            home = root / "home"
+            init_witnessd_home(
+                InitConfig(
+                    home=home,
+                    witnessd_root=witnessd_root,
+                    depone_root=depone_root,
+                    network_allowed=False,
+                )
+            )
+            prior_artifact = home / "runs" / "prior-run" / "evidence.json"
+            prior_artifact.parent.mkdir(parents=True)
+            prior_artifact.write_text('{"observed": true}\n', encoding="utf-8")
+            prior_bytes = prior_artifact.read_bytes()
+            new_commit = self._commit_file(
+                depone_root, "depone/__init__.py", "new\n"
+            )
+
+            stdout = io.StringIO()
+            with (
+                patch.dict(os.environ, {"WITNESSD_DEPONE_REF": new_commit}),
+                patch(
+                    "witnessd.preflight.probe_adapter_capability",
+                    return_value={"decision": "pass"},
+                ),
+                redirect_stdout(stdout),
+            ):
+                doctor_code = main(
+                    [
+                        "orro",
+                        "doctor",
+                        "--home",
+                        str(home),
+                        "--adapter",
+                        "codex",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(doctor_code, 1)
+            doctor = json.loads(stdout.getvalue())
+            depone_pin = {
+                check["name"]: check for check in doctor["checks"]
+            }["depone_pin"]
+            self.assertEqual(depone_pin["status"], "blocked")
+            self.assertEqual(depone_pin["reason"], "stale-upgrade-provision")
+            self.assertEqual(depone_pin["current_commit"], new_commit)
+            self.assertEqual(depone_pin["expected_commit"], new_commit)
+            self.assertTrue(
+                depone_pin["remediation"]["requires_explicit_user_action"]
+            )
+            self.assertIn("python3 -m orro init", depone_pin["remediation"]["command"])
+            self.assertIn(str(depone_root), depone_pin["remediation"]["command"])
+            self.assertIn("stale", depone_pin["detail"].lower())
+
+            human_stdout = io.StringIO()
+            human_stderr = io.StringIO()
+            with (
+                patch.dict(os.environ, {"WITNESSD_DEPONE_REF": new_commit}),
+                patch(
+                    "witnessd.preflight.probe_adapter_capability",
+                    return_value={"decision": "pass"},
+                ),
+                redirect_stdout(human_stdout),
+                redirect_stderr(human_stderr),
+            ):
+                human_code = main(
+                    [
+                        "orro",
+                        "doctor",
+                        "--home",
+                        str(home),
+                        "--adapter",
+                        "codex",
+                    ]
+                )
+            self.assertEqual(human_code, 1)
+            self.assertIn("stale-upgrade-provision", human_stderr.getvalue())
+            self.assertIn("python3 -m orro init", human_stderr.getvalue())
+            json.loads(human_stdout.getvalue())
+
+            init_stdout = io.StringIO()
+            with redirect_stdout(init_stdout):
+                init_code = main(
+                    [
+                        "orro",
+                        "init",
+                        "--home",
+                        str(home),
+                        "--repo",
+                        str(repo),
+                        "--depone-root",
+                        str(depone_root),
+                    ]
+                )
+            self.assertEqual(init_code, 0, init_stdout.getvalue())
+            self.assertEqual(prior_artifact.read_bytes(), prior_bytes)
+            self.assertEqual(validate_depone_pin(home)["depone"]["commit"], new_commit)
+
+            proofrun_stdout = io.StringIO()
+            proofrun_stderr = io.StringIO()
+            with redirect_stdout(proofrun_stdout), redirect_stderr(proofrun_stderr):
+                proofrun_code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "--goal",
+                        "pin gate smoke",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--json",
+                    ]
+                )
+            self.assertEqual(proofrun_code, 2)
+            self.assertEqual(
+                json.loads(proofrun_stdout.getvalue())["error"]["code"],
+                "ERR_ORRO_PROOFRUN_NO_PLAN",
+            )
+            self.assertNotIn(ERR_WITNESSD_DEPONE_PIN_MISMATCH, proofrun_stderr.getvalue())
+
+    def test_doctor_does_not_offer_init_for_forged_provision(self) -> None:
+        witnessd_root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            depone_root = root / "depone"
+            depone_root.mkdir()
+            self._seed_git_repo(depone_root, {"depone/__init__.py": "base\n"})
+            home = root / "home"
+            init_witnessd_home(
+                InitConfig(
+                    home=home,
+                    witnessd_root=witnessd_root,
+                    depone_root=depone_root,
+                    network_allowed=False,
+                )
+            )
+            subprocess.run(
+                ["git", "checkout", "-qb", "forged"],
+                cwd=depone_root,
+                check=True,
+            )
+            forged_commit = self._commit_file(
+                depone_root, "depone/__init__.py", "unrelated\n"
+            )
+            subprocess.run(
+                ["git", "checkout", "-q", "main"],
+                cwd=depone_root,
+                check=True,
+            )
+            current_commit = self._commit_file(
+                depone_root, "depone/__init__.py", "expected\n"
+            )
+            provision_path = home / "provision.json"
+            provision = json.loads(provision_path.read_text(encoding="utf-8"))
+            provision["depone"]["commit"] = forged_commit
+            provision_path.write_text(json.dumps(provision), encoding="utf-8")
+
+            stdout = io.StringIO()
+            with (
+                patch.dict(os.environ, {"WITNESSD_DEPONE_REF": current_commit}),
+                patch(
+                    "witnessd.preflight.probe_adapter_capability",
+                    return_value={"decision": "pass"},
+                ),
+                redirect_stdout(stdout),
+            ):
+                code = main(
+                    [
+                        "orro",
+                        "doctor",
+                        "--home",
+                        str(home),
+                        "--adapter",
+                        "codex",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 1)
+            doctor = json.loads(stdout.getvalue())
+            depone_pin = {
+                check["name"]: check for check in doctor["checks"]
+            }["depone_pin"]
+            self.assertEqual(depone_pin["status"], "blocked")
+            self.assertEqual(depone_pin["reason"], "depone-pin-mismatch")
+            self.assertNotIn("remediation", depone_pin)
 
     def test_cli_init_writes_home_and_prints_config_path(self) -> None:
         depone_root = self._depone_root()

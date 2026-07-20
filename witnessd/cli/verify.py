@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -649,25 +650,90 @@ def _cmd_orro_doctor(args: argparse.Namespace) -> int:
     home = Path(args.home).resolve(strict=False) if args.home else None
     env = os.environ.copy()
     if home is not None:
-        try:
-            env = _depone_subprocess_env(home)
-        except Exception as exc:  # noqa: BLE001 - readiness check reports pin failure
+        from witnessd.distribution import classify_depone_pin_state
+
+        depone_pin_state = classify_depone_pin_state(home)
+        if depone_pin_state["state"] == "stale-upgrade":
+            depone_root = str(depone_pin_state["depone_root"])
+            remediation_command = (
+                "python3 -m orro init "
+                f"--home {shlex.quote(str(home))} "
+                f"--repo {shlex.quote(str(Path.cwd().resolve(strict=False)))} "
+                f"--depone-root {shlex.quote(depone_root)}"
+            )
             checks.append(
                 {
                     "name": "depone_pin",
                     "status": "blocked",
-                    "code": str(exc),
+                    "code": str(depone_pin_state["code"]),
+                    "reason": "stale-upgrade-provision",
                     "path": str(home / "provision.json"),
+                    "recorded_commit": depone_pin_state["recorded_commit"],
+                    "current_commit": depone_pin_state["current_commit"],
+                    "expected_commit": depone_pin_state["expected_commit"],
+                    "detail": (
+                        "Stale upgrade provision: the Depone checkout is at the "
+                        "current expected pin, but provision.json records an older "
+                        "valid commit. Run the explicit init remediation to refresh "
+                        "provisioning metadata."
+                    ),
+                    "remediation": {
+                        "command": remediation_command,
+                        "effect": (
+                            "refreshes provision.json to the current pinned Depone; "
+                            "preserves existing run artifacts"
+                        ),
+                        "requires_explicit_user_action": True,
+                    },
                 }
             )
+            if not args.json:
+                print(
+                    "depone_pin: blocked (stale-upgrade-provision); "
+                    f"remediation: {remediation_command}",
+                    file=sys.stderr,
+                )
+        elif depone_pin_state["state"] != "ok":
+            check = {
+                "name": "depone_pin",
+                "status": "blocked",
+                "code": str(depone_pin_state["code"]),
+                "reason": (
+                    "depone-pin-mismatch"
+                    if depone_pin_state["state"] == "mismatch"
+                    else "depone-pin-missing"
+                ),
+                "path": str(home / "provision.json"),
+            }
+            for field in (
+                "depone_root",
+                "recorded_commit",
+                "current_commit",
+                "expected_commit",
+            ):
+                if field in depone_pin_state:
+                    check[field] = depone_pin_state[field]
+            checks.append(check)
         else:
-            checks.append(
-                {
-                    "name": "depone_pin",
-                    "status": "pass",
-                    "path": str(home / "provision.json"),
-                }
-            )
+            try:
+                env = _depone_subprocess_env(home)
+            except Exception as exc:  # noqa: BLE001 - readiness check reports pin race
+                checks.append(
+                    {
+                        "name": "depone_pin",
+                        "status": "blocked",
+                        "code": str(exc),
+                        "path": str(home / "provision.json"),
+                    }
+                )
+            else:
+                checks.append(
+                    {
+                        "name": "depone_pin",
+                        "status": "pass",
+                        "path": str(home / "provision.json"),
+                    }
+                )
     engine_lock_path: Path | None = None
     if args.engine_lock:
         engine_lock_path = Path(args.engine_lock).resolve(strict=False)
