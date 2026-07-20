@@ -95,6 +95,73 @@ def init_witnessd_home(config: InitConfig) -> dict[str, str]:
 
 
 def validate_depone_pin(home: Path) -> dict[str, Any]:
+    provision = _load_depone_provision(home)
+    depone = provision["depone"]
+    depone_root = Path(str(depone["root"])).resolve(strict=False)
+    current_commit = _git_commit(depone_root)
+    if current_commit != str(depone["commit"]):
+        raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISMATCH)
+    return provision
+
+
+def classify_depone_pin_state(
+    home: Path, *, depone_ref: str | None = None
+) -> dict[str, Any]:
+    """Describe the local Depone pin state without weakening enforcement."""
+
+    try:
+        provision = _load_depone_provision(home)
+    except ProvisionError as exc:
+        return {"state": "missing", "code": exc.code}
+
+    depone = provision["depone"]
+    depone_root = Path(str(depone["root"])).resolve(strict=False)
+    recorded_commit = str(depone["commit"])
+    result: dict[str, Any] = {
+        "state": "mismatch",
+        "code": ERR_WITNESSD_DEPONE_PIN_MISMATCH,
+        "depone_root": str(depone_root),
+        "recorded_commit": recorded_commit,
+        "current_commit": None,
+        "expected_commit": None,
+    }
+    try:
+        current_commit = _git_commit(depone_root)
+    except ProvisionError as exc:
+        result["code"] = exc.code
+        return result
+    result["current_commit"] = current_commit
+    if current_commit == recorded_commit:
+        result["state"] = "ok"
+        result.pop("code")
+        return result
+
+    expected_ref = (
+        depone_ref or os.environ.get("WITNESSD_DEPONE_REF") or DEFAULT_DEPONE_REF
+    )
+    try:
+        expected_commit = _git_commit_for_ref(depone_root, expected_ref)
+    except ProvisionError:
+        return result
+    result["expected_commit"] = expected_commit
+    if current_commit != expected_commit:
+        return result
+
+    try:
+        resolved_recorded_commit = _git_commit_for_ref(depone_root, recorded_commit)
+    except ProvisionError:
+        return result
+    if resolved_recorded_commit != recorded_commit:
+        return result
+    if not _git_commit_is_ancestor(
+        depone_root, ancestor=recorded_commit, descendant=current_commit
+    ):
+        return result
+    result["state"] = "stale-upgrade"
+    return result
+
+
+def _load_depone_provision(home: Path) -> dict[str, Any]:
     provision_path = home.resolve(strict=False) / "provision.json"
     if not provision_path.is_file():
         raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISSING)
@@ -113,10 +180,6 @@ def validate_depone_pin(home: Path) -> dict[str, Any]:
     recorded_commit = depone.get("commit")
     if not isinstance(root, str) or not isinstance(recorded_commit, str):
         raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISSING)
-    depone_root = Path(root).resolve(strict=False)
-    current_commit = _git_commit(depone_root)
-    if current_commit != recorded_commit:
-        raise ProvisionError(ERR_WITNESSD_DEPONE_PIN_MISMATCH)
     return provision
 
 
@@ -435,6 +498,26 @@ def _git_commit_for_ref(root: Path, ref: str) -> str:
     if completed.returncode != 0:
         raise ProvisionError(ERR_ORRO_SETUP_DEPONE_PIN_MISMATCH)
     return completed.stdout.strip()
+
+
+def _git_commit_is_ancestor(
+    root: Path, *, ancestor: str, descendant: str
+) -> bool:
+    completed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "merge-base",
+            "--is-ancestor",
+            ancestor,
+            descendant,
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return completed.returncode == 0
 
 
 def _git_commit_optional(root: Path) -> str:
