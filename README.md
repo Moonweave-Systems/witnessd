@@ -39,6 +39,21 @@ granted write scope, and Depone independently checks the resulting evidence.
 
 ### Offline demo (not real AI work)
 
+For the five-minute AI-free write-scope guardrail demo, run both directions:
+
+```bash
+python3 -m orro demo
+python3 -m orro demo --violate
+```
+
+`orro demo` creates a sample repository, executes a declared deterministic
+shell command, seals the observed touched files, and asks the pinned Depone to
+re-derive `policy_conformance`. The normal case writes under `src/**` and prints
+`Policy conformance: PASS`; `--violate` writes `outside.txt`, prints the
+blocking write-scope failure, and exits non-zero. Shell execution stands in for
+an agent; it demonstrates the evidence path, not AI execution, agent quality,
+approval, or assurance.
+
 For an intentional script/fixture demonstration without model authentication,
 the reference adapter remains available:
 
@@ -198,6 +213,7 @@ witnessd runtime code or Depone verifier logic.
 | `orro report` | human-facing summary of observed ORRO artifacts and next safe action |
 | `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
 | `orro check` | companion: deterministic verify (Depone verdict) + read-only review (advisory); spawns zero execution-adapter lanes; does not claim observed execution |
+| `orro demo` | AI-free deterministic shell guardrail demo; Depone re-derives write-scope PASS/FAIL |
 | `orro auto --dry-run` | non-executing automation planner that recommends the next command |
 | `orro auto --once` | one-step executor for proofcheck or handoff only |
 | `orro auto --until-complete` | bounded post-run loop over proofcheck and handoff only |
@@ -348,6 +364,14 @@ scope input that generates the role capability directly instead of requiring a
 prebuilt rolepack. It is never inferred or defaulted; without `--write-scope`,
 `--rolepack`, `--rolepack-file`, or `--team`, code-change role-lane compilation
 still fails closed.
+With `--lane-adapter shell`, `--command '<shell>'` (repeatable) compiles one
+implementation-intent lane whose declared commands run in the existing runner
+sandbox and whose region remains exactly the granted write scope. It is not
+valid for prompt-driven AI adapters and is mutually exclusive with `--check`.
+`orro flow` threads the same flag and keeps model-policy routing off for that
+deterministic shell lane.
+The observer records touched files and Depone re-derives whether they stay
+inside the declared scope; witnessd does not self-award the PASS/FAIL.
 `orro proofrun --workflow-plan <path> --role-lane-plan <path>` validates that the
 role-lane plan is bound to the workflow plan, that proofrun is allowed, and that
 execution is explicitly allowed before creating a run directory. It then reuses

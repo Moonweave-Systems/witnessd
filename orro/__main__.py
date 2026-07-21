@@ -15,7 +15,7 @@ DEPRECATION_WARNING = (
     "in the next major witnessd release."
 )
 
-ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,sketch,trace,flow,flowplan,proofrun,proofcheck,advisory-provenance-check,handoff,next,report,review,check,auto,team,doctor,engine-lock} ...
+ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,sketch,trace,flow,flowplan,proofrun,proofcheck,advisory-provenance-check,handoff,next,report,review,check,demo,auto,team,doctor,engine-lock} ...
 
 ORRO - Observed Run & Review Orchestrator
 
@@ -40,6 +40,7 @@ public commands:
   report       human-facing summary of observed ORRO artifacts and next action
   review       advisory read-only reviewer lanes; not proof or assurance
   check        companion: verify (Depone verdict) + read-only review; not observed execution
+  demo         AI-free shell guardrail demo with Depone scope-conformance PASS/FAIL
   auto         dry-run, one-step, or bounded post-run automation
   team         scaffold team config or run flowplan/proofrun/proofcheck/report
   doctor       ORRO engine/verifier readiness; not runlog health or evidence verification
@@ -57,6 +58,7 @@ boundary:
 options:
   -h, --help   show this help message and exit
   --write-scope '<glob>' (repeatable): bounded write scope for a code-change plan; generates the role capability directly instead of requiring a prebuilt rolepack. Never inferred or defaulted.
+  --command '<shell>' (repeatable, --lane-adapter shell only): declared deterministic commands the runner executes; touched files are checked against --write-scope. Not for AI adapters.
   --role-lane-tier
                auto (default): shell lanes run at quick/120s, AI-adapter lanes at agentic/1800s; override with quick|agentic|frontier
   --runner-sandbox DIR

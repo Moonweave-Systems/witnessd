@@ -56,6 +56,16 @@ def _cmd_plan(args: argparse.Namespace) -> int:
             ),
         )
         return 2
+    if getattr(args, "command", None) and not getattr(args, "role_lanes_out", None):
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_COMMAND_UNSUPPORTED",
+            message=(
+                "--command requires --role-lanes-out with --profile code-change "
+                "and --lane-adapter shell"
+            ),
+        )
+        return 2
 
     if args.draft_adapter:
         draft_root = f"{root.rstrip(os.sep)}-witnessd-plan-draft"
@@ -178,6 +188,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                 policy=DEFAULT_MODEL_POLICY if args.model_policy == "default" else None,
                 rolepack=rolepack,
                 check_commands=getattr(args, "check", None),
+                command_commands=getattr(args, "command", None),
             )
             role_lane_plan_ref = write_role_lane_plan(
                 Path(args.role_lanes_out).resolve(strict=False),
@@ -247,6 +258,36 @@ def _flowplan_role_lane_error_details(
     message: str,
     rolepack: dict[str, object] | None,
 ) -> dict[str, str] | None:
+    if code == "ERR_ORRO_COMMAND_ADAPTER_UNSUPPORTED":
+        return {
+            "reason": (
+                "declared commands are deterministic shell execution; AI adapters "
+                "are prompt-driven"
+            ),
+            "required_input_or_grant": "--lane-adapter shell",
+            "next_command": (
+                "python3 -m orro flowplan "
+                f"{shlex.quote(str(args.goal))} --root {shlex.quote(str(args.root))} "
+                "--profile code-change --lane-adapter shell "
+                f"--role-lanes-out {shlex.quote(str(args.role_lanes_out))} "
+                "--write-scope '<glob>' --command '<shell>' --json"
+            ),
+        }
+    if code == "ERR_ORRO_COMMAND_CHECK_CONFLICT":
+        return {
+            "reason": (
+                "--check is verification-only with an empty region; --command is "
+                "implementation intent with a declared write scope"
+            ),
+            "required_input_or_grant": "choose exactly one of --command or --check",
+            "next_command": (
+                "python3 -m orro flowplan "
+                f"{shlex.quote(str(args.goal))} --root {shlex.quote(str(args.root))} "
+                "--profile code-change --lane-adapter shell "
+                f"--role-lanes-out {shlex.quote(str(args.role_lanes_out))} "
+                "--write-scope '<glob>' --command '<shell>' --json"
+            ),
+        }
     if code == "ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED":
         flowplan_command = (
             "python3 -m orro flowplan "

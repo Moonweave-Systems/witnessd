@@ -705,8 +705,13 @@ def _role_lane_plan_team_specs(
         adapter = str(lane["adapter"])
         region = list(lane["region"])
         if adapter == "shell":
+            declared_commands = lane.get("commands")
             checks = lane.get("check_commands")
-            if (
+            if isinstance(declared_commands, list) and declared_commands:
+                commands = [
+                    ["sh", "-c", str(command)] for command in declared_commands
+                ]
+            elif (
                 lane.get("lane_intent") == "verification-only"
                 and isinstance(checks, list)
                 and checks

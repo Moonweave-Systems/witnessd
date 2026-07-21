@@ -51,6 +51,7 @@ The cross-engine artifact boundary is summarized in
 | `orro report` | human-facing summary of observed artifacts and next safe action |
 | `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
 | `orro check` | companion: deterministic verify (Depone verdict) + read-only review (advisory); spawns zero execution-adapter lanes; does not claim observed execution |
+| `orro demo` | AI-free deterministic shell guardrail demo; Depone re-derives write-scope PASS/FAIL |
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
 | `orro auto --until-complete` | bounded post-run proofcheck/handoff loop; orchestration metadata only |
@@ -184,6 +185,17 @@ Checks run with `PYTHONDONTWRITEBYTECODE=1`; checks must otherwise be
 side-effect-free, and tool caches (`.pytest_cache`, `.ruff_cache`, and similar)
 should be covered by the target repo's `.gitignore` or redirected outside the
 worktree—any file a check writes is honestly falsified by Depone.
+
+`python3 -m orro flowplan "<goal>" --root <repo> --profile code-change
+--role-lanes-out role-lane-plan.json --lane-adapter shell --write-scope
+'src/**' --command '<shell>'` compiles a deterministic implementation lane. The
+commands are declared intent, the lane region remains exactly the granted write
+scope, and the observer captures actual touched files for Depone to re-derive.
+`--command` is repeatable, mutually exclusive with `--check`, and invalid for
+prompt-driven AI adapters. `orro flow` threads it with model-policy routing off
+for the deterministic shell lane. `python3 -m orro demo [--violate]` exercises this
+path against a generated sample repo; it is a shell stand-in for an agent, not
+evidence of AI execution, approval, or assurance.
 
 AI adapter execution and review subprocesses receive per-lane Python cache
 shaping under witnessd state outside the worktree:

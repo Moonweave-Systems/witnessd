@@ -400,6 +400,17 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_flow.add_argument("--repo", "--root", dest="repo", default=None)
     orro_flow.add_argument("--write-scope", action="append", default=[])
     orro_flow.add_argument(
+        "--command",
+        action="append",
+        default=None,
+        metavar="'<shell>'",
+        help=(
+            "--command '<shell>' (repeatable, --lane-adapter shell only): declared "
+            "deterministic commands the runner executes; touched files are checked "
+            "against --write-scope. Not for AI adapters."
+        ),
+    )
+    orro_flow.add_argument(
         "--adapter",
         default=None,
         choices=["shell", "codex", "claude", "agy", "gemini", "opencode"],
@@ -426,6 +437,19 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_flow.add_argument("--json", action="store_true")
     orro_flow.add_argument("--verification-only", action="store_true")
     orro_flow.set_defaults(func=_cli_handler("flow", "_cmd_orro_flow"))
+
+    orro_demo = sub.add_parser(
+        "orro-demo",
+        help=argparse.SUPPRESS,
+        description=(
+            "Run an offline deterministic shell guardrail demonstration through "
+            "witnessd execution and Depone policy-conformance re-derivation."
+        ),
+    )
+    orro_demo.add_argument("--violate", action="store_true")
+    orro_demo.add_argument("--work-dir", default=None)
+    orro_demo.add_argument("--depone-root", default=None)
+    orro_demo.set_defaults(func=_cli_handler("demo", "_cmd_orro_demo"))
 
     isolation = sub.add_parser("isolation", help="isolation contract checks")
     isolation.add_argument("--self-test", action="store_true")
@@ -855,6 +879,17 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
         help="declared verification check command for verification-only role "
         "lanes (repeatable; requires --role-lanes-out)",
     )
+    flowplan.add_argument(
+        "--command",
+        action="append",
+        default=None,
+        metavar="'<shell>'",
+        help=(
+            "--command '<shell>' (repeatable, --lane-adapter shell only): declared "
+            "deterministic commands the runner executes; touched files are checked "
+            "against --write-scope. Not for AI adapters."
+        ),
+    )
     flowplan.add_argument("--out", default=None)
     flowplan.add_argument("--role-lanes-out", default=None)
     flowplan.add_argument(
@@ -983,6 +1018,7 @@ ORRO_COMMAND_MAP: dict[str, str] = {
     "report": "orro-report",
     "review": "orro-review",
     "check": "orro-check",
+    "demo": "orro-demo",
     "auto": "orro-auto",
     "flow": "orro-flow",
     "team": "team",

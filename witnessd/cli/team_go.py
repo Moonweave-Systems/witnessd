@@ -414,6 +414,13 @@ def _team_go_reference_adapter_lanes(
                 and checks
             ):
                 continue
+            commands = lane.get("commands")
+            if (
+                lane.get("lane_intent") == "implementation"
+                and isinstance(commands, list)
+                and commands
+            ):
+                continue
             reference_lanes.append(
                 {
                     "lane_id": lane.get("lane_id"),
