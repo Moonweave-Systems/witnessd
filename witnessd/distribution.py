@@ -31,7 +31,7 @@ PROVISION_SCHEMA_VERSION = "0.1"
 ORRO_ENGINE_LOCK_KIND = "orro-engine-lock"
 ORRO_ENGINE_LOCK_SCHEMA_VERSION = "1.0"
 DEFAULT_DEPONE_REPOSITORY = "https://github.com/Moonweave-Systems/Depone.git"
-DEFAULT_DEPONE_REF = "cba0bbbb78667628dfe789461b0243ac7e547b5a"
+DEFAULT_DEPONE_REF = "4046da8d8eeb0e0aef98c70b39efb2c399ede05a"
 
 
 class ProvisionError(Exception):
