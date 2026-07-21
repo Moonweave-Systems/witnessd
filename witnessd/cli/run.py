@@ -14,6 +14,12 @@ from witnessd.status import render_status
 
 
 ERR_ORRO_REFERENCE_ADAPTER_REFUSED = "ERR_ORRO_REFERENCE_ADAPTER_REFUSED"
+RUNNER_SANDBOX_DIRECTORY_REASON = (
+    "--runner-sandbox is a filesystem directory where the adapter runner "
+    "executes; it is not the host Codex sandbox_mode "
+    "(read-only/workspace-write), not the observer out/log directory, and "
+    "not controlled by the shell session start directory"
+)
 
 
 def _requested_signing_profile(args: argparse.Namespace) -> str | None:
@@ -70,6 +76,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     if not args.runner_sandbox:
         print("ERR_WITNESSD_RUN_GOAL_OR_SANDBOX_REQUIRED", file=sys.stderr)
+        print(f"message: {RUNNER_SANDBOX_DIRECTORY_REASON}", file=sys.stderr)
+        print(
+            "next_command: "
+            + _proofrun_runner_sandbox_next_command(
+                args,
+                adapter="shell",
+                prompt=list(args.command or []),
+            ),
+            file=sys.stderr,
+        )
         return 2
 
     sandbox = os.path.abspath(args.runner_sandbox)
@@ -785,8 +801,8 @@ def _cmd_run_adapter(args: argparse.Namespace) -> int:
             args,
             code="ERR_WITNESSD_RUNNER_SANDBOX_REQUIRED",
             message="proofrun adapter execution requires --runner-sandbox <dir>",
-            reason=("the codex/claude runner executes inside an isolated sandbox dir"),
-            required_input_or_grant="--runner-sandbox <dir>",
+            reason=RUNNER_SANDBOX_DIRECTORY_REASON,
+            required_input_or_grant="--runner-sandbox DIR",
             next_command=_adapter_proofrun_next_command(
                 args,
                 prompt=list(args.command),
@@ -846,9 +862,29 @@ def _adapter_proofrun_next_command(
     *,
     prompt: list[str] | None,
 ) -> str:
+    return _proofrun_runner_sandbox_next_command(
+        args,
+        adapter=str(args.adapter),
+        prompt=prompt,
+    )
+
+
+def _proofrun_runner_sandbox_next_command(
+    args: argparse.Namespace,
+    *,
+    adapter: str,
+    prompt: list[str] | None,
+) -> str:
     prompt_text = shlex.join(prompt) if prompt else '"<prompt>"'
     return (
-        "python3 -m witnessd proofrun "
-        f"--adapter {shlex.quote(str(args.adapter))} "
-        f"--runner-sandbox <dir> -- {prompt_text}"
+        "PROJECT=/abs/project\n"
+        'RUN_DIR="$PROJECT/.witnessd/runs/<run-id>"; '
+        'SANDBOX="$RUN_DIR/sandbox"; mkdir -p "$SANDBOX"\n'
+        "orro proofrun"
+        ' --repo "$PROJECT" --home "$PROJECT/.witnessd" '
+        f"--adapter {shlex.quote(adapter)} "
+        '--runner-sandbox "$SANDBOX" -- '
+        f"{prompt_text}\n"
+        "hint: for shell-only evidence capture without agentic execution, "
+        "consider `flowplan --profile verification-only --check ...`"
     )

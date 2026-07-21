@@ -17,6 +17,11 @@ import os
 # Mirror of Depone capture_bridge.OBSERVER_ID. witnessd is the observer that
 # produces this capture; the id is the fixed contract token Depone requires.
 OBSERVER_ID = "depone-observer"
+ERR_OBSERVER_NOT_SEPARATED_MESSAGE = (
+    "ERR_OBSERVER_NOT_SEPARATED: observer output path must live outside the "
+    "--runner-sandbox filesystem directory; this is about directory arguments, "
+    "not where the shell session was started"
+)
 
 
 class ObserverSeparationError(Exception):
@@ -40,9 +45,9 @@ def assert_separated(runner_sandbox: str, out_path: str) -> None:
     """Fail closed unless out_path lives outside the runner sandbox."""
     observer_dir = os.path.dirname(_norm_path(out_path))
     if _is_inside_or_equal(observer_dir, runner_sandbox):
-        raise ObserverSeparationError("ERR_OBSERVER_NOT_SEPARATED")
+        raise ObserverSeparationError(ERR_OBSERVER_NOT_SEPARATED_MESSAGE)
     if _is_inside_or_equal(out_path, runner_sandbox):
-        raise ObserverSeparationError("ERR_OBSERVER_NOT_SEPARATED")
+        raise ObserverSeparationError(ERR_OBSERVER_NOT_SEPARATED_MESSAGE)
 
 
 def build_observer_capture(

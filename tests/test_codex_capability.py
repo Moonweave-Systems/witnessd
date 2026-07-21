@@ -21,6 +21,7 @@ from unittest.mock import patch
 from witnessd import codex_capability as capability
 from witnessd.codex_capability import (
     ALLOWED_APPROVAL_POLICIES,
+    ALLOWED_SANDBOX_MODES,
     CODEX_LOCAL_CAPABILITY_KIND,
     build_codex_local_capability,
     validate_codex_local_capability,
@@ -99,6 +100,45 @@ class CodexLocalCapabilityTests(unittest.TestCase):
         self.assertEqual(receipt["repo"]["dirty"], False)
         self.assertEqual(receipt["instruction_files"][0]["present"], True)
         self.assertEqual(validate_codex_local_capability(receipt), [])
+
+    def test_sandbox_mode_wording_is_host_codex_capability_only(self) -> None:
+        self.assertEqual(
+            ALLOWED_SANDBOX_MODES,
+            frozenset({"read-only", "workspace-write"}),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_codex = _seed_repo(root)
+
+            with patch("shutil.which", return_value=fake_codex.as_posix()):
+                read_only = build_codex_local_capability(
+                    repo=root,
+                    sandbox_mode="read-only",
+                    approval_policy="on-request",
+                )
+                workspace_write = build_codex_local_capability(
+                    repo=root,
+                    sandbox_mode="workspace-write",
+                    approval_policy="on-request",
+                )
+                unknown = build_codex_local_capability(
+                    repo=root,
+                    sandbox_mode="disabled",
+                    approval_policy="on-request",
+                )
+
+        self.assertEqual(read_only["decision"], "pass")
+        self.assertEqual(workspace_write["decision"], "pass")
+        self.assertEqual(unknown["decision"], "blocked")
+        self.assertIn(
+            (
+                "unsupported host Codex sandbox_mode declaration "
+                "(expected read-only or workspace-write); this is not "
+                "--runner-sandbox DIR"
+            ),
+            unknown["blocked_reasons"],
+        )
+        self.assertEqual(validate_codex_local_capability(unknown), [])
 
     def test_version_probe_nonzero_exit_blocks_with_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

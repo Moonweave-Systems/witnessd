@@ -19,6 +19,12 @@ import argparse
 import sys
 
 
+RUNNER_SANDBOX_HELP = (
+    "filesystem DIR where the runner executes; NOT a Codex sandbox mode "
+    "(read-only/workspace-write) and NOT the observer run/out directory"
+)
+
+
 def _cli_handler(module: str, name: str):
     def _invoke(args: argparse.Namespace) -> int:
         import importlib
@@ -104,7 +110,12 @@ def _build_parser() -> argparse.ArgumentParser:
             "requires an external operator key and real observer/runner separation"
         ),
     )
-    a2.add_argument("--runner-sandbox", required=True)
+    a2.add_argument(
+        "--runner-sandbox",
+        required=True,
+        metavar="DIR",
+        help=RUNNER_SANDBOX_HELP,
+    )
     a2.add_argument("--out", required=True, help="observer evidence directory")
     a2.add_argument("--observer-dir", required=True)
     a2.add_argument("--keys-dir", default=None)
@@ -394,7 +405,12 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["shell", "codex", "claude", "agy", "gemini", "opencode"],
     )
     orro_flow.add_argument("--home", default=None)
-    orro_flow.add_argument("--runner-sandbox", default=None)
+    orro_flow.add_argument(
+        "--runner-sandbox",
+        default=None,
+        metavar="DIR",
+        help=RUNNER_SANDBOX_HELP,
+    )
     orro_flow.add_argument("--rolepack-file", default=None)
     orro_flow.add_argument(
         "--role-lane-tier",
@@ -431,7 +447,12 @@ def _build_parser() -> argparse.ArgumentParser:
     pause_race.set_defaults(func=_cli_handler("runtime_ops", "_cmd_faultkit"))
     budget = faultkit_sub.add_parser("budget-blowout")
     budget.add_argument("--root", "--repo", dest="root", required=True)
-    budget.add_argument("--runner-sandbox", required=True)
+    budget.add_argument(
+        "--runner-sandbox",
+        required=True,
+        metavar="DIR",
+        help=RUNNER_SANDBOX_HELP,
+    )
     budget.add_argument("--codex-binary", default="codex")
     budget.add_argument("--task-id", default="budget-blowout")
     budget.add_argument("--prompt", default="trigger budget blowout")
@@ -748,7 +769,12 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
         choices=["shell", "codex", "claude", "agy", "gemini", "opencode"],
     )
     run.add_argument("--root", default=".")
-    run.add_argument("--runner-sandbox", default=None)
+    run.add_argument(
+        "--runner-sandbox",
+        default=None,
+        metavar="DIR",
+        help=RUNNER_SANDBOX_HELP,
+    )
     run.add_argument(
         "--out", default=None, help="observer output path (outside sandbox)"
     )

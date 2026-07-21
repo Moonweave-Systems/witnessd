@@ -143,12 +143,17 @@ def _cmd_faultkit(args: argparse.Namespace) -> int:
                 code="ERR_WITNESSD_RUNNER_SANDBOX_REQUIRED",
                 message="faultkit adapter execution requires --runner-sandbox <dir>",
                 reason=(
-                    "the codex/claude runner executes inside an isolated sandbox dir"
+                    "--runner-sandbox is a filesystem directory where the "
+                    "adapter runner executes; it is not the host Codex "
+                    "sandbox_mode (read-only/workspace-write), not the "
+                    "observer out/log directory, and not controlled by the "
+                    "shell session start directory"
                 ),
-                required_input_or_grant="--runner-sandbox <dir>",
+                required_input_or_grant="--runner-sandbox DIR",
                 next_command=(
                     "python3 -m witnessd faultkit budget-blowout "
-                    "--root <repo> --runner-sandbox <dir>"
+                    "--root /abs/project --runner-sandbox "
+                    "/abs/project/.witnessd/runs/<run-id>/sandbox"
                 ),
             )
             return 2

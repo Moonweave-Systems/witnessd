@@ -141,6 +141,30 @@ class OrroCommandSurfaceTests(unittest.TestCase):
             self.assertIn("quick|agentic|frontier", help_text)
         self.assertIn(expected_help, ORRO_HELP)
 
+    def test_runner_sandbox_help_distinguishes_directory_from_codex_mode(self) -> None:
+        parser = _build_parser()
+        commands = parser._subparsers._group_actions[0].choices
+        expected = (
+            "filesystem DIR where the runner executes; NOT a Codex sandbox mode "
+            "(read-only/workspace-write) and NOT the observer run/out directory"
+        )
+
+        for help_text in (
+            commands["a2-observer-run"].format_help(),
+            commands["orro-flow"].format_help(),
+            commands["faultkit"]._subparsers._group_actions[0]
+            .choices["budget-blowout"]
+            .format_help(),
+            commands["run"].format_help(),
+            commands["proofrun"].format_help(),
+        ):
+            self.assertIn("--runner-sandbox DIR", help_text)
+            self.assertIn("filesystem DIR where the runner executes", help_text)
+            self.assertIn("NOT a Codex", help_text)
+            self.assertIn("sandbox mode (read-only/workspace-write)", help_text)
+            self.assertIn("observer run/out directory", help_text)
+        self.assertIn(expected, ORRO_HELP)
+
 
 if __name__ == "__main__":
     unittest.main()

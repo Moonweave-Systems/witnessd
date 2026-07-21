@@ -93,9 +93,11 @@ verify evidence, approve merge, or raise assurance.
 orchestrates the existing init, scout, flowplan, proofrun, and proofcheck
 implementations and returns a single `orro-flow-result`. It uses model-policy
 default, preserves the exact user scope, requires observer/runner separation,
-and stops at the first gate with a structured actionable blocker. It never
-auto-approves risky changes, enables reference adapters without the explicit
-flag, skips Depone, or raises assurance.
+and stops at the first gate with a structured actionable blocker.
+`--runner-sandbox` is a filesystem directory where the runner executes, not a
+Codex `sandbox_mode` value or the observer output directory. It never auto-approves
+risky changes, enables reference adapters without the explicit flag, skips
+Depone, or raises assurance.
 
 `python3 -m orro team go "<task>" --repo <repo> --home .witnessd --team .orro/team.json --json`
 is the usable one-command wrapper over `flowplan -> proofrun -> proofcheck ->

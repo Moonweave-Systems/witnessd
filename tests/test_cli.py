@@ -158,16 +158,59 @@ class TestRunSeparation(unittest.TestCase):
         )
         self.assertEqual(
             payload["error"]["reason"],
-            "the codex/claude runner executes inside an isolated sandbox dir",
+            (
+                "--runner-sandbox is a filesystem directory where the adapter "
+                "runner executes; it is not the host Codex sandbox_mode "
+                "(read-only/workspace-write), not the observer out/log "
+                "directory, and not controlled by the shell session start "
+                "directory"
+            ),
         )
         self.assertEqual(
             payload["error"]["required_input_or_grant"],
-            "--runner-sandbox <dir>",
+            "--runner-sandbox DIR",
         )
-        self.assertIn("--runner-sandbox <dir>", payload["error"]["next_command"])
+        self.assertIn("PROJECT=/abs/project", payload["error"]["next_command"])
+        self.assertIn(
+            'RUN_DIR="$PROJECT/.witnessd/runs/<run-id>"',
+            payload["error"]["next_command"],
+        )
+        self.assertIn(
+            'SANDBOX="$RUN_DIR/sandbox"',
+            payload["error"]["next_command"],
+        )
+        self.assertIn('mkdir -p "$SANDBOX"', payload["error"]["next_command"])
+        self.assertIn("--repo \"$PROJECT\"", payload["error"]["next_command"])
+        self.assertIn(
+            "--home \"$PROJECT/.witnessd\"",
+            payload["error"]["next_command"],
+        )
+        self.assertIn(
+            "--runner-sandbox \"$SANDBOX\"",
+            payload["error"]["next_command"],
+        )
         self.assertIn("-- 'do X'", payload["error"]["next_command"])
         self.assertNotIn("Traceback", stdout.getvalue() + stderr.getvalue())
         self.assertNotIn("TypeError", stdout.getvalue() + stderr.getvalue())
+
+    def test_shell_missing_runner_sandbox_explains_directory_arguments(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = main(["run", "--adapter", "shell", "--", "true"])
+
+        self.assertEqual(code, 2)
+        message = stderr.getvalue()
+        self.assertIn("ERR_WITNESSD_RUN_GOAL_OR_SANDBOX_REQUIRED", message)
+        self.assertIn("--runner-sandbox is a filesystem directory", message)
+        self.assertIn("not the host Codex sandbox_mode", message)
+        self.assertIn("not the observer out/log directory", message)
+        self.assertIn("not controlled by the shell session start directory", message)
+        self.assertIn("PROJECT=/abs/project", message)
+        self.assertIn('SANDBOX="$RUN_DIR/sandbox"', message)
+        self.assertIn("--runner-sandbox \"$SANDBOX\"", message)
+        self.assertEqual(stdout.getvalue(), "")
 
     def test_proofrun_adapter_missing_prompt_returns_actionable_error(self):
         stdout = io.StringIO()
@@ -307,6 +350,8 @@ class TestRunSeparation(unittest.TestCase):
                 )
             self.assertNotEqual(code, 0)
             self.assertIn("ERR_OBSERVER_NOT_SEPARATED", err.getvalue())
+            self.assertIn("directory arguments", err.getvalue())
+            self.assertIn("not where the shell session was started", err.getvalue())
             self.assertFalse(
                 os.path.exists(os.path.join(sandbox, "capture-manifest.json"))
             )

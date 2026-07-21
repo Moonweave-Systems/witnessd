@@ -51,7 +51,11 @@ def build_codex_local_capability(
         version_probe = _probe_codex_version(binary_path, version_timeout_seconds)
         blocked_reasons.extend(_version_probe_blocked_reasons(version_probe))
     if sandbox_mode not in ALLOWED_SANDBOX_MODES:
-        blocked_reasons.append("unsupported sandbox mode")
+        blocked_reasons.append(
+            "unsupported host Codex sandbox_mode declaration "
+            "(expected read-only or workspace-write); this is not "
+            "--runner-sandbox DIR"
+        )
     if approval_policy not in ALLOWED_APPROVAL_POLICIES:
         blocked_reasons.append("unsupported approval policy")
     git_facts = _git_facts(resolved_repo)
