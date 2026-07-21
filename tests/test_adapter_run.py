@@ -15,6 +15,7 @@ from depone.agent_fabric.paired_run import validate_runner_receipt
 from depone.agent_fabric.evidence_substrate import ingest_signed_evidence_bundle
 from depone.verify.adapters.base import EvidenceContext, EvidenceFile
 from depone.verify.evidence_contract import validate_evidence_contract
+from depone.verify.engine import run_verification
 
 from witnessd.adapter_run import LaneBlocked, run_adapter_lane
 from witnessd.emitter import emit_lane_evidence
@@ -137,6 +138,30 @@ def _fake_codex_writes_env_and_code(directory: str) -> str:
         "cat >/dev/null\n"
         'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T1"}\'\n'
         'printf \'%s\\n\' \'{"type":"item.completed","item":{"type":"command_execution","command":"write code"}}\'\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
+def _fake_codex_reads_forbidden_skill(directory: str) -> str:
+    path = pathlib.Path(directory) / "codex"
+    event = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": "sed -n '1,80p' /home/ubuntu/.codex/skills/tikz-refine/SKILL.md",
+            },
+        }
+    )
+    path.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
+        "while [ $# -gt 0 ]; do shift; done\n"
+        "cat >/dev/null\n"
+        f"printf '%s\\n' '{event}'\n"
         "exit 0\n",
         encoding="utf-8",
     )
@@ -1353,6 +1378,110 @@ class TestAdapterRun(unittest.TestCase):
             )
 
             self.assertEqual(errors, [])
+
+    def test_skill_routing_forbidden_codex_skill_is_bound_and_refuted_by_depone(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "skill-routing-bound-observation")
+            _init_repo(sandbox)
+
+            out = run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="t-skill-routing-bound-observation",
+                prompt="do X",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=_fake_codex_reads_forbidden_skill(bindir),
+                evidence_dir=evidence_dir,
+                allowed_touched_files=["codex-home.txt"],
+                capture_profile="full",
+                write_scope=["codex-home.txt"],
+                skill_routing={
+                    "forbidden_skills": ["tikz-refine"],
+                    "preferred_skills": ["figure-agent"],
+                    "enforcement": "block",
+                },
+                role_id="runner",
+                role_capability="execute",
+            )
+
+            evidence_root = pathlib.Path(evidence_dir)
+            self.assertEqual(
+                (evidence_root / "observed-skills.txt").read_text(encoding="utf-8"),
+                "tikz-refine\n",
+            )
+            contract = json.loads(
+                (evidence_root / "evidence-contract.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                contract["schema_version"], "v110.role_capability_skill_routing"
+            )
+            self.assertEqual(
+                contract["role_capability_skill_routing"],
+                {
+                    "run_intent_path": "run-intent.json",
+                    "bundle_path": "bundle.json",
+                    "forbidden_skills": ["tikz-refine"],
+                    "preferred_skills": ["figure-agent"],
+                    "enforcement": "block",
+                },
+            )
+            subjects = {
+                item["name"]: item["digest"]["sha256"]
+                for item in out["bundle"]["statement"]["subject"]
+            }
+            self.assertEqual(
+                subjects["observed-skills.txt"],
+                hashlib.sha256((evidence_root / "observed-skills.txt").read_bytes()).hexdigest(),
+            )
+            errors = validate_evidence_contract(
+                _evidence_context_from_dir(
+                    evidence_root,
+                    trusted_observer_public_key_file=out["public_key_path"],
+                )
+            )
+            self.assertTrue(
+                any(
+                    error.code == "ERR_ROLE_CAPABILITY_SKILL_ROUTING_VIOLATION"
+                    for error in errors
+                ),
+                errors,
+            )
+            report = run_verification(
+                {
+                    "phases": [{"id": "proofrun"}],
+                    "required_role_capability_axes": ["skill_routing"],
+                },
+                _evidence_context_from_dir(
+                    evidence_root,
+                    trusted_observer_public_key_file=out["public_key_path"],
+                ),
+            )
+            self.assertEqual(
+                [
+                    (
+                        entry.axis,
+                        entry.status,
+                        entry.error_code,
+                    )
+                    for entry in report.role_capability_conformance
+                    if entry.axis == "skill_routing"
+                ],
+                [
+                    (
+                        "skill_routing",
+                        "fail",
+                        "ERR_ROLE_CAPABILITY_SKILL_ROUTING_VIOLATION",
+                    )
+                ],
+            )
 
     def test_write_scope_git_diff_observation_tamper_refutes_in_depone(self):
         with (

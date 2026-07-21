@@ -24,8 +24,10 @@ RUN_INTENT_ARTIFACT_KIND = "moonweave-run-intent-artifact"
 RUN_INTENT_SCHEMA_VERSION = "1.0"
 RUN_INTENT_ROLE_CAPABILITY_SCHEMA_VERSION = "1.1"
 RUN_INTENT_ROLE_CAPABILITY_TOOL_SCHEMA_VERSION = "1.2"
+RUN_INTENT_ROLE_CAPABILITY_SKILL_ROUTING_SCHEMA_VERSION = "1.3"
 ROLE_CAPABILITY_SCHEMA_VERSION = "1.0"
 ROLE_CAPABILITY_TOOL_SCHEMA_VERSION = "1.1"
+ROLE_CAPABILITY_SKILL_ROUTING_SCHEMA_VERSION = "1.2"
 RUN_INTENT_PAYLOAD_TYPE = "application/vnd.moonweave.run-intent+json"
 DEFAULT_ADAPTER_VERSION = "witnessd.adapter_run/1"
 
@@ -76,6 +78,8 @@ def build_run_intent(
 ) -> dict[str, Any]:
     if role_capability is None:
         schema_version = RUN_INTENT_SCHEMA_VERSION
+    elif isinstance(role_capability.get("declared_skill_routing"), dict):
+        schema_version = RUN_INTENT_ROLE_CAPABILITY_SKILL_ROUTING_SCHEMA_VERSION
     elif isinstance(role_capability.get("declared_tools"), dict):
         schema_version = RUN_INTENT_ROLE_CAPABILITY_TOOL_SCHEMA_VERSION
     else:
@@ -123,10 +127,13 @@ def build_role_capability_intent(
     capability: str,
     declared_write_scope: list[str],
     declared_tools: dict[str, list[str]] | None = None,
+    declared_skill_routing: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     role_capability = {
         "schema_version": (
-            ROLE_CAPABILITY_TOOL_SCHEMA_VERSION
+            ROLE_CAPABILITY_SKILL_ROUTING_SCHEMA_VERSION
+            if declared_skill_routing is not None
+            else ROLE_CAPABILITY_TOOL_SCHEMA_VERSION
             if declared_tools is not None
             else ROLE_CAPABILITY_SCHEMA_VERSION
         ),
@@ -138,6 +145,16 @@ def build_role_capability_intent(
         role_capability["declared_tools"] = {
             "mcp": list(declared_tools.get("mcp", [])),
             "allow": list(declared_tools.get("allow", [])),
+        }
+    if declared_skill_routing is not None:
+        role_capability["declared_skill_routing"] = {
+            "forbidden_skills": list(
+                declared_skill_routing.get("forbidden_skills", [])
+            ),
+            "preferred_skills": list(
+                declared_skill_routing.get("preferred_skills", [])
+            ),
+            "enforcement": str(declared_skill_routing.get("enforcement", "block")),
         }
     return role_capability
 

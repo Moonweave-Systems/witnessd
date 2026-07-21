@@ -43,10 +43,14 @@ SIGNING_STATUS_UNSIGNED = "unsigned-content-addressed"
 SIGNING_STATUS_OPERATOR_KEY = "signed-ed25519-operator-key"
 EVIDENCE_CONTRACT_SCHEMA_VERSION = "v105.verify_wedge"
 ROLE_CAPABILITY_EVIDENCE_CONTRACT_SCHEMA_VERSION = "v109.role_capability_write_scope"
+ROLE_CAPABILITY_SKILL_ROUTING_EVIDENCE_CONTRACT_SCHEMA_VERSION = (
+    "v110.role_capability_skill_routing"
+)
 ROLE_CAPABILITY_TOOL_CALLS_EVIDENCE_CONTRACT_SCHEMA_VERSION = (
     "v107.role_capability_tool_calls"
 )
 OBSERVED_TOUCHED_FILES_SUBJECT_NAME = "observed-touched-files.txt"
+OBSERVED_SKILLS_SUBJECT_NAME = "observed-skills.txt"
 EVIDENCE_MODE_CONTEMPORANEOUS = "contemporaneous"
 EVIDENCE_MODE_POST_HOC = "post_hoc"
 DEFAULT_EPOCH_SECONDS = 300
@@ -299,6 +303,8 @@ def build_evidence_contract(
     exit_code: int,
     diff_patch: str = "",
     write_scope: list[str] | None = None,
+    skill_routing: dict[str, Any] | None = None,
+    observed_skills: list[str] | None = None,
     tool_call_decision_receipts: bool = False,
 ) -> dict[str, str]:
     """Build the evidence-contract plus its companion files.
@@ -316,7 +322,9 @@ def build_evidence_contract(
     # tool-call receipts stays on v109 (which accepts both directives) rather than
     # falling back to v107, whose write_scope would be accepted without a bound
     # observation and is refused by Depone.
-    if write_scope is not None:
+    if skill_routing is not None:
+        schema_version = ROLE_CAPABILITY_SKILL_ROUTING_EVIDENCE_CONTRACT_SCHEMA_VERSION
+    elif write_scope is not None:
         schema_version = ROLE_CAPABILITY_EVIDENCE_CONTRACT_SCHEMA_VERSION
     elif tool_call_decision_receipts:
         schema_version = ROLE_CAPABILITY_TOOL_CALLS_EVIDENCE_CONTRACT_SCHEMA_VERSION
@@ -332,6 +340,14 @@ def build_evidence_contract(
             "run_intent_path": "run-intent.json",
             "bundle_path": "bundle.json",
         }
+    if skill_routing is not None:
+        contract["role_capability_skill_routing"] = {
+            "run_intent_path": "run-intent.json",
+            "bundle_path": "bundle.json",
+            "forbidden_skills": list(skill_routing.get("forbidden_skills", [])),
+            "preferred_skills": list(skill_routing.get("preferred_skills", [])),
+            "enforcement": str(skill_routing.get("enforcement", "block")),
+        }
     if tool_call_decision_receipts:
         contract["role_capability_tool_calls"] = {
             "run_intent_path": "run-intent.json",
@@ -339,12 +355,17 @@ def build_evidence_contract(
             "decision_receipts_path": "tool-call-decision-receipts.json",
         }
     name_only = "".join(f"{name}\n" for name in touched_files)
-    return {
+    files = {
         "evidence-contract.json": json.dumps(contract, indent=2),
         OBSERVED_TOUCHED_FILES_SUBJECT_NAME: name_only,
         "git-diff.patch": diff_patch,
         "exit-code.txt": f"{exit_code}\n",
     }
+    if skill_routing is not None:
+        files[OBSERVED_SKILLS_SUBJECT_NAME] = "".join(
+            f"{name}\n" for name in (observed_skills or [])
+        )
+    return files
 
 
 def _self_test() -> None:

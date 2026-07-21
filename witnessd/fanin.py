@@ -1840,6 +1840,7 @@ def _run_adapter_lane(
         ),
         model=spec.get("model"),
         write_scope=spec.get("write_scope"),
+        skill_routing=spec.get("skill_routing"),
         role_id=spec.get("role_id"),
         role_capability=spec.get("role_capability"),
         tools=spec.get("tools"),

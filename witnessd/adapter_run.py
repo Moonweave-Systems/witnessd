@@ -50,6 +50,11 @@ from witnessd.write_scope_declaration import (
     build_write_scope_declaration,
     write_scope_allows_paths,
 )
+from witnessd.skill_observation import observed_skills_from_raw_events
+from witnessd.skill_routing_declaration import (
+    build_skill_routing_declaration,
+    normalize_skill_routing_declaration,
+)
 from witnessd.tool_declaration import normalize_tool_grant
 from witnessd.usage import usage_from_transcript
 
@@ -191,6 +196,23 @@ def _run_adapter(
     raise LaneBlocked("preflight_blocked", f"unknown adapter: {adapter}")
 
 
+def _inject_skill_routing_prompt(
+    prompt: str, skill_routing: dict[str, Any] | None
+) -> str:
+    if skill_routing is None:
+        return prompt
+    lines = [
+        "Role capability skill_routing constraint:",
+        "Forbidden skills: " + ", ".join(skill_routing.get("forbidden_skills", [])),
+        "Preferred skills: " + ", ".join(skill_routing.get("preferred_skills", [])),
+        "Enforcement: " + str(skill_routing.get("enforcement", "block")),
+    ]
+    if isinstance(skill_routing.get("reason"), str):
+        lines.append("Reason: " + skill_routing["reason"])
+    lines.append("Honor this constraint before selecting or reading any skill.")
+    return "\n".join(lines) + "\n\n" + prompt
+
+
 def _git_diff_patch(worktree: str, touched_files: list[str]) -> str:
     if not touched_files:
         return ""
@@ -259,6 +281,7 @@ def run_adapter_lane(
     run_intent: dict[str, Any] | None = None,
     model: str | None = None,
     write_scope: list[str] | None = None,
+    skill_routing: dict[str, Any] | None = None,
     role_id: str | None = None,
     role_capability: str | None = None,
     tools: dict[str, Any] | None = None,
@@ -379,9 +402,20 @@ def run_adapter_lane(
             )
             redacted_write_scope, findings = redact_secrets_in(redacted_write_scope)
             secret_findings = merge_secret_findings(secret_findings, findings)
+        redacted_skill_routing = normalize_skill_routing_declaration(skill_routing)
+        if redacted_skill_routing is not None:
+            redacted_skill_routing, findings = redact_secrets_in(
+                redacted_skill_routing
+            )
+            secret_findings = merge_secret_findings(secret_findings, findings)
+        effective_prompt = _inject_skill_routing_prompt(prompt, redacted_skill_routing)
         declared_tools = normalized_tools if adapter == "claude" else None
         role_capability_intent = None
-        if redacted_write_scope is not None or declared_tools is not None:
+        if (
+            redacted_write_scope is not None
+            or declared_tools is not None
+            or redacted_skill_routing is not None
+        ):
             role_capability_intent = build_role_capability_intent(
                 role_id=role_id or task_id,
                 capability=role_capability or "execute",
@@ -391,6 +425,7 @@ def run_adapter_lane(
                     else redacted_allowed_for_manifest
                 ),
                 declared_tools=declared_tools,
+                declared_skill_routing=redacted_skill_routing,
             )
         if run_intent is None:
             run_intent = build_run_intent(
@@ -401,7 +436,9 @@ def run_adapter_lane(
                 sandbox_mode="workspace-write" if adapter == "codex" else "unknown",
                 provider=adapter,
                 instruction_hashes={
-                    "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+                    "prompt_sha256": hashlib.sha256(
+                        effective_prompt.encode("utf-8")
+                    ).hexdigest()
                 },
                 budgets={
                     "max_tokens": int(budget["max_tokens"]),
@@ -427,7 +464,7 @@ def run_adapter_lane(
         adapter_result = _run_adapter(
             adapter=adapter,
             sandbox=worktree,
-            prompt=prompt,
+            prompt=effective_prompt,
             transcript_path=str(transcript_path),
             transcript_invocation_path=transcript_invocation_path,
             log_path=str(log_path),
@@ -598,6 +635,35 @@ def run_adapter_lane(
             provider_artifacts["write-scope-declaration"] = str(
                 write_scope_declaration_path
             )
+        observed_skills: list[str] | None = None
+        if redacted_skill_routing is not None:
+            raw_events_path = getattr(adapter_result, "raw_events_path", None)
+            if raw_events_path is None:
+                raise LaneBlocked(
+                    "ERR_ROLE_CAPABILITY_SKILL_ROUTING_OBSERVATION_UNAVAILABLE",
+                    "skill_routing requires raw provider events for bound observation",
+                )
+            observed_skills = observed_skills_from_raw_events(
+                Path(raw_events_path).read_bytes(),
+                adapter=adapter,
+            )
+            skill_routing_declaration = build_skill_routing_declaration(
+                role_id=role_id or task_id,
+                lane_id=task_id,
+                capability=role_capability or "execute",
+                skill_routing=redacted_skill_routing,
+                observed_skills=observed_skills,
+            )
+            skill_routing_declaration_path = (
+                task_dir / "skill-routing-declaration.json"
+            )
+            skill_routing_declaration_path.write_text(
+                json.dumps(skill_routing_declaration, sort_keys=True),
+                encoding="utf-8",
+            )
+            provider_artifacts["skill-routing-declaration"] = str(
+                skill_routing_declaration_path
+            )
 
         started_at = _now_iso()
         ended_at = _now_iso()
@@ -622,6 +688,8 @@ def run_adapter_lane(
             redaction_manifest=redaction_manifest,
             provider_artifacts=provider_artifacts,
             write_scope=redacted_write_scope,
+            skill_routing=redacted_skill_routing,
+            observed_skills=observed_skills,
             role_id=role_id,
             role_capability=role_capability,
             signing_profile=signing_profile,

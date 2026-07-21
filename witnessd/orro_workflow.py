@@ -427,11 +427,18 @@ def _required_role_capability_axes(
         and isinstance(lane.get("granted_tools"), dict)
         for lane in lanes
     )
+    skill_routing_required = any(
+        lane.get("phase") == "proofrun"
+        and lane.get("may_execute") is True
+        and isinstance(lane.get("granted_skill_routing"), dict)
+        for lane in lanes
+    )
     return [
         axis
         for axis, required in (
             ("write_scope", write_scope_required),
             ("tool_calls", tool_calls_required),
+            ("skill_routing", skill_routing_required),
         )
         if required
     ]
@@ -1026,6 +1033,11 @@ def _role_capability_lane_fields(grant: RoleCapabilityGrant) -> dict[str, Any]:
             if grant.tools is not None
             else {}
         ),
+        **(
+            {"granted_skill_routing": dict(grant.skill_routing)}
+            if grant.skill_routing is not None
+            else {}
+        ),
     }
 
 
@@ -1416,6 +1428,18 @@ def _validate_role_lane(lane: Any, *, workflow_profile: str) -> None:
                 ERR_ORRO_ROLE_LANE_PLAN_INVALID,
                 "role-lane granted_tools is invalid",
             )
+    if "granted_skill_routing" in lane:
+        try:
+            from witnessd.skill_routing_declaration import (
+                normalize_skill_routing_declaration,
+            )
+
+            normalize_skill_routing_declaration(lane["granted_skill_routing"])
+        except ValueError as exc:
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+                "role-lane granted_skill_routing is invalid",
+            ) from exc
     region = lane.get("region")
     if (
         not isinstance(region, list)
