@@ -68,8 +68,10 @@ It runs `init -> scout -> flowplan -> proofrun -> proofcheck`, uses
 `--model-policy default`, and returns one `orro-flow-result` containing the run
 directory, final verdict, and per-phase artifacts. `--write-scope` is required,
 repeatable, and never inferred or widened. A supplied rolepack must use exactly
-the same execute scopes. The runner sandbox is created outside the observer run
-directory unless `--runner-sandbox` is supplied; overlapping paths fail closed.
+the same execute scopes. The runner sandbox is a filesystem directory where the
+runner executes, not a Codex `sandbox_mode` value and not the observer run/output
+directory. It is created outside the observer run directory unless
+`--runner-sandbox` is supplied; overlapping paths fail closed.
 Every first-phase failure is returned as an actionable structured blocker. No
 risky-change, reference-adapter, write-scope, or Depone gate is bypassed.
 

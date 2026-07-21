@@ -121,15 +121,17 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
                 code="ERR_ORRO_FLOW_RUNNER_NOT_SEPARATED",
                 message="runner sandbox overlaps the observer run directory",
                 reason=(
-                    "proofrun must preserve observer/runner filesystem separation"
+                    "proofrun must preserve observer/runner filesystem "
+                    "separation between directory arguments; this is not about "
+                    "where the shell session was started"
                 ),
                 required_input_or_grant=(
-                    "--runner-sandbox <dir> outside the --run-dir tree"
+                    "--runner-sandbox DIR outside the --run-dir tree"
                 ),
                 next_command=(
                     "python3 -m witnessd proofrun "
                     f"{shlex.quote(str(args.goal))} --repo {shlex.quote(str(repo))} "
-                    f"--home {shlex.quote(str(home))} --runner-sandbox <dir> "
+                    f"--home {shlex.quote(str(home))} --runner-sandbox DIR "
                     "--workflow-plan <workflow-plan.json> "
                     "--role-lane-plan <role-lane-plan.json> --json"
                 ),

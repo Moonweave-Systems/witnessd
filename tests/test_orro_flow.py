@@ -581,7 +581,16 @@ class OrroFlowTests(unittest.TestCase):
             self.assertEqual(
                 payload["error"]["code"], "ERR_ORRO_FLOW_RUNNER_NOT_SEPARATED"
             )
-            self.assertIn("--runner-sandbox", payload["error"]["next_command"])
+            self.assertIn("directory arguments", payload["error"]["reason"])
+            self.assertIn(
+                "not about where the shell session was started",
+                payload["error"]["reason"],
+            )
+            self.assertIn(
+                "--runner-sandbox DIR outside the --run-dir tree",
+                payload["error"]["required_input_or_grant"],
+            )
+            self.assertIn("--runner-sandbox DIR", payload["error"]["next_command"])
             self.assertNotIn("Traceback", stderr.getvalue())
 
 

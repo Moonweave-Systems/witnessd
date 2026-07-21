@@ -87,8 +87,10 @@ uses model-policy default and emits an `orro-flow-result` with per-phase
 artifacts. The command never invents or broadens write scope, requires supplied
 rolepack execute scopes to match it, keeps runner and observer directories
 separate, and stops at the first existing gate with an actionable structured
-blocker. It does not approve risky work, opt into reference adapters, weaken
-Depone verification, or create a new assurance source.
+blocker. `--runner-sandbox` is a filesystem directory where the runner executes,
+not a Codex `sandbox_mode` value or the observer output directory. It does not
+approve risky work, opt into reference adapters, weaken Depone verification, or
+create a new assurance source.
 
 `python3 -m orro team go "<task>" --repo <repo> --home .witnessd --json`
 is the one-command wrapper for `flowplan -> proofrun -> proofcheck -> report`.

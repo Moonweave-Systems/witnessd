@@ -28,7 +28,8 @@ class TestSep(unittest.TestCase):
         with tempfile.TemporaryDirectory() as s:
             with self.assertRaises(ObserverSeparationError) as ctx:
                 assert_separated(runner_sandbox=s, out_path=os.path.join(s, "c.json"))
-            self.assertEqual(str(ctx.exception), "ERR_OBSERVER_NOT_SEPARATED")
+            self.assertIn("ERR_OBSERVER_NOT_SEPARATED", str(ctx.exception))
+            self.assertIn("directory arguments", str(ctx.exception))
 
 
 if __name__ == "__main__":
