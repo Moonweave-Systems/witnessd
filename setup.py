@@ -5,7 +5,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="witnessd",
-    version="2.11.3",
+    version="2.11.4",
     description="witnessd execution engine with deprecated ORRO compatibility shim",
     packages=find_packages(include=["witnessd*", "orro*"]),
     python_requires=">=3.10",
