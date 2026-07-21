@@ -298,6 +298,63 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
     if out_path is not None:
         command.extend(["--out", str(out_path)])
     code, payload = _run_depone_json(command, env=env)
+    command_policy: dict[str, object] | None = None
+    command_policy_source: dict[str, object] | None = None
+    try:
+        command_policy, command_policy_source = _derive_command_lane_policy(
+            evidence_dir=evidence_dir,
+            env=env,
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        code = 1
+        payload = {
+            **payload,
+            "decision": "blocked",
+            "error": {
+                "code": "ERR_ORRO_POLICY_CONFORMANCE_DERIVATION_FAILED",
+                "message": str(exc),
+            },
+        }
+    if command_policy is not None:
+        payload["policy_conformance"] = command_policy
+        if command_policy_source is not None:
+            payload["policy_conformance_source"] = command_policy_source
+        if command_policy.get("overall") != "pass":
+            code = 1
+            payload["decision"] = "fail"
+            policy_errors = [
+                {
+                    "code": axis.get("error_code")
+                    or "ERR_ORRO_POLICY_CONFORMANCE_FAILED",
+                    "message": (
+                        f"{axis.get('axis', 'policy')} policy conformance failed"
+                    ),
+                    **(
+                        {"path": axis["evidence_path"]}
+                        if axis.get("evidence_path")
+                        else {}
+                    ),
+                }
+                for axis in command_policy.get("axes", [])
+                if isinstance(axis, dict) and axis.get("status") == "fail"
+            ]
+            existing_errors = payload.get("errors")
+            base_errors = existing_errors if isinstance(existing_errors, list) else []
+            payload["errors"] = [*base_errors, *policy_errors]
+            payload["error_count"] = len(payload["errors"])
+        if out_path is not None and out_path.is_file():
+            verdict_payload = json.loads(out_path.read_text(encoding="utf-8"))
+            if not isinstance(verdict_payload, dict):
+                raise ValueError("proofcheck verdict must be a JSON object")
+            verdict_payload["decision"] = payload.get("decision", "blocked")
+            verdict_payload["policy_conformance"] = command_policy
+            verdict_payload["policy_conformance_source"] = command_policy_source
+            if payload.get("errors"):
+                verdict_payload["errors"] = payload["errors"]
+            out_path.write_text(
+                json.dumps(verdict_payload, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
     advisory_result = _optional_advisory_provenance_verify(evidence_dir, home=home)
     advisory_provenance = advisory_result[1] if advisory_result is not None else None
     binding: dict[str, object] | None = None
@@ -382,6 +439,16 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
             else {}
         ),
         "error_count": payload.get("error_count", 1 if payload.get("error") else 0),
+        **(
+            {"policy_conformance": command_policy}
+            if command_policy is not None
+            else {}
+        ),
+        **(
+            {"policy_conformance_source": command_policy_source}
+            if command_policy_source is not None
+            else {}
+        ),
         **({"out": payload["out"]} if payload.get("out") else {}),
         **({"errors": payload["errors"]} if payload.get("errors") else {}),
         **({"error": payload["error"]} if payload.get("error") else {}),
@@ -411,6 +478,98 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         )
     print(json.dumps(result, sort_keys=True))
     return 0 if code == 0 and result["decision"] == "pass" else 1
+
+
+def _derive_command_lane_policy(
+    *,
+    evidence_dir: Path,
+    env: dict[str, str],
+) -> tuple[dict[str, object] | None, dict[str, object] | None]:
+    role_lane_path = evidence_dir / "role-lane-plan.json"
+    if not role_lane_path.is_file():
+        return None, None
+    role_lane_plan = json.loads(role_lane_path.read_text(encoding="utf-8"))
+    if not isinstance(role_lane_plan, dict):
+        raise ValueError("role-lane-plan.json must contain a JSON object")
+    lanes = role_lane_plan.get("lanes")
+    if not isinstance(lanes, list):
+        raise ValueError("role-lane-plan.json lanes must be a list")
+    command_lanes = [
+        lane
+        for lane in lanes
+        if isinstance(lane, dict)
+        and lane.get("adapter") == "shell"
+        and isinstance(lane.get("commands"), list)
+        and lane.get("commands")
+    ]
+    if not command_lanes:
+        return None, None
+    if len(command_lanes) != 1:
+        raise ValueError("declared command policy verification requires exactly one lane")
+
+    lane = command_lanes[0]
+    lane_id = str(lane.get("lane_id", ""))
+    if not lane_id:
+        raise ValueError("declared command lane_id is missing")
+    lane_evidence = evidence_dir / lane_id
+    if not lane_evidence.is_dir():
+        raise ValueError(f"declared command lane evidence is missing: {lane_id}")
+
+    verifier_dir = evidence_dir / "depone-policy-verification"
+    verifier_dir.mkdir(parents=True, exist_ok=True)
+    plan_path = verifier_dir / "plan.json"
+    report_path = verifier_dir / f"{lane_id}.json"
+    required_axes = role_lane_plan.get("required_role_capability_axes")
+    if required_axes != ["write_scope"]:
+        raise ValueError("declared command lane must require the write_scope axis")
+    plan = {
+        "schema_version": "0.5",
+        "plan_id": f"orro-command-policy-{lane_id}",
+        "phases": [{"id": "proofrun"}],
+        "required_role_capability_axes": list(required_axes),
+    }
+    plan_path.write_text(
+        json.dumps(plan, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "depone",
+            "verify",
+            str(plan_path),
+            "--evidence",
+            str(lane_evidence),
+            "--out",
+            str(report_path),
+            "--json",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    if not report_path.is_file():
+        raise ValueError(
+            "Depone policy verification did not write a report: "
+            + (completed.stderr.strip() or completed.stdout.strip())
+        )
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    if not isinstance(report, dict):
+        raise ValueError("Depone policy verification report must be a JSON object")
+    policy = report.get("policy_conformance")
+    if not isinstance(policy, dict) or policy.get("overall") not in {
+        "pass",
+        "fail",
+        "inconclusive",
+    }:
+        raise ValueError("Depone policy verification report lacks policy_conformance")
+    return dict(policy), {
+        "verifier": "Depone",
+        "report": str(report_path),
+        "lane_id": lane_id,
+    }
 
 
 def _proofcheck_workflow_contract(

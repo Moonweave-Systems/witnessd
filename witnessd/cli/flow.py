@@ -9,11 +9,9 @@ import time
 from pathlib import Path
 
 from witnessd.cli._output import (
-    _invoke_cli_capture,
     _json_or_text,
     _structured_error,
 )
-from witnessd.cli.team_ops import _paths_overlap
 
 
 def _cmd_orro_flow(args: argparse.Namespace) -> int:
@@ -370,11 +368,13 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
         "--role-lane-tier",
         str(args.role_lane_tier),
         "--model-policy",
-        "default",
+        "off" if args.command else "default",
         "--rolepack-file",
         str(rolepack_path),
         "--json",
     ]
+    for command in args.command or []:
+        flowplan_argv += ["--command", str(command)]
     if args.verification_only:
         flowplan_argv += ["--lane-intent", "verification-only"]
     flowplan_code, flowplan_payload, flowplan_error = _invoke_orro_flow_phase(

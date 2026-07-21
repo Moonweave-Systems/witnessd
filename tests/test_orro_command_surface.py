@@ -58,6 +58,7 @@ class OrroCommandSurfaceTests(unittest.TestCase):
             "report": "orro-report",
             "review": "orro-review",
             "check": "orro-check",
+            "demo": "orro-demo",
             "auto": "orro-auto",
             "team": "team",
         }
@@ -110,6 +111,47 @@ class OrroCommandSurfaceTests(unittest.TestCase):
         self.assertIn("requiring a prebuilt", flowplan_help)
         self.assertIn("rolepack. Never inferred or defaulted.", flowplan_help)
         self.assertIn(expected_help, ORRO_HELP)
+
+    def test_flowplan_exposes_declared_shell_command_help(self) -> None:
+        parser = _build_parser()
+        commands = parser._subparsers._group_actions[0].choices
+        flowplan = parser.parse_args(
+            [
+                "flowplan",
+                "goal",
+                "--command",
+                "touch src/a.txt",
+                "--command",
+                "touch src/b.txt",
+            ]
+        )
+
+        self.assertEqual(
+            flowplan.command,
+            ["touch src/a.txt", "touch src/b.txt"],
+        )
+        expected_help = (
+            "--command '<shell>' (repeatable, --lane-adapter shell only): declared "
+            "deterministic commands the runner executes; touched files are checked "
+            "against --write-scope. Not for AI adapters."
+        )
+        flowplan_help = commands["flowplan"].format_help()
+        self.assertIn("--command '<shell>'", flowplan_help)
+        self.assertIn("declared deterministic commands", flowplan_help)
+        self.assertIn("executes; touched files are checked", flowplan_help)
+        self.assertIn("against --write-", flowplan_help)
+        self.assertIn("Not for AI adapters.", flowplan_help)
+        self.assertIn(expected_help, ORRO_HELP)
+
+    def test_orro_demo_is_public_and_exposes_violation_mode(self) -> None:
+        parser = _build_parser()
+        commands = parser._subparsers._group_actions[0].choices
+
+        demo = parser.parse_args(["orro-demo", "--violate"])
+
+        self.assertTrue(demo.violate)
+        self.assertIn("--violate", commands["orro-demo"].format_help())
+        self.assertIn("demo", ORRO_HELP)
 
     def test_doctor_help_distinguishes_runlog_health_from_orro_readiness(self) -> None:
         self.assertIn("runlog health", _build_parser().format_help())

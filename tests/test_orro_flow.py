@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import json
-import os
 import subprocess
 import tempfile
 import unittest
@@ -40,6 +39,7 @@ class OrroFlowTests(unittest.TestCase):
         for option in (
             "--repo",
             "--write-scope",
+            "--command",
             "--adapter",
             "--runner-sandbox",
             "--rolepack-file",

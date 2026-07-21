@@ -39,6 +39,9 @@ ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED = "ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIR
 ERR_ORRO_ROLE_LANE_INTENT_INVALID = "ERR_ORRO_ROLE_LANE_INTENT_INVALID"
 ERR_ORRO_VERIFICATION_CHECK_REQUIRED = "ERR_ORRO_VERIFICATION_CHECK_REQUIRED"
 ERR_ORRO_VERIFICATION_CHECK_UNSUPPORTED = "ERR_ORRO_VERIFICATION_CHECK_UNSUPPORTED"
+ERR_ORRO_COMMAND_ADAPTER_UNSUPPORTED = "ERR_ORRO_COMMAND_ADAPTER_UNSUPPORTED"
+ERR_ORRO_COMMAND_CHECK_CONFLICT = "ERR_ORRO_COMMAND_CHECK_CONFLICT"
+ERR_ORRO_COMMAND_PROFILE_UNSUPPORTED = "ERR_ORRO_COMMAND_PROFILE_UNSUPPORTED"
 ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED = "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED"
 ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION = "ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION"
 
@@ -252,6 +255,7 @@ def compile_role_lane_plan(
     policy: dict[str, Any] | None = None,
     rolepack: dict[str, Any] | None = None,
     check_commands: list[str] | None = None,
+    command_commands: list[str] | None = None,
 ) -> dict[str, Any]:
     validate_workflow_plan(workflow_plan)
     if lane_adapter not in ROLE_LANE_ADAPTERS:
@@ -269,6 +273,37 @@ def compile_role_lane_plan(
             "lane timeout override must be an integer from 1 to 3600",
         )
     profile = str(workflow_plan["profile"])
+    commands = _normalized_shell_commands(command_commands)
+    if command_commands is not None and check_commands is not None:
+        raise OrroWorkflowError(
+            ERR_ORRO_COMMAND_CHECK_CONFLICT,
+            "--command and --check are mutually exclusive",
+        )
+    if command_commands is not None and lane_adapter != "shell":
+        raise OrroWorkflowError(
+            ERR_ORRO_COMMAND_ADAPTER_UNSUPPORTED,
+            "--command requires --lane-adapter shell; AI adapters are prompt-driven",
+        )
+    if command_commands is not None and profile != "code-change":
+        raise OrroWorkflowError(
+            ERR_ORRO_COMMAND_PROFILE_UNSUPPORTED,
+            "--command is only supported by the code-change profile",
+        )
+    if command_commands is not None and any(
+        isinstance(role, dict)
+        and role.get("phase") == "proofrun"
+        and role.get("lane_intent") == "verification-only"
+        for role in workflow_plan.get("roles", [])
+    ):
+        raise OrroWorkflowError(
+            ERR_ORRO_COMMAND_PROFILE_UNSUPPORTED,
+            "--command requires implementation lane intent, not verification-only",
+        )
+    if command_commands is not None and not commands:
+        raise OrroWorkflowError(
+            ERR_ORRO_COMMAND_PROFILE_UNSUPPORTED,
+            "--command requires at least one non-empty shell command",
+        )
     if check_commands is not None and profile != "verification-only":
         raise OrroWorkflowError(
             ERR_ORRO_VERIFICATION_CHECK_UNSUPPORTED,
@@ -317,6 +352,7 @@ def compile_role_lane_plan(
                         lane_timeout_seconds,
                         policy,
                         rolepack,
+                        commands if command_commands is not None else None,
                     )
                 )
     elif profile == "review-only" and (
@@ -1041,14 +1077,18 @@ def _role_capability_lane_fields(grant: RoleCapabilityGrant) -> dict[str, Any]:
     }
 
 
-def _normalized_check_commands(check_commands: list[str] | None) -> list[str]:
-    if check_commands is None:
+def _normalized_shell_commands(commands: list[str] | None) -> list[str]:
+    if commands is None:
         return []
     return [
-        check
-        for check in check_commands
-        if isinstance(check, str) and check.strip()
+        command
+        for command in commands
+        if isinstance(command, str) and command.strip()
     ]
+
+
+def _normalized_check_commands(check_commands: list[str] | None) -> list[str]:
+    return _normalized_shell_commands(check_commands)
 
 
 def _verify_lane_from_role(
@@ -1093,6 +1133,7 @@ def _role_lane_from_role(
     lane_timeout_seconds: int | None,
     policy: dict[str, Any] | None,
     rolepack: dict[str, Any] | None,
+    command_commands: list[str] | None = None,
 ) -> dict[str, Any]:
     profile = str(workflow_plan["profile"])
     role_id = str(role["role_id"])
@@ -1104,6 +1145,11 @@ def _role_lane_from_role(
         policy=policy,
         grant=grant,
     )
+    if command_commands is not None and resolved_adapter != "shell":
+        raise OrroWorkflowError(
+            ERR_ORRO_COMMAND_ADAPTER_UNSUPPORTED,
+            "--command requires a resolved shell lane; AI adapters are prompt-driven",
+        )
     digest = hashlib.sha256(
         f"{workflow_plan['goal']}:{profile}:{role_id}:{resolved_adapter}".encode(
             "utf-8"
@@ -1147,17 +1193,26 @@ def _role_lane_from_role(
         ),
         "region": region,
         "prompt": (
-            f"{ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX}{role_id} "
-            f"for goal: {workflow_plan['goal']}"
+            "Run declared deterministic shell commands under observation: "
+            + "; ".join(command_commands)
+            if command_commands is not None
+            else (
+                f"{ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX}{role_id} "
+                f"for goal: {workflow_plan['goal']}"
+            )
         ),
         "budget": {"max_tokens": 0, "max_usd": 0.0, "max_depth": 1},
         "may_execute": True,
         "may_verify": False,
         "raises_assurance": False,
         **(
-            {"lane_intent": role["lane_intent"]}
-            if role.get("lane_intent") is not None
-            else {}
+            {"lane_intent": "implementation", "commands": list(command_commands)}
+            if command_commands is not None
+            else (
+                {"lane_intent": role["lane_intent"]}
+                if role.get("lane_intent") is not None
+                else {}
+            )
         ),
         **role_capability,
         **extra,
@@ -1359,6 +1414,22 @@ def _validate_role_lane(lane: Any, *, workflow_profile: str) -> None:
             raise OrroWorkflowError(
                 ERR_ORRO_VERIFICATION_CHECK_REQUIRED,
                 "claimless verification-only lane requires non-empty check_commands",
+            )
+    if "commands" in lane:
+        commands = lane["commands"]
+        if (
+            lane.get("adapter") != "shell"
+            or lane_intent != "implementation"
+            or not isinstance(commands, list)
+            or not commands
+            or not all(
+                isinstance(command, str) and command.strip()
+                for command in commands
+            )
+        ):
+            raise OrroWorkflowError(
+                ERR_ORRO_ROLE_LANE_PLAN_INVALID,
+                "declared commands require a non-empty implementation shell lane",
             )
     if "model" in lane and (not isinstance(lane["model"], str) or not lane["model"]):
         raise OrroWorkflowError(
