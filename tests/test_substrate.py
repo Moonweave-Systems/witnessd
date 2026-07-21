@@ -267,6 +267,40 @@ class TestEvidenceContract(unittest.TestCase):
             errors,
         )
 
+    def test_skill_routing_contract_uses_v110_schema_and_bound_subject(self):
+        files = build_evidence_contract(
+            allowed_touched_files=["depone/example.py"],
+            touched_files=["depone/example.py"],
+            exit_code=0,
+            skill_routing={
+                "forbidden_skills": ["tikz-refine"],
+                "preferred_skills": ["figure-agent"],
+                "enforcement": "block",
+            },
+            observed_skills=["tikz-refine"],
+        )
+
+        contract = json.loads(files["evidence-contract.json"])
+        self.assertEqual(
+            contract["schema_version"], "v110.role_capability_skill_routing"
+        )
+        self.assertEqual(
+            contract["role_capability_skill_routing"],
+            {
+                "run_intent_path": "run-intent.json",
+                "bundle_path": "bundle.json",
+                "forbidden_skills": ["tikz-refine"],
+                "preferred_skills": ["figure-agent"],
+                "enforcement": "block",
+            },
+        )
+        self.assertEqual(files["observed-skills.txt"], "tikz-refine\n")
+        errors = validate_evidence_contract(self._context(files))
+        self.assertTrue(
+            any(e.code == "ERR_ROLE_CAPABILITY_RUN_INTENT_MISSING" for e in errors),
+            errors,
+        )
+
     def test_forbidden_touched_file_detected(self):
         files = build_evidence_contract(
             allowed_touched_files=["depone/example.py"],

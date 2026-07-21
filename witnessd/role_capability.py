@@ -21,6 +21,7 @@ _GRANT_FIELDS = {
     "adapters",
     "model",
     "write_scope",
+    "skill_routing",
     "tools",
 }
 _ROLEPACK_FIELDS = {"kind", "schema_version", "name", "grants"}
@@ -40,6 +41,7 @@ class RoleCapabilityGrant:
     adapters: tuple[str, ...]
     model: str | None = None
     write_scope: tuple[str, ...] | None = None
+    skill_routing: dict[str, Any] | None = None
     tools: dict[str, tuple[str, ...]] | None = None
     schema_version: str = ROLE_CAPABILITY_SCHEMA_VERSION
 
@@ -63,6 +65,7 @@ class RoleCapabilityGrant:
         model = payload.get("model")
         adapters = payload.get("adapters")
         write_scope = payload.get("write_scope")
+        skill_routing = payload.get("skill_routing")
         tools = payload.get("tools")
         if not isinstance(role_id, str) or not role_id:
             raise ValueError("role capability grant role_id is invalid")
@@ -89,6 +92,12 @@ class RoleCapabilityGrant:
             or not all(isinstance(item, str) and item for item in write_scope)
         ):
             raise ValueError("role capability grant write_scope must be a string list")
+        if skill_routing is not None:
+            from witnessd.skill_routing_declaration import (
+                normalize_skill_routing_declaration,
+            )
+
+            skill_routing = normalize_skill_routing_declaration(skill_routing)
         if tools is not None:
             _validate_tools(tools)
         return cls(
@@ -97,6 +106,7 @@ class RoleCapabilityGrant:
             adapters=tuple(adapters),
             model=model,
             write_scope=tuple(write_scope) if write_scope is not None else None,
+            skill_routing=skill_routing,
             tools=(
                 {
                     "mcp": tuple(tools.get("mcp", [])),
@@ -119,6 +129,21 @@ class RoleCapabilityGrant:
             payload["model"] = self.model
         if self.write_scope is not None:
             payload["write_scope"] = list(self.write_scope)
+        if self.skill_routing is not None:
+            payload["skill_routing"] = {
+                "forbidden_skills": list(
+                    self.skill_routing.get("forbidden_skills", [])
+                ),
+                "preferred_skills": list(
+                    self.skill_routing.get("preferred_skills", [])
+                ),
+                "enforcement": str(self.skill_routing.get("enforcement", "block")),
+                **(
+                    {"reason": self.skill_routing["reason"]}
+                    if isinstance(self.skill_routing.get("reason"), str)
+                    else {}
+                ),
+            }
         if self.tools is not None:
             payload["tools"] = {
                 "mcp": list(self.tools["mcp"]),

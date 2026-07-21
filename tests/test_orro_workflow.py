@@ -26,6 +26,7 @@ def _runner_rolepack(
     adapters: list[str],
     write_scope: list[str],
     model: str | None = None,
+    skill_routing: dict | None = None,
     name: str = "developer",
 ) -> dict:
     grant = {
@@ -36,6 +37,8 @@ def _runner_rolepack(
     }
     if model is not None:
         grant["model"] = model
+    if skill_routing is not None:
+        grant["skill_routing"] = skill_routing
     return {
         "kind": "moonweave-rolepack",
         "schema_version": "0.2",
@@ -1309,6 +1312,46 @@ class OrroWorkflowTests(unittest.TestCase):
         self.assertEqual(lane["granted_write_scope"], ["orro/**", "docs/**"])
         self.assertEqual(lane["granted_tools"], {"mcp": [], "allow": []})
         self.assertEqual(lane["region"], ["orro/**", "docs/**"])
+
+    def test_compile_role_lane_plan_declares_skill_routing_axis(self) -> None:
+        workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")
+        rolepack = _runner_rolepack(
+            adapters=["codex"],
+            write_scope=["src/**"],
+            skill_routing={
+                "forbidden_skills": ["tikz-refine"],
+                "preferred_skills": ["figure-agent"],
+                "enforcement": "block",
+                "reason": "repo-local Figure Agent boundary",
+            },
+        )
+
+        role_lane_plan = compile_role_lane_plan(
+            workflow_plan=workflow_plan,
+            tier="frontier",
+            policy=DEFAULT_MODEL_POLICY,
+            rolepack=rolepack,
+        )
+
+        validate_role_lane_plan(role_lane_plan)
+        lane = role_lane_plan["lanes"][0]
+        self.assertEqual(
+            role_lane_plan["required_role_capability_axes"],
+            ["write_scope", "skill_routing"],
+        )
+        self.assertEqual(
+            lane["granted_skill_routing"],
+            {
+                "forbidden_skills": ["tikz-refine"],
+                "preferred_skills": ["figure-agent"],
+                "enforcement": "block",
+                "reason": "repo-local Figure Agent boundary",
+            },
+        )
+        self.assertEqual(
+            lane["role_capability"]["skill_routing"],
+            lane["granted_skill_routing"],
+        )
 
     def test_compile_role_lane_plan_requires_code_change_write_scope(self) -> None:
         workflow_plan = compile_workflow_plan(goal="fix parser", profile="code-change")

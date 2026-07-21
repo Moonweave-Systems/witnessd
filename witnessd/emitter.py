@@ -53,6 +53,7 @@ from witnessd.runintent import (
 from witnessd.signing import DEFAULT_OPERATOR_KEY_ID, derive_public_key_id
 from witnessd.substrate import (
     OBSERVED_TOUCHED_FILES_SUBJECT_NAME,
+    OBSERVED_SKILLS_SUBJECT_NAME,
     build_bundle,
     build_evidence_contract,
     build_otel_spans,
@@ -143,6 +144,8 @@ def emit_lane_evidence(
     redaction_manifest: dict[str, Any] | None = None,
     provider_artifacts: dict[str, str] | None = None,
     write_scope: list[str] | None = None,
+    skill_routing: dict[str, Any] | None = None,
+    observed_skills: list[str] | None = None,
     role_id: str | None = None,
     role_capability: str | None = None,
     observer_output_path: str | None = None,
@@ -162,6 +165,8 @@ def emit_lane_evidence(
     """
     if _is_inside_or_equal(public_key_path, evidence_dir):
         raise EmitterError("ERR_TRUST_ROOT_NOT_SEPARATED")
+    if skill_routing is not None and observed_skills is None:
+        raise EmitterError("ERR_ROLE_CAPABILITY_SKILL_ROUTING_OBSERVATION_UNAVAILABLE")
     runtime_sandbox = runner_sandbox if runtime_sandbox is None else runtime_sandbox
 
     secret_findings: list[dict[str, Any]] = []
@@ -180,6 +185,12 @@ def emit_lane_evidence(
     secret_findings = merge_secret_findings(secret_findings, findings)
     if write_scope is not None:
         write_scope, findings = redact_secrets_in(write_scope)
+        secret_findings = merge_secret_findings(secret_findings, findings)
+    if skill_routing is not None:
+        skill_routing, findings = redact_secrets_in(skill_routing)
+        secret_findings = merge_secret_findings(secret_findings, findings)
+    if observed_skills is not None:
+        observed_skills, findings = redact_secrets_in(observed_skills)
         secret_findings = merge_secret_findings(secret_findings, findings)
     if run_intent_path is None and run_intent is not None:
         run_intent, findings = redact_secrets_in(run_intent)
@@ -242,9 +253,10 @@ def emit_lane_evidence(
                 build_role_capability_intent(
                     role_id=role_id or task_id,
                     capability=role_capability or "execute",
-                    declared_write_scope=list(write_scope),
+                    declared_write_scope=list(write_scope or []),
+                    declared_skill_routing=skill_routing,
                 )
-                if write_scope is not None
+                if write_scope is not None or skill_routing is not None
                 else None
             ),
         )
@@ -414,6 +426,8 @@ def emit_lane_evidence(
                 if subject_name == "model-declaration"
                 else "write-scope-declaration.json"
                 if subject_name == "write-scope-declaration"
+                else "skill-routing-declaration.json"
+                if subject_name == "skill-routing-declaration"
                 else "tool-declaration.json"
                 if subject_name == "tool-declaration"
                 else "tool-call-decision-advisory.json"
@@ -432,6 +446,8 @@ def emit_lane_evidence(
         exit_code=exit_code,
         diff_patch=diff_patch,
         write_scope=write_scope,
+        skill_routing=skill_routing,
+        observed_skills=observed_skills,
         tool_call_decision_receipts=(
             provider_artifacts is not None
             and "tool-call-decision-receipts" in provider_artifacts
@@ -441,6 +457,11 @@ def emit_lane_evidence(
         artifacts[OBSERVED_TOUCHED_FILES_SUBJECT_NAME] = _emit_artifact(
             OBSERVED_TOUCHED_FILES_SUBJECT_NAME,
             contract_files.pop(OBSERVED_TOUCHED_FILES_SUBJECT_NAME),
+        )
+    if skill_routing is not None:
+        artifacts[OBSERVED_SKILLS_SUBJECT_NAME] = _emit_artifact(
+            OBSERVED_SKILLS_SUBJECT_NAME,
+            contract_files.pop(OBSERVED_SKILLS_SUBJECT_NAME),
         )
     bundle = build_bundle(
         manifest,
@@ -512,6 +533,8 @@ def emit_supervised_lane(
     redaction_manifest: dict[str, Any] | None = None,
     provider_artifacts: dict[str, str] | None = None,
     write_scope: list[str] | None = None,
+    skill_routing: dict[str, Any] | None = None,
+    observed_skills: list[str] | None = None,
     role_id: str | None = None,
     role_capability: str | None = None,
     signing_profile: str | None = None,
@@ -564,6 +587,8 @@ def emit_supervised_lane(
         redaction_manifest=redaction_manifest,
         provider_artifacts=provider_artifacts,
         write_scope=write_scope,
+        skill_routing=skill_routing,
+        observed_skills=observed_skills,
         role_id=role_id,
         role_capability=role_capability,
         signing_profile=signing_profile,

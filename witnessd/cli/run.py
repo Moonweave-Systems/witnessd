@@ -763,6 +763,8 @@ def _attach_role_capability_team_fields(spec: dict, lane: dict) -> None:
             "mcp": list(granted_tools.get("mcp", [])),
             "allow": list(granted_tools.get("allow", [])),
         }
+    if isinstance(lane.get("granted_skill_routing"), dict):
+        spec["skill_routing"] = dict(lane["granted_skill_routing"])
 
 
 def _cmd_run_adapter(args: argparse.Namespace) -> int:

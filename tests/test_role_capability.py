@@ -107,6 +107,56 @@ class RoleCapabilityTests(unittest.TestCase):
         self.assertEqual(grant.model, "gpt-5.5")
         self.assertEqual(grant.tools, {"mcp": ("filesystem",), "allow": ("read_file",)})
 
+    def test_rolepack_accepts_skill_routing_grant(self) -> None:
+        rolepack = {
+            "kind": ROLEPACK_KIND,
+            "schema_version": ROLEPACK_SCHEMA_VERSION,
+            "name": "developer",
+            "grants": [
+                {
+                    "role_id": "runner",
+                    "capability": "execute",
+                    "adapters": ["codex"],
+                    "write_scope": ["src/**"],
+                    "skill_routing": {
+                        "forbidden_skills": ["tikz-refine"],
+                        "preferred_skills": ["figure-agent"],
+                        "enforcement": "block",
+                        "reason": "repo-local Figure Agent boundary",
+                    },
+                }
+            ],
+        }
+
+        validate_rolepack(rolepack)
+        grant = grant_for_role(rolepack, "runner")
+        self.assertIsNotNone(grant)
+        self.assertEqual(
+            grant.skill_routing,
+            {
+                "forbidden_skills": ["tikz-refine"],
+                "preferred_skills": ["figure-agent"],
+                "enforcement": "block",
+                "reason": "repo-local Figure Agent boundary",
+            },
+        )
+
+    def test_role_capability_grant_rejects_invalid_skill_routing(self) -> None:
+        with self.assertRaises(ValueError):
+            RoleCapabilityGrant.from_dict(
+                {
+                    "role_id": "runner",
+                    "capability": "execute",
+                    "adapters": ["codex"],
+                    "write_scope": ["src/**"],
+                    "skill_routing": {
+                        "forbidden_skills": ["tikz-refine"],
+                        "preferred_skills": [],
+                        "enforcement": "warn",
+                    },
+                }
+            )
+
     def test_role_capability_grant_rejects_removed_model_policy_ref(self) -> None:
         with self.assertRaises(ValueError):
             RoleCapabilityGrant.from_dict(
