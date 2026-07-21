@@ -341,6 +341,11 @@ and `handoff` preserve these references when they are present.
 `orro flowplan --role-lanes-out <path>` writes an `orro-role-lane-plan` that
 maps executable workflow roles to witnessd team lanes. The default lane adapter
 is deterministic `shell`; live model adapters are not used by default.
+For `code-change`, `--write-scope '<glob>'` (repeatable) is a bounded write
+scope input that generates the role capability directly instead of requiring a
+prebuilt rolepack. It is never inferred or defaulted; without `--write-scope`,
+`--rolepack`, `--rolepack-file`, or `--team`, code-change role-lane compilation
+still fails closed.
 `orro proofrun --workflow-plan <path> --role-lane-plan <path>` validates that the
 role-lane plan is bound to the workflow plan, that proofrun is allowed, and that
 execution is explicitly allowed before creating a run directory. It then reuses

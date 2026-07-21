@@ -56,6 +56,7 @@ boundary:
 
 options:
   -h, --help   show this help message and exit
+  --write-scope '<glob>' (repeatable): bounded write scope for a code-change plan; generates the role capability directly instead of requiring a prebuilt rolepack. Never inferred or defaulted.
   --role-lane-tier
                auto (default): shell lanes run at quick/120s, AI-adapter lanes at agentic/1800s; override with quick|agentic|frontier
 """

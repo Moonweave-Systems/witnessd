@@ -90,6 +90,27 @@ class OrroCommandSurfaceTests(unittest.TestCase):
         self.assertEqual(scout_root.repo, scout_repo.repo)
         self.assertIs(scout_root.func, scout_repo.func)
 
+    def test_flowplan_exposes_bounded_write_scope_help(self) -> None:
+        parser = _build_parser()
+        commands = parser._subparsers._group_actions[0].choices
+        flowplan = parser.parse_args(
+            ["flowplan", "goal", "--write-scope", "src/**", "--write-scope", "docs/**"]
+        )
+
+        self.assertEqual(flowplan.write_scope, ["src/**", "docs/**"])
+        expected_help = (
+            "--write-scope '<glob>' (repeatable): bounded write scope for a "
+            "code-change plan; generates the role capability directly instead of "
+            "requiring a prebuilt rolepack. Never inferred or defaulted."
+        )
+        flowplan_help = commands["flowplan"].format_help()
+        self.assertIn("--write-scope '<glob>'", flowplan_help)
+        self.assertIn("(repeatable): bounded write", flowplan_help)
+        self.assertIn("code-change plan; generates the role", flowplan_help)
+        self.assertIn("requiring a prebuilt", flowplan_help)
+        self.assertIn("rolepack. Never inferred or defaulted.", flowplan_help)
+        self.assertIn(expected_help, ORRO_HELP)
+
     def test_doctor_help_distinguishes_runlog_health_from_orro_readiness(self) -> None:
         self.assertIn("runlog health", _build_parser().format_help())
         self.assertIn("not runlog health", ORRO_HELP)

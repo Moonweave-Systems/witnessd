@@ -832,6 +832,17 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
     flowplan.add_argument("--out", default=None)
     flowplan.add_argument("--role-lanes-out", default=None)
     flowplan.add_argument(
+        "--write-scope",
+        action="append",
+        default=[],
+        metavar="'<glob>'",
+        help=(
+            "--write-scope '<glob>' (repeatable): bounded write scope for a "
+            "code-change plan; generates the role capability directly instead of "
+            "requiring a prebuilt rolepack. Never inferred or defaulted."
+        ),
+    )
+    flowplan.add_argument(
         "--lane-adapter",
         default="shell",
         choices=["shell", "codex", "claude", "agy", "gemini", "opencode"],

@@ -141,16 +141,34 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                 )
                 if value
             ]
+            raw_write_scope = list(getattr(args, "write_scope", []))
+            write_scope = [scope for scope in raw_write_scope if scope]
+            if raw_write_scope and selected_rolepack_inputs:
+                raise RolepackError(
+                    "ERR_ORRO_ROLEPACK_CONFLICT",
+                    "--write-scope, --rolepack, --rolepack-file, and --team are mutually exclusive",
+                )
+            if raw_write_scope and not write_scope:
+                raise ValueError("--write-scope requires a non-empty glob")
             if len(selected_rolepack_inputs) > 1:
                 raise RolepackError(
                     "ERR_ORRO_ROLEPACK_CONFLICT",
                     "--rolepack, --rolepack-file, and --team are mutually exclusive",
                 )
-            rolepack = (
-                load_rolepack_file(args.team or args.rolepack_file)
-                if args.team or args.rolepack_file
-                else resolve_rolepack(args.rolepack)
-            )
+            if write_scope and workflow_plan.get("profile") == "code-change":
+                from witnessd.orro_team_surface import build_rolepack_scaffold
+
+                rolepack = build_rolepack_scaffold(
+                    template=None,
+                    roles=[f"runner:{args.lane_adapter}"],
+                    write_scope=write_scope,
+                )
+            else:
+                rolepack = (
+                    load_rolepack_file(args.team or args.rolepack_file)
+                    if args.team or args.rolepack_file
+                    else resolve_rolepack(args.rolepack)
+                )
 
             role_lane_plan = compile_role_lane_plan(
                 workflow_plan=workflow_plan,
@@ -180,6 +198,15 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                 code=exc.code,
                 message=str(exc),
                 **(details or {}),
+            )
+            return 1
+        except ValueError as exc:
+            _emit_orro_error(
+                args,
+                code="ERR_ORRO_FLOWPLAN_WRITE_SCOPE_INVALID",
+                message=str(exc),
+                reason="--write-scope values must be non-empty rolepack write_scope globs",
+                required_input_or_grant="--write-scope '<glob>' (repeatable)",
             )
             return 1
         payload["role_lane_plan"] = role_lane_plan_ref
