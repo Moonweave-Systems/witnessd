@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -18,7 +19,12 @@ from witnessd.orro_workflow import (
 from witnessd.orro_team_surface import build_rolepack_scaffold
 
 
-DEPONE_ROOT = Path(__file__).resolve().parents[2] / "depone"
+# CI clones the pinned Depone to WITNESSD_DEPONE_ROOT (e.g. $RUNNER_TEMP/depone),
+# which is not the local sibling layout; honor the env var, fall back to sibling.
+DEPONE_ROOT = Path(
+    os.environ.get("WITNESSD_DEPONE_ROOT")
+    or (Path(__file__).resolve().parents[2] / "depone")
+)
 
 
 def _seed_repo(repo: Path) -> None:
@@ -155,14 +161,10 @@ class ShellCommandLaneCompilationTests(unittest.TestCase):
                 "--json",
             ]
 
-            code, payload, _error = _run(
-                [*common, "--lane-adapter", "codex"]
-            )
+            code, payload, _error = _run([*common, "--lane-adapter", "codex"])
             self.assertEqual(code, 1)
             error = payload["error"]
-            self.assertEqual(
-                error["code"], "ERR_ORRO_COMMAND_ADAPTER_UNSUPPORTED"
-            )
+            self.assertEqual(error["code"], "ERR_ORRO_COMMAND_ADAPTER_UNSUPPORTED")
             for field in ("reason", "required_input_or_grant", "next_command"):
                 self.assertTrue(error[field])
             self.assertIn("--lane-adapter shell", error["next_command"])
@@ -271,7 +273,9 @@ class ShellGuardrailDeponeEndToEndTests(unittest.TestCase):
             self.assertEqual(code, 0, payload)
         self.assertTrue(verdict_path.is_file())
         verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
-        self.assertEqual(payload.get("policy_conformance"), verdict["policy_conformance"])
+        self.assertEqual(
+            payload.get("policy_conformance"), verdict["policy_conformance"]
+        )
         return verdict
 
     def test_in_scope_command_reaches_real_depone_policy_pass(self) -> None:
@@ -280,7 +284,9 @@ class ShellGuardrailDeponeEndToEndTests(unittest.TestCase):
 
         policy = verdict["policy_conformance"]
         self.assertEqual(policy["overall"], "pass")
-        write_scope = next(axis for axis in policy["axes"] if axis["axis"] == "write_scope")
+        write_scope = next(
+            axis for axis in policy["axes"] if axis["axis"] == "write_scope"
+        )
         self.assertEqual(write_scope["status"], "pass")
         self.assertFalse(write_scope["blocks_handoff"])
 
@@ -290,7 +296,9 @@ class ShellGuardrailDeponeEndToEndTests(unittest.TestCase):
 
         policy = verdict["policy_conformance"]
         self.assertEqual(policy["overall"], "fail")
-        write_scope = next(axis for axis in policy["axes"] if axis["axis"] == "write_scope")
+        write_scope = next(
+            axis for axis in policy["axes"] if axis["axis"] == "write_scope"
+        )
         self.assertEqual(write_scope["status"], "fail")
         self.assertEqual(
             write_scope["error_code"],
@@ -305,9 +313,7 @@ class OrroDemoTests(unittest.TestCase):
         stdout = io.StringIO()
         stderr = io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = orro_main(
-                ["demo", "--depone-root", str(DEPONE_ROOT), *extra]
-            )
+            code = orro_main(["demo", "--depone-root", str(DEPONE_ROOT), *extra])
         return code, stdout.getvalue(), stderr.getvalue()
 
     def test_demo_prints_depone_policy_pass(self) -> None:
