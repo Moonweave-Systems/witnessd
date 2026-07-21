@@ -168,7 +168,11 @@ writes executable role-lane intent. `python3 -m orro proofrun "<goal>" --repo
 <repo> --home .witnessd --workflow-plan workflow-plan.json --role-lane-plan
 role-lane-plan.json` validates the role-lane plan against the workflow hash and
 executes allowed lanes through existing witnessd team machinery. Role-lane plans
-are not proof, approval, or assurance. `review-only` and default
+are not proof, approval, or assurance. For `code-change`, `--write-scope
+'<glob>'` (repeatable) is a bounded write scope input that generates the role
+capability directly instead of requiring a prebuilt rolepack. It is never
+inferred or defaulted; absent a write scope or explicit rolepack input, role-lane
+compilation still fails closed. `review-only` and default
 `release-readiness` role-lane plans cannot launch proofrun. `verification-only`
 role-lane plans compile declared shell check lanes (`flowplan --check`,
 repeatable) with an empty write region; proofrun executes those checks under

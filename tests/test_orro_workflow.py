@@ -663,6 +663,110 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertIn("--write-scope '<glob>'", error["next_command"])
             self.assertIn("--model-policy default", error["next_command"])
 
+    def test_flowplan_write_scope_generates_rolepack_for_code_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            direct_out = root / "direct-role-lane-plan.json"
+            rolepack_path = root / "team-rolepack.json"
+            explicit_out = root / "explicit-role-lane-plan.json"
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                team_code = main(
+                    [
+                        "orro",
+                        "team",
+                        "init",
+                        "--role",
+                        "runner:shell",
+                        "--write-scope",
+                        "src/**",
+                        "--out",
+                        str(rolepack_path),
+                        "--yes",
+                    ]
+                )
+            self.assertEqual(team_code, 0, stdout.getvalue())
+
+            direct_code, _direct_payload = self._flowplan(
+                [
+                    "fix parser",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(direct_out),
+                    "--write-scope",
+                    "src/**",
+                ]
+            )
+            explicit_code, _explicit_payload = self._flowplan(
+                [
+                    "fix parser",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(explicit_out),
+                    "--rolepack-file",
+                    str(rolepack_path),
+                ]
+            )
+
+            self.assertEqual(direct_code, 0)
+            self.assertEqual(explicit_code, 0)
+            direct_plan = json.loads(direct_out.read_text(encoding="utf-8"))
+            explicit_plan = json.loads(explicit_out.read_text(encoding="utf-8"))
+            self.assertEqual(direct_plan, explicit_plan)
+            lane = direct_plan["lanes"][0]
+            self.assertEqual(lane["granted_write_scope"], ["src/**"])
+            self.assertEqual(lane["role_capability"]["write_scope"], ["src/**"])
+
+    def test_flowplan_write_scope_conflicts_with_explicit_rolepack_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rolepack_path = root / "rolepack.json"
+            rolepack_path.write_text(
+                json.dumps(_runner_rolepack(adapters=["shell"], write_scope=["src/**"]))
+                + "\n",
+                encoding="utf-8",
+            )
+            cases = (
+                ("--rolepack", "developer"),
+                ("--rolepack-file", str(rolepack_path)),
+                ("--team", str(rolepack_path)),
+                ("--rolepack-file", str(rolepack_path), ""),
+            )
+            for case in cases:
+                option, value = case[0], case[1]
+                scope = case[2] if len(case) == 3 else "src/**"
+                with self.subTest(option=option, scope=scope):
+                    out = root / f"{option.lstrip('-')}-lane-plan.json"
+                    code, text = self._flowplan_raw(
+                        [
+                            "fix parser",
+                            "--root",
+                            tmp,
+                            "--profile",
+                            "code-change",
+                            "--role-lanes-out",
+                            str(out),
+                            "--write-scope",
+                            scope,
+                            option,
+                            value,
+                            "--json",
+                        ]
+                    )
+
+                    self.assertEqual(code, 1)
+                    self.assertFalse(out.exists())
+                    error = json.loads(text)["error"]
+                    self.assertEqual(error["code"], "ERR_ORRO_ROLEPACK_CONFLICT")
+                    self.assertIn("--write-scope", error["message"])
+
     def test_flowplan_adapter_not_granted_has_actionable_rolepack_details(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
