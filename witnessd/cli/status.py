@@ -374,13 +374,19 @@ def _roadmap_item_status(
 
 def _run_dirs(home: Path) -> list[Path]:
     runs = home / "runs"
-    if not runs.is_dir():
-        return []
-    return sorted(
-        (path.resolve(strict=False) for path in runs.iterdir() if path.is_dir()),
-        key=_path_newness,
-        reverse=True,
+    result = (
+        sorted(
+            (path.resolve(strict=False) for path in runs.iterdir() if path.is_dir()),
+            key=_path_newness,
+            reverse=True,
+        )
+        if runs.is_dir()
+        else []
     )
+    companion = home / "companion-run"
+    if companion.is_dir():
+        result.append(companion.resolve(strict=False))
+    return result
 
 
 def _path_newness(path: Path) -> tuple[int, str]:

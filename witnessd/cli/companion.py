@@ -13,6 +13,7 @@ from witnessd.cli._output import (
     _structured_error,
     _write_json_file,
 )
+from witnessd.orro_roadmap import OrroRoadmapError, require_roadmap_item
 
 
 def _emit_blocker(error: dict[str, object]) -> int:
@@ -368,6 +369,24 @@ def _review_goal(goal: str, declared_intent: dict[str, Any] | None) -> str:
 
 def _cmd_orro_check(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve(strict=False) if args.repo else Path.cwd()
+    roadmap_item = getattr(args, "roadmap_item", None)
+    if roadmap_item is not None:
+        try:
+            require_roadmap_item(repo, roadmap_item)
+        except OrroRoadmapError as exc:
+            return _emit_blocker(
+                _structured_error(
+                    code=exc.code,
+                    message="orro check received an unknown roadmap item",
+                    reason=str(exc),
+                    required_input_or_grant=(
+                        "a roadmap item id listed in .orro/roadmap.json"
+                    ),
+                    next_command=(
+                        "python3 -m orro status --repo <repo> --home <home>"
+                    ),
+                )
+            )
     if args.apply and not args.fix:
         return _emit_blocker(
             _structured_error(

@@ -231,6 +231,48 @@ class OrroCheckBlockerTest(unittest.TestCase):
             self.assertIn("--write-scope", payload["error"]["required_input_or_grant"])
             self.assertIn("--apply", payload["error"]["next_command"])
 
+    def test_unknown_roadmap_item_blocks_before_any_phase(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            write_roadmap(
+                repo,
+                {
+                    "kind": "orro-roadmap",
+                    "schema_version": "0.1",
+                    "items": [{"id": "known-item", "title": "Known"}],
+                },
+            )
+            with patch(
+                "witnessd.cli.companion._invoke_phase",
+                side_effect=AssertionError("roadmap blocker must precede all phases"),
+            ):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--roadmap-item",
+                        "no-such-item",
+                        "--check",
+                        "true",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2, err)
+            self.assertEqual(payload["kind"], "orro-companion-result")
+            self.assertEqual(payload["decision"], "blocked")
+            self.assertEqual(
+                payload["error"]["code"], "ERR_ORRO_ROADMAP_ITEM_UNKNOWN"
+            )
+            self.assertIn("known-item", payload["error"]["reason"])
+
     def test_no_checks_declared_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"

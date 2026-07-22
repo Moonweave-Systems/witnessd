@@ -115,7 +115,11 @@ def require_roadmap_item(repo: Path, item_id: str) -> dict[str, Any]:
             return item
     raise OrroRoadmapError(
         ERR_ORRO_ROADMAP_ITEM_UNKNOWN,
-        f"roadmap item is not present in .orro/roadmap.json: {item_id}",
+        "roadmap item is not present in .orro/roadmap.json: "
+        f"{item_id}; known roadmap item ids: "
+        + ", ".join(str(item["id"]) for item in items)
+        if items
+        else f"{item_id}; known roadmap item ids: (none)",
     )
 
 

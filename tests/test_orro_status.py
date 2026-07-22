@@ -139,6 +139,49 @@ class OrroStatusTests(unittest.TestCase):
             self.assertEqual(payload["items"], [])
             self.assertEqual(payload["off_plan"][0]["run_dir"], str(run_dir))
 
+    def test_companion_run_is_included_in_item_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            companion = home / "companion-run"
+            companion.mkdir(parents=True)
+            write_roadmap(
+                repo,
+                {
+                    "kind": "orro-roadmap",
+                    "schema_version": "0.1",
+                    "items": [{"id": "companion-item", "title": "Companion"}],
+                },
+            )
+            seal_roadmap_binding(
+                repo=repo, run_dir=companion, item_id="companion-item"
+            )
+
+            with patch(
+                "witnessd.cli.status.decide_next",
+                return_value=(0, {"decision": "needs-proofcheck"}),
+            ):
+                pending = build_status(repo=repo, home=home)
+
+            pending_item = pending["items"][0]
+            self.assertEqual(pending["workspace"]["run_count"], 1)
+            self.assertEqual(pending_item["status"], "in-progress")
+            self.assertEqual(pending_item["latest_run"], str(companion))
+
+            with patch(
+                "witnessd.cli.status.decide_next",
+                return_value=(0, {"decision": "complete"}),
+            ):
+                verified = build_status(repo=repo, home=home)
+
+            verified_item = verified["items"][0]
+            self.assertEqual(verified_item["status"], "done (verified)")
+            self.assertEqual(
+                verified_item["evidence_ref"],
+                str(companion / "proofcheck-verdict.json"),
+            )
+
     def test_malformed_ledger_is_structured_exit_two(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
