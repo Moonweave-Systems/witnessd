@@ -388,10 +388,16 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             return _emit_blocker(
                 _structured_error(
                     code=exc.code,
-                    message="orro check received an unknown roadmap item",
+                    message=(
+                        "orro check received an unknown roadmap step"
+                        if exc.code == "ERR_ORRO_ROADMAP_STEP_UNKNOWN"
+                        else "orro check received an unknown roadmap item"
+                    ),
                     reason=str(exc),
                     required_input_or_grant=(
-                        "a roadmap item id listed in .orro/roadmap.json"
+                        "a roadmap step id listed on the roadmap item"
+                        if exc.code == "ERR_ORRO_ROADMAP_STEP_UNKNOWN"
+                        else "a roadmap item id listed in .orro/roadmap.json"
                     ),
                     next_command=(
                         "python3 -m orro status --repo <repo> --home <home>"
