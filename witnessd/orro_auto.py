@@ -26,7 +26,7 @@ AUTO_SESSION_SCHEMA_VERSION = "0.1"
 ERR_ORRO_AUTO_BLOCKED = "ERR_ORRO_AUTO_BLOCKED"
 ERR_ORRO_AUTO_WRITE_FAILED = "ERR_ORRO_AUTO_WRITE_FAILED"
 ERR_ORRO_AUTO_STEP_NOT_EXECUTABLE = "ERR_ORRO_AUTO_STEP_NOT_EXECUTABLE"
-ERR_ORRO_AUTO_STEP_NOT_VERIFIED = "ERR_ORRO_AUTO_STEP_NOT_VERIFIED"
+ERR_ORRO_AUTO_STEP_EVIDENCE_PENDING = "ERR_ORRO_AUTO_STEP_EVIDENCE_PENDING"
 ERR_ORRO_AUTO_MAX_STEPS_REACHED = "ERR_ORRO_AUTO_MAX_STEPS_REACHED"
 
 
@@ -317,7 +317,7 @@ def run_item_session(
             elif completed.stderr.strip():
                 reasons.append(completed.stderr.strip())
             error = {
-                "code": ERR_ORRO_AUTO_STEP_NOT_VERIFIED,
+                "code": ERR_ORRO_AUTO_STEP_EVIDENCE_PENDING,
                 "message": f"step {next_step['id']} stopped at {resulting_state}",
             }
             break
