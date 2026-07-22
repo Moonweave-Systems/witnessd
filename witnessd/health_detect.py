@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -8,10 +9,144 @@ from typing import Iterable
 
 _VERSION = re.compile(r"(?<!\d)(\d+(?:\.\d+)+(?:[-+._a-zA-Z0-9]*)?)(?!\d)")
 _PRE_COMMIT_CONFIGS = (".pre-commit-config.yaml", ".pre-commit-config.yml")
+_BOOTSTRAP_CONFIG_SECTIONS = (
+    ("tool.black", "black", "[tool.black]\nline-length = 88\n"),
+    ("tool.ruff", "ruff", '[tool.ruff]\nselect = ["E", "F", "I"]\n'),
+    (
+        "tool.ruff.lint.mccabe",
+        "ruff.lint.mccabe",
+        "[tool.ruff.lint.mccabe]\nmax-complexity = 10\n",
+    ),
+)
+
+
+def seed_missing_gate_config(repo: Path) -> dict[str, list[str]]:
+    """Append bootstrap config only for tool sections that are not present."""
+
+    pyproject_path = repo / "pyproject.toml"
+    pyproject = (
+        pyproject_path.read_text(encoding="utf-8") if pyproject_path.exists() else ""
+    )
+    written: list[str] = []
+    present: list[str] = []
+    blocks: list[str] = []
+    for label, tool, block in _BOOTSTRAP_CONFIG_SECTIONS:
+        if _has_tool_section(pyproject, tool):
+            present.append(label)
+        else:
+            written.append(label)
+            blocks.append(block)
+    if blocks:
+        with pyproject_path.open("a", encoding="utf-8") as stream:
+            for block in blocks:
+                stream.write("\n" + block)
+    return {"written": written, "present": present}
+
+
+def ensure_health_profile(repo: Path) -> tuple[list[dict[str, str]], bool]:
+    """Write the bootstrap profile once, preserving any existing user profile."""
+
+    existing = _read_health_profile(repo)
+    if existing is not None:
+        return existing, False
+    profile = _bootstrap_health_profile()
+    _write_health_profile(repo, profile)
+    return profile, True
+
+
+def promote_health_gates(repo: Path, gate_names: Iterable[str]) -> list[dict[str, str]]:
+    """Promote known profile gates to blocking enforcement."""
+
+    profile = _read_health_profile(repo)
+    if profile is None:
+        raise FileNotFoundError(repo / ".orro" / "health.json")
+    requested = list(dict.fromkeys(gate_names))
+    known = {gate["gate"] for gate in profile}
+    unknown = [gate for gate in requested if gate not in known]
+    if unknown:
+        raise ValueError("unknown health gate: " + ", ".join(unknown))
+    promoted = [dict(gate) for gate in profile]
+    for gate in promoted:
+        if gate["gate"] in requested:
+            gate["enforcement"] = "block"
+    _write_health_profile(repo, promoted)
+    return promoted
+
+
+def _bootstrap_health_profile() -> list[dict[str, str]]:
+    return [
+        {
+            "gate": "format",
+            "tool": "black",
+            "command": "black --check --quiet .",
+            "enforcement": "block",
+        },
+        {
+            "gate": "lint",
+            "tool": "ruff",
+            "command": "ruff check .",
+            "enforcement": "advisory",
+        },
+        {
+            "gate": "complexity",
+            "tool": "ruff-c901",
+            "command": "ruff check --select C901 .",
+            "enforcement": "advisory",
+        },
+    ]
+
+
+def _health_profile_path(repo: Path) -> Path:
+    return repo / ".orro" / "health.json"
+
+
+def _read_health_profile(repo: Path) -> list[dict[str, str]] | None:
+    path = _health_profile_path(repo)
+    if not path.is_file():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError(".orro/health.json must contain a list of gates")
+    profile: list[dict[str, str]] = []
+    for index, item in enumerate(payload):
+        if not isinstance(item, dict):
+            raise ValueError(f".orro/health.json gate {index} must be an object")
+        values: dict[str, str] = {}
+        for key in ("gate", "tool", "command", "enforcement"):
+            value = item.get(key)
+            if not isinstance(value, str) or not value:
+                raise ValueError(
+                    f".orro/health.json gate {index}.{key} must be a non-empty string"
+                )
+            values[key] = value
+        if values["enforcement"] not in {"block", "advisory"}:
+            raise ValueError(
+                f".orro/health.json gate {index}.enforcement must be block or advisory"
+            )
+        profile.append(values)
+    return profile
+
+
+def _write_health_profile(repo: Path, profile: list[dict[str, str]]) -> None:
+    path = _health_profile_path(repo)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(profile, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def detect_health_gates(repo: Path) -> list[dict[str, str | None]]:
     """Return configured health gates in stable tool order."""
+
+    profile = _read_health_profile(repo)
+    if profile is not None:
+        return [
+            {
+                **gate,
+                "version": resolve_tool_version(gate["tool"]),
+            }
+            for gate in profile
+        ]
 
     pyproject = _read_text(repo / "pyproject.toml")
     package_json = _read_text(repo / "package.json")

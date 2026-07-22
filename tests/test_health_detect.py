@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import stat
 import tempfile
@@ -7,7 +8,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from witnessd.health_detect import detect_health_gates, safe_fixer_commands
+from witnessd.health_detect import (
+    detect_health_gates,
+    ensure_health_profile,
+    promote_health_gates,
+    safe_fixer_commands,
+    seed_missing_gate_config,
+)
 
 
 def _write_tool(bin_dir: Path, name: str, version_output: str) -> None:
@@ -34,6 +41,99 @@ def _write_npx(bin_dir: Path) -> None:
 
 
 class HealthDetectionTest(unittest.TestCase):
+    def test_seed_missing_gate_config_appends_only_absent_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original = (
+                "[project]\n" 'name = "kept"\n\n' "[tool.ruff]\n" 'select = ["F401"]\n'
+            )
+            pyproject = root / "pyproject.toml"
+            pyproject.write_text(original, encoding="utf-8")
+
+            report = seed_missing_gate_config(root)
+            seeded = pyproject.read_text(encoding="utf-8")
+
+            self.assertEqual(
+                report,
+                {
+                    "written": ["tool.black", "tool.ruff.lint.mccabe"],
+                    "present": ["tool.ruff"],
+                },
+            )
+            self.assertTrue(seeded.startswith(original))
+            self.assertEqual(seeded[: len(original)], original)
+            self.assertIn("\n[tool.black]\nline-length = 88\n", seeded)
+            self.assertIn("\n[tool.ruff.lint.mccabe]\nmax-complexity = 10\n", seeded)
+            self.assertEqual(seeded.count("[tool.ruff]"), 1)
+
+    def test_seed_missing_gate_config_creates_complete_default_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            report = seed_missing_gate_config(root)
+            seeded = (root / "pyproject.toml").read_text(encoding="utf-8")
+
+            self.assertEqual(
+                report,
+                {
+                    "written": [
+                        "tool.black",
+                        "tool.ruff",
+                        "tool.ruff.lint.mccabe",
+                    ],
+                    "present": [],
+                },
+            )
+            self.assertIn("[tool.black]\nline-length = 88", seeded)
+            self.assertIn('[tool.ruff]\nselect = ["E", "F", "I"]', seeded)
+            self.assertIn("[tool.ruff.lint.mccabe]\nmax-complexity = 10", seeded)
+
+    def test_health_profile_round_trips_and_wins_over_auto_detect_tiers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "pyproject.toml").write_text(
+                "[tool.ruff]\n[tool.mypy]\n", encoding="utf-8"
+            )
+
+            profile, written = ensure_health_profile(root)
+            profile_again, written_again = ensure_health_profile(root)
+
+            self.assertTrue(written)
+            self.assertFalse(written_again)
+            self.assertEqual(profile_again, profile)
+            self.assertEqual(
+                json.loads(
+                    (root / ".orro" / "health.json").read_text(encoding="utf-8")
+                ),
+                profile,
+            )
+            gates = detect_health_gates(root)
+            self.assertEqual(
+                [(gate["gate"], gate["tool"], gate["enforcement"]) for gate in gates],
+                [
+                    ("format", "black", "block"),
+                    ("lint", "ruff", "advisory"),
+                    ("complexity", "ruff-c901", "advisory"),
+                ],
+            )
+            self.assertNotIn("mypy", {gate["tool"] for gate in gates})
+
+    def test_promote_health_gates_changes_only_requested_advisory_tier(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            before, _ = ensure_health_profile(root)
+
+            after = promote_health_gates(root, ["lint"])
+
+            self.assertEqual(
+                next(gate for gate in after if gate["gate"] == "lint")["enforcement"],
+                "block",
+            )
+            unchanged = [gate for gate in before if gate["gate"] != "lint"]
+            self.assertEqual(
+                [gate for gate in after if gate["gate"] != "lint"], unchanged
+            )
+
     def test_pyproject_ruff_and_mypy_yield_ordered_gates_with_versions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

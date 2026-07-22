@@ -167,6 +167,11 @@ class OrroCommandSurfaceTests(unittest.TestCase):
                 "tests/**",
                 "--apply",
                 "--health-plan",
+                "--init",
+                "--promote",
+                "lint",
+                "--promote",
+                "complexity",
             ]
         )
 
@@ -175,6 +180,8 @@ class OrroCommandSurfaceTests(unittest.TestCase):
         self.assertEqual(parsed.write_scope, ["src/**", "tests/**"])
         self.assertTrue(parsed.apply)
         self.assertTrue(parsed.health_plan)
+        self.assertTrue(parsed.init)
+        self.assertEqual(parsed.promote, ["lint", "complexity"])
         help_text = commands["orro-check"].format_help()
         self.assertIn("already-adopted deterministic gates", help_text)
         self.assertIn("requires explicit --write-scope", help_text)
@@ -182,6 +189,8 @@ class OrroCommandSurfaceTests(unittest.TestCase):
         self.assertIn("apply the scope-verified fixer diff", help_text)
         self.assertIn("as JSON without", help_text)
         self.assertIn("running phases", help_text)
+        self.assertIn("append missing default tool config", help_text)
+        self.assertIn("advisory gate to block", help_text)
 
     def test_doctor_help_distinguishes_runlog_health_from_orro_readiness(self) -> None:
         self.assertIn("runlog health", _build_parser().format_help())
