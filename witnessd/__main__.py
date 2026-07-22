@@ -848,7 +848,15 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
     run.add_argument("--log", default=None, help="observer log path (outside sandbox)")
     run.add_argument("--keys-dir", default=None)
     run.add_argument("--task-id", default="witnessd-lane")
-    run.add_argument("--arm", default="direct", choices=["direct", "governed"])
+    run.add_argument(
+        "--arm",
+        default="direct",
+        choices=["direct", "governed"],
+        help=(
+            "select the execution arm; --arm direct does not convert a self-signed "
+            "trust anchor into an independent trust anchor"
+        ),
+    )
     run.add_argument(
         "--tier", default="agentic", choices=["quick", "agentic", "frontier"]
     )
