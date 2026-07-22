@@ -31,7 +31,7 @@ PROVISION_SCHEMA_VERSION = "0.1"
 ORRO_ENGINE_LOCK_KIND = "orro-engine-lock"
 ORRO_ENGINE_LOCK_SCHEMA_VERSION = "1.0"
 DEFAULT_DEPONE_REPOSITORY = "https://github.com/Moonweave-Systems/Depone.git"
-DEFAULT_DEPONE_REF = "f6f60a3168ec4aaee5ec0b7434157d6f3791dc9e"
+DEFAULT_DEPONE_REF = "5f7ccc35174f92ec1d7565c3066cd903e605442d"
 
 
 class ProvisionError(Exception):
@@ -500,9 +500,7 @@ def _git_commit_for_ref(root: Path, ref: str) -> str:
     return completed.stdout.strip()
 
 
-def _git_commit_is_ancestor(
-    root: Path, *, ancestor: str, descendant: str
-) -> bool:
+def _git_commit_is_ancestor(root: Path, *, ancestor: str, descendant: str) -> bool:
     completed = subprocess.run(
         [
             "git",
