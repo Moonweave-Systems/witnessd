@@ -27,7 +27,7 @@ class DistributionInitTests(unittest.TestCase):
     def test_default_depone_ref_pins_v023_lane_intent_support(self) -> None:
         self.assertEqual(
             DEFAULT_DEPONE_REF,
-            "f6f60a3168ec4aaee5ec0b7434157d6f3791dc9e",
+            "5f7ccc35174f92ec1d7565c3066cd903e605442d",
         )
         self.assertRegex(DEFAULT_DEPONE_REF, r"^[0-9a-f]{40}$")
 
@@ -58,7 +58,9 @@ class DistributionInitTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
         subprocess.run(["git", "add", relative_path], cwd=root, check=True)
-        subprocess.run(["git", "commit", "-qm", f"update {relative_path}"], cwd=root, check=True)
+        subprocess.run(
+            ["git", "commit", "-qm", f"update {relative_path}"], cwd=root, check=True
+        )
         return subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=root,
@@ -178,9 +180,7 @@ class DistributionInitTests(unittest.TestCase):
                 )
             )
             self.assertEqual(classify_depone_pin_state(home)["state"], "ok")
-            new_commit = self._commit_file(
-                depone_root, "depone/__init__.py", "new\n"
-            )
+            new_commit = self._commit_file(depone_root, "depone/__init__.py", "new\n")
 
             with patch.dict(os.environ, {"WITNESSD_DEPONE_REF": new_commit}):
                 stale = classify_depone_pin_state(home)
@@ -239,9 +239,7 @@ class DistributionInitTests(unittest.TestCase):
             prior_artifact.parent.mkdir(parents=True)
             prior_artifact.write_text('{"observed": true}\n', encoding="utf-8")
             prior_bytes = prior_artifact.read_bytes()
-            new_commit = self._commit_file(
-                depone_root, "depone/__init__.py", "new\n"
-            )
+            new_commit = self._commit_file(depone_root, "depone/__init__.py", "new\n")
 
             stdout = io.StringIO()
             with (
@@ -266,16 +264,14 @@ class DistributionInitTests(unittest.TestCase):
 
             self.assertEqual(doctor_code, 1)
             doctor = json.loads(stdout.getvalue())
-            depone_pin = {
-                check["name"]: check for check in doctor["checks"]
-            }["depone_pin"]
+            depone_pin = {check["name"]: check for check in doctor["checks"]}[
+                "depone_pin"
+            ]
             self.assertEqual(depone_pin["status"], "blocked")
             self.assertEqual(depone_pin["reason"], "stale-upgrade-provision")
             self.assertEqual(depone_pin["current_commit"], new_commit)
             self.assertEqual(depone_pin["expected_commit"], new_commit)
-            self.assertTrue(
-                depone_pin["remediation"]["requires_explicit_user_action"]
-            )
+            self.assertTrue(depone_pin["remediation"]["requires_explicit_user_action"])
             self.assertIn("python3 -m orro init", depone_pin["remediation"]["command"])
             self.assertIn(str(depone_root), depone_pin["remediation"]["command"])
             self.assertIn("stale", depone_pin["detail"].lower())
@@ -345,7 +341,9 @@ class DistributionInitTests(unittest.TestCase):
                 json.loads(proofrun_stdout.getvalue())["error"]["code"],
                 "ERR_ORRO_PROOFRUN_NO_PLAN",
             )
-            self.assertNotIn(ERR_WITNESSD_DEPONE_PIN_MISMATCH, proofrun_stderr.getvalue())
+            self.assertNotIn(
+                ERR_WITNESSD_DEPONE_PIN_MISMATCH, proofrun_stderr.getvalue()
+            )
 
     def test_doctor_does_not_offer_init_for_forged_provision(self) -> None:
         witnessd_root = Path(__file__).resolve().parents[1]
@@ -407,9 +405,9 @@ class DistributionInitTests(unittest.TestCase):
 
             self.assertEqual(code, 1)
             doctor = json.loads(stdout.getvalue())
-            depone_pin = {
-                check["name"]: check for check in doctor["checks"]
-            }["depone_pin"]
+            depone_pin = {check["name"]: check for check in doctor["checks"]}[
+                "depone_pin"
+            ]
             self.assertEqual(depone_pin["status"], "blocked")
             self.assertEqual(depone_pin["reason"], "depone-pin-mismatch")
             self.assertNotIn("remediation", depone_pin)

@@ -67,9 +67,7 @@ def _verify_remediation(args: argparse.Namespace) -> tuple[str, str, str]:
     )
 
 
-def _emit_orro_error(
-    args: argparse.Namespace, *, code: str, message: str
-) -> None:
+def _emit_orro_error(args: argparse.Namespace, *, code: str, message: str) -> None:
     reason, required_input_or_grant, next_command = _verify_remediation(args)
     _base_emit_orro_error(
         args,
@@ -102,18 +100,23 @@ def _with_verify_error(
 def _emit_orro_engine_lock_check_error(
     args: argparse.Namespace, *, code: str, message: str
 ) -> None:
-    payload = _with_verify_error(args, {
-        "command": "orro engine-lock check",
-        "locked": False,
-        "mismatches": [],
-        "boundary": {
-            "approves_merge": False,
-            "raises_assurance": False,
-            "executes_commands": False,
-            "verifies_evidence": False,
+    payload = _with_verify_error(
+        args,
+        {
+            "command": "orro engine-lock check",
+            "locked": False,
+            "mismatches": [],
+            "boundary": {
+                "approves_merge": False,
+                "raises_assurance": False,
+                "executes_commands": False,
+                "verifies_evidence": False,
+            },
+            "error": {"code": code, "message": message},
         },
-        "error": {"code": code, "message": message},
-    }, default_code=code, default_message=message)
+        default_code=code,
+        default_message=message,
+    )
     if getattr(args, "json", False):
         print(json.dumps(payload, sort_keys=True))
         return
@@ -300,6 +303,8 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
     code, payload = _run_depone_json(command, env=env)
     command_policy: dict[str, object] | None = None
     command_policy_source: dict[str, object] | None = None
+    command_health: dict[str, object] | None = None
+    command_health_source: dict[str, object] | None = None
     try:
         command_policy, command_policy_source = _derive_command_lane_policy(
             evidence_dir=evidence_dir,
@@ -312,6 +317,21 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
             "decision": "blocked",
             "error": {
                 "code": "ERR_ORRO_POLICY_CONFORMANCE_DERIVATION_FAILED",
+                "message": str(exc),
+            },
+        }
+    try:
+        command_health, command_health_source = _derive_command_lane_health(
+            evidence_dir=evidence_dir,
+            env=env,
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        code = 1
+        payload = {
+            **payload,
+            "decision": "blocked",
+            "error": {
+                "code": "ERR_ORRO_HEALTH_CONFORMANCE_DERIVATION_FAILED",
                 "message": str(exc),
             },
         }
@@ -349,6 +369,48 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
             verdict_payload["decision"] = payload.get("decision", "blocked")
             verdict_payload["policy_conformance"] = command_policy
             verdict_payload["policy_conformance_source"] = command_policy_source
+            if payload.get("errors"):
+                verdict_payload["errors"] = payload["errors"]
+            out_path.write_text(
+                json.dumps(verdict_payload, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+    if command_health is not None:
+        payload["health_conformance"] = command_health
+        if command_health_source is not None:
+            payload["health_conformance_source"] = command_health_source
+        blocking_health_axes = [
+            axis
+            for axis in command_health.get("axes", [])
+            if isinstance(axis, dict) and axis.get("blocks_handoff") is True
+        ]
+        if blocking_health_axes:
+            code = 1
+            payload["decision"] = "fail"
+            health_errors = [
+                {
+                    "code": axis.get("error_code")
+                    or "ERR_ORRO_HEALTH_CONFORMANCE_FAILED",
+                    "message": f"{axis.get('gate', 'health')} health gate failed",
+                    **(
+                        {"path": axis["evidence_path"]}
+                        if axis.get("evidence_path")
+                        else {}
+                    ),
+                }
+                for axis in blocking_health_axes
+            ]
+            existing_errors = payload.get("errors")
+            base_errors = existing_errors if isinstance(existing_errors, list) else []
+            payload["errors"] = [*base_errors, *health_errors]
+            payload["error_count"] = len(payload["errors"])
+        if out_path is not None and out_path.is_file():
+            verdict_payload = json.loads(out_path.read_text(encoding="utf-8"))
+            if not isinstance(verdict_payload, dict):
+                raise ValueError("proofcheck verdict must be a JSON object")
+            verdict_payload["decision"] = payload.get("decision", "blocked")
+            verdict_payload["health_conformance"] = command_health
+            verdict_payload["health_conformance_source"] = command_health_source
             if payload.get("errors"):
                 verdict_payload["errors"] = payload["errors"]
             out_path.write_text(
@@ -440,13 +502,19 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         ),
         "error_count": payload.get("error_count", 1 if payload.get("error") else 0),
         **(
-            {"policy_conformance": command_policy}
-            if command_policy is not None
-            else {}
+            {"policy_conformance": command_policy} if command_policy is not None else {}
         ),
         **(
             {"policy_conformance_source": command_policy_source}
             if command_policy_source is not None
+            else {}
+        ),
+        **(
+            {"health_conformance": command_health} if command_health is not None else {}
+        ),
+        **(
+            {"health_conformance_source": command_health_source}
+            if command_health_source is not None
             else {}
         ),
         **({"out": payload["out"]} if payload.get("out") else {}),
@@ -464,7 +532,10 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
             "workflow in the same run directory, or use `orro team go`."
         )
     if reference_warning is not None:
-        from witnessd.cli.run import _reference_adapter_markers, _stamp_reference_adapter_artifact
+        from witnessd.cli.run import (
+            _reference_adapter_markers,
+            _stamp_reference_adapter_artifact,
+        )
 
         result.update(_reference_adapter_markers(reference_warning))
         if out_path is not None and out_path.is_file():
@@ -505,7 +576,9 @@ def _derive_command_lane_policy(
     if not command_lanes:
         return None, None
     if len(command_lanes) != 1:
-        raise ValueError("declared command policy verification requires exactly one lane")
+        raise ValueError(
+            "declared command policy verification requires exactly one lane"
+        )
 
     lane = command_lanes[0]
     lane_id = str(lane.get("lane_id", ""))
@@ -572,6 +645,117 @@ def _derive_command_lane_policy(
     }
 
 
+def _derive_command_lane_health(
+    *,
+    evidence_dir: Path,
+    env: dict[str, str],
+) -> tuple[dict[str, object] | None, dict[str, object] | None]:
+    gates_path = evidence_dir / "health" / "gates.json"
+    if not gates_path.is_file():
+        return None, None
+    declaration = json.loads(gates_path.read_text(encoding="utf-8"))
+    if not isinstance(declaration, dict):
+        raise ValueError("health/gates.json must contain a JSON object")
+    raw_gates = declaration.get("gates")
+    if not isinstance(raw_gates, list) or not raw_gates:
+        raise ValueError("health/gates.json gates must be a non-empty list")
+
+    gates: list[dict[str, object]] = []
+    verifier_dir = evidence_dir / "depone-health-verification"
+    verifier_dir.mkdir(parents=True, exist_ok=True)
+    required_keys = (
+        "gate",
+        "tool",
+        "enforcement",
+        "expected_exit_code",
+        "exit_code_path",
+        "log_path",
+    )
+    for index, raw_gate in enumerate(raw_gates):
+        if not isinstance(raw_gate, dict):
+            raise ValueError(f"health/gates.json gates[{index}] must be an object")
+        gate = {key: raw_gate.get(key) for key in required_keys}
+        for key in ("gate", "tool", "exit_code_path", "log_path"):
+            if not isinstance(gate[key], str) or not gate[key]:
+                raise ValueError(
+                    f"health/gates.json gates[{index}].{key} must be a non-empty string"
+                )
+        if gate["enforcement"] not in {"block", "advisory"}:
+            raise ValueError(f"health/gates.json gates[{index}].enforcement is invalid")
+        if type(gate["expected_exit_code"]) is not int:
+            raise ValueError(
+                f"health/gates.json gates[{index}].expected_exit_code must be an integer"
+            )
+        for path_key in ("exit_code_path", "log_path"):
+            relative = Path(str(gate[path_key]))
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError(
+                    f"health/gates.json gates[{index}].{path_key} must be relative"
+                )
+            source_path = evidence_dir / relative
+            if not source_path.is_file():
+                raise ValueError(f"recorded health evidence is missing: {relative}")
+            target_path = verifier_dir / relative
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(source_path.read_bytes())
+        gates.append(gate)
+
+    contract = {
+        "schema_version": "v111.code_health",
+        "code_health": {"gates": gates},
+    }
+    contract_path = verifier_dir / "evidence-contract.json"
+    contract_path.write_text(
+        json.dumps(contract, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    plan_path = verifier_dir / "plan.json"
+    report_path = verifier_dir / "report.json"
+    plan = {
+        "schema_version": "0.5",
+        "plan_id": "orro-command-health",
+        "phases": [{"id": "proofrun"}],
+    }
+    plan_path.write_text(
+        json.dumps(plan, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "depone",
+            "verify",
+            str(plan_path),
+            "--evidence",
+            str(verifier_dir),
+            "--out",
+            str(report_path),
+            "--json",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    if not report_path.is_file():
+        raise ValueError(
+            "Depone health verification did not write a report: "
+            + (completed.stderr.strip() or completed.stdout.strip())
+        )
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    if not isinstance(report, dict):
+        raise ValueError("Depone health verification report must be a JSON object")
+    health = report.get("health_conformance")
+    if not isinstance(health, dict) or health.get("overall") not in {"pass", "fail"}:
+        raise ValueError("Depone health verification report lacks health_conformance")
+    return dict(health), {
+        "verifier": "Depone",
+        "report": str(report_path),
+        "contract": str(contract_path),
+    }
+
+
 def _proofcheck_workflow_contract(
     payload: dict[str, object],
 ) -> dict[str, object] | None:
@@ -627,8 +811,6 @@ def _cmd_advisory_provenance_check(args: argparse.Namespace) -> int:
         )
     print(json.dumps(payload, sort_keys=True))
     return code
-
-
 
 
 def _cmd_handoff(args: argparse.Namespace) -> int:
@@ -699,15 +881,20 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
             if decision == "REFUTE"
             else "ERR_ORRO_HANDOFF_ADVISORY_PROVENANCE_BLOCKED"
         )
-        error_payload = _with_verify_error(args, {
-            "error": {
-                "code": error_code,
-                "message": (
-                    "advisory provenance re-derivation must pass before handoff"
-                ),
+        error_payload = _with_verify_error(
+            args,
+            {
+                "error": {
+                    "code": error_code,
+                    "message": (
+                        "advisory provenance re-derivation must pass before handoff"
+                    ),
+                },
+                "advisory_provenance": advisory_provenance,
             },
-            "advisory_provenance": advisory_provenance,
-        }, default_code=error_code, default_message="advisory provenance re-derivation must pass before handoff")
+            default_code=error_code,
+            default_message="advisory provenance re-derivation must pass before handoff",
+        )
         if args.json:
             print(json.dumps(error_payload, sort_keys=True))
         else:
@@ -800,6 +987,7 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         )
     print(json.dumps(payload, sort_keys=True))
     return 0
+
 
 def _cmd_orro_doctor(args: argparse.Namespace) -> int:
     from witnessd.preflight import probe_adapter_capability

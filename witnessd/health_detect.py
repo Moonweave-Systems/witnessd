@@ -22,25 +22,25 @@ def detect_health_gates(repo: Path) -> list[dict[str, str | None]]:
         or _pyproject_mentions_dependency(pyproject, "black")
         or _mentions_tool((pre_commit,), "black")
     ):
-        gates.append(_gate("format", "black", "black --check --quiet ."))
+        gates.append(_gate("format", "black", "black --check --quiet .", "block"))
     if (
         _has_tool_section(pyproject, "ruff")
         or (repo / "ruff.toml").is_file()
         or _pyproject_mentions_dependency(pyproject, "ruff")
         or _mentions_tool((pre_commit,), "ruff")
     ):
-        gates.append(_gate("lint", "ruff", "ruff check ."))
+        gates.append(_gate("lint", "ruff", "ruff check .", "block"))
     if (
         _has_tool_section(pyproject, "mypy")
         or (repo / "mypy.ini").is_file()
         or _pyproject_mentions_dependency(pyproject, "mypy")
         or _mentions_tool((pre_commit,), "mypy")
     ):
-        gates.append(_gate("type", "mypy", "mypy ."))
+        gates.append(_gate("type", "mypy", "mypy .", "block"))
     if _has_glob(repo, ".eslintrc*") or _mentions_tool(
         (package_json, pre_commit), "eslint"
     ):
-        gates.append(_gate("lint", "eslint", "npx --no-install eslint ."))
+        gates.append(_gate("lint", "eslint", "npx --no-install eslint .", "block"))
     if _has_glob(repo, ".prettierrc*") or _mentions_tool(
         (package_json, pre_commit), "prettier"
     ):
@@ -49,6 +49,7 @@ def detect_health_gates(repo: Path) -> list[dict[str, str | None]]:
                 "format",
                 "prettier",
                 "npx --no-install prettier --check .",
+                "block",
             )
         )
     if (repo / "go.mod").is_file():
@@ -57,6 +58,29 @@ def detect_health_gates(repo: Path) -> list[dict[str, str | None]]:
                 "format",
                 "gofmt",
                 "sh -c 'test -z \"$(gofmt -l .)\"'",
+                "block",
+            )
+        )
+    if _ruff_is_configured(repo, pyproject, pre_commit) and _has_complexity_config(
+        pyproject, _read_text(repo / "ruff.toml")
+    ):
+        gates.append(
+            _gate(
+                "complexity",
+                "ruff-c901",
+                "ruff check --select C901 .",
+                "advisory",
+            )
+        )
+    if (repo / ".importlinter").is_file() or _has_tool_section(
+        pyproject, "importlinter"
+    ):
+        gates.append(
+            _gate(
+                "architecture",
+                "import-linter",
+                "lint-imports",
+                "block",
             )
         )
     return gates
@@ -95,13 +119,35 @@ def resolve_tool_version(tool: str) -> str:
     return match.group(1) if match else "unresolved"
 
 
-def _gate(gate: str, tool: str, command: str) -> dict[str, str]:
+def _gate(gate: str, tool: str, command: str, enforcement: str) -> dict[str, str]:
     return {
         "gate": gate,
         "tool": tool,
         "command": command,
         "version": resolve_tool_version(tool),
+        "enforcement": enforcement,
     }
+
+
+def _ruff_is_configured(repo: Path, pyproject: str, pre_commit: str) -> bool:
+    return (
+        _has_tool_section(pyproject, "ruff")
+        or (repo / "ruff.toml").is_file()
+        or _pyproject_mentions_dependency(pyproject, "ruff")
+        or _mentions_tool((pre_commit,), "ruff")
+    )
+
+
+def _has_complexity_config(pyproject: str, ruff_toml: str) -> bool:
+    return any(
+        re.search(
+            r"^\s*\[(?:tool\.ruff\.)?lint\.mccabe\]",
+            text,
+            re.MULTILINE,
+        )
+        or re.search(r"^\s*max-complexity\s*=", text, re.MULTILINE)
+        for text in (pyproject, ruff_toml)
+    )
 
 
 def _read_text(path: Path) -> str:
@@ -171,4 +217,8 @@ def _version_argv(tool: str) -> list[str]:
         return ["npx", "--no-install", tool, "--version"]
     if tool == "gofmt":
         return ["go", "version"]
+    if tool == "ruff-c901":
+        return ["ruff", "--version"]
+    if tool == "import-linter":
+        return ["lint-imports", "--version"]
     return [tool, "--version"]
