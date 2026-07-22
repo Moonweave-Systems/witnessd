@@ -94,6 +94,13 @@ def _fake_ruff_fixer(directory: Path) -> str:
     return str(path)
 
 
+def _fake_health_tool(directory: Path, name: str, body: str) -> str:
+    path = directory / name
+    path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
 def _fake_ruff_checker(directory: Path) -> str:
     path = directory / "ruff"
     path.write_text(
@@ -260,6 +267,7 @@ class OrroCheckHealthPlanTest(unittest.TestCase):
                         "tool": "ruff",
                         "command": "ruff check .",
                         "version": "unresolved",
+                        "enforcement": "block",
                     }
                 ],
             )
@@ -327,6 +335,130 @@ class OrroCheckVerifyTest(unittest.TestCase):
             )
             self.assertIs(payload["reviewed_work_execution_observed"], False)
             self.assertTrue((root / "run" / "companion-manifest.json").is_file())
+
+    def test_block_health_failure_sets_fail_and_blocks_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            (repo / "pyproject.toml").write_text(
+                '[project]\ndependencies = ["black"]\n'
+                "[tool.importlinter]\nroot_package = 'pkg'\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "pyproject.toml"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-qm", "configure health"], cwd=repo, check=True
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            _fake_health_tool(
+                bin_dir,
+                "black",
+                'if [ "$1" = "--version" ]; then echo "black, 24.10.0"; exit 0; fi\nexit 0\n',
+            )
+            _fake_health_tool(
+                bin_dir,
+                "lint-imports",
+                'if [ "$1" = "--version" ]; then echo "import-linter 2.1"; exit 0; fi\n'
+                'echo "architecture contract violated" >&2\nexit 1\n',
+            )
+            run_dir = root / "run"
+
+            with patch.dict(
+                os.environ,
+                {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"},
+            ):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(run_dir),
+                        "--health",
+                        "--no-review",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2, err)
+            self.assertEqual(payload["verdict_ref"]["decision"], "fail")
+            health = payload["code_health"]
+            architecture = next(
+                axis for axis in health["gates"] if axis["gate"] == "architecture"
+            )
+            self.assertEqual(architecture["status"], "fail")
+            self.assertEqual(architecture["enforcement"], "block")
+            self.assertIs(architecture["blocks_handoff"], True)
+            self.assertEqual(
+                (run_dir / "health" / "01-architecture.exit").read_text(
+                    encoding="utf-8"
+                ),
+                "1\n",
+            )
+
+    def test_advisory_health_failure_is_reported_without_gating(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            (repo / "pyproject.toml").write_text(
+                "[tool.ruff]\n[tool.ruff.lint.mccabe]\nmax-complexity = 1\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "pyproject.toml"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-qm", "configure complexity"],
+                cwd=repo,
+                check=True,
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            _fake_health_tool(
+                bin_dir,
+                "ruff",
+                'if [ "$1" = "--version" ]; then echo "ruff 0.6.9"; exit 0; fi\n'
+                'case "$*" in *C901*) echo "C901 too complex"; exit 1;; esac\n'
+                "exit 0\n",
+            )
+            run_dir = root / "run"
+
+            with patch.dict(
+                os.environ,
+                {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"},
+            ):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(run_dir),
+                        "--health",
+                        "--no-review",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0, err)
+            self.assertEqual(payload["verdict_ref"]["decision"], "pass")
+            health = payload["code_health"]
+            self.assertEqual(health["overall"], "fail")
+            complexity = next(
+                axis for axis in health["gates"] if axis["gate"] == "complexity"
+            )
+            self.assertEqual(complexity["status"], "fail")
+            self.assertEqual(complexity["enforcement"], "advisory")
+            self.assertIs(complexity["blocks_handoff"], False)
 
     def test_health_fix_runs_in_scope_before_verify_and_records_diff(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -597,14 +729,12 @@ class OrroCheckVerifyTest(unittest.TestCase):
                 )
 
             self.assertEqual(code, 2, err)
-            self.assertIn(
-                payload["code_health"]["verdict"],
-                {"blocked", "blocked-explicit"},
-            )
+            self.assertEqual(payload["code_health"]["verdict"], "fail")
             gate = payload["code_health"]["gates"][0]
             self.assertEqual(gate["tool"], "mypy")
             self.assertEqual(gate["version"], "unresolved")
-            self.assertEqual(gate["status"], payload["code_health"]["verdict"])
+            self.assertEqual(gate["status"], "fail")
+            self.assertIs(gate["blocks_handoff"], True)
             self.assertEqual(
                 payload["code_health"]["means"],
                 "declared deterministic gates ran under observation; the verdict "
@@ -657,7 +787,16 @@ class OrroCheckVerifyTest(unittest.TestCase):
             )
             self.assertEqual(
                 plan["lanes"][0]["check_commands"],
-                ["false", "ruff check ."],
+                ["false"],
+            )
+            health_plan = json.loads(
+                (run_dir / "health-run" / "role-lane-plan.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                health_plan["lanes"][0]["check_commands"],
+                ["ruff check ."],
             )
             self.assertEqual(
                 payload["code_health"]["verdict"], payload["verdict_ref"]["decision"]

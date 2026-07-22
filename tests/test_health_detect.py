@@ -13,7 +13,7 @@ from witnessd.health_detect import detect_health_gates, safe_fixer_commands
 def _write_tool(bin_dir: Path, name: str, version_output: str) -> None:
     path = bin_dir / name
     path.write_text(
-        "#!/bin/sh\n" f"printf '%s\\n' '{version_output}'\n",
+        f"#!/bin/sh\nprintf '%s\\n' '{version_output}'\n",
         encoding="utf-8",
     )
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
@@ -57,12 +57,14 @@ class HealthDetectionTest(unittest.TestCase):
                         "tool": "ruff",
                         "command": "ruff check .",
                         "version": "0.6.9",
+                        "enforcement": "block",
                     },
                     {
                         "gate": "type",
                         "tool": "mypy",
                         "command": "mypy .",
                         "version": "1.11.2",
+                        "enforcement": "block",
                     },
                 ],
             )
@@ -94,25 +96,39 @@ class HealthDetectionTest(unittest.TestCase):
 
             self.assertEqual(
                 [
-                    (gate["gate"], gate["tool"], gate["command"], gate["version"])
+                    (
+                        gate["gate"],
+                        gate["tool"],
+                        gate["command"],
+                        gate["version"],
+                        gate["enforcement"],
+                    )
                     for gate in gates
                 ],
                 [
-                    ("format", "black", "black --check --quiet .", "24.10.0"),
-                    ("lint", "ruff", "ruff check .", "0.6.9"),
-                    ("type", "mypy", "mypy .", "1.11.2"),
-                    ("lint", "eslint", "npx --no-install eslint .", "9.1.0"),
+                    ("format", "black", "black --check --quiet .", "24.10.0", "block"),
+                    ("lint", "ruff", "ruff check .", "0.6.9", "block"),
+                    ("type", "mypy", "mypy .", "1.11.2", "block"),
+                    (
+                        "lint",
+                        "eslint",
+                        "npx --no-install eslint .",
+                        "9.1.0",
+                        "block",
+                    ),
                     (
                         "format",
                         "prettier",
                         "npx --no-install prettier --check .",
                         "3.3.3",
+                        "block",
                     ),
                     (
                         "format",
                         "gofmt",
                         "sh -c 'test -z \"$(gofmt -l .)\"'",
                         "1.23.1",
+                        "block",
                     ),
                 ],
             )
@@ -135,6 +151,7 @@ class HealthDetectionTest(unittest.TestCase):
                         "tool": "mypy",
                         "command": "mypy .",
                         "version": "unresolved",
+                        "enforcement": "block",
                     }
                 ],
             )
@@ -150,6 +167,52 @@ class HealthDetectionTest(unittest.TestCase):
             )
 
             self.assertEqual(detect_health_gates(root), [])
+
+    def test_complexity_and_architecture_gates_use_declared_tiers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "pyproject.toml").write_text(
+                "[tool.ruff]\n"
+                "[tool.ruff.lint.mccabe]\n"
+                "max-complexity = 3\n"
+                "[tool.importlinter]\n"
+                "root_package = 'pkg'\n",
+                encoding="utf-8",
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            _write_tool(bin_dir, "ruff", "ruff 0.6.9")
+            _write_tool(bin_dir, "lint-imports", "import-linter 2.1")
+
+            with patch.dict(os.environ, {"PATH": str(bin_dir)}):
+                gates = detect_health_gates(root)
+
+            self.assertEqual(
+                gates,
+                [
+                    {
+                        "gate": "lint",
+                        "tool": "ruff",
+                        "command": "ruff check .",
+                        "version": "0.6.9",
+                        "enforcement": "block",
+                    },
+                    {
+                        "gate": "complexity",
+                        "tool": "ruff-c901",
+                        "command": "ruff check --select C901 .",
+                        "version": "0.6.9",
+                        "enforcement": "advisory",
+                    },
+                    {
+                        "gate": "architecture",
+                        "tool": "import-linter",
+                        "command": "lint-imports",
+                        "version": "2.1",
+                        "enforcement": "block",
+                    },
+                ],
+            )
 
     def test_safe_fixers_include_only_the_locked_semantics_preserving_subset(
         self,

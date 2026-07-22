@@ -77,6 +77,85 @@ def _assert_no_execution_adapter(role_lane_plan_path: Path) -> None:
             )
 
 
+def _record_command_lane_health(
+    *,
+    evidence_dir: Path,
+    health_run_dir: Path,
+    gates: list[dict[str, object]],
+) -> None:
+    ledger_path = health_run_dir / "team-ledger.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    lanes = ledger.get("lanes") if isinstance(ledger, dict) else None
+    if not isinstance(lanes, list) or len(lanes) != 1 or not isinstance(lanes[0], dict):
+        raise ValueError("health shell run must seal exactly one lane")
+    receipt_ref = lanes[0].get("worktree_receipt")
+    if not isinstance(receipt_ref, str) or not receipt_ref:
+        raise ValueError("health shell lane lacks a worktree receipt")
+    receipt_path = health_run_dir / receipt_ref
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    command_receipts = (
+        receipt.get("command_receipts") if isinstance(receipt, dict) else None
+    )
+    if not isinstance(command_receipts, list) or len(command_receipts) < len(gates):
+        raise ValueError("health shell lane lacks per-gate command receipts")
+
+    health_dir = evidence_dir / "health"
+    health_dir.mkdir(parents=True, exist_ok=True)
+    contract_gates: list[dict[str, object]] = []
+    observations: list[dict[str, object]] = []
+    for index, gate in enumerate(gates):
+        receipt_entry = command_receipts[index]
+        if not isinstance(receipt_entry, dict):
+            raise ValueError(f"health command receipt {index} must be an object")
+        expected_command = ["sh", "-c", str(gate["command"])]
+        if receipt_entry.get("command") != expected_command:
+            raise ValueError(
+                f"health command receipt {index} does not match its declared gate"
+            )
+        exit_code = receipt_entry.get("exit_code")
+        if type(exit_code) is not int:
+            raise ValueError(
+                f"health command receipt {index} lacks an integer exit code"
+            )
+        gate_id = str(gate["gate"])
+        stem = f"{index:02d}-{gate_id}"
+        exit_path = health_dir / f"{stem}.exit"
+        log_path = health_dir / f"{stem}.log"
+        exit_path.write_text(f"{exit_code}\n", encoding="utf-8")
+        log_path.write_text(
+            str(receipt_entry.get("stdout", "")) + str(receipt_entry.get("stderr", "")),
+            encoding="utf-8",
+        )
+        contract_gates.append(
+            {
+                "gate": gate_id,
+                "tool": str(gate["tool"]),
+                "enforcement": str(gate["enforcement"]),
+                "expected_exit_code": 0,
+                "exit_code_path": exit_path.relative_to(evidence_dir).as_posix(),
+                "log_path": log_path.relative_to(evidence_dir).as_posix(),
+            }
+        )
+        observations.append(
+            {
+                "gate": gate_id,
+                "command_receipt_index": index,
+                "receipt": str(receipt_path),
+                "exit_code": exit_code,
+            }
+        )
+    _write_json_file(health_dir / "gates.json", {"gates": contract_gates})
+    _write_json_file(
+        health_dir / "observation.json",
+        {
+            "kind": "orro-health-command-observation",
+            "source_receipt": str(receipt_path),
+            "source_receipt_sha256": _hash_file(receipt_path),
+            "gates": observations,
+        },
+    )
+
+
 def _execution_adapter_lane_count(team_ledger_path: Path) -> int:
     try:
         ledger = json.loads(team_ledger_path.read_text(encoding="utf-8"))
@@ -100,7 +179,7 @@ def _print_human_summary(
     verdict_ref = manifest["verdict_ref"]
     assert isinstance(verdict_ref, dict)
     verdict = verdict_ref["decision"]
-    dot = "● pass" if verdict == "pass" else "● blocked"
+    dot = "● pass" if verdict == "pass" else f"● {verdict}"
     print("orro check — evidence & review for work you already drove\n")
     declared_intent = manifest.get("declared_intent")
     if isinstance(declared_intent, dict):
@@ -112,21 +191,27 @@ def _print_human_summary(
     code_health = manifest.get("code_health")
     if isinstance(code_health, dict):
         health_verdict = str(code_health["verdict"])
-        health_dot = "● pass" if health_verdict == "pass" else "● blocked"
-        print(
-            "  CODE HEALTH   (Depone verdict, deterministic gates)   " f"{health_dot}"
-        )
+        health_dot = "● pass" if health_verdict == "pass" else f"● {health_verdict}"
+        print(f"  CODE HEALTH   (Depone verdict, deterministic gates)   {health_dot}")
         gates = code_health.get("gates")
         if isinstance(gates, list):
             for gate in gates:
                 if not isinstance(gate, dict):
                     continue
                 status = str(gate.get("status", "blocked"))
-                marker = "✓" if status == "pass" else "✗"
+                enforcement = str(gate.get("enforcement", "block"))
+                marker = (
+                    "✓"
+                    if status == "pass"
+                    else "⚠"
+                    if enforcement == "advisory"
+                    else "✗"
+                )
                 print(
                     f"    {marker} {str(gate.get('gate', '')):<8} "
                     f"{str(gate.get('tool', '')):<10} "
-                    f"{str(gate.get('version', 'unresolved')):<12} {status}"
+                    f"{str(gate.get('version', 'unresolved')):<12} {status} "
+                    f"({enforcement})"
                 )
         fixes = code_health.get("fixes_applied")
         if isinstance(fixes, dict):
@@ -160,7 +245,7 @@ def _print_human_summary(
         )
     print("  BOUNDARY")
     if isinstance(code_health, dict):
-        print(f'    "health: {code_health["verdict"]}" = ' f'{code_health["means"]}')
+        print(f'    "health: {code_health["verdict"]}" = {code_health["means"]}')
     adapter_count = manifest["execution_adapter_lanes_spawned"]
     print(
         "    reviewed work was NOT observed-executed · "
@@ -295,8 +380,25 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
         return 0
 
     checks = list(getattr(args, "check", None) or [])
-    if args.health:
-        checks.extend(str(gate["command"]) for gate in health_gates)
+    if args.health and not health_gates:
+        return _emit_blocker(
+            _structured_error(
+                code="ERR_ORRO_HEALTH_NO_GATES_DETECTED",
+                message="orro check --health detected no configured health gates",
+                reason=(
+                    "health gates are read from the repo's own tool config and "
+                    "none was found"
+                ),
+                required_input_or_grant=(
+                    "add tool config (e.g. [tool.ruff]) or pass --check '<cmd>'"
+                ),
+                next_command=(
+                    "python3 -m orro check --health --health-plan --repo <repo>"
+                ),
+            )
+        )
+    if args.health and not checks:
+        checks.append("true")
     if args.fix and not [scope for scope in args.write_scope if scope]:
         return _emit_blocker(
             _structured_error(
@@ -311,23 +413,6 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             )
         )
     if not checks:
-        if args.health:
-            return _emit_blocker(
-                _structured_error(
-                    code="ERR_ORRO_HEALTH_NO_GATES_DETECTED",
-                    message="orro check --health detected no configured health gates",
-                    reason=(
-                        "health gates are read from the repo's own tool config and "
-                        "none was found"
-                    ),
-                    required_input_or_grant=(
-                        "add tool config (e.g. [tool.ruff]) or pass --check '<cmd>'"
-                    ),
-                    next_command=(
-                        "python3 -m orro check --health --health-plan --repo <repo>"
-                    ),
-                )
-            )
         return _emit_blocker(
             _structured_error(
                 code="ERR_ORRO_CHECK_NO_CHECKS_DECLARED",
@@ -617,6 +702,83 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     )
                 applied_to_worktree = True
 
+    if args.health:
+        health_run_dir = run_dir / "health-run"
+        health_run_dir.mkdir(parents=True, exist_ok=True)
+        health_wp = health_run_dir / "workflow-plan.json"
+        health_rlp = health_run_dir / "role-lane-plan.json"
+        health_goal = "Run configured code-health gates under observation"
+        health_flowplan_argv = [
+            "flowplan",
+            health_goal,
+            "--root",
+            str(verify_repo),
+            "--profile",
+            "verification-only",
+            "--out",
+            str(health_wp),
+            "--role-lanes-out",
+            str(health_rlp),
+            "--lane-adapter",
+            "shell",
+        ]
+        for gate in health_gates:
+            health_flowplan_argv.extend(["--check", str(gate["command"])])
+        health_flowplan_argv.append("--json")
+        code, _, err = _invoke_phase(health_flowplan_argv)
+        if code != 0:
+            return _emit_blocker(
+                _structured_error(
+                    code="ERR_ORRO_HEALTH_FLOWPLAN_BLOCKED",
+                    message="health verification flowplan failed",
+                    reason=err or "flowplan returned nonzero",
+                )
+            )
+        _assert_no_execution_adapter(health_rlp)
+        _, _, health_proofrun_err = _invoke_phase(
+            [
+                "proofrun",
+                health_goal,
+                "--repo",
+                str(verify_repo),
+                "--home",
+                str(home),
+                "--workflow-plan",
+                str(health_wp),
+                "--role-lane-plan",
+                str(health_rlp),
+                "--adapter",
+                "shell",
+                "--runner-sandbox",
+                str(run_dir / "health-sandbox"),
+                "--run-dir",
+                str(health_run_dir),
+                "--json",
+            ]
+        )
+        if not (health_run_dir / "team-ledger.json").is_file():
+            return _emit_blocker(
+                _structured_error(
+                    code="ERR_ORRO_HEALTH_PROOFRUN_BLOCKED",
+                    message="health proofrun sealed no evidence",
+                    reason=health_proofrun_err or "proofrun returned no team ledger",
+                )
+            )
+        try:
+            _record_command_lane_health(
+                evidence_dir=run_dir,
+                health_run_dir=health_run_dir,
+                gates=health_gates,
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            return _emit_blocker(
+                _structured_error(
+                    code="ERR_ORRO_HEALTH_OBSERVATION_BLOCKED",
+                    message="could not bind health gates to observed command receipts",
+                    reason=str(exc),
+                )
+            )
+
     verify_wp = run_dir / "verify-workflow-plan.json"
     verify_rlp = run_dir / "verify-role-lane-plan.json"
     verdict_path = run_dir / "proofcheck-verdict.json"
@@ -705,7 +867,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
         verdict_payload.get("decision") if isinstance(verdict_payload, dict) else None
     )
     if (
-        decision not in {"pass", "blocked", "blocked-explicit"}
+        decision not in {"pass", "fail", "blocked", "blocked-explicit"}
         or not verdict_path.is_file()
     ):
         return _emit_blocker(
@@ -805,10 +967,54 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             "reflects their exit status, and is NOT a claim of good design, "
             "correct behavior, or structural consistency"
         )
+        health_conformance = (
+            verdict_payload.get("health_conformance")
+            if isinstance(verdict_payload, dict)
+            else None
+        )
+        if not isinstance(health_conformance, dict):
+            return _emit_blocker(
+                _structured_error(
+                    code="ERR_ORRO_HEALTH_CONFORMANCE_MISSING",
+                    message="proofcheck did not return health_conformance",
+                )
+            )
+        axes = health_conformance.get("axes")
+        if not isinstance(axes, list):
+            return _emit_blocker(
+                _structured_error(
+                    code="ERR_ORRO_HEALTH_CONFORMANCE_INVALID",
+                    message="proofcheck returned invalid health_conformance axes",
+                )
+            )
+        surfaced_gates: list[dict[str, object]] = []
+        for axis in axes:
+            if not isinstance(axis, dict):
+                continue
+            detected = next(
+                (
+                    gate
+                    for gate in health_gates
+                    if gate.get("gate") == axis.get("gate")
+                    and gate.get("tool") == axis.get("tool")
+                ),
+                {},
+            )
+            surfaced_gates.append(
+                {
+                    "gate": axis.get("gate"),
+                    "tool": axis.get("tool"),
+                    "status": axis.get("status"),
+                    "enforcement": axis.get("enforcement"),
+                    "blocks_handoff": axis.get("blocks_handoff"),
+                    "version": detected.get("version", "unresolved"),
+                }
+            )
         code_health: dict[str, object] = {
             "applied": True,
             "verdict": decision,
-            "gates": [dict(gate, status=decision) for gate in health_gates],
+            "overall": health_conformance.get("overall"),
+            "gates": surfaced_gates,
             "means": means,
             "verdict_source": "depone-verification-only",
             "structural_consistency_covered": False,
