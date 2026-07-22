@@ -13,7 +13,7 @@ from witnessd.cli._output import (
     _structured_error,
     _write_json_file,
 )
-from witnessd.orro_roadmap import OrroRoadmapError, require_roadmap_item
+from witnessd.orro_roadmap import OrroRoadmapError, require_roadmap_item, require_roadmap_step
 
 
 def _emit_blocker(error: dict[str, object]) -> int:
@@ -370,9 +370,20 @@ def _review_goal(goal: str, declared_intent: dict[str, Any] | None) -> str:
 def _cmd_orro_check(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve(strict=False) if args.repo else Path.cwd()
     roadmap_item = getattr(args, "roadmap_item", None)
+    roadmap_step = getattr(args, "roadmap_step", None)
+    if roadmap_step is not None and roadmap_item is None:
+        return _emit_blocker(_structured_error(
+            code="ERR_ORRO_ROADMAP_STEP_REQUIRES_ITEM",
+            message="orro check received --roadmap-step without --roadmap-item",
+            reason="a step is scoped to one roadmap item",
+            required_input_or_grant="add --roadmap-item",
+            next_command="python3 -m orro check --roadmap-item <item> --roadmap-step <step>",
+        ))
     if roadmap_item is not None:
         try:
-            require_roadmap_item(repo, roadmap_item)
+            item = require_roadmap_item(repo, roadmap_item)
+            if roadmap_step is not None:
+                require_roadmap_step(repo, roadmap_item, roadmap_step, item=item)
         except OrroRoadmapError as exc:
             return _emit_blocker(
                 _structured_error(
@@ -657,6 +668,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                         if args.roadmap_item
                         else []
                     ),
+                    *(["--roadmap-step", roadmap_step] if roadmap_step else []),
                     "--json",
                 ]
             )
@@ -871,6 +883,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     if args.roadmap_item
                     else []
                 ),
+                *(["--roadmap-step", roadmap_step] if roadmap_step else []),
                 "--json",
             ]
         )
@@ -953,10 +966,11 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             "--run-dir",
             str(run_dir),
             *(
-                ["--roadmap-item", args.roadmap_item]
+            ["--roadmap-item", args.roadmap_item]
                 if args.roadmap_item
                 else []
-            ),
+        ),
+        *(["--roadmap-step", roadmap_step] if roadmap_step else []),
             "--json",
         ]
     )

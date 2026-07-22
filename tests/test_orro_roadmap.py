@@ -9,6 +9,7 @@ from pathlib import Path
 from witnessd.orro_roadmap import (
     ERR_ORRO_ROADMAP_INVALID,
     ERR_ORRO_ROADMAP_ITEM_UNKNOWN,
+    ERR_ORRO_ROADMAP_STEP_UNKNOWN,
     OrroRoadmapError,
     read_roadmap,
     read_roadmap_binding,
@@ -18,6 +19,77 @@ from witnessd.orro_roadmap import (
 
 
 class OrroRoadmapTests(unittest.TestCase):
+    def test_steps_validate_and_bind_step_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            run_dir = root / "home" / "runs" / "run-1"
+            run_dir.mkdir(parents=True)
+            write_roadmap(
+                repo,
+                {
+                    "kind": "orro-roadmap",
+                    "schema_version": "0.1",
+                    "items": [{
+                        "id": "feature",
+                        "title": "Feature",
+                        "steps": [{
+                            "id": "verify",
+                            "profile": "verification-only",
+                            "checks": ["true"],
+                        }],
+                    }],
+                },
+            )
+            binding = seal_roadmap_binding(
+                repo=repo, run_dir=run_dir, item_id="feature", step_id="verify"
+            )
+            self.assertEqual(binding["step_id"], "verify")
+            self.assertEqual(read_roadmap_binding(run_dir), binding)
+
+    def test_steps_malformed_and_done_conflict(self) -> None:
+        invalid = [
+            {"id": "verify", "profile": "verification-only", "wat": 1},
+            {"id": "verify", "profile": "bad-profile"},
+            {"id": "verify", "profile": "verification-only", "checks": "true"},
+        ]
+        for step in invalid:
+            with self.subTest(step=step), tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(OrroRoadmapError) as caught:
+                    write_roadmap(Path(tmp), {
+                        "kind": "orro-roadmap", "schema_version": "0.1",
+                        "items": [{"id": "feature", "title": "Feature", "steps": [step]}],
+                    })
+                self.assertEqual(caught.exception.code, ERR_ORRO_ROADMAP_INVALID)
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(OrroRoadmapError) as caught:
+                write_roadmap(Path(tmp), {
+                    "kind": "orro-roadmap", "schema_version": "0.1",
+                    "items": [{"id": "feature", "title": "Feature", "status": "done", "steps": []}],
+                })
+            self.assertEqual(caught.exception.code, ERR_ORRO_ROADMAP_INVALID)
+
+    def test_duplicate_step_id_and_unknown_step_are_structured(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            with self.assertRaises(OrroRoadmapError):
+                write_roadmap(repo, {
+                    "kind": "orro-roadmap", "schema_version": "0.1",
+                    "items": [{"id": "feature", "title": "Feature", "steps": [
+                        {"id": "verify", "profile": "verification-only"},
+                        {"id": "verify", "profile": "verification-only"},
+                    ]}],
+                })
+            write_roadmap(repo, {
+                "kind": "orro-roadmap", "schema_version": "0.1",
+                "items": [{"id": "feature", "title": "Feature", "steps": [
+                    {"id": "verify", "profile": "verification-only"},
+                ]}],
+            })
+            with self.assertRaises(OrroRoadmapError) as caught:
+                from witnessd.orro_roadmap import require_roadmap_step
+                require_roadmap_step(repo, "feature", "missing")
+            self.assertEqual(caught.exception.code, ERR_ORRO_ROADMAP_STEP_UNKNOWN)
     def test_absent_roadmap_is_none(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             self.assertIsNone(read_roadmap(Path(tmp)))

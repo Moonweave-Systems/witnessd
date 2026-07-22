@@ -428,6 +428,8 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
         proofrun_argv.append("--allow-reference-adapter")
     if args.roadmap_item:
         proofrun_argv.extend(["--roadmap-item", args.roadmap_item])
+    if getattr(args, "roadmap_step", None):
+        proofrun_argv.extend(["--roadmap-step", args.roadmap_step])
     proofrun_code, proofrun_payload, proofrun_error = _invoke_orro_flow_phase(
         proofrun_argv
     )

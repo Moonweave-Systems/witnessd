@@ -265,6 +265,7 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     from witnessd.orro_roadmap import (
         OrroRoadmapError,
         require_roadmap_item,
+        require_roadmap_step,
         seal_roadmap_binding,
     )
     from witnessd.signing import gen_operator_keypair
@@ -275,9 +276,15 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
         args.home or os.environ.get("WITNESSD_HOME") or (repo / ".witnessd")
     ).resolve(strict=False)
     roadmap_item = getattr(args, "roadmap_item", None)
+    roadmap_step = getattr(args, "roadmap_step", None)
+    if roadmap_step is not None and roadmap_item is None:
+        _emit_orro_error(args, code="ERR_ORRO_ROADMAP_STEP_REQUIRES_ITEM", message="--roadmap-step requires --roadmap-item")
+        return 2
     if roadmap_item is not None:
         try:
-            require_roadmap_item(repo, roadmap_item)
+            item = require_roadmap_item(repo, roadmap_item)
+            if roadmap_step is not None:
+                require_roadmap_step(repo, roadmap_item, roadmap_step, item=item)
         except OrroRoadmapError as exc:
             _emit_orro_error(args, code=exc.code, message=str(exc))
             return 2
@@ -438,6 +445,7 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
                 repo=repo,
                 run_dir=out_dir,
                 item_id=roadmap_item,
+                step_id=roadmap_step,
             )
         except OrroRoadmapError as exc:
             _emit_orro_error(args, code=exc.code, message=str(exc))

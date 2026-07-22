@@ -16,17 +16,24 @@ ROADMAP_BINDING_SCHEMA_VERSION = "0.1"
 
 ERR_ORRO_ROADMAP_INVALID = "ERR_ORRO_ROADMAP_INVALID"
 ERR_ORRO_ROADMAP_ITEM_UNKNOWN = "ERR_ORRO_ROADMAP_ITEM_UNKNOWN"
+ERR_ORRO_ROADMAP_STEP_UNKNOWN = "ERR_ORRO_ROADMAP_STEP_UNKNOWN"
+ERR_ORRO_ROADMAP_STEP_REQUIRES_ITEM = "ERR_ORRO_ROADMAP_STEP_REQUIRES_ITEM"
 ERR_ORRO_ROADMAP_WRITE_FAILED = "ERR_ORRO_ROADMAP_WRITE_FAILED"
 
 _ITEM_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _ROADMAP_KEYS = {"kind", "schema_version", "items"}
-_ITEM_KEYS = {"id", "title", "status", "note", "spec"}
+_ITEM_KEYS = {"id", "title", "status", "note", "spec", "steps"}
+_STEP_KEYS = {"id", "title", "profile", "write_scope", "checks", "commands", "adapter"}
+_PROFILES = {
+    "code-change", "review-only", "verification-only", "docs-change", "release-readiness"
+}
 _BINDING_KEYS = {
     "kind",
     "schema_version",
     "item_id",
     "ledger_path",
     "ledger_sha256",
+    "step_id",
 }
 
 
@@ -80,9 +87,11 @@ def read_roadmap_binding(run_dir: Path) -> dict[str, Any] | None:
 
 
 def seal_roadmap_binding(
-    *, repo: Path, run_dir: Path, item_id: str
+    *, repo: Path, run_dir: Path, item_id: str, step_id: str | None = None
 ) -> dict[str, Any]:
-    require_roadmap_item(repo, item_id)
+    item = require_roadmap_item(repo, item_id)
+    if step_id is not None:
+        require_roadmap_step(repo, item_id, step_id, item=item)
 
     ledger = roadmap_path(repo)
     binding = {
@@ -92,6 +101,8 @@ def seal_roadmap_binding(
         "ledger_path": ".orro/roadmap.json",
         "ledger_sha256": hashlib.sha256(ledger.read_bytes()).hexdigest(),
     }
+    if step_id is not None:
+        binding["step_id"] = step_id
     path = run_dir / "roadmap-binding.json"
     try:
         path.write_text(
@@ -120,6 +131,28 @@ def require_roadmap_item(repo: Path, item_id: str) -> dict[str, Any]:
         + ", ".join(str(item["id"]) for item in items)
         if items
         else f"{item_id}; known roadmap item ids: (none)",
+    )
+
+
+def require_roadmap_step(
+    repo: Path, item_id: str | None, step_id: str, *, item: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    if item_id is None:
+        raise OrroRoadmapError(
+            ERR_ORRO_ROADMAP_STEP_REQUIRES_ITEM,
+            "--roadmap-step requires --roadmap-item",
+        )
+    item = item or require_roadmap_item(repo, item_id)
+    steps = item.get("steps", [])
+    for step in steps:
+        if step["id"] == step_id:
+            return step
+    raise OrroRoadmapError(
+        ERR_ORRO_ROADMAP_STEP_UNKNOWN,
+        f"roadmap step is not present on item {item_id}: {step_id}; known roadmap step ids: "
+        + ", ".join(str(step["id"]) for step in steps)
+        if steps
+        else f"{step_id}; known roadmap step ids: (none)",
     )
 
 
@@ -153,14 +186,25 @@ def _validate_roadmap(payload: Any) -> dict[str, Any]:
             _invalid(f".orro/roadmap.json item {index}.title must be a non-empty string")
         if "status" in item and item.get("status") != "done":
             _invalid(f".orro/roadmap.json item {index}.status must be done")
+        if "status" in item and "steps" in item:
+            _invalid(f".orro/roadmap.json item {index} may not have both status and steps")
         for key in ("note", "spec"):
             if key in item and not isinstance(item.get(key), str):
                 _invalid(f".orro/roadmap.json item {index}.{key} must be a string")
+        if "steps" in item:
+            steps = item["steps"]
+            if not isinstance(steps, list):
+                _invalid(f".orro/roadmap.json item {index}.steps must be a list")
+            step_ids: set[str] = set()
+            for step_index, step in enumerate(steps):
+                _validate_step(step, index=index, step_index=step_index, seen=step_ids)
     return payload
 
 
 def _validate_binding(payload: Any) -> dict[str, Any]:
-    if not isinstance(payload, dict) or set(payload) != _BINDING_KEYS:
+    if not isinstance(payload, dict) or set(payload) not in (
+        _BINDING_KEYS - {"step_id"}, _BINDING_KEYS
+    ):
         _invalid("roadmap-binding.json has invalid fields")
     if payload.get("kind") != ROADMAP_BINDING_KIND:
         _invalid(f"roadmap-binding.json kind must be {ROADMAP_BINDING_KIND}")
@@ -180,7 +224,35 @@ def _validate_binding(payload: Any) -> dict[str, Any]:
         or any(character not in "0123456789abcdef" for character in digest)
     ):
         _invalid("roadmap-binding.json ledger_sha256 must be lowercase SHA-256")
+    if "step_id" in payload and (
+        not isinstance(payload["step_id"], str) or _ITEM_ID.fullmatch(payload["step_id"]) is None
+    ):
+        _invalid("roadmap-binding.json step_id must be kebab-case")
     return payload
+
+
+def _validate_step(
+    step: Any, *, index: int, step_index: int, seen: set[str]
+) -> None:
+    if not isinstance(step, dict) or not set(step).issubset(_STEP_KEYS) or not {"id", "profile"}.issubset(step):
+        _invalid(f".orro/roadmap.json item {index}.step {step_index} has invalid fields")
+    step_id = step.get("id")
+    if not isinstance(step_id, str) or _ITEM_ID.fullmatch(step_id) is None:
+        _invalid(f".orro/roadmap.json item {index}.step {step_index}.id must be kebab-case")
+    if step_id in seen:
+        _invalid(f".orro/roadmap.json step id is duplicated: {step_id}")
+    seen.add(step_id)
+    if not isinstance(step.get("profile"), str) or step.get("profile") not in _PROFILES:
+        _invalid(f".orro/roadmap.json item {index}.step {step_index}.profile is invalid")
+    if "title" in step and (not isinstance(step["title"], str) or not step["title"].strip()):
+        _invalid(f".orro/roadmap.json item {index}.step {step_index}.title must be a non-empty string")
+    for key in ("write_scope", "checks", "commands"):
+        if key in step and (
+            not isinstance(step[key], list) or any(not isinstance(value, str) for value in step[key])
+        ):
+            _invalid(f".orro/roadmap.json item {index}.step {step_index}.{key} must be a list of strings")
+    if "adapter" in step and not isinstance(step["adapter"], str):
+        _invalid(f".orro/roadmap.json item {index}.step {step_index}.adapter must be a string")
 
 
 def _invalid(message: str) -> None:
