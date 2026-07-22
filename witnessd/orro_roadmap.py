@@ -82,13 +82,7 @@ def read_roadmap_binding(run_dir: Path) -> dict[str, Any] | None:
 def seal_roadmap_binding(
     *, repo: Path, run_dir: Path, item_id: str
 ) -> dict[str, Any]:
-    roadmap = read_roadmap(repo)
-    items = roadmap["items"] if roadmap is not None else []
-    if not any(item["id"] == item_id for item in items):
-        raise OrroRoadmapError(
-            ERR_ORRO_ROADMAP_ITEM_UNKNOWN,
-            f"roadmap item is not present in .orro/roadmap.json: {item_id}",
-        )
+    require_roadmap_item(repo, item_id)
 
     ledger = roadmap_path(repo)
     binding = {
@@ -111,6 +105,18 @@ def seal_roadmap_binding(
             ERR_ORRO_ROADMAP_WRITE_FAILED, "roadmap binding was not readable"
         )
     return readable
+
+
+def require_roadmap_item(repo: Path, item_id: str) -> dict[str, Any]:
+    roadmap = read_roadmap(repo)
+    items = roadmap["items"] if roadmap is not None else []
+    for item in items:
+        if item["id"] == item_id:
+            return item
+    raise OrroRoadmapError(
+        ERR_ORRO_ROADMAP_ITEM_UNKNOWN,
+        f"roadmap item is not present in .orro/roadmap.json: {item_id}",
+    )
 
 
 def _validate_roadmap(payload: Any) -> dict[str, Any]:

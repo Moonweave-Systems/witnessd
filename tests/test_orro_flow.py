@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.__main__ import main
+from witnessd.orro_roadmap import write_roadmap
 
 
 def _seed_repo(repo: Path) -> None:
@@ -375,6 +376,14 @@ class OrroFlowTests(unittest.TestCase):
             repo.mkdir()
             runner_sandbox.mkdir()
             _seed_repo(repo)
+            write_roadmap(
+                repo,
+                {
+                    "kind": "orro-roadmap",
+                    "schema_version": "0.1",
+                    "items": [{"id": "guided-flow", "title": "Guided flow"}],
+                },
+            )
             rolepack_path.write_text(
                 json.dumps(
                     {
@@ -420,11 +429,15 @@ class OrroFlowTests(unittest.TestCase):
                         "--run-dir",
                         str(run_dir),
                         "--allow-reference-adapter",
+                        "--roadmap-item",
+                        "guided-flow",
                         "--json",
                     ]
                 )
 
-            self.assertEqual(code, 0, stderr.getvalue())
+            self.assertEqual(
+                code, 0, f"stdout={stdout.getvalue()}\nstderr={stderr.getvalue()}"
+            )
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["kind"], "orro-flow-result")
             self.assertEqual(payload["decision"], "pass")
@@ -438,6 +451,12 @@ class OrroFlowTests(unittest.TestCase):
             self.assertEqual(payload["runner_sandbox"], str(runner_sandbox.resolve()))
             self.assertFalse((run_dir / "team-ledger.json").is_relative_to(runner_sandbox))
             self.assertTrue((run_dir / "proofcheck-verdict.json").is_file())
+            self.assertEqual(
+                json.loads(
+                    (run_dir / "roadmap-binding.json").read_text(encoding="utf-8")
+                )["item_id"],
+                "guided-flow",
+            )
             self.assertNotIn("Traceback", stdout.getvalue())
             self.assertNotIn("Traceback", stderr.getvalue())
 

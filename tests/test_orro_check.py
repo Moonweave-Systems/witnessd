@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.__main__ import main
+from witnessd.orro_roadmap import write_roadmap
 
 
 def _seed_repo(repo: Path) -> None:
@@ -505,6 +506,48 @@ class OrroCheckVerifyTest(unittest.TestCase):
             )
             self.assertEqual(manifest["verdict_ref"]["decision"], "pass")
 
+    def test_check_threads_explicit_roadmap_item_to_proofrun(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            write_roadmap(
+                repo,
+                {
+                    "kind": "orro-roadmap",
+                    "schema_version": "0.1",
+                    "items": [{"id": "check-run", "title": "Check run"}],
+                },
+            )
+            run_dir = root / "run"
+
+            code, _payload, err = _run(
+                [
+                    "orro",
+                    "check",
+                    "--repo",
+                    str(repo),
+                    "--home",
+                    str(root / "home"),
+                    "--run-dir",
+                    str(run_dir),
+                    "--check",
+                    "true",
+                    "--roadmap-item",
+                    "check-run",
+                    "--no-review",
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 0, err)
+            self.assertEqual(
+                json.loads(
+                    (run_dir / "roadmap-binding.json").read_text(encoding="utf-8")
+                )["item_id"],
+                "check-run",
+            )
     def test_failing_check_yields_blocked_verdict_exit_2(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             (code, payload, err), root = self._run_check(tmp, ["false"])

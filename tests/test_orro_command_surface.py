@@ -7,6 +7,35 @@ from witnessd.__main__ import ORRO_COMMAND_MAP, _build_parser, _normalize_orro_a
 
 
 class OrroCommandSurfaceTests(unittest.TestCase):
+    def test_execution_surfaces_expose_explicit_roadmap_item(self) -> None:
+        parser = _build_parser()
+        proofrun = parser.parse_args(
+            ["proofrun", "--goal", "goal", "--roadmap-item", "legibility-v1"]
+        )
+        guided_flow = parser.parse_args(
+            ["orro-flow", "goal", "--roadmap-item", "legibility-v1"]
+        )
+        team_go = parser.parse_args(
+            [
+                "team",
+                "go",
+                "goal",
+                "--repo",
+                ".",
+                "--roadmap-item",
+                "legibility-v1",
+            ]
+        )
+        check = parser.parse_args(
+            ["orro-check", "--roadmap-item", "legibility-v1"]
+        )
+
+        for parsed in (proofrun, guided_flow, team_go, check):
+            self.assertEqual(parsed.roadmap_item, "legibility-v1")
+
+        run_help = parser._subparsers._group_actions[0].choices["run"].format_help()
+        self.assertNotIn("--roadmap-item", run_help)
+
     def test_run_and_proofrun_expose_honest_keyless_opt_in(self) -> None:
         parser = _build_parser()
         commands = parser._subparsers._group_actions[0].choices

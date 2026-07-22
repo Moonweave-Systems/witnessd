@@ -633,6 +633,11 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     str(run_dir / "health-fix-sandbox"),
                     "--run-dir",
                     str(fix_run_dir),
+                    *(
+                        ["--roadmap-item", args.roadmap_item]
+                        if args.roadmap_item
+                        else []
+                    ),
                     "--json",
                 ]
             )
@@ -842,6 +847,11 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                 str(run_dir / "health-sandbox"),
                 "--run-dir",
                 str(health_run_dir),
+                *(
+                    ["--roadmap-item", args.roadmap_item]
+                    if args.roadmap_item
+                    else []
+                ),
                 "--json",
             ]
         )
@@ -923,6 +933,11 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             str(sandbox),
             "--run-dir",
             str(run_dir),
+            *(
+                ["--roadmap-item", args.roadmap_item]
+                if args.roadmap_item
+                else []
+            ),
             "--json",
         ]
     )

@@ -94,6 +94,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_run_args(proofrun)
     proofrun.add_argument(
+        "--roadmap-item",
+        default=None,
+        metavar="ID",
+        help="explicit .orro/roadmap.json item id for this run; never inferred",
+    )
+    proofrun.add_argument(
         "--allow-reference-adapter",
         action="store_true",
         help=(
@@ -357,6 +363,12 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_check.add_argument("--repo", "--root", dest="repo", default=None)
     orro_check.add_argument("--home", default=None)
     orro_check.add_argument("--run-dir", default=None)
+    orro_check.add_argument(
+        "--roadmap-item",
+        default=None,
+        metavar="ID",
+        help="explicit .orro/roadmap.json item id for proofrun; never inferred",
+    )
     orro_check.add_argument("--check", action="append", default=None)
     orro_check.add_argument(
         "--health",
@@ -472,6 +484,12 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     orro_flow.add_argument("--run-dir", default=None)
+    orro_flow.add_argument(
+        "--roadmap-item",
+        default=None,
+        metavar="ID",
+        help="explicit .orro/roadmap.json item id for proofrun; never inferred",
+    )
     orro_flow.add_argument("--allow-reference-adapter", action="store_true")
     orro_flow.add_argument("--json", action="store_true")
     orro_flow.add_argument("--verification-only", action="store_true")
@@ -562,6 +580,12 @@ def _build_parser() -> argparse.ArgumentParser:
     team_go.add_argument("--home", default=None)
     team_go.add_argument("--team", default=None)
     team_go.add_argument("--run-dir", default=None)
+    team_go.add_argument(
+        "--roadmap-item",
+        default=None,
+        metavar="ID",
+        help="explicit .orro/roadmap.json item id for proofrun; never inferred",
+    )
     team_go.add_argument(
         "--profile",
         choices=[
