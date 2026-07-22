@@ -595,16 +595,6 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             )
         fix_diff_ref = {"path": str(diff_path), "sha256": _hash_file(diff_path)}
         if args.apply:
-            if fix_diff_ref is None:
-                return _emit_blocker(
-                    _structured_error(
-                        code="ERR_ORRO_HEALTH_APPLY_UNVERIFIED",
-                        message="health fixer produced no verified diff object",
-                        reason="no proofchecked health-fix.diff reference is available",
-                        required_input_or_grant="a passing scope-verified fix lane",
-                        next_command="python3 -m orro check --health --fix ...",
-                    )
-                )
             verified_diff_path = Path(fix_diff_ref["path"])
             if verified_diff_path.is_file() and verified_diff_path.stat().st_size > 0:
                 apply_result = subprocess.run(
