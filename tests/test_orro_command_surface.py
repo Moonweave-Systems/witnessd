@@ -10,10 +10,10 @@ class OrroCommandSurfaceTests(unittest.TestCase):
     def test_execution_surfaces_expose_explicit_roadmap_item(self) -> None:
         parser = _build_parser()
         proofrun = parser.parse_args(
-            ["proofrun", "--goal", "goal", "--roadmap-item", "legibility-v1"]
+            ["proofrun", "--goal", "goal", "--roadmap-item", "legibility-v1", "--roadmap-step", "verify"]
         )
         guided_flow = parser.parse_args(
-            ["orro-flow", "goal", "--roadmap-item", "legibility-v1"]
+            ["orro-flow", "goal", "--roadmap-item", "legibility-v1", "--roadmap-step", "verify"]
         )
         team_go = parser.parse_args(
             [
@@ -24,14 +24,17 @@ class OrroCommandSurfaceTests(unittest.TestCase):
                 ".",
                 "--roadmap-item",
                 "legibility-v1",
+                "--roadmap-step",
+                "verify",
             ]
         )
         check = parser.parse_args(
-            ["orro-check", "--roadmap-item", "legibility-v1"]
+            ["orro-check", "--roadmap-item", "legibility-v1", "--roadmap-step", "verify"]
         )
 
         for parsed in (proofrun, guided_flow, team_go, check):
             self.assertEqual(parsed.roadmap_item, "legibility-v1")
+            self.assertEqual(parsed.roadmap_step, "verify")
 
         commands = parser._subparsers._group_actions[0].choices
         run_help = commands["run"].format_help()

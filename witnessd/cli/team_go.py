@@ -282,6 +282,7 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
         + (["--fail-fast"] if args.fail_fast else [])
         + (["--allow-reference-adapter"] if args.allow_reference_adapter else [])
         + (["--roadmap-item", args.roadmap_item] if args.roadmap_item else [])
+        + (["--roadmap-step", args.roadmap_step] if getattr(args, "roadmap_step", None) else [])
     )
     proofrun_payload = _json_or_text(proofrun_stdout)
     if proofrun_code != 0:

@@ -70,7 +70,7 @@ def build_status(*, repo: Path, home: Path) -> dict[str, Any]:
             off_plan.append({"run_dir": run["run_dir"], "state": run["state"]})
 
     items = [
-        _roadmap_item_status(item, by_item.get(str(item["id"]), []))
+        _roadmap_item_status(item, by_item.get(str(item["id"]), []), repo=repo)
         for item in (roadmap or {"items": []})["items"]
     ]
     off_plan.sort(key=lambda item: _path_newness(Path(item["run_dir"])), reverse=True)
@@ -109,6 +109,18 @@ def render_status_text(payload: dict[str, Any]) -> str:
             elif item.get("latest_run"):
                 line += f" — {item['run_state']}: {item['latest_run']}"
             lines.append(line)
+            for step in item.get("steps", []):
+                step_line = f"  - step {step['id']}: {step['state']}"
+                if step.get("evidence_ref"):
+                    step_line += f" — evidence: {step['evidence_ref']}"
+                elif step.get("run_dir"):
+                    step_line += f" — run: {step['run_dir']}"
+                lines.append(step_line)
+            next_step = item.get("next_step")
+            if isinstance(next_step, dict):
+                lines.append(
+                    f"  Next step {next_step['id']}: {next_step['suggested_next_command']}"
+                )
     lines.append("Off-plan runs:")
     off_plan = payload.get("off_plan")
     if not isinstance(off_plan, list) or not off_plan:
@@ -327,6 +339,7 @@ def _status_run(run_dir: Path, *, home: Path) -> dict[str, Any]:
             "run_dir": str(run_dir),
             "state": state,
             "item_id": binding.get("item_id") if binding is not None else None,
+            "step_id": binding.get("step_id") if binding is not None else None,
         }
         if evidence_ref is not None:
             result["evidence_ref"] = evidence_ref
@@ -341,6 +354,7 @@ def _status_run(run_dir: Path, *, home: Path) -> dict[str, Any]:
         "run_dir": str(run_dir),
         "state": str(decision.get("decision", "blocked")),
         "item_id": binding.get("item_id") if binding is not None else None,
+        "step_id": binding.get("step_id") if binding is not None else None,
     }
 
 
@@ -374,9 +388,11 @@ def _companion_status(run_dir: Path) -> tuple[str, str | None]:
 
 
 def _roadmap_item_status(
-    item: dict[str, Any], bound_runs: list[dict[str, Any]]
+    item: dict[str, Any], bound_runs: list[dict[str, Any]], *, repo: Path | None = None
 ) -> dict[str, Any]:
     result = dict(item)
+    if "steps" in item:
+        return _roadmap_item_steps_status(item, bound_runs, repo=repo)
     ordered = sorted(
         bound_runs,
         key=lambda run: _path_newness(Path(run["run_dir"])),
@@ -415,6 +431,105 @@ def _roadmap_item_status(
     else:
         result["status"] = "not-started"
     return result
+
+
+def _roadmap_item_steps_status(
+    item: dict[str, Any], bound_runs: list[dict[str, Any]], *, repo: Path | None = None
+) -> dict[str, Any]:
+    result = dict(item)
+    step_records: list[dict[str, Any]] = []
+    for step in item.get("steps", []):
+        step_runs = [run for run in bound_runs if run.get("step_id") == step["id"]]
+        ordered = sorted(
+            step_runs,
+            key=lambda run: _path_newness(Path(run["run_dir"])),
+            reverse=True,
+        )
+        verified = next((run for run in ordered if _run_is_verified(run)), None)
+        record: dict[str, Any] = {"id": step["id"], "state": "not-started"}
+        if verified is not None:
+            record.update(
+                {
+                    "state": "done (verified)",
+                    "run_dir": verified["run_dir"],
+                    "evidence_ref": verified.get(
+                        "evidence_ref",
+                        str(Path(verified["run_dir"]) / "proofcheck-verdict.json"),
+                    ),
+                }
+            )
+        elif ordered:
+            record.update(
+                {
+                    "state": "in-progress",
+                    "run_dir": ordered[0]["run_dir"],
+                    "run_state": ordered[0]["state"],
+                }
+            )
+        step_records.append(record)
+
+    verified_count = sum(step["state"] == "done (verified)" for step in step_records)
+    result["steps"] = step_records
+    if not step_records:
+        result["status"] = "not-started"
+        result["next_step"] = None
+        return result
+    next_index = next(
+        (index for index, step in enumerate(step_records) if step["state"] != "done (verified)"),
+        None,
+    )
+    for index, record in enumerate(step_records):
+        record["suggested_next_command"] = (
+            _suggested_step_command(
+                item,
+                item["steps"][next_index],
+                repo=str(repo) if repo else None,
+            )
+            if index == next_index
+            else None
+        )
+    if verified_count == len(step_records):
+        result["status"] = "done (verified)"
+        result["next_step"] = None
+    elif verified_count == 0 and not any("run_dir" in step for step in step_records):
+        result["status"] = "not-started"
+        result["next_step"] = _next_step_record(item, next_index, repo=repo)
+    else:
+        result["status"] = f"in-progress ({verified_count}/{len(step_records)} steps)"
+        result["next_step"] = _next_step_record(item, next_index, repo=repo)
+    return result
+
+
+def _run_is_verified(run: dict[str, Any]) -> bool:
+    return run["state"] in {"complete", "ready-for-handoff", "companion-pass"}
+
+
+def _next_step_record(item: dict[str, Any], index: int | None, *, repo: Path | None = None) -> dict[str, Any] | None:
+    if index is None:
+        return None
+    step = item["steps"][index]
+    return {
+        "id": step["id"],
+        "suggested_next_command": _suggested_step_command(item, step, repo=str(repo) if repo else None),
+    }
+
+
+def _suggested_step_command(item: dict[str, Any], step: dict[str, Any], *, repo: str | None = None) -> str:
+    repo_arg = repo or "<repo>"
+    item_id, step_id = item["id"], step["id"]
+    profile = step["profile"]
+    checks = step.get("checks")
+    if profile == "verification-only" and checks:
+        return " ".join(
+            ["orro check", *[f"--check '{check}'" for check in checks],
+             f"--roadmap-item {item_id}", f"--roadmap-step {step_id}", f"--repo {repo_arg}"]
+        )
+    if profile == "code-change" and step.get("write_scope") and step.get("adapter"):
+        command = f'orro flow "{item["title"]}: {step_id}"'
+        for scope in step["write_scope"]:
+            command += f" --write-scope '{scope}'"
+        return f"{command} --adapter {step['adapter']} --roadmap-item {item_id} --roadmap-step {step_id} --repo {repo_arg}"
+    return f"construct the command manually (profile: {profile})"
 
 
 def _run_dirs(home: Path) -> list[Path]:

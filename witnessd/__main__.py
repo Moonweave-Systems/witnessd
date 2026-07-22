@@ -99,6 +99,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="ID",
         help="explicit .orro/roadmap.json item id for this run; never inferred",
     )
+    proofrun.add_argument("--roadmap-step", default=None, metavar="ID")
     proofrun.add_argument(
         "--allow-reference-adapter",
         action="store_true",
@@ -369,6 +370,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="ID",
         help="explicit .orro/roadmap.json item id for proofrun; never inferred",
     )
+    orro_check.add_argument("--roadmap-step", default=None, metavar="ID")
     orro_check.add_argument("--check", action="append", default=None)
     orro_check.add_argument(
         "--health",
@@ -490,6 +492,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="ID",
         help="explicit .orro/roadmap.json item id for proofrun; never inferred",
     )
+    orro_flow.add_argument("--roadmap-step", default=None, metavar="ID")
     orro_flow.add_argument("--allow-reference-adapter", action="store_true")
     orro_flow.add_argument("--json", action="store_true")
     orro_flow.add_argument("--verification-only", action="store_true")
@@ -607,6 +610,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="ID",
         help="explicit .orro/roadmap.json item id for proofrun; never inferred",
     )
+    team_go.add_argument("--roadmap-step", default=None, metavar="ID")
     team_go.add_argument(
         "--profile",
         choices=[

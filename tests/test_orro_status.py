@@ -28,6 +28,21 @@ def _roadmap() -> dict[str, object]:
     }
 
 
+def _steps_roadmap() -> dict[str, object]:
+    return {
+        "kind": "orro-roadmap",
+        "schema_version": "0.1",
+        "items": [{
+            "id": "feature",
+            "title": "Feature",
+            "steps": [
+                {"id": "implement", "profile": "code-change", "write_scope": ["src/**"], "adapter": "codex"},
+                {"id": "verify", "profile": "verification-only", "checks": ["true"]},
+            ],
+        }],
+    }
+
+
 def _write_companion_verdict(
     run_dir: Path, *, decision: str, tamper: bool = False
 ) -> Path:
@@ -58,6 +73,59 @@ def _write_companion_verdict(
 
 
 class OrroStatusTests(unittest.TestCase):
+    def test_steps_derive_progress_and_next_command_from_verified_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = root / "repo", root / "home"
+            write_roadmap(repo, _steps_roadmap())
+            runs = home / "runs"
+            runs.mkdir(parents=True)
+            implement_run = runs / "run-implement-pending"
+            implement_run.mkdir()
+            seal_roadmap_binding(repo=repo, run_dir=implement_run, item_id="feature", step_id="implement")
+            with patch("witnessd.cli.status.decide_next", return_value=(0, {"decision": "evidence-pending"})):
+                initial = build_status(repo=repo, home=home)
+            item = initial["items"][0]
+            self.assertEqual(item["status"], "in-progress (0/2 steps)")
+            self.assertEqual(item["steps"][0]["state"], "in-progress")
+            self.assertIn("orro flow \"Feature: implement\"", item["steps"][0]["suggested_next_command"])
+            self.assertIn("--roadmap-item feature --roadmap-step implement", item["steps"][0]["suggested_next_command"])
+
+            verify_run = runs / "run-verify"
+            verify_run.mkdir()
+            seal_roadmap_binding(repo=repo, run_dir=verify_run, item_id="feature", step_id="verify")
+            def partial_decide(run_dir: Path, *, home: Path) -> tuple[int, dict[str, object]]:
+                return (0, {"decision": "complete" if run_dir == verify_run else "evidence-pending"})
+
+            with patch("witnessd.cli.status.decide_next", side_effect=partial_decide):
+                partial = build_status(repo=repo, home=home)
+            item = partial["items"][0]
+            self.assertEqual(item["status"], "in-progress (1/2 steps)")
+            self.assertEqual(item["steps"][1]["state"], "done (verified)")
+            self.assertIn("--roadmap-step implement", item["next_step"]["suggested_next_command"])
+
+            implement_run = runs / "run-implement"
+            implement_run.mkdir()
+            seal_roadmap_binding(repo=repo, run_dir=implement_run, item_id="feature", step_id="implement")
+            with patch("witnessd.cli.status.decide_next", return_value=(0, {"decision": "complete"})):
+                complete = build_status(repo=repo, home=home)
+            self.assertEqual(complete["items"][0]["status"], "done (verified)")
+            self.assertIsNone(complete["items"][0]["next_step"])
+
+    def test_steps_manual_recommendation_does_not_guess_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = root / "repo", root / "home"
+            write_roadmap(repo, {
+                "kind": "orro-roadmap", "schema_version": "0.1", "items": [{
+                    "id": "review", "title": "Review", "steps": [
+                        {"id": "inspect", "profile": "review-only"},
+                    ],
+                }],
+            })
+            with patch("witnessd.cli.status.decide_next", return_value=(0, {"decision": "evidence-pending"})):
+                item = build_status(repo=repo, home=home)["items"][0]
+            self.assertIn("construct the command manually (profile: review-only)", item["next_step"]["suggested_next_command"])
     def test_status_uses_honest_vocabulary_and_decide_next(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
