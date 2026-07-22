@@ -87,10 +87,7 @@ def _execution_adapter_lane_count(team_ledger_path: Path) -> int:
             1
             for lane in lanes
             if isinstance(lane, dict)
-            and (
-                lane.get("runner_adapter_kind")
-                or lane.get("team_adapter_kind")
-            )
+            and (lane.get("runner_adapter_kind") or lane.get("team_adapter_kind"))
             not in {None, "shell"}
         )
     except (OSError, UnicodeError, json.JSONDecodeError):
@@ -112,6 +109,44 @@ def _print_human_summary(
         if isinstance(non_goals, list) and non_goals:
             print(f"    non-goals: {'; '.join(non_goals)}")
         print()
+    code_health = manifest.get("code_health")
+    if isinstance(code_health, dict):
+        health_verdict = str(code_health["verdict"])
+        health_dot = "● pass" if health_verdict == "pass" else "● blocked"
+        print(
+            "  CODE HEALTH   (Depone verdict, deterministic gates)   " f"{health_dot}"
+        )
+        gates = code_health.get("gates")
+        if isinstance(gates, list):
+            for gate in gates:
+                if not isinstance(gate, dict):
+                    continue
+                status = str(gate.get("status", "blocked"))
+                marker = "✓" if status == "pass" else "✗"
+                print(
+                    f"    {marker} {str(gate.get('gate', '')):<8} "
+                    f"{str(gate.get('tool', '')):<10} "
+                    f"{str(gate.get('version', 'unresolved')):<12} {status}"
+                )
+        fixes = code_health.get("fixes_applied")
+        if isinstance(fixes, dict):
+            ran = fixes.get("ran")
+            diff_ref = fixes.get("diff_ref")
+            commands = ", ".join(str(command) for command in ran or [])
+            diff_path = (
+                Path(str(diff_ref.get("path"))).name
+                if isinstance(diff_ref, dict)
+                else "health-fix.diff"
+            )
+            applied_note = (
+                " (applied to working tree)"
+                if fixes.get("applied_to_worktree") is True
+                else ""
+            )
+            print(
+                f"    fixes applied: {commands or '(none)'}   → {diff_path}"
+                f"{applied_note}"
+            )
     print(f"  VERIFICATION   (Depone verdict, deterministic)   {dot}")
     review_ref = manifest.get("review_ref")
     if isinstance(review_ref, dict):
@@ -124,6 +159,8 @@ def _print_human_summary(
             f"(install {reviewer or 'the reviewer'}, or pass --no-review)"
         )
     print("  BOUNDARY")
+    if isinstance(code_health, dict):
+        print(f'    "health: {code_health["verdict"]}" = ' f'{code_health["means"]}')
     adapter_count = manifest["execution_adapter_lanes_spawned"]
     print(
         "    reviewed work was NOT observed-executed · "
@@ -228,8 +265,69 @@ def _review_goal(goal: str, declared_intent: dict[str, Any] | None) -> str:
 
 
 def _cmd_orro_check(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve(strict=False) if args.repo else Path.cwd()
+    if args.apply and not args.fix:
+        return _emit_blocker(
+            _structured_error(
+                code="ERR_ORRO_HEALTH_APPLY_REQUIRES_FIX",
+                message="orro check --apply requires --fix",
+                reason="apply needs a fix lane to produce a verified diff",
+                required_input_or_grant="add --fix and --write-scope",
+                next_command=(
+                    "python3 -m orro check --health --fix "
+                    "--write-scope '<glob>' --apply --repo <repo>"
+                ),
+            )
+        )
+    health_requested = bool(args.health or args.health_plan or args.fix)
+    health_gates: list[dict[str, object]] = []
+    if health_requested:
+        from witnessd.health_detect import detect_health_gates
+
+        health_gates = list(detect_health_gates(repo))
+    if args.health_plan:
+        print(
+            json.dumps(
+                {"kind": "orro-health-plan", "gates": health_gates},
+                sort_keys=True,
+            )
+        )
+        return 0
+
     checks = list(getattr(args, "check", None) or [])
+    if args.health:
+        checks.extend(str(gate["command"]) for gate in health_gates)
+    if args.fix and not [scope for scope in args.write_scope if scope]:
+        return _emit_blocker(
+            _structured_error(
+                code="ERR_ORRO_HEALTH_FIX_SCOPE_REQUIRED",
+                message="orro check --fix requires an explicit write scope",
+                reason="the fixer write scope is never inferred",
+                required_input_or_grant="--write-scope '<glob>' (repeatable)",
+                next_command=(
+                    "python3 -m orro check --health --fix "
+                    "--write-scope '<glob>' --repo <repo>"
+                ),
+            )
+        )
     if not checks:
+        if args.health:
+            return _emit_blocker(
+                _structured_error(
+                    code="ERR_ORRO_HEALTH_NO_GATES_DETECTED",
+                    message="orro check --health detected no configured health gates",
+                    reason=(
+                        "health gates are read from the repo's own tool config and "
+                        "none was found"
+                    ),
+                    required_input_or_grant=(
+                        "add tool config (e.g. [tool.ruff]) or pass --check '<cmd>'"
+                    ),
+                    next_command=(
+                        "python3 -m orro check --health --health-plan --repo <repo>"
+                    ),
+                )
+            )
         return _emit_blocker(
             _structured_error(
                 code="ERR_ORRO_CHECK_NO_CHECKS_DECLARED",
@@ -248,11 +346,8 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
         try:
             declared_intent = read_declared_intent(Path(args.intent))
         except OrroAdvisoryError as exc:
-            return _emit_blocker(
-                _structured_error(code=exc.code, message=str(exc))
-            )
+            return _emit_blocker(_structured_error(code=exc.code, message=str(exc)))
 
-    repo = Path(args.repo).resolve(strict=False) if args.repo else Path.cwd()
     home = Path(args.home).resolve(strict=False) if args.home else repo / ".witnessd"
     run_dir = (
         Path(args.run_dir).resolve(strict=False)
@@ -294,6 +389,234 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             )
         )
 
+    fix_commands: list[str] = []
+    fix_diff_ref: dict[str, str] | None = None
+    applied_to_worktree = False
+    verify_repo = repo
+    if args.fix:
+        from witnessd.health_detect import safe_fixer_commands
+
+        fix_commands = safe_fixer_commands(health_gates)
+        if fix_commands:
+            fix_run_dir = run_dir / "health-fix-run"
+            fix_run_dir.mkdir(parents=True, exist_ok=True)
+            fix_wp = fix_run_dir / "workflow-plan.json"
+            fix_rlp = fix_run_dir / "role-lane-plan.json"
+            fix_verdict_path = fix_run_dir / "proofcheck-verdict.json"
+            fix_goal = (
+                "Apply configured code-health safe fixers within declared write scope"
+            )
+            fix_flowplan_argv = [
+                "flowplan",
+                fix_goal,
+                "--root",
+                str(repo),
+                "--profile",
+                "code-change",
+                "--out",
+                str(fix_wp),
+                "--role-lanes-out",
+                str(fix_rlp),
+                "--lane-adapter",
+                "shell",
+            ]
+            for scope in args.write_scope:
+                fix_flowplan_argv.extend(["--write-scope", scope])
+            for command in fix_commands:
+                fix_flowplan_argv.extend(["--command", command])
+            fix_flowplan_argv.append("--json")
+            code, _, err = _invoke_phase(fix_flowplan_argv)
+            if code != 0:
+                return _emit_blocker(
+                    _structured_error(
+                        code="ERR_ORRO_HEALTH_FIX_FLOWPLAN_BLOCKED",
+                        message="health fixer flowplan failed",
+                        reason=err or "flowplan returned nonzero",
+                        required_input_or_grant=(
+                            "resolve the reported scope-bounded fixer plan blocker"
+                        ),
+                        next_command=(
+                            "python3 -m orro flowplan ... --profile code-change"
+                        ),
+                    )
+                )
+            _assert_no_execution_adapter(fix_rlp)
+            _, _, fix_proofrun_err = _invoke_phase(
+                [
+                    "proofrun",
+                    fix_goal,
+                    "--repo",
+                    str(repo),
+                    "--home",
+                    str(home),
+                    "--workflow-plan",
+                    str(fix_wp),
+                    "--role-lane-plan",
+                    str(fix_rlp),
+                    "--adapter",
+                    "shell",
+                    "--runner-sandbox",
+                    str(run_dir / "health-fix-sandbox"),
+                    "--run-dir",
+                    str(fix_run_dir),
+                    "--json",
+                ]
+            )
+            fix_team_ledger = fix_run_dir / "team-ledger.json"
+            if not fix_team_ledger.is_file():
+                return _emit_blocker(
+                    _structured_error(
+                        code="ERR_ORRO_HEALTH_FIX_PROOFRUN_BLOCKED",
+                        message="health fixer proofrun sealed no evidence",
+                        reason=(
+                            fix_proofrun_err
+                            or "proofrun returned nonzero without sealing team-ledger.json"
+                        ),
+                        required_input_or_grant=(
+                            "resolve the reported scope-bounded fixer blocker"
+                        ),
+                        next_command="python3 -m orro proofrun ...",
+                    )
+                )
+            _, fix_verdict_payload, fix_verdict_err = _invoke_phase(
+                [
+                    "proofcheck",
+                    "--evidence-dir",
+                    str(fix_run_dir),
+                    "--home",
+                    str(home),
+                    "--out",
+                    str(fix_verdict_path),
+                    "--json",
+                ]
+            )
+            try:
+                fix_verdict = json.loads(fix_verdict_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                fix_verdict = {}
+            fix_decision = (
+                fix_verdict_payload.get("decision")
+                if isinstance(fix_verdict_payload, dict)
+                else None
+            )
+            policy = (
+                fix_verdict.get("policy_conformance")
+                if isinstance(fix_verdict, dict)
+                else None
+            )
+            if (
+                fix_decision != "pass"
+                or not isinstance(policy, dict)
+                or policy.get("overall") != "pass"
+            ):
+                return _emit_blocker(
+                    _structured_error(
+                        code="ERR_ORRO_HEALTH_FIX_PROOFCHECK_BLOCKED",
+                        message="Depone did not confirm the health fixer write scope",
+                        reason=(
+                            fix_verdict_err
+                            or f"decision={fix_decision!r}, policy_conformance={policy!r}"
+                        ),
+                        required_input_or_grant=(
+                            "keep fixer mutations inside every declared --write-scope"
+                        ),
+                        next_command="python3 -m orro proofcheck ...",
+                    )
+                )
+
+            try:
+                fix_ledger = json.loads(fix_team_ledger.read_text(encoding="utf-8"))
+                fix_lanes = fix_ledger["lanes"]
+                fix_receipt_rel = fix_lanes[0]["worktree_receipt"]
+                fix_receipt = json.loads(
+                    (fix_run_dir / fix_receipt_rel).read_text(encoding="utf-8")
+                )
+                verify_repo = Path(fix_receipt["worktree"]).resolve(strict=True)
+                fix_base_commit = str(fix_receipt["base_commit"])
+                fix_head_commit = str(fix_receipt["head_commit"])
+            except (
+                OSError,
+                UnicodeError,
+                json.JSONDecodeError,
+                KeyError,
+                IndexError,
+                TypeError,
+            ) as exc:
+                return _emit_blocker(
+                    _structured_error(
+                        code="ERR_ORRO_HEALTH_FIX_RECEIPT_BLOCKED",
+                        message="could not resolve the proofchecked fixer worktree",
+                        reason=str(exc),
+                        required_input_or_grant=(
+                            "a valid code-change worktree lane receipt"
+                        ),
+                        next_command="python3 -m orro proofcheck ...",
+                    )
+                )
+
+        diff_path = run_dir / "health-fix.diff"
+        if fix_commands:
+            diff_argv = [
+                "git",
+                "-C",
+                str(verify_repo),
+                "diff",
+                "--binary",
+                "--no-ext-diff",
+            ]
+            diff_argv.extend([fix_base_commit, fix_head_commit, "--"])
+            diff_result = subprocess.run(diff_argv, capture_output=True, check=False)
+            if diff_result.returncode != 0:
+                return _emit_blocker(
+                    _structured_error(
+                        code="ERR_ORRO_HEALTH_FIX_DIFF_BLOCKED",
+                        message="could not capture the post-fixer repository diff",
+                        reason=diff_result.stderr.decode(
+                            "utf-8", errors="replace"
+                        ).strip(),
+                        required_input_or_grant="a readable Git worktree",
+                        next_command=(
+                            f"git -C {verify_repo} diff --binary --no-ext-diff"
+                        ),
+                    )
+                )
+            diff_bytes = diff_result.stdout
+        else:
+            diff_bytes = b""
+        try:
+            diff_path.write_bytes(diff_bytes)
+        except OSError as exc:
+            return _emit_blocker(
+                _structured_error(
+                    code="ERR_ORRO_HEALTH_FIX_DIFF_BLOCKED",
+                    message="could not write health-fix.diff",
+                    reason=str(exc),
+                )
+            )
+        fix_diff_ref = {"path": str(diff_path), "sha256": _hash_file(diff_path)}
+        if args.apply:
+            verified_diff_path = Path(fix_diff_ref["path"])
+            if verified_diff_path.is_file() and verified_diff_path.stat().st_size > 0:
+                apply_result = subprocess.run(
+                    ["git", "-C", str(repo), "apply", str(verified_diff_path)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if apply_result.returncode != 0:
+                    return _emit_blocker(
+                        _structured_error(
+                            code="ERR_ORRO_HEALTH_APPLY_FAILED",
+                            message="could not apply the verified health fixer diff",
+                            reason=apply_result.stderr.strip(),
+                            required_input_or_grant=(
+                                "a caller working tree that accepts health-fix.diff"
+                            ),
+                            next_command=f"git -C {repo} apply {verified_diff_path}",
+                        )
+                    )
+                applied_to_worktree = True
+
     verify_wp = run_dir / "verify-workflow-plan.json"
     verify_rlp = run_dir / "verify-role-lane-plan.json"
     verdict_path = run_dir / "proofcheck-verdict.json"
@@ -301,7 +624,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
         "flowplan",
         goal,
         "--root",
-        str(repo),
+        str(verify_repo),
         "--profile",
         "verification-only",
         "--out",
@@ -336,7 +659,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             "proofrun",
             goal,
             "--repo",
-            str(repo),
+            str(verify_repo),
             "--home",
             str(home),
             "--workflow-plan",
@@ -476,6 +799,28 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     }
 
     manifest = manifest_partial(decision, verdict_path, team_ledger)
+    if args.health:
+        means = (
+            "declared deterministic gates ran under observation; the verdict "
+            "reflects their exit status, and is NOT a claim of good design, "
+            "correct behavior, or structural consistency"
+        )
+        code_health: dict[str, object] = {
+            "applied": True,
+            "verdict": decision,
+            "gates": [dict(gate, status=decision) for gate in health_gates],
+            "means": means,
+            "verdict_source": "depone-verification-only",
+            "structural_consistency_covered": False,
+        }
+        if args.fix:
+            assert fix_diff_ref is not None
+            code_health["fixes_applied"] = {
+                "ran": fix_commands,
+                "diff_ref": fix_diff_ref,
+                "applied_to_worktree": applied_to_worktree,
+            }
+        manifest["code_health"] = code_health
     if declared_intent is not None and intent_reference is not None:
         manifest["declared_intent"] = declared_intent
         manifest["declared_intent_ref"] = intent_reference
