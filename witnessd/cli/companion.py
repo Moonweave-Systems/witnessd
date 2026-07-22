@@ -743,8 +743,9 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
     manifest = manifest_partial(decision, verdict_path, team_ledger)
     if args.health:
         means = (
-            "declared deterministic gates passed under observation; NOT a claim "
-            "of good design, correct behavior, or structural consistency"
+            "declared deterministic gates ran under observation; the verdict "
+            "reflects their exit status, and is NOT a claim of good design, "
+            "correct behavior, or structural consistency"
         )
         code_health: dict[str, object] = {
             "applied": True,

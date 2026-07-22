@@ -350,7 +350,7 @@ class OrroCheckVerifyTest(unittest.TestCase):
             self.assertIn("src/health-fixed.txt", diff_path.read_text(encoding="utf-8"))
             self.assertFalse(payload["code_health"]["structural_consistency_covered"])
             self.assertIn(
-                "declared deterministic gates passed under observation",
+                "declared deterministic gates ran under observation; the verdict reflects their exit status",
                 payload["code_health"]["means"],
             )
             self.assertNotIn("independently re-derived", json.dumps(payload))
@@ -398,7 +398,7 @@ class OrroCheckVerifyTest(unittest.TestCase):
             self.assertIn("ruff", output)
             self.assertIn("0.6.9", output)
             self.assertIn(
-                "declared deterministic gates passed under observation",
+                "declared deterministic gates ran under observation; the verdict reflects their exit status",
                 output,
             )
             self.assertIn("NOT a claim of good design", output)
@@ -442,6 +442,13 @@ class OrroCheckVerifyTest(unittest.TestCase):
             self.assertEqual(gate["tool"], "mypy")
             self.assertEqual(gate["version"], "unresolved")
             self.assertEqual(gate["status"], payload["code_health"]["verdict"])
+            self.assertEqual(
+                payload["code_health"]["means"],
+                "declared deterministic gates ran under observation; the verdict "
+                "reflects their exit status, and is NOT a claim of good design, "
+                "correct behavior, or structural consistency",
+            )
+            self.assertNotIn("passed", json.dumps(payload))
 
     def test_health_composes_detected_gates_after_explicit_checks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
