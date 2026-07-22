@@ -508,6 +508,27 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_demo.add_argument("--depone-root", default=None)
     orro_demo.set_defaults(func=_cli_handler("demo", "_cmd_orro_demo"))
 
+    orro_status = sub.add_parser(
+        "orro-status",
+        help=argparse.SUPPRESS,
+        description="Report roadmap-bound observed run state without executing or verifying.",
+    )
+    orro_status.add_argument("--repo", "--root", dest="repo", default=".")
+    orro_status.add_argument("--home", default=None)
+    orro_status.add_argument("--json", action="store_true")
+    orro_status.set_defaults(func=_cli_handler("status", "_cmd_orro_status"))
+
+    orro_tidy = sub.add_parser(
+        "orro-tidy",
+        help=argparse.SUPPRESS,
+        description="Inventory ORRO worktrees or safely remove eligible clean worktrees.",
+    )
+    orro_tidy.add_argument("--repo", "--root", dest="repo", default=".")
+    orro_tidy.add_argument("--home", default=None)
+    orro_tidy.add_argument("--apply", action="store_true")
+    orro_tidy.add_argument("--json", action="store_true")
+    orro_tidy.set_defaults(func=_cli_handler("status", "_cmd_orro_tidy"))
+
     isolation = sub.add_parser("isolation", help="isolation contract checks")
     isolation.add_argument("--self-test", action="store_true")
     isolation.set_defaults(func=_cli_handler("runtime_ops", "_cmd_isolation"))
@@ -1094,6 +1115,8 @@ ORRO_COMMAND_MAP: dict[str, str] = {
     "review": "orro-review",
     "check": "orro-check",
     "demo": "orro-demo",
+    "status": "orro-status",
+    "tidy": "orro-tidy",
     "auto": "orro-auto",
     "flow": "orro-flow",
     "team": "team",

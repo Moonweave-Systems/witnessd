@@ -33,8 +33,37 @@ class OrroCommandSurfaceTests(unittest.TestCase):
         for parsed in (proofrun, guided_flow, team_go, check):
             self.assertEqual(parsed.roadmap_item, "legibility-v1")
 
-        run_help = parser._subparsers._group_actions[0].choices["run"].format_help()
+        commands = parser._subparsers._group_actions[0].choices
+        run_help = commands["run"].format_help()
         self.assertNotIn("--roadmap-item", run_help)
+        team_commands = commands["team"]._subparsers._group_actions[0].choices
+        for help_text in (
+            commands["proofrun"].format_help(),
+            commands["orro-flow"].format_help(),
+            team_commands["go"].format_help(),
+            commands["orro-check"].format_help(),
+        ):
+            self.assertIn("--roadmap-item", help_text)
+            self.assertIn("never inferred", help_text)
+
+    def test_status_and_tidy_use_distinct_internal_commands(self) -> None:
+        parser = _build_parser()
+        commands = parser._subparsers._group_actions[0].choices
+
+        status = parser.parse_args(
+            ["orro-status", "--repo", "/tmp/repo", "--home", "/tmp/home", "--json"]
+        )
+        tidy = parser.parse_args(
+            ["orro-tidy", "--repo", "/tmp/repo", "--home", "/tmp/home", "--apply"]
+        )
+
+        self.assertEqual(status.cmd, "orro-status")
+        self.assertEqual(tidy.cmd, "orro-tidy")
+        self.assertTrue(status.json)
+        self.assertTrue(tidy.apply)
+        self.assertNotIn("--force", commands["orro-tidy"].format_help())
+        for command in ("status", "tidy"):
+            self.assertIn(command, ORRO_HELP)
 
     def test_run_and_proofrun_expose_honest_keyless_opt_in(self) -> None:
         parser = _build_parser()
@@ -88,6 +117,8 @@ class OrroCommandSurfaceTests(unittest.TestCase):
             "review": "orro-review",
             "check": "orro-check",
             "demo": "orro-demo",
+            "status": "orro-status",
+            "tidy": "orro-tidy",
             "auto": "orro-auto",
             "team": "team",
         }

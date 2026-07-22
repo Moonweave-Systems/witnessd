@@ -15,7 +15,7 @@ DEPRECATION_WARNING = (
     "in the next major witnessd release."
 )
 
-ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,sketch,trace,flow,flowplan,proofrun,proofcheck,advisory-provenance-check,handoff,next,report,review,check,demo,auto,team,doctor,engine-lock} ...
+ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,sketch,trace,flow,flowplan,proofrun,proofcheck,advisory-provenance-check,handoff,next,report,status,tidy,review,check,demo,auto,team,doctor,engine-lock} ...
 
 ORRO - Observed Run & Review Orchestrator
 
@@ -38,6 +38,8 @@ public commands:
   handoff      maintainer review package gated by proofcheck-verdict.json
   next         non-executing continuation gate over persisted run artifacts
   report       human-facing summary of observed ORRO artifacts and next action
+  status       roadmap-bound observed state; not proof, approval, or assurance
+  tidy         dry-run worktree inventory; --apply removes only safe eligible worktrees
   review       advisory read-only reviewer lanes; not proof or assurance
   check        companion: verify (Depone verdict) + read-only review; not observed execution
   demo         AI-free shell guardrail demo with Depone scope-conformance PASS/FAIL
