@@ -138,7 +138,15 @@ def _print_human_summary(
                 if isinstance(diff_ref, dict)
                 else "health-fix.diff"
             )
-            print(f"    fixes applied: {commands or '(none)'}   → {diff_path}")
+            applied_note = (
+                " (applied to working tree)"
+                if fixes.get("applied_to_worktree") is True
+                else ""
+            )
+            print(
+                f"    fixes applied: {commands or '(none)'}   → {diff_path}"
+                f"{applied_note}"
+            )
     print(f"  VERIFICATION   (Depone verdict, deterministic)   {dot}")
     review_ref = manifest.get("review_ref")
     if isinstance(review_ref, dict):
@@ -258,6 +266,19 @@ def _review_goal(goal: str, declared_intent: dict[str, Any] | None) -> str:
 
 def _cmd_orro_check(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve(strict=False) if args.repo else Path.cwd()
+    if args.apply and not args.fix:
+        return _emit_blocker(
+            _structured_error(
+                code="ERR_ORRO_HEALTH_APPLY_REQUIRES_FIX",
+                message="orro check --apply requires --fix",
+                reason="apply needs a fix lane to produce a verified diff",
+                required_input_or_grant="add --fix and --write-scope",
+                next_command=(
+                    "python3 -m orro check --health --fix "
+                    "--write-scope '<glob>' --apply --repo <repo>"
+                ),
+            )
+        )
     health_requested = bool(args.health or args.health_plan or args.fix)
     health_gates: list[dict[str, object]] = []
     if health_requested:
@@ -370,6 +391,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
 
     fix_commands: list[str] = []
     fix_diff_ref: dict[str, str] | None = None
+    applied_to_worktree = False
     verify_repo = repo
     if args.fix:
         from witnessd.health_detect import safe_fixer_commands
@@ -533,22 +555,36 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                 )
 
         diff_path = run_dir / "health-fix.diff"
-        diff_argv = ["git", "-C", str(verify_repo), "diff", "--binary", "--no-ext-diff"]
         if fix_commands:
+            diff_argv = [
+                "git",
+                "-C",
+                str(verify_repo),
+                "diff",
+                "--binary",
+                "--no-ext-diff",
+            ]
             diff_argv.extend([fix_base_commit, fix_head_commit, "--"])
-        diff_result = subprocess.run(diff_argv, capture_output=True, check=False)
-        if diff_result.returncode != 0:
-            return _emit_blocker(
-                _structured_error(
-                    code="ERR_ORRO_HEALTH_FIX_DIFF_BLOCKED",
-                    message="could not capture the post-fixer repository diff",
-                    reason=diff_result.stderr.decode("utf-8", errors="replace").strip(),
-                    required_input_or_grant="a readable Git worktree",
-                    next_command=f"git -C {verify_repo} diff --binary --no-ext-diff",
+            diff_result = subprocess.run(diff_argv, capture_output=True, check=False)
+            if diff_result.returncode != 0:
+                return _emit_blocker(
+                    _structured_error(
+                        code="ERR_ORRO_HEALTH_FIX_DIFF_BLOCKED",
+                        message="could not capture the post-fixer repository diff",
+                        reason=diff_result.stderr.decode(
+                            "utf-8", errors="replace"
+                        ).strip(),
+                        required_input_or_grant="a readable Git worktree",
+                        next_command=(
+                            f"git -C {verify_repo} diff --binary --no-ext-diff"
+                        ),
+                    )
                 )
-            )
+            diff_bytes = diff_result.stdout
+        else:
+            diff_bytes = b""
         try:
-            diff_path.write_bytes(diff_result.stdout)
+            diff_path.write_bytes(diff_bytes)
         except OSError as exc:
             return _emit_blocker(
                 _structured_error(
@@ -558,6 +594,38 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                 )
             )
         fix_diff_ref = {"path": str(diff_path), "sha256": _hash_file(diff_path)}
+        if args.apply:
+            if fix_diff_ref is None:
+                return _emit_blocker(
+                    _structured_error(
+                        code="ERR_ORRO_HEALTH_APPLY_UNVERIFIED",
+                        message="health fixer produced no verified diff object",
+                        reason="no proofchecked health-fix.diff reference is available",
+                        required_input_or_grant="a passing scope-verified fix lane",
+                        next_command="python3 -m orro check --health --fix ...",
+                    )
+                )
+            verified_diff_path = Path(fix_diff_ref["path"])
+            if verified_diff_path.is_file() and verified_diff_path.stat().st_size > 0:
+                apply_result = subprocess.run(
+                    ["git", "-C", str(repo), "apply", str(verified_diff_path)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if apply_result.returncode != 0:
+                    return _emit_blocker(
+                        _structured_error(
+                            code="ERR_ORRO_HEALTH_APPLY_FAILED",
+                            message="could not apply the verified health fixer diff",
+                            reason=apply_result.stderr.strip(),
+                            required_input_or_grant=(
+                                "a caller working tree that accepts health-fix.diff"
+                            ),
+                            next_command=f"git -C {repo} apply {verified_diff_path}",
+                        )
+                    )
+                applied_to_worktree = True
 
     verify_wp = run_dir / "verify-workflow-plan.json"
     verify_rlp = run_dir / "verify-role-lane-plan.json"
@@ -760,6 +828,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             code_health["fixes_applied"] = {
                 "ran": fix_commands,
                 "diff_ref": fix_diff_ref,
+                "applied_to_worktree": applied_to_worktree,
             }
         manifest["code_health"] = code_health
     if declared_intent is not None and intent_reference is not None:

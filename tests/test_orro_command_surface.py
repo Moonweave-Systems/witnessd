@@ -165,6 +165,7 @@ class OrroCommandSurfaceTests(unittest.TestCase):
                 "src/**",
                 "--write-scope",
                 "tests/**",
+                "--apply",
                 "--health-plan",
             ]
         )
@@ -172,11 +173,13 @@ class OrroCommandSurfaceTests(unittest.TestCase):
         self.assertTrue(parsed.health)
         self.assertTrue(parsed.fix)
         self.assertEqual(parsed.write_scope, ["src/**", "tests/**"])
+        self.assertTrue(parsed.apply)
         self.assertTrue(parsed.health_plan)
         help_text = commands["orro-check"].format_help()
         self.assertIn("already-adopted deterministic gates", help_text)
         self.assertIn("requires explicit --write-scope", help_text)
         self.assertIn("never inferred", help_text)
+        self.assertIn("apply the scope-verified fixer diff", help_text)
         self.assertIn("as JSON without", help_text)
         self.assertIn("running phases", help_text)
 

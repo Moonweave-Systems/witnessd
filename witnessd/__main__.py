@@ -376,6 +376,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="repeatable fixer write bound; mandatory with --fix and never inferred",
     )
     orro_check.add_argument(
+        "--apply",
+        action="store_true",
+        help="apply the scope-verified fixer diff to the caller's working tree",
+    )
+    orro_check.add_argument(
         "--health-plan",
         action="store_true",
         help="print the detected health gate plan as JSON without running phases",
