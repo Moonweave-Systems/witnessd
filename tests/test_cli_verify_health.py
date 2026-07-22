@@ -43,10 +43,7 @@ class CommandLaneHealthDerivationTest(unittest.TestCase):
 
             health, source = _derive_command_lane_health(
                 evidence_dir=evidence_dir,
-                env={
-                    **os.environ,
-                    "PYTHONPATH": "/home/ubuntu/depone",
-                },
+                env=dict(os.environ),
             )
 
             self.assertEqual(health["overall"], "fail")
