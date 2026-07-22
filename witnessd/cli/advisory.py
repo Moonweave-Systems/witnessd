@@ -48,9 +48,9 @@ ADVISORY_REMEDIATION = {
         "python3 -m orro review --repo <repo> --home .witnessd --role-lane-plan <plan.json> --json",
     ),
     "orro-auto": (
-        "auto can continue only from a valid persisted state and one explicitly selected mode",
-        "an existing ORRO run directory and exactly one auto mode",
-        "python3 -m orro auto --dry-run <run-dir> --home .witnessd --json",
+        "auto requires one explicit mode; run-item executes declared steps only behind evidence gates",
+        "a valid run directory, or --run-item with --repo and --max-steps",
+        "python3 -m orro auto --run-item <item> --repo <repo> --home .witnessd --max-steps 1 --json",
     ),
 }
 
@@ -373,21 +373,73 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
         build_auto_plan,
         build_auto_receipt,
         build_auto_session,
+        run_item_session,
         write_auto_plan,
         write_auto_receipt,
         write_auto_session,
     )
 
-    mode_count = sum(
-        bool(mode) for mode in (args.dry_run, args.once, args.until_complete)
-    )
+    run_item = args.run_item is not None
+    mode_count = sum(bool(mode) for mode in (args.dry_run, args.once, args.until_complete, run_item))
     if mode_count > 1:
         _emit_orro_error(
             args,
             code="ERR_ORRO_AUTO_MODE_CONFLICT",
-            message="choose exactly one of --dry-run, --once, or --until-complete",
+            message="choose exactly one of --dry-run, --once, --until-complete, or --run-item",
         )
         return 2
+    if run_item:
+        if args.run_dir:
+            _emit_orro_error(
+                args,
+                code="ERR_ORRO_AUTO_RUN_DIR_CONFLICT",
+                message="orro auto --run-item cannot be combined with a run directory",
+            )
+            return 2
+        if args.max_steps is None:
+            _emit_orro_error(
+                args,
+                code="ERR_ORRO_AUTO_MAX_STEPS_REQUIRED",
+                message="orro auto --run-item requires --max-steps",
+            )
+            return 2
+        if args.max_steps < 1:
+            _emit_orro_error(
+                args,
+                code="ERR_ORRO_AUTO_MAX_STEPS_INVALID",
+                message="orro auto --run-item requires a positive --max-steps",
+            )
+            return 2
+        if not args.repo:
+            _emit_orro_error(
+                args,
+                code="ERR_ORRO_AUTO_REPO_REQUIRED",
+                message="orro auto --run-item requires --repo",
+            )
+            return 2
+        repo = Path(args.repo).resolve(strict=False)
+        home = Path(args.home).resolve(strict=False) if args.home else repo / ".witnessd"
+        code, session = run_item_session(
+            repo=repo,
+            home=home,
+            item_id=str(args.run_item),
+            max_steps=int(args.max_steps),
+        )
+        receipt_path = Path(args.out).resolve(strict=False) if args.out else home / "orro-auto-session.json"
+        try:
+            write_auto_session(receipt_path, session)
+        except OrroAutoError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 1
+        if code != 0:
+            session = _with_advisory_error(
+                args,
+                session,
+                default_code="ERR_ORRO_AUTO_BLOCKED",
+                default_message="ORRO auto run-item stopped before completion",
+            )
+        print(json.dumps(session, sort_keys=True))
+        return code
     if mode_count == 0:
         _emit_orro_error(
             args,

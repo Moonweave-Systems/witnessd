@@ -55,7 +55,7 @@ Use these names in new user-facing docs:
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
 | `orro auto --until-complete` | bounded post-run loop over proofcheck and handoff only |
-| `orro auto` | future broader continuation mode behind evidence gates |
+| `orro auto --run-item` | bounded declared-step chain executor behind evidence gates |
 | `orro ultra` | future high-autonomy profile |
 | `python3 -m orro` | deprecated witnessd compatibility shim for the ORRO-owned command |
 | `orro engine-lock` | write/check distribution metadata for pinned witnessd and Depone commits |
@@ -177,6 +177,13 @@ bounded post-run loop over the same safe steps. It requires `--max-steps`; v0
 allows only 1 or 2. It re-checks continuation state before every step and may
 run proofcheck then handoff, but never proofrun or workers. The auto session is
 orchestration metadata only, not proof, verifier truth, approval, or assurance.
+
+`orro auto --run-item <item-id> --repo <repo> --home <home> --max-steps N --json`
+executes the next declared roadmap step's recommended command behind evidence
+gates, continuing only after verified pass and stopping at the first non-pass.
+It never guesses missing inputs or retries a step. Its bounded session receipt
+is orchestration metadata, not proof; the executed step's own evidence remains
+the source of verification truth.
 
 ## Legacy docs
 
