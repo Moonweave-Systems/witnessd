@@ -26,6 +26,11 @@ PROOFCHECK_WORKFLOW_ARTIFACTS = (
     "pr-handoff.json",
 )
 
+INDEPENDENT_TRUST_ANCHOR_NOTE = (
+    "independent_trust_anchor=false is expected for self-signed local runs; "
+    "it limits assurance claims but does not by itself block proofrun/proofcheck."
+)
+
 
 VERIFY_REMEDIATION = {
     "proofcheck": (
@@ -437,6 +442,9 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         if isinstance(verdict_payload, dict):
             verdict_payload["trust_anchor"] = trust_anchor.trust_anchor
             verdict_payload["independent_trust_anchor"] = trust_anchor.independent
+            verdict_payload["independent_trust_anchor_note"] = (
+                INDEPENDENT_TRUST_ANCHOR_NOTE
+            )
             if advisory_provenance is not None:
                 verdict_payload["advisory_provenance"] = advisory_provenance
             if code == 0 and payload.get("decision") == "pass":
@@ -474,6 +482,7 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         "decision": payload.get("decision", "blocked"),
         "trust_anchor": trust_anchor.trust_anchor,
         "independent_trust_anchor": trust_anchor.independent,
+        "independent_trust_anchor_note": INDEPENDENT_TRUST_ANCHOR_NOTE,
         "evidence_dir": str(evidence_dir),
         **(
             {"orro_binding": binding}
@@ -522,6 +531,23 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         **({"error": payload["error"]} if payload.get("error") else {}),
     }
     workflow_contract = _proofcheck_workflow_contract(payload)
+    if str(result["decision"]).startswith("blocked"):
+        from witnessd.orro_next import team_ledger_block_diagnostics
+
+        lane_block = team_ledger_block_diagnostics(evidence_dir)
+        if lane_block is not None:
+            result.update(lane_block)
+            lane = lane_block["blocked_lanes"][0]
+            blocked_summary = (
+                f"{result['decision']}: lane {lane.get('lane_id', 'unknown')} "
+                f"blocked — {lane.get('blocked_reason') or 'no runtime reason reported'}."
+            )
+            if not trust_anchor.independent:
+                blocked_summary += (
+                    " independent_trust_anchor=false is expected for self-signed "
+                    "local runs and did not cause this."
+                )
+            result["blocked_summary"] = blocked_summary
     if workflow_contract is not None:
         result["workflow_contract"] = workflow_contract
         result["message"] = (

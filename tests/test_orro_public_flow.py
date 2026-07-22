@@ -1658,12 +1658,15 @@ class OrroPublicFlowTests(unittest.TestCase):
                 checks=["true"],
             )
 
-            _home, run_dir, _payload = self._proofrun(
+            home, run_dir, proofrun = self._proofrun(
                 root,
                 workflow_plan=plan_path,
                 role_lane_plan=role_lane_path,
             )
 
+            self.assertEqual(proofrun["decision"], "pass")
+            self.assertEqual(proofrun["trust_anchor"], "self-signed")
+            self.assertFalse(proofrun["independent_trust_anchor"])
             ledger = json.loads(
                 (run_dir / "team-ledger.json").read_text(encoding="utf-8")
             )
@@ -1675,6 +1678,74 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertTrue(verdict_path.exists())
             verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
             self.assertEqual(verdict["decision"], "pass")
+
+            proofcheck = self._proofcheck_out(home, run_dir)
+            self.assertEqual(proofcheck["decision"], "pass")
+            self.assertEqual(proofcheck["trust_anchor"], "self-signed")
+            self.assertFalse(proofcheck["independent_trust_anchor"])
+            self.assertEqual(
+                proofcheck["independent_trust_anchor_note"],
+                "independent_trust_anchor=false is expected for self-signed local "
+                "runs; it limits assurance claims but does not by itself block "
+                "proofrun/proofcheck.",
+            )
+
+    def test_proofcheck_blocked_explicit_surfaces_verdict_lane_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence_dir = Path(tmp) / "evidence"
+            evidence_dir.mkdir()
+            team_verdict = {
+                "decision": "blocked-explicit",
+                "lane_results": [
+                    {
+                        "lane_id": "verify",
+                        "verification_state": "blocked",
+                        "blocked_reason": "verification command modified the worktree",
+                        "errors": [],
+                    },
+                    {
+                        "lane_id": "other",
+                        "verification_state": "pass",
+                        "errors": [],
+                    },
+                ],
+            }
+            (evidence_dir / "team-ledger-verdict.json").write_text(
+                json.dumps(team_verdict) + "\n", encoding="utf-8"
+            )
+            out = evidence_dir / "proofcheck-verdict.json"
+
+            def fake_depone(
+                _command: list[str], *, env: dict[str, str]
+            ) -> tuple[int, dict]:
+                verdict = {
+                    "decision": "blocked-explicit",
+                    "verifier_command": "proofcheck",
+                }
+                out.write_text(json.dumps(verdict) + "\n", encoding="utf-8")
+                return 1, {**verdict, "out": str(out)}
+
+            with patch("witnessd.cli.verify._run_depone_json", side_effect=fake_depone):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    code = main(
+                        ["proofcheck", str(evidence_dir), "--out", str(out), "--json"]
+                    )
+
+            self.assertEqual(code, 1)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["decision"], "blocked-explicit")
+            self.assertEqual(payload["blocked_lane_count"], 1)
+            self.assertEqual(payload["blocked_lanes"], [team_verdict["lane_results"][0]])
+            self.assertIn("lane verify blocked", payload["blocked_summary"])
+            self.assertIn(
+                "verification command modified the worktree",
+                payload["blocked_summary"],
+            )
+            self.assertIn(
+                "did not cause this",
+                payload["blocked_summary"],
+            )
 
     def test_verification_only_proofrun_needs_no_reference_adapter_optin(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2465,6 +2536,12 @@ class OrroPublicFlowTests(unittest.TestCase):
         self.assertIn("orro scout", result.stdout)
         self.assertIn("role-lane shell", result.stdout)
         self.assertIn("reference/placeholder proofrun lanes", result.stdout)
+        self.assertIn("execution arm", result.stdout)
+        normalized_help = " ".join(result.stdout.split())
+        self.assertIn(
+            "does not convert a self-signed trust anchor into an independent trust anchor",
+            normalized_help,
+        )
 
     def test_direct_shell_capture_stays_blocked_with_workflow_contract_guidance(
         self,

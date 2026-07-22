@@ -27,7 +27,7 @@ class DistributionInitTests(unittest.TestCase):
     def test_default_depone_ref_pins_v023_lane_intent_support(self) -> None:
         self.assertEqual(
             DEFAULT_DEPONE_REF,
-            "5f7ccc35174f92ec1d7565c3066cd903e605442d",
+            "ea1055f756d580784be8448c470ac068518f7568",
         )
         self.assertRegex(DEFAULT_DEPONE_REF, r"^[0-9a-f]{40}$")
 

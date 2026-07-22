@@ -206,6 +206,63 @@ class OrroReportTests(unittest.TestCase):
             self.assertNotIn("declared_intent", payload)
             self.assertNotIn("declared_intent_ref", payload)
 
+    def test_lane_block_reason_drives_next_and_report_from_verdict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home, run_dir = self._proofrun(Path(tmp))
+            ledger = json.loads(
+                (run_dir / "team-ledger.json").read_text(encoding="utf-8")
+            )
+            self.assertNotIn("blocked_reason", ledger["lanes"][0])
+            lane_id = ledger["lanes"][0]["lane_id"]
+            reason = "runtime verification command modified the worktree"
+            team_verdict = {
+                "decision": "blocked-explicit",
+                "lane_results": [
+                    {
+                        "lane_id": lane_id,
+                        "verification_state": "blocked",
+                        "blocked_reason": reason,
+                        "errors": [],
+                    }
+                ],
+            }
+            (run_dir / "team-ledger-verdict.json").write_text(
+                json.dumps(team_verdict) + "\n", encoding="utf-8"
+            )
+            diagnostic = (
+                "jq '.decision, (.lane_results[]? ) | {lane_id, "
+                "verification_state, blocked_reason, errors}' "
+                f"{run_dir}/team-ledger-verdict.json"
+            )
+
+            next_stdout = io.StringIO()
+            with redirect_stdout(next_stdout):
+                next_code = main(
+                    ["orro", "next", str(run_dir), "--home", str(home), "--json"]
+                )
+            next_payload = json.loads(next_stdout.getvalue())
+
+            self.assertEqual(next_code, 1)
+            self.assertEqual(next_payload["decision"], "blocked")
+            self.assertEqual(next_payload["blocked_lane_count"], 1)
+            self.assertEqual(next_payload["blocked_lanes"], team_verdict["lane_results"])
+            self.assertIn(reason, next_payload["reasons"][0])
+            self.assertEqual(next_payload["diagnostic_command"], diagnostic)
+            self.assertEqual(next_payload["next_allowed"], [diagnostic])
+
+            code, report = self._report(run_dir, home)
+
+            self.assertEqual(code, 1)
+            self.assertIn(reason, report["summary"]["headline"])
+            self.assertEqual(
+                report["summary"]["recommended_next_action"], diagnostic
+            )
+            self.assertEqual(report["execution"]["blocked_lane_count"], 1)
+            self.assertEqual(
+                report["execution"]["blocked_lanes"], team_verdict["lane_results"]
+            )
+            self.assertEqual(report["next"]["diagnostic_command"], diagnostic)
+
     def test_report_cites_explicit_declared_intent_and_renders_it_after_goal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
