@@ -94,6 +94,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_run_args(proofrun)
     proofrun.add_argument(
+        "--roadmap-item",
+        default=None,
+        metavar="ID",
+        help="explicit .orro/roadmap.json item id for this run; never inferred",
+    )
+    proofrun.add_argument(
         "--allow-reference-adapter",
         action="store_true",
         help=(
@@ -357,6 +363,12 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_check.add_argument("--repo", "--root", dest="repo", default=None)
     orro_check.add_argument("--home", default=None)
     orro_check.add_argument("--run-dir", default=None)
+    orro_check.add_argument(
+        "--roadmap-item",
+        default=None,
+        metavar="ID",
+        help="explicit .orro/roadmap.json item id for proofrun; never inferred",
+    )
     orro_check.add_argument("--check", action="append", default=None)
     orro_check.add_argument(
         "--health",
@@ -472,6 +484,12 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     orro_flow.add_argument("--run-dir", default=None)
+    orro_flow.add_argument(
+        "--roadmap-item",
+        default=None,
+        metavar="ID",
+        help="explicit .orro/roadmap.json item id for proofrun; never inferred",
+    )
     orro_flow.add_argument("--allow-reference-adapter", action="store_true")
     orro_flow.add_argument("--json", action="store_true")
     orro_flow.add_argument("--verification-only", action="store_true")
@@ -489,6 +507,27 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_demo.add_argument("--work-dir", default=None)
     orro_demo.add_argument("--depone-root", default=None)
     orro_demo.set_defaults(func=_cli_handler("demo", "_cmd_orro_demo"))
+
+    orro_status = sub.add_parser(
+        "orro-status",
+        help=argparse.SUPPRESS,
+        description="Report roadmap-bound observed run state without executing or verifying.",
+    )
+    orro_status.add_argument("--repo", "--root", dest="repo", default=".")
+    orro_status.add_argument("--home", default=None)
+    orro_status.add_argument("--json", action="store_true")
+    orro_status.set_defaults(func=_cli_handler("status", "_cmd_orro_status"))
+
+    orro_tidy = sub.add_parser(
+        "orro-tidy",
+        help=argparse.SUPPRESS,
+        description="Inventory ORRO worktrees or safely remove eligible clean worktrees.",
+    )
+    orro_tidy.add_argument("--repo", "--root", dest="repo", default=".")
+    orro_tidy.add_argument("--home", default=None)
+    orro_tidy.add_argument("--apply", action="store_true")
+    orro_tidy.add_argument("--json", action="store_true")
+    orro_tidy.set_defaults(func=_cli_handler("status", "_cmd_orro_tidy"))
 
     isolation = sub.add_parser("isolation", help="isolation contract checks")
     isolation.add_argument("--self-test", action="store_true")
@@ -562,6 +601,12 @@ def _build_parser() -> argparse.ArgumentParser:
     team_go.add_argument("--home", default=None)
     team_go.add_argument("--team", default=None)
     team_go.add_argument("--run-dir", default=None)
+    team_go.add_argument(
+        "--roadmap-item",
+        default=None,
+        metavar="ID",
+        help="explicit .orro/roadmap.json item id for proofrun; never inferred",
+    )
     team_go.add_argument(
         "--profile",
         choices=[
@@ -1070,6 +1115,8 @@ ORRO_COMMAND_MAP: dict[str, str] = {
     "review": "orro-review",
     "check": "orro-check",
     "demo": "orro-demo",
+    "status": "orro-status",
+    "tidy": "orro-tidy",
     "auto": "orro-auto",
     "flow": "orro-flow",
     "team": "team",

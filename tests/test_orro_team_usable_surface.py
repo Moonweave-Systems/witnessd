@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.__main__ import main
+from witnessd.orro_roadmap import write_roadmap
 from witnessd import orro_team_surface, orro_workflow
 from witnessd.role_capability import validate_rolepack
 
@@ -294,6 +295,14 @@ class OrroTeamUsableSurfaceTests(unittest.TestCase):
             repo.mkdir()
             bindir.mkdir()
             _seed_repo(repo)
+            write_roadmap(
+                repo,
+                {
+                    "kind": "orro-roadmap",
+                    "schema_version": "0.1",
+                    "items": [{"id": "team-go", "title": "Team go"}],
+                },
+            )
             _fake_codex_writes_prompt(bindir)
 
             with redirect_stdout(io.StringIO()):
@@ -342,6 +351,8 @@ class OrroTeamUsableSurfaceTests(unittest.TestCase):
                             str(team_path),
                             "--run-dir",
                             str(run_dir),
+                            "--roadmap-item",
+                            "team-go",
                             "--json",
                         ]
                     )
@@ -362,6 +373,12 @@ class OrroTeamUsableSurfaceTests(unittest.TestCase):
             self.assertTrue((run_dir / "proofcheck-verdict.json").is_file())
             self.assertTrue((run_dir / "orro-report.json").is_file())
             self.assertTrue((run_dir / "moonweave-routing-decision.json").is_file())
+            self.assertEqual(
+                json.loads(
+                    (run_dir / "roadmap-binding.json").read_text(encoding="utf-8")
+                )["item_id"],
+                "team-go",
+            )
             role_lane_plan = json.loads((run_dir / "role-lane-plan.json").read_text(encoding="utf-8"))
             self.assertEqual(role_lane_plan["lanes"][0]["prompt"], task)
             prompt_out = next((run_dir / "worktrees").glob("runner*/orro/task-output.txt"))

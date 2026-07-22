@@ -262,6 +262,11 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
         write_workflow_role_dispatch,
     )
     from witnessd.planner import dispatch, seal_plan
+    from witnessd.orro_roadmap import (
+        OrroRoadmapError,
+        require_roadmap_item,
+        seal_roadmap_binding,
+    )
     from witnessd.signing import gen_operator_keypair
     from witnessd.trust_anchor import resolve_trust_anchor
 
@@ -269,6 +274,13 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
     home = Path(
         args.home or os.environ.get("WITNESSD_HOME") or (repo / ".witnessd")
     ).resolve(strict=False)
+    roadmap_item = getattr(args, "roadmap_item", None)
+    if roadmap_item is not None:
+        try:
+            require_roadmap_item(repo, roadmap_item)
+        except OrroRoadmapError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 2
     try:
         validate_depone_pin(home)
     except ProvisionError as exc:
@@ -419,6 +431,17 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
             / f"run-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{time.monotonic_ns()}"
         )
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    if roadmap_item is not None:
+        try:
+            seal_roadmap_binding(
+                repo=repo,
+                run_dir=out_dir,
+                item_id=roadmap_item,
+            )
+        except OrroRoadmapError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 1
 
     workflow_plan_ref: dict[str, object] | None = None
     if workflow_plan is not None and workflow_plan_source is not None:

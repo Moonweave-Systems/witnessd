@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 from witnessd.__main__ import main
 from witnessd.orro_report import build_report
+from witnessd.orro_roadmap import write_roadmap
 from witnessd.orro_team_surface import apply_task_prompt_to_role_lane_plan
 from witnessd.orro_workflow import OrroWorkflowError
 from witnessd.signing import gen_operator_keypair
@@ -238,8 +239,18 @@ class OrroPublicFlowTests(unittest.TestCase):
         external_keys_dir: Path | None = None,
         allow_reference_adapter: bool = True,
         codex_binary: str | None = None,
+        roadmap_item: str | None = None,
     ) -> tuple[Path, Path, dict]:
         repo, home = self._init_home(root)
+        if roadmap_item is not None:
+            write_roadmap(
+                repo,
+                {
+                    "kind": "orro-roadmap",
+                    "schema_version": "0.1",
+                    "items": [{"id": roadmap_item, "title": "Bound test item"}],
+                },
+            )
         trusted_public_key: Path | None = None
         if external_keys_dir is not None:
             external_keys_dir.mkdir()
@@ -269,6 +280,8 @@ class OrroPublicFlowTests(unittest.TestCase):
             args.append("--allow-reference-adapter")
         if codex_binary is not None:
             args.extend(["--codex-binary", codex_binary])
+        if roadmap_item is not None:
+            args.extend(["--roadmap-item", roadmap_item])
         with (
             patch.dict(os.environ, {}, clear=False),
             redirect_stdout(stdout),
@@ -282,6 +295,57 @@ class OrroPublicFlowTests(unittest.TestCase):
         self.assertEqual(code, 0, f"stdout={stdout.getvalue()}\nstderr={stderr.getvalue()}")
         payload = json.loads(stdout.getvalue())
         return home, Path(payload["run_dir"]), payload
+
+    def test_proofrun_seals_explicit_roadmap_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _home, run_dir, _payload = self._proofrun(
+                Path(tmp), roadmap_item="legibility-v1"
+            )
+
+            binding = json.loads(
+                (run_dir / "roadmap-binding.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(binding["item_id"], "legibility-v1")
+            self.assertEqual(binding["ledger_path"], ".orro/roadmap.json")
+
+    def test_proofrun_unknown_roadmap_item_blocks_before_run_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            write_roadmap(
+                repo,
+                {
+                    "kind": "orro-roadmap",
+                    "schema_version": "0.1",
+                    "items": [{"id": "known-item", "title": "Known"}],
+                },
+            )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(
+                    [
+                        "orro",
+                        "proofrun",
+                        "goal",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--roadmap-item",
+                        "typo-item",
+                        "--allow-reference-adapter",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2, stderr.getvalue())
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(
+                payload["error"]["code"], "ERR_ORRO_ROADMAP_ITEM_UNKNOWN"
+            )
+            self.assertFalse((home / "runs").exists())
 
     def _proofcheck_out(
         self,
