@@ -43,7 +43,7 @@ public commands:
   review       advisory read-only reviewer lanes; not proof or assurance
   check        companion: verify (Depone verdict) + read-only review; not observed execution
   demo         AI-free shell guardrail demo with Depone scope-conformance PASS/FAIL
-  auto         dry-run, one-step, or bounded post-run automation
+  auto         dry-run, one-step, bounded post-run, or bounded item-chain automation
   team         scaffold team config or run flowplan/proofrun/proofcheck/report
   doctor       ORRO engine/verifier readiness; not runlog health or evidence verification
   engine-lock  write/check distribution metadata for pinned engine commits
@@ -53,7 +53,9 @@ boundary:
   advise, sketch, trace, next, and report read status/intent only; trace consumes a
   symptom-bound prior-run receipt without executing repo code; auto --dry-run recommends
   commands only; auto --once executes at most one proofcheck or handoff step;
-  auto --until-complete loops over those post-run steps with --max-steps. None
+  auto --until-complete loops over those post-run steps with --max-steps; auto
+  --run-item executes the next declared step's recommended command behind
+  evidence gates, bounded by --max-steps, and stops at the first non-pass. None
   is proof or assurance. A provenance PASS means sealed bytes are internally
   re-derivable; it does not establish that a direction or root cause is correct.
 

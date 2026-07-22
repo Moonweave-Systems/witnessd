@@ -430,11 +430,21 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_check.add_argument("--json", action="store_true")
     orro_check.set_defaults(func=_cli_handler("companion", "_cmd_orro_check"))
 
-    orro_auto = sub.add_parser("orro-auto", help=argparse.SUPPRESS)
+    orro_auto = sub.add_parser(
+        "orro-auto",
+        help=argparse.SUPPRESS,
+        description=(
+            "auto --run-item executes the next declared step's recommended command "
+            "behind evidence gates; bounded by --max-steps; stops at the first non-pass. "
+            "Existing --dry-run, --once, and --until-complete modes remain non-proofrun."
+        ),
+    )
     orro_auto.add_argument("run_dir", nargs="?")
     orro_auto.add_argument("--dry-run", action="store_true")
     orro_auto.add_argument("--once", action="store_true")
     orro_auto.add_argument("--until-complete", action="store_true")
+    orro_auto.add_argument("--run-item", default=None, metavar="ITEM_ID")
+    orro_auto.add_argument("--repo", default=None)
     orro_auto.add_argument("--max-steps", type=int, default=None)
     orro_auto.add_argument("--home", default=None)
     orro_auto.add_argument("--out", default=None)
