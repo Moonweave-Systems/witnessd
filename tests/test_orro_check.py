@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import stat
 import subprocess
 import tempfile
@@ -74,6 +75,53 @@ def _fake_agy(directory: Path) -> str:
     return str(path)
 
 
+def _fake_ruff_fixer(directory: Path) -> str:
+    path = directory / "ruff"
+    path.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then\n'
+        "  printf '%s\\n' 'ruff 0.6.9'\n"
+        'elif [ "$1" = "check" ] && [ "$2" = "--fix" ]; then\n'
+        "  mkdir -p src && printf '%s\\n' 'fixed' > src/health-fixed.txt\n"
+        'elif [ "$1" = "check" ]; then\n'
+        '  test "$(cat src/health-fixed.txt)" = "fixed"\n'
+        "else\n"
+        "  exit 1\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
+def _fake_ruff_checker(directory: Path) -> str:
+    path = directory / "ruff"
+    path.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = \"--version\" ]; then printf '%s\\n' 'ruff 0.6.9'; fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
+def _fake_ruff_scope_violator(directory: Path) -> str:
+    path = directory / "ruff"
+    path.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then\n'
+        "  printf '%s\\n' 'ruff 0.6.9'\n"
+        'elif [ "$1" = "check" ] && [ "$2" = "--fix" ]; then\n'
+        "  printf '%s\\n' 'outside' > outside.txt\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
 class OrroCheckBlockerTest(unittest.TestCase):
     def test_no_checks_declared_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -90,6 +138,92 @@ class OrroCheckBlockerTest(unittest.TestCase):
             )
             self.assertIn("required_input_or_grant", payload["error"])
             self.assertIn("next_command", payload["error"])
+
+    def test_health_without_detected_or_explicit_gates_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            code, payload, err = _run(
+                ["orro", "check", "--repo", str(repo), "--health", "--json"]
+            )
+            self.assertEqual(code, 2, err)
+            self.assertEqual(
+                payload["error"]["code"], "ERR_ORRO_HEALTH_NO_GATES_DETECTED"
+            )
+            self.assertIn("[tool.ruff]", payload["error"]["required_input_or_grant"])
+            self.assertIn("--health-plan", payload["error"]["next_command"])
+
+    def test_fix_without_write_scope_blocks_before_any_phase(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            (repo / "pyproject.toml").write_text("[tool.ruff]\n", encoding="utf-8")
+            with patch(
+                "witnessd.cli.companion._invoke_phase",
+                side_effect=AssertionError("scope blocker must precede all phases"),
+            ):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--health",
+                        "--fix",
+                        "--json",
+                    ]
+                )
+            self.assertEqual(code, 2, err)
+            self.assertEqual(
+                payload["error"]["code"], "ERR_ORRO_HEALTH_FIX_SCOPE_REQUIRED"
+            )
+            self.assertIn("--write-scope", payload["error"]["required_input_or_grant"])
+
+
+class OrroCheckHealthPlanTest(unittest.TestCase):
+    def test_health_plan_prints_detected_gates_without_running_a_phase(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            (repo / "pyproject.toml").write_text(
+                "[tool.ruff]\nline-length = 88\n",
+                encoding="utf-8",
+            )
+
+            with (
+                patch.dict("os.environ", {"PATH": str(repo / "empty-bin")}),
+                patch(
+                    "witnessd.cli.companion._invoke_phase",
+                    side_effect=AssertionError("health-plan must not run a phase"),
+                ),
+            ):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--health-plan",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0, err)
+            self.assertEqual(payload["kind"], "orro-health-plan")
+            self.assertEqual(
+                payload["gates"],
+                [
+                    {
+                        "gate": "lint",
+                        "tool": "ruff",
+                        "command": "ruff check .",
+                        "version": "unresolved",
+                    }
+                ],
+            )
 
 
 class OrroCheckVerifyTest(unittest.TestCase):
@@ -155,7 +289,270 @@ class OrroCheckVerifyTest(unittest.TestCase):
             self.assertIs(payload["reviewed_work_execution_observed"], False)
             self.assertTrue((root / "run" / "companion-manifest.json").is_file())
 
-    def test_declared_intent_is_sealed_and_cited_without_review_drift_keys(self) -> None:
+    def test_health_fix_runs_in_scope_before_verify_and_records_diff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            (repo / "pyproject.toml").write_text("[tool.ruff]\n", encoding="utf-8")
+            (repo / "src").mkdir()
+            (repo / "src" / "health-fixed.txt").write_text(
+                "unfixed\n", encoding="utf-8"
+            )
+            subprocess.run(
+                ["git", "add", "pyproject.toml", "src"], cwd=repo, check=True
+            )
+            subprocess.run(
+                ["git", "commit", "-qm", "configure ruff"], cwd=repo, check=True
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            _fake_ruff_fixer(bin_dir)
+            run_dir = root / "run"
+
+            with patch.dict(
+                os.environ,
+                {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"},
+            ):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(run_dir),
+                        "--health",
+                        "--fix",
+                        "--write-scope",
+                        "src/**",
+                        "--no-review",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0, err)
+            self.assertEqual(payload["code_health"]["verdict"], "pass")
+            self.assertEqual(payload["code_health"]["gates"][0]["status"], "pass")
+            self.assertEqual(
+                payload["code_health"]["fixes_applied"]["ran"],
+                ["ruff check --fix ."],
+            )
+            diff_path = run_dir / "health-fix.diff"
+            self.assertEqual(
+                payload["code_health"]["fixes_applied"]["diff_ref"]["path"],
+                str(diff_path),
+            )
+            self.assertTrue(diff_path.is_file())
+            self.assertIn("src/health-fixed.txt", diff_path.read_text(encoding="utf-8"))
+            self.assertFalse(payload["code_health"]["structural_consistency_covered"])
+            self.assertIn(
+                "declared deterministic gates passed under observation",
+                payload["code_health"]["means"],
+            )
+            self.assertNotIn("independently re-derived", json.dumps(payload))
+
+    def test_health_human_output_carries_the_means_boundary_without_overclaim(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            (repo / "pyproject.toml").write_text("[tool.ruff]\n", encoding="utf-8")
+            subprocess.run(["git", "add", "pyproject.toml"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-qm", "configure ruff"], cwd=repo, check=True
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            _fake_ruff_checker(bin_dir)
+
+            with patch.dict(
+                os.environ,
+                {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"},
+            ):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--health",
+                        "--no-review",
+                    ]
+                )
+
+            self.assertEqual(code, 0, err)
+            output = payload["_raw"]
+            self.assertIn("CODE HEALTH", output)
+            self.assertIn("lint", output)
+            self.assertIn("ruff", output)
+            self.assertIn("0.6.9", output)
+            self.assertIn(
+                "declared deterministic gates passed under observation",
+                output,
+            )
+            self.assertIn("NOT a claim of good design", output)
+            self.assertNotIn("independently re-derived", output)
+
+    def test_configured_but_unavailable_tool_yields_a_named_blocked_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            (repo / "mypy.ini").write_text("[mypy]\nstrict = true\n", encoding="utf-8")
+            subprocess.run(["git", "add", "mypy.ini"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-qm", "configure mypy"], cwd=repo, check=True
+            )
+
+            with patch.dict(os.environ, {"PATH": "/usr/bin:/bin"}):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--health",
+                        "--no-review",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2, err)
+            self.assertIn(
+                payload["code_health"]["verdict"],
+                {"blocked", "blocked-explicit"},
+            )
+            gate = payload["code_health"]["gates"][0]
+            self.assertEqual(gate["tool"], "mypy")
+            self.assertEqual(gate["version"], "unresolved")
+            self.assertEqual(gate["status"], payload["code_health"]["verdict"])
+
+    def test_health_composes_detected_gates_after_explicit_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            (repo / "pyproject.toml").write_text("[tool.ruff]\n", encoding="utf-8")
+            subprocess.run(["git", "add", "pyproject.toml"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-qm", "configure ruff"], cwd=repo, check=True
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            _fake_ruff_checker(bin_dir)
+            run_dir = root / "run"
+
+            with patch.dict(
+                os.environ,
+                {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"},
+            ):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(run_dir),
+                        "--check",
+                        "false",
+                        "--health",
+                        "--no-review",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2, err)
+            plan = json.loads(
+                (run_dir / "verify-role-lane-plan.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                plan["lanes"][0]["check_commands"],
+                ["false", "ruff check ."],
+            )
+            self.assertEqual(
+                payload["code_health"]["verdict"], payload["verdict_ref"]["decision"]
+            )
+
+    def test_health_fix_outside_declared_scope_is_falsified_by_depone(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            (repo / "pyproject.toml").write_text("[tool.ruff]\n", encoding="utf-8")
+            subprocess.run(["git", "add", "pyproject.toml"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-qm", "configure ruff"], cwd=repo, check=True
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            _fake_ruff_scope_violator(bin_dir)
+            run_dir = root / "run"
+
+            with patch.dict(
+                os.environ,
+                {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"},
+            ):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(run_dir),
+                        "--health",
+                        "--fix",
+                        "--write-scope",
+                        "src/**",
+                        "--no-review",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2, err)
+            self.assertEqual(
+                payload["error"]["code"],
+                "ERR_ORRO_HEALTH_FIX_PROOFCHECK_BLOCKED",
+            )
+            fix_verdict = json.loads(
+                (run_dir / "health-fix-run" / "proofcheck-verdict.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(fix_verdict["policy_conformance"]["overall"], "fail")
+            write_scope = next(
+                axis
+                for axis in fix_verdict["policy_conformance"]["axes"]
+                if axis["axis"] == "write_scope"
+            )
+            self.assertEqual(write_scope["status"], "fail")
+
+    def test_declared_intent_is_sealed_and_cited_without_review_drift_keys(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             intent = {
@@ -344,7 +741,9 @@ class OrroCheckReviewTest(unittest.TestCase):
                     flowplan_goals[profile] = argv[1]
                 return original(argv)
 
-            with patch("witnessd.cli.companion._invoke_phase", side_effect=capture_goals):
+            with patch(
+                "witnessd.cli.companion._invoke_phase", side_effect=capture_goals
+            ):
                 code, payload, err = _run(
                     [
                         "orro",
@@ -371,12 +770,16 @@ class OrroCheckReviewTest(unittest.TestCase):
             self.assertNotIn(intent["intent"], flowplan_goals["verification-only"])
             self.assertIn(intent["intent"], flowplan_goals["review-only"])
             self.assertIn(intent["non_goals"][0], flowplan_goals["review-only"])
-            self.assertEqual(payload["intent_drift_advisory"][0]["matched_token"], "review-only")
+            self.assertEqual(
+                payload["intent_drift_advisory"][0]["matched_token"], "review-only"
+            )
             self.assertIs(
                 payload["intent_drift_advisory"][0]["can_change_evidence_verdict"],
                 False,
             )
-            self.assertIn("lexical-screening absence only", payload["intent_alignment_note"])
+            self.assertIn(
+                "lexical-screening absence only", payload["intent_alignment_note"]
+            )
 
 
 class ReviewerUnavailableTest(unittest.TestCase):
@@ -418,9 +821,7 @@ class ReviewerUnavailableTest(unittest.TestCase):
             self.assertEqual(payload["verdict_ref"]["decision"], "pass")
             self.assertNotIn("review_ref", payload)
             manifest = json.loads(
-                (root / "run" / "companion-manifest.json").read_text(
-                    encoding="utf-8"
-                )
+                (root / "run" / "companion-manifest.json").read_text(encoding="utf-8")
             )
             self.assertEqual(manifest, payload)
 
@@ -575,7 +976,9 @@ class OrroCheckHumanOutputTest(unittest.TestCase):
                 )
             lines = out.getvalue().splitlines()
             self.assertEqual(code, 0, errbuf.getvalue())
-            self.assertEqual(lines[0], "orro check — evidence & review for work you already drove")
+            self.assertEqual(
+                lines[0], "orro check — evidence & review for work you already drove"
+            )
             self.assertIn("Verify the requested boundary.", lines[2])
             self.assertIn("paper-chat", out.getvalue())
             self.assertLess(

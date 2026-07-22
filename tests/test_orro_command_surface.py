@@ -153,11 +153,40 @@ class OrroCommandSurfaceTests(unittest.TestCase):
         self.assertIn("--violate", commands["orro-demo"].format_help())
         self.assertIn("demo", ORRO_HELP)
 
+    def test_orro_check_exposes_health_flags_and_repeatable_fix_scope(self) -> None:
+        parser = _build_parser()
+        commands = parser._subparsers._group_actions[0].choices
+        parsed = parser.parse_args(
+            [
+                "orro-check",
+                "--health",
+                "--fix",
+                "--write-scope",
+                "src/**",
+                "--write-scope",
+                "tests/**",
+                "--health-plan",
+            ]
+        )
+
+        self.assertTrue(parsed.health)
+        self.assertTrue(parsed.fix)
+        self.assertEqual(parsed.write_scope, ["src/**", "tests/**"])
+        self.assertTrue(parsed.health_plan)
+        help_text = commands["orro-check"].format_help()
+        self.assertIn("already-adopted deterministic gates", help_text)
+        self.assertIn("requires explicit --write-scope", help_text)
+        self.assertIn("never inferred", help_text)
+        self.assertIn("as JSON without", help_text)
+        self.assertIn("running phases", help_text)
+
     def test_doctor_help_distinguishes_runlog_health_from_orro_readiness(self) -> None:
         self.assertIn("runlog health", _build_parser().format_help())
         self.assertIn("not runlog health", ORRO_HELP)
 
-    def test_role_lane_tier_defaults_to_adapter_aware_auto_on_every_surface(self) -> None:
+    def test_role_lane_tier_defaults_to_adapter_aware_auto_on_every_surface(
+        self,
+    ) -> None:
         parser = _build_parser()
         flowplan = parser.parse_args(["flowplan", "goal"])
         guided_flow = parser.parse_args(["orro-flow", "goal"])
@@ -194,7 +223,8 @@ class OrroCommandSurfaceTests(unittest.TestCase):
         for help_text in (
             commands["a2-observer-run"].format_help(),
             commands["orro-flow"].format_help(),
-            commands["faultkit"]._subparsers._group_actions[0]
+            commands["faultkit"]
+            ._subparsers._group_actions[0]
             .choices["budget-blowout"]
             .format_help(),
             commands["run"].format_help(),

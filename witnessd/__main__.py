@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import sys
 
-
 RUNNER_SANDBOX_HELP = (
     "filesystem DIR where the runner executes; NOT a Codex sandbox mode "
     "(read-only/workspace-write) and NOT the observer run/out directory"
@@ -35,6 +34,7 @@ def _cli_handler(module: str, name: str):
 
 
 DEFAULT_TEAM_PLAN_RUN_LANE_TIMEOUT_SECONDS = 900
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="witnessd")
@@ -358,6 +358,28 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_check.add_argument("--home", default=None)
     orro_check.add_argument("--run-dir", default=None)
     orro_check.add_argument("--check", action="append", default=None)
+    orro_check.add_argument(
+        "--health",
+        action="store_true",
+        help="detect the repo's already-adopted deterministic gates and add them",
+    )
+    orro_check.add_argument(
+        "--fix",
+        action="store_true",
+        help="run only safe configured fixers before verify; requires explicit --write-scope",
+    )
+    orro_check.add_argument(
+        "--write-scope",
+        action="append",
+        default=[],
+        metavar="'<glob>'",
+        help="repeatable fixer write bound; mandatory with --fix and never inferred",
+    )
+    orro_check.add_argument(
+        "--health-plan",
+        action="store_true",
+        help="print the detected health gate plan as JSON without running phases",
+    )
     orro_check.add_argument(
         "--intent",
         default=None,
@@ -733,7 +755,9 @@ def _build_parser() -> argparse.ArgumentParser:
     pilot_rotation.add_argument("--archive", required=True)
     pilot_rotation.add_argument("--out", required=True)
     pilot_rotation.add_argument("--retired-key-id", default="witnessd-operator")
-    pilot_rotation.set_defaults(func=_cli_handler("pilot", "_cmd_pilot_rotation_record"))
+    pilot_rotation.set_defaults(
+        func=_cli_handler("pilot", "_cmd_pilot_rotation_record")
+    )
 
     pilot_canary = pilot_sub.add_parser(
         "canary", help="emit a signed operator key-rotation canary bundle"
@@ -748,7 +772,9 @@ def _build_parser() -> argparse.ArgumentParser:
     pilot_archive.add_argument("--archive", required=True)
     pilot_archive.add_argument("--out", default=None)
     pilot_archive.add_argument("--artifact", action="append", required=True)
-    pilot_archive.set_defaults(func=_cli_handler("pilot", "_cmd_pilot_archive_evidence"))
+    pilot_archive.set_defaults(
+        func=_cli_handler("pilot", "_cmd_pilot_archive_evidence")
+    )
 
     return parser
 
