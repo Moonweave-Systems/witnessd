@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from witnessd.cli._output import _hash_file as _output_hash_file
-from witnessd.orro_next import decide_next
+from witnessd.orro_next import decide_next, team_ledger_block_diagnostics
 from witnessd.orro_workflow import (
     role_lane_plan_binding_ref,
     summarize_executable_lanes,
@@ -66,7 +66,9 @@ def build_report(
     verification = _verification_summary(run_dir, continuation, observed)
     handoff = _handoff_summary(run_dir, continuation, observed)
     reference_adapter = _reference_adapter_summary(run_dir)
-    summary = _summary(continuation, verification, handoff, reference_adapter)
+    summary = _summary(
+        continuation, execution, verification, handoff, reference_adapter
+    )
     intent_reference = None
     if declared_intent is not None and declared_intent_source is not None:
         from witnessd.orro_intent import declared_intent_ref
@@ -96,6 +98,11 @@ def build_report(
             "next_allowed": list(continuation.get("next_allowed", [])),
             "blocked": bool(continuation.get("blocked", next_code != 0)),
             "reasons": list(continuation.get("reasons", [])),
+            **(
+                {"diagnostic_command": continuation["diagnostic_command"]}
+                if isinstance(continuation.get("diagnostic_command"), str)
+                else {}
+            ),
         },
         "auto": _auto_summary(run_dir),
         "human_review": _human_review(summary, workflow, verification, workstyle),
@@ -244,6 +251,7 @@ def _verification_line(verification: dict[str, Any]) -> str:
 
 def _summary(
     continuation: dict[str, Any],
+    execution: dict[str, Any],
     verification: dict[str, Any],
     handoff: dict[str, Any],
     reference_adapter: dict[str, Any],
@@ -253,7 +261,9 @@ def _summary(
     next_action = next_allowed[0] if isinstance(next_allowed, list) and next_allowed else None
     return {
         "state": state,
-        "headline": _headline(state, verification, handoff, reference_adapter),
+        "headline": _headline(
+            state, execution, verification, handoff, reference_adapter
+        ),
         "recommended_next_action": next_action,
         "complete": state == "complete",
         "blocked": bool(continuation.get("blocked", False)),
@@ -264,10 +274,20 @@ def _summary(
 
 def _headline(
     state: str,
+    execution: dict[str, Any],
     verification: dict[str, Any],
     handoff: dict[str, Any],
     reference_adapter: dict[str, Any],
 ) -> str:
+    blocked_lanes = execution.get("blocked_lanes")
+    if isinstance(blocked_lanes, list) and blocked_lanes:
+        lane = blocked_lanes[0]
+        if isinstance(lane, dict):
+            return (
+                f"Lane {lane.get('lane_id', 'unknown')} blocked — "
+                f"{lane.get('blocked_reason') or 'no runtime reason reported'} "
+                "(runtime-reported diagnostic)."
+            )
     if reference_adapter.get("reference_adapter"):
         return (
             "Reference shell adapter evidence exists and proofcheck may pass, "
@@ -348,12 +368,14 @@ def _execution_summary(
     policy_selected = len(summary_lanes) == 1 and (
         summary_lanes[0].get("model_source") == "model-policy"
     )
+    lane_block = team_ledger_block_diagnostics(run_dir) or {}
     return {
         "proofrun_evidence_present": bool(observed.get("team_ledger")),
         "team_ledger_present": bool(observed.get("team_ledger")),
         "team_ledger_verdict_present": bool(observed.get("team_ledger_verdict")),
         **execution_summary,
         "policy_selected": policy_selected,
+        **lane_block,
         "runner_roles": [
             role
             for role in continuation.get("role_status", [])

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,7 @@ ERR_ORRO_NEXT_PROOFCHECK_BINDING_MISMATCH = "ERR_ORRO_NEXT_PROOFCHECK_BINDING_MI
 ERR_ORRO_NEXT_HANDOFF_LOAD_FAILED = "ERR_ORRO_NEXT_HANDOFF_LOAD_FAILED"
 ERR_ORRO_NEXT_HANDOFF_UNBOUND = "ERR_ORRO_NEXT_HANDOFF_UNBOUND"
 ERR_ORRO_NEXT_HANDOFF_BINDING_MISMATCH = "ERR_ORRO_NEXT_HANDOFF_BINDING_MISMATCH"
+ERR_ORRO_NEXT_LANE_BLOCKED = "ERR_ORRO_NEXT_LANE_BLOCKED"
 
 _CRITICAL_JSON_ARTIFACTS = (
     "workflow-plan.json",
@@ -114,6 +116,32 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
         payload["error"] = {
             "code": ERR_ORRO_NEXT_HANDOFF_LOAD_FAILED,
             "message": handoff_error,
+        }
+        return 1, payload
+
+    lane_block = team_ledger_block_diagnostics(run_dir)
+    if lane_block is not None:
+        blocked_lanes = lane_block["blocked_lanes"]
+        reasons = [
+            "lane "
+            f"{lane.get('lane_id', 'unknown')} blocked — "
+            f"{lane.get('blocked_reason') or 'no runtime reason reported'} "
+            "(runtime-reported diagnostic from team-ledger-verdict.json)"
+            for lane in blocked_lanes
+        ]
+        payload = _base_decision(
+            run_dir,
+            decision="blocked",
+            blocked=True,
+            reasons=reasons,
+            home=home,
+            proofcheck_payload=proofcheck_payload,
+        )
+        payload.update(lane_block)
+        payload["next_allowed"] = [lane_block["diagnostic_command"]]
+        payload["error"] = {
+            "code": ERR_ORRO_NEXT_LANE_BLOCKED,
+            "message": reasons[0],
         }
         return 1, payload
 
@@ -215,6 +243,37 @@ def write_decision(path: Path, payload: dict[str, Any]) -> None:
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     except OSError as exc:
         raise OrroNextError("ERR_ORRO_NEXT_WRITE_FAILED", str(exc)) from exc
+
+
+def team_ledger_block_diagnostics(run_dir: Path) -> dict[str, Any] | None:
+    """Lift runtime-reported lane blocks from the verifier verdict, if readable."""
+    verdict, error = _load_optional_json(run_dir / "team-ledger-verdict.json")
+    if error is not None or verdict is None:
+        return None
+    lane_results = verdict.get("lane_results")
+    if not isinstance(lane_results, list):
+        return None
+    blocked_lanes = [
+        {
+            "lane_id": lane.get("lane_id"),
+            "verification_state": lane.get("verification_state"),
+            "blocked_reason": lane.get("blocked_reason"),
+            "errors": lane.get("errors") if isinstance(lane.get("errors"), list) else [],
+        }
+        for lane in lane_results
+        if isinstance(lane, dict) and lane.get("verification_state") == "blocked"
+    ]
+    if not blocked_lanes:
+        return None
+    verdict_path = shlex.quote(str(run_dir / "team-ledger-verdict.json"))
+    return {
+        "blocked_lane_count": len(blocked_lanes),
+        "blocked_lanes": blocked_lanes,
+        "diagnostic_command": (
+            "jq '.decision, (.lane_results[]? ) | {lane_id, verification_state, "
+            f"blocked_reason, errors}}' {verdict_path}"
+        ),
+    }
 
 
 def _base_decision(

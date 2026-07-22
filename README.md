@@ -147,7 +147,11 @@ witnessd signs the default single-machine flow with an operator key generated
 by that same runtime. Verification labels this `trust_anchor: "self-signed"`:
 the signature and evidence bytes remain checkable, but there is no independent
 out-of-band anchor and the result must not claim observer-signed provenance or
-A1/A2 from that key. To make an external trust anchor eligible, provision the
+A1/A2 from that key. `independent_trust_anchor=false` is expected for self-signed
+local runs; it limits assurance claims but does not by itself block
+proofrun/proofcheck. `--arm direct` selects the execution arm and does not
+convert a self-signed anchor into an independent one. To make an external trust
+anchor eligible, provision the
 matching operator keypair outside the runtime and supply its public key through
 `DEPONE_TRUSTED_OBSERVER_PUBLIC_KEY_FILE`; outputs then report
 `trust_anchor: "operator-provided"`. Observer-signed/A2 language additionally
