@@ -386,6 +386,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="print the detected health gate plan as JSON without running phases",
     )
     orro_check.add_argument(
+        "--init",
+        action="store_true",
+        help="append missing default tool config, seed .orro/health.json, then run health",
+    )
+    orro_check.add_argument(
+        "--promote",
+        action="append",
+        default=[],
+        metavar="GATE",
+        help="repeatable: promote a profile advisory gate to block, then run health",
+    )
+    orro_check.add_argument(
         "--intent",
         default=None,
         metavar="INTENT_JSON_PATH",

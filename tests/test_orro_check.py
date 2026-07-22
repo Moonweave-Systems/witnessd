@@ -142,6 +142,67 @@ def _fake_ruff_scope_violator(directory: Path) -> str:
 
 
 class OrroCheckBlockerTest(unittest.TestCase):
+    def test_promote_without_profile_blocks_before_any_phase(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            with patch(
+                "witnessd.cli.companion._invoke_phase",
+                side_effect=AssertionError("profile blocker must precede all phases"),
+            ):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--health",
+                        "--promote",
+                        "lint",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2, err)
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_HEALTH_NO_PROFILE")
+            self.assertEqual(payload["error"]["reason"], "run --init first")
+
+    def test_unknown_promote_gate_blocks_without_rewriting_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            profile_path = repo / ".orro" / "health.json"
+            profile_path.parent.mkdir()
+            profile_path.write_text(
+                '[{"gate":"lint","tool":"ruff","command":"ruff check .",'
+                '"enforcement":"advisory"}]\n',
+                encoding="utf-8",
+            )
+            before = profile_path.read_bytes()
+            with patch(
+                "witnessd.cli.companion._invoke_phase",
+                side_effect=AssertionError("gate blocker must precede all phases"),
+            ):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--health",
+                        "--promote",
+                        "missing",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2, err)
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_HEALTH_UNKNOWN_GATE")
+            self.assertIn("missing", payload["error"]["reason"])
+            self.assertEqual(profile_path.read_bytes(), before)
+
     def test_apply_without_fix_blocks_before_any_phase(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
@@ -229,6 +290,72 @@ class OrroCheckBlockerTest(unittest.TestCase):
 
 
 class OrroCheckHealthPlanTest(unittest.TestCase):
+    def test_init_seeds_config_and_profile_before_health_detection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+
+            code, payload, err = _run(
+                [
+                    "orro",
+                    "check",
+                    "--repo",
+                    str(repo),
+                    "--health-plan",
+                    "--init",
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 0, err)
+            self.assertEqual(
+                payload["bootstrap"]["config"]["written"],
+                ["tool.black", "tool.ruff", "tool.ruff.lint.mccabe"],
+            )
+            self.assertEqual(payload["bootstrap"]["profile"], "written")
+            self.assertEqual(
+                [(gate["gate"], gate["enforcement"]) for gate in payload["gates"]],
+                [
+                    ("format", "block"),
+                    ("lint", "advisory"),
+                    ("complexity", "advisory"),
+                ],
+            )
+            self.assertTrue((repo / "pyproject.toml").is_file())
+            self.assertTrue((repo / ".orro" / "health.json").is_file())
+
+    def test_promote_updates_profile_before_health_detection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            profile_path = repo / ".orro" / "health.json"
+            profile_path.parent.mkdir()
+            profile_path.write_text(
+                '[{"gate":"lint","tool":"ruff","command":"ruff check .",'
+                '"enforcement":"advisory"}]\n',
+                encoding="utf-8",
+            )
+
+            code, payload, err = _run(
+                [
+                    "orro",
+                    "check",
+                    "--repo",
+                    str(repo),
+                    "--health-plan",
+                    "--promote",
+                    "lint",
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 0, err)
+            self.assertEqual(payload["gates"][0]["enforcement"], "block")
+            persisted = json.loads(profile_path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted[0]["enforcement"], "block")
+
     def test_health_plan_prints_detected_gates_without_running_a_phase(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
@@ -274,6 +401,63 @@ class OrroCheckHealthPlanTest(unittest.TestCase):
 
 
 class OrroCheckVerifyTest(unittest.TestCase):
+    def test_init_implies_health_and_runs_seeded_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            (repo / "a.py").write_text("x = 1\n", encoding="utf-8")
+            subprocess.run(["git", "add", "a.py"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "add python"], cwd=repo, check=True)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            _fake_health_tool(
+                bin_dir,
+                "black",
+                'if [ "$1" = "--version" ]; then echo "black, 24.10.0"; fi\nexit 0\n',
+            )
+            _fake_health_tool(
+                bin_dir,
+                "ruff",
+                'if [ "$1" = "--version" ]; then echo "ruff 0.6.9"; fi\nexit 0\n',
+            )
+
+            with patch.dict(
+                os.environ,
+                {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"},
+            ):
+                code, payload, err = _run(
+                    [
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--init",
+                        "--no-review",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0, err)
+            self.assertEqual(payload["verdict_ref"]["decision"], "pass")
+            self.assertEqual(
+                [
+                    (gate["gate"], gate["enforcement"])
+                    for gate in payload["code_health"]["gates"]
+                ],
+                [
+                    ("format", "block"),
+                    ("lint", "advisory"),
+                    ("complexity", "advisory"),
+                ],
+            )
+            self.assertEqual(payload["health_bootstrap"]["profile"], "written")
+
     def _run_check(
         self, tmp: str, checks: list[str]
     ) -> tuple[tuple[int, object, str], Path]:

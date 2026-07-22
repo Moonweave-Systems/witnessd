@@ -181,6 +181,25 @@ def _print_human_summary(
     verdict = verdict_ref["decision"]
     dot = "● pass" if verdict == "pass" else f"● {verdict}"
     print("orro check — evidence & review for work you already drove\n")
+    bootstrap = manifest.get("health_bootstrap")
+    if isinstance(bootstrap, dict):
+        config = bootstrap.get("config")
+        if isinstance(config, dict):
+            written = ", ".join(str(item) for item in config.get("written", []))
+            present = ", ".join(str(item) for item in config.get("present", []))
+            print(f"  BOOTSTRAP   config written: {written or '(none)'}")
+            print(f"              already present: {present or '(none)'}")
+        if "profile" in bootstrap:
+            print(f"              .orro/health.json: {bootstrap['profile']}")
+        promoted = bootstrap.get("promoted")
+        if isinstance(promoted, list) and promoted:
+            print(f"              promoted to block: {', '.join(map(str, promoted))}")
+        if config is not None:
+            print(
+                "              config only; use --fix --write-scope '<glob>' "
+                "--apply for the one-time reformat"
+            )
+        print()
     declared_intent = manifest.get("declared_intent")
     if isinstance(declared_intent, dict):
         print(f"  DECLARED INTENT   {declared_intent['intent']}")
@@ -203,9 +222,7 @@ def _print_human_summary(
                 marker = (
                     "✓"
                     if status == "pass"
-                    else "⚠"
-                    if enforcement == "advisory"
-                    else "✗"
+                    else "⚠" if enforcement == "advisory" else "✗"
                 )
                 print(
                     f"    {marker} {str(gate.get('gate', '')):<8} "
@@ -364,23 +381,95 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                 ),
             )
         )
-    health_requested = bool(args.health or args.health_plan or args.fix)
+    bootstrap_report: dict[str, object] | None = None
+    if args.init:
+        from witnessd.health_detect import (
+            ensure_health_profile,
+            seed_missing_gate_config,
+        )
+
+        try:
+            config_report = seed_missing_gate_config(repo)
+            _, profile_written = ensure_health_profile(repo)
+        except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+            return _emit_blocker(
+                _structured_error(
+                    code="ERR_ORRO_HEALTH_INIT_BLOCKED",
+                    message="orro check --init could not seed the health profile",
+                    reason=str(exc),
+                    required_input_or_grant="writable UTF-8 pyproject.toml and .orro",
+                    next_command="python3 -m orro check --health --init --repo <repo>",
+                )
+            )
+        bootstrap_report = {
+            "config": config_report,
+            "profile": "written" if profile_written else "present",
+        }
+    if args.promote:
+        from witnessd.health_detect import promote_health_gates
+
+        try:
+            promote_health_gates(repo, args.promote)
+        except FileNotFoundError:
+            return _emit_blocker(
+                _structured_error(
+                    code="ERR_ORRO_HEALTH_NO_PROFILE",
+                    message="orro check --promote requires .orro/health.json",
+                    reason="run --init first",
+                    required_input_or_grant="a persisted health profile",
+                    next_command="python3 -m orro check --health --init --repo <repo>",
+                )
+            )
+        except ValueError as exc:
+            return _emit_blocker(
+                _structured_error(
+                    code="ERR_ORRO_HEALTH_UNKNOWN_GATE",
+                    message="orro check --promote named an unknown health gate",
+                    reason=str(exc),
+                    required_input_or_grant="a gate named in .orro/health.json",
+                    next_command=("python3 -m orro check --health-plan --repo <repo>"),
+                )
+            )
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            return _emit_blocker(
+                _structured_error(
+                    code="ERR_ORRO_HEALTH_PROFILE_INVALID",
+                    message="orro check could not update .orro/health.json",
+                    reason=str(exc),
+                )
+            )
+        if bootstrap_report is None:
+            bootstrap_report = {}
+        bootstrap_report["promoted"] = list(dict.fromkeys(args.promote))
+
+    health_mode = bool(args.health or args.init or args.promote)
+    health_requested = bool(health_mode or args.health_plan or args.fix)
     health_gates: list[dict[str, object]] = []
     if health_requested:
         from witnessd.health_detect import detect_health_gates
 
-        health_gates = list(detect_health_gates(repo))
-    if args.health_plan:
-        print(
-            json.dumps(
-                {"kind": "orro-health-plan", "gates": health_gates},
-                sort_keys=True,
+        try:
+            health_gates = list(detect_health_gates(repo))
+        except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+            return _emit_blocker(
+                _structured_error(
+                    code="ERR_ORRO_HEALTH_PROFILE_INVALID",
+                    message="orro check could not read .orro/health.json",
+                    reason=str(exc),
+                )
             )
-        )
+    if args.health_plan:
+        payload: dict[str, object] = {
+            "kind": "orro-health-plan",
+            "gates": health_gates,
+        }
+        if bootstrap_report is not None:
+            payload["bootstrap"] = bootstrap_report
+        print(json.dumps(payload, sort_keys=True))
         return 0
 
     checks = list(getattr(args, "check", None) or [])
-    if args.health and not health_gates:
+    if health_mode and not health_gates:
         return _emit_blocker(
             _structured_error(
                 code="ERR_ORRO_HEALTH_NO_GATES_DETECTED",
@@ -397,7 +486,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                 ),
             )
         )
-    if args.health and not checks:
+    if health_mode and not checks:
         checks.append("true")
     if args.fix and not [scope for scope in args.write_scope if scope]:
         return _emit_blocker(
@@ -702,7 +791,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     )
                 applied_to_worktree = True
 
-    if args.health:
+    if health_mode:
         health_run_dir = run_dir / "health-run"
         health_run_dir.mkdir(parents=True, exist_ok=True)
         health_wp = health_run_dir / "workflow-plan.json"
@@ -961,7 +1050,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     }
 
     manifest = manifest_partial(decision, verdict_path, team_ledger)
-    if args.health:
+    if health_mode:
         means = (
             "declared deterministic gates ran under observation; the verdict "
             "reflects their exit status, and is NOT a claim of good design, "
@@ -1043,6 +1132,8 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             manifest["intent_alignment_note"] = INTENT_ALIGNMENT_NOTE
     if review_skipped is not None:
         manifest["review_skipped"] = review_skipped
+    if bootstrap_report is not None:
+        manifest["health_bootstrap"] = bootstrap_report
     manifest_path = run_dir / "companion-manifest.json"
     _write_json_file(manifest_path, manifest)
 
