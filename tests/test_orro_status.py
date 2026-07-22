@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.__main__ import main
+from witnessd.cli._output import _hash_file
 from witnessd.cli.status import build_status, render_status_text
 from witnessd.orro_roadmap import seal_roadmap_binding, write_roadmap
 
@@ -25,6 +26,35 @@ def _roadmap() -> dict[str, object]:
             {"id": "future-item", "title": "Future"},
         ],
     }
+
+
+def _write_companion_verdict(
+    run_dir: Path, *, decision: str, tamper: bool = False
+) -> Path:
+    verdict_path = run_dir / "proofcheck-verdict.json"
+    verdict_path.write_text(
+        json.dumps({"kind": "orro-proofcheck-verdict", "decision": decision})
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest = {
+        "kind": "orro-companion-manifest",
+        "verdict_ref": {
+            "path": str(verdict_path),
+            "sha256": _hash_file(verdict_path),
+            "decision": decision,
+        },
+    }
+    (run_dir / "companion-manifest.json").write_text(
+        json.dumps(manifest) + "\n", encoding="utf-8"
+    )
+    if tamper:
+        verdict_path.write_text(
+            json.dumps({"kind": "orro-proofcheck-verdict", "decision": "tampered"})
+            + "\n",
+            encoding="utf-8",
+        )
+    return verdict_path
 
 
 class OrroStatusTests(unittest.TestCase):
@@ -181,6 +211,86 @@ class OrroStatusTests(unittest.TestCase):
                 verified_item["evidence_ref"],
                 str(companion / "proofcheck-verdict.json"),
             )
+
+    def test_verified_companion_manifest_marks_bound_item_done(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            companion = home / "companion-run"
+            companion.mkdir(parents=True)
+            write_roadmap(
+                repo,
+                {
+                    "kind": "orro-roadmap",
+                    "schema_version": "0.1",
+                    "items": [{"id": "companion-item", "title": "Companion"}],
+                },
+            )
+            seal_roadmap_binding(repo=repo, run_dir=companion, item_id="companion-item")
+            verdict_path = _write_companion_verdict(companion, decision="pass")
+
+            with patch("witnessd.cli.status.decide_next") as decide:
+                payload = build_status(repo=repo, home=home)
+
+            decide.assert_not_called()
+            item = payload["items"][0]
+            self.assertEqual(item["status"], "done (verified)")
+            self.assertEqual(item["run_state"], "companion-pass")
+            self.assertEqual(item["evidence_ref"], str(verdict_path))
+
+    def test_tampered_companion_verdict_is_unverified_and_not_done(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            companion = home / "companion-run"
+            companion.mkdir(parents=True)
+            write_roadmap(
+                repo,
+                {
+                    "kind": "orro-roadmap",
+                    "schema_version": "0.1",
+                    "items": [{"id": "companion-item", "title": "Companion"}],
+                },
+            )
+            seal_roadmap_binding(repo=repo, run_dir=companion, item_id="companion-item")
+            _write_companion_verdict(companion, decision="pass", tamper=True)
+
+            with patch("witnessd.cli.status.decide_next") as decide:
+                payload = build_status(repo=repo, home=home)
+
+            decide.assert_not_called()
+            item = payload["items"][0]
+            self.assertEqual(item["status"], "in-progress")
+            self.assertEqual(item["run_state"], "companion-unverified")
+            self.assertNotIn("evidence_ref", item)
+
+    def test_blocked_companion_manifest_stays_in_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            companion = home / "companion-run"
+            companion.mkdir(parents=True)
+            write_roadmap(
+                repo,
+                {
+                    "kind": "orro-roadmap",
+                    "schema_version": "0.1",
+                    "items": [{"id": "companion-item", "title": "Companion"}],
+                },
+            )
+            seal_roadmap_binding(repo=repo, run_dir=companion, item_id="companion-item")
+            _write_companion_verdict(companion, decision="blocked")
+
+            with patch("witnessd.cli.status.decide_next") as decide:
+                payload = build_status(repo=repo, home=home)
+
+            decide.assert_not_called()
+            item = payload["items"][0]
+            self.assertEqual(item["status"], "in-progress")
+            self.assertEqual(item["run_state"], "companion-blocked")
 
     def test_malformed_ledger_is_structured_exit_two(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

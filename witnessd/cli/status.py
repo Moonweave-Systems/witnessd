@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from witnessd.cli._output import _emit_orro_error
+from witnessd.cli._output import _emit_orro_error, _hash_file
 from witnessd.orro_next import decide_next
 from witnessd.orro_roadmap import (
     OrroRoadmapError,
@@ -317,6 +317,21 @@ def render_tidy_text(payload: dict[str, Any]) -> str:
 
 
 def _status_run(run_dir: Path, *, home: Path) -> dict[str, Any]:
+    if (run_dir / "companion-manifest.json").is_file():
+        state, evidence_ref = _companion_status(run_dir)
+        try:
+            binding = read_roadmap_binding(run_dir)
+        except OrroRoadmapError:
+            binding = None
+        result = {
+            "run_dir": str(run_dir),
+            "state": state,
+            "item_id": binding.get("item_id") if binding is not None else None,
+        }
+        if evidence_ref is not None:
+            result["evidence_ref"] = evidence_ref
+        return result
+
     _, decision = decide_next(run_dir, home=home)
     try:
         binding = read_roadmap_binding(run_dir)
@@ -327,6 +342,35 @@ def _status_run(run_dir: Path, *, home: Path) -> dict[str, Any]:
         "state": str(decision.get("decision", "blocked")),
         "item_id": binding.get("item_id") if binding is not None else None,
     }
+
+
+def _companion_status(run_dir: Path) -> tuple[str, str | None]:
+    manifest_path = run_dir / "companion-manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return "companion-unverified", None
+    if not isinstance(manifest, dict):
+        return "companion-unverified", None
+
+    verdict_ref = manifest.get("verdict_ref")
+    if not isinstance(verdict_ref, dict):
+        return "companion-unverified", None
+    verdict_path_value = verdict_ref.get("path")
+    verdict_hash = verdict_ref.get("sha256")
+    if not isinstance(verdict_path_value, str) or not isinstance(verdict_hash, str):
+        return "companion-unverified", None
+
+    verdict_path = Path(verdict_path_value).resolve(strict=False)
+    try:
+        if not verdict_path.is_file() or _hash_file(verdict_path) != verdict_hash:
+            return "companion-unverified", None
+    except (OSError, ValueError, RuntimeError):
+        return "companion-unverified", None
+
+    if verdict_ref.get("decision") == "pass":
+        return "companion-pass", str(verdict_path)
+    return "companion-blocked", None
 
 
 def _roadmap_item_status(
@@ -342,7 +386,7 @@ def _roadmap_item_status(
         (
             run
             for run in ordered
-            if run["state"] in {"complete", "ready-for-handoff"}
+            if run["state"] in {"complete", "ready-for-handoff", "companion-pass"}
         ),
         None,
     )
@@ -350,8 +394,9 @@ def _roadmap_item_status(
         result.update(
             {
                 "status": "done (verified)",
-                "evidence_ref": str(
-                    Path(verified["run_dir"]) / "proofcheck-verdict.json"
+                "evidence_ref": verified.get(
+                    "evidence_ref",
+                    str(Path(verified["run_dir"]) / "proofcheck-verdict.json"),
                 ),
                 "run_dir": verified["run_dir"],
                 "run_state": verified["state"],
