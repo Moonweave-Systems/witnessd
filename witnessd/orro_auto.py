@@ -430,8 +430,6 @@ def _produced_run_dir(stdout: str, command: list[str], *, home: Path) -> Path | 
         index = command.index("--run-dir")
         if index + 1 < len(command):
             return Path(command[index + 1]).resolve(strict=False)
-    if len(command) >= 2 and command[0] == "orro" and command[1] == "check":
-        return home / "companion-run"
     return None
 
 
