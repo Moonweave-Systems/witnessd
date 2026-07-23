@@ -542,6 +542,34 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_tidy.add_argument("--json", action="store_true")
     orro_tidy.set_defaults(func=_cli_handler("status", "_cmd_orro_tidy"))
 
+    orro_task = sub.add_parser(
+        "orro-task",
+        help=argparse.SUPPRESS,
+        description=(
+            "Manage a roadmap-item task worktree; setup metadata only, not proof. "
+            "The worktree, its branch, and its commits are workspace state, not proof; "
+            "task begin output is setup metadata — not proof, not verifier truth, not "
+            "approval, not assurance. Merge approval and merge execution stay human; "
+            "ORRO never merges. Panes/agent/session state belong to the workspace "
+            "runtime, never sealed into evidence."
+        ),
+    )
+    task_sub = orro_task.add_subparsers(dest="task_command", required=True)
+    task_begin = task_sub.add_parser(
+        "begin",
+        help="create or resume a roadmap-item task worktree",
+        description=(
+            "Create or resume the persistent roadmap-item worktree. Output is setup "
+            "metadata only, not proof, verifier truth, approval, or assurance."
+        ),
+    )
+    task_begin.add_argument("item_id")
+    task_begin.add_argument("--repo", "--root", dest="repo", default=".")
+    task_begin.add_argument("--base", default=None, help="base ref for a new task branch (default: current HEAD)")
+    task_begin.add_argument("--no-open", action="store_true", help="skip ORRO_TASK_OPEN_COMMAND")
+    task_begin.add_argument("--json", action="store_true")
+    task_begin.set_defaults(func=_cli_handler("task", "_cmd_orro_task"))
+
     isolation = sub.add_parser("isolation", help="isolation contract checks")
     isolation.add_argument("--self-test", action="store_true")
     isolation.set_defaults(func=_cli_handler("runtime_ops", "_cmd_isolation"))
@@ -1131,6 +1159,7 @@ ORRO_COMMAND_MAP: dict[str, str] = {
     "demo": "orro-demo",
     "status": "orro-status",
     "tidy": "orro-tidy",
+    "task": "orro-task",
     "auto": "orro-auto",
     "flow": "orro-flow",
     "team": "team",
