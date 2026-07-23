@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import json
+import io
 import os
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
+from witnessd.__main__ import main
 from witnessd.cli.status import apply_tidy, build_status, build_tidy_inventory
 from witnessd.orro_roadmap import ERR_ORRO_ROADMAP_ITEM_UNKNOWN, write_roadmap
-from witnessd.orro_task import begin_task, read_task_descriptor, scan_task_worktrees
+from witnessd.orro_task import ERR_ORRO_TASK_INVALID, begin_task, read_task_descriptor, scan_task_worktrees
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -74,7 +77,7 @@ class OrroTaskTests(unittest.TestCase):
             repo = Path(tmp)
             _seed_repo(repo)
             _roadmap(repo)
-            command = "/bin/sh -c 'test \"$1\" = item-one && test \"$2\" = orro/item-one' sh {item_id} {branch}"
+            command = "/bin/sh -c 'printf stdout-tail; printf stderr-tail >&2; test \"$1\" = item-one && test \"$2\" = orro/item-one' sh {item_id} {branch}"
             with patch.dict(os.environ, {"ORRO_TASK_OPEN_COMMAND": command}):
                 payload = begin_task(repo=repo, item_id="item-one", base="HEAD")
             receipt = json.loads(
@@ -85,6 +88,72 @@ class OrroTaskTests(unittest.TestCase):
             self.assertEqual(payload["open_hook_exit_code"], 0)
             self.assertEqual(receipt["exit_code"], 0)
             self.assertEqual(receipt["command"], command.replace("{item_id}", "item-one").replace("{branch}", "orro/item-one").replace("{path}", str(repo / ".orro" / "worktrees" / "item-one")))
+            self.assertEqual(receipt["stdout_tail"], "stdout-tail")
+            self.assertEqual(receipt["stderr_tail"], "stderr-tail")
+
+    def test_resume_skips_hook_unless_explicitly_opened(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            _seed_repo(repo)
+            _roadmap(repo)
+            command = "/bin/sh -c 'printf x >> {path}/hook.log'"
+            with patch.dict(os.environ, {"ORRO_TASK_OPEN_COMMAND": command}):
+                first = begin_task(repo=repo, item_id="item-one", base="HEAD")
+                second = begin_task(repo=repo, item_id="item-one", base="HEAD")
+                third = begin_task(repo=repo, item_id="item-one", base="HEAD", open=True)
+            self.assertEqual(first["state"], "created")
+            self.assertEqual(second["state"], "resumed")
+            self.assertEqual(second["message"], "open hook skipped on resume (pass --open to re-open)")
+            self.assertEqual(third["state"], "resumed")
+            self.assertEqual((repo / ".orro" / "worktrees" / "item-one" / "hook.log").read_text(), "xx")
+
+    def test_attached_task_skips_hook_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            _seed_repo(repo)
+            _roadmap(repo)
+            _git(repo, "branch", "orro/item-one", "HEAD").check_returncode()
+            command = "/bin/sh -c 'printf x >> {path}/hook.log'"
+            with patch.dict(os.environ, {"ORRO_TASK_OPEN_COMMAND": command}):
+                payload = begin_task(repo=repo, item_id="item-one", base="HEAD")
+            self.assertEqual(payload["state"], "attached")
+            self.assertEqual(payload["message"], "open hook skipped on resume (pass --open to re-open)")
+            self.assertFalse((repo / ".orro" / "worktrees" / "item-one" / "hook.log").exists())
+
+    def test_open_and_no_open_are_mutually_exclusive(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            _seed_repo(repo)
+            _roadmap(repo)
+            with self.assertRaisesRegex(ValueError, "--open and --no-open") as caught:
+                begin_task(repo=repo, item_id="item-one", base="HEAD", open=True, no_open=True)
+            self.assertEqual(caught.exception.code, ERR_ORRO_TASK_INVALID)
+
+    def test_binary_hook_output_is_recovered_without_crashing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            _seed_repo(repo)
+            _roadmap(repo)
+            command = "/usr/bin/python3 -c 'import sys; sys.stdout.buffer.write(bytes([255])); sys.stderr.buffer.write(bytes([254]))'"
+            with patch.dict(os.environ, {"ORRO_TASK_OPEN_COMMAND": command}):
+                begin_task(repo=repo, item_id="item-one", base="HEAD")
+            receipt = json.loads((repo / ".orro" / "worktrees" / "item-one" / "task-open-receipt.json").read_text())
+            self.assertEqual(receipt["stdout_tail"], "�")
+            self.assertEqual(receipt["stderr_tail"], "�")
+
+    def test_human_output_shows_rendered_command_and_disclaimer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            _seed_repo(repo)
+            _roadmap(repo)
+            command = "/bin/echo WORKSPACE-42 {item_id} {path}"
+            output = io.StringIO()
+            with patch.dict(os.environ, {"ORRO_TASK_OPEN_COMMAND": command}), redirect_stdout(output):
+                code = main(["orro-task", "begin", "item-one", "--repo", str(repo)])
+            rendered = command.replace("{item_id}", "item-one").replace("{path}", str(repo / ".orro" / "worktrees" / "item-one"))
+            self.assertEqual(code, 0)
+            self.assertIn(f"open hook command: {rendered}", output.getvalue())
+            self.assertIn("open hook may open/focus an external workspace; this is a workspace-runtime action, not a Codex thread and not proof/evidence", output.getvalue())
 
     def test_open_hook_failure_keeps_worktree_and_surfaces_exit_code(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

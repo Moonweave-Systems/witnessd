@@ -566,7 +566,17 @@ def _build_parser() -> argparse.ArgumentParser:
     task_begin.add_argument("item_id")
     task_begin.add_argument("--repo", "--root", dest="repo", default=".")
     task_begin.add_argument("--base", default=None, help="base ref for a new task branch (default: current HEAD)")
-    task_begin.add_argument("--no-open", action="store_true", help="skip ORRO_TASK_OPEN_COMMAND")
+    open_group = task_begin.add_mutually_exclusive_group()
+    open_group.add_argument(
+        "--open",
+        action="store_true",
+        help="run ORRO_TASK_OPEN_COMMAND even when resuming an existing task",
+    )
+    open_group.add_argument(
+        "--no-open",
+        action="store_true",
+        help="skip ORRO_TASK_OPEN_COMMAND (recommended for non-interactive use)",
+    )
     task_begin.add_argument("--json", action="store_true")
     task_begin.set_defaults(func=_cli_handler("task", "_cmd_orro_task"))
 

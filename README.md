@@ -581,6 +581,19 @@ ORRO parser, and will be removed in the next major witnessd release. The
 standalone `Moonweave-Systems/ORRO` package now owns the product `orro` command
 and distribution docs.
 
+### Task worktrees and open hooks
+
+`orro task begin <item-id> --repo <repo>` creates or resumes the persistent
+roadmap-item worktree. A fresh task runs `ORRO_TASK_OPEN_COMMAND` when configured;
+resuming skips it unless `--open` is passed. Use `--no-open` for non-interactive
+or CLI-only use. To disable the hook, unset `ORRO_TASK_OPEN_COMMAND`.
+
+For GitHub issues, name the roadmap item after the issue (for example, `gh-113`)
+and put the issue URL in that item's existing `spec` field. The open hook may
+open/focus an external workspace; that is a workspace-runtime action, not a
+Codex thread and not proof/evidence. Its rendered command and bounded stdout/stderr
+tails are recorded in `task-open-receipt.json` for recovery.
+
 ## Session skill
 
 This repo ships two in-session guidance files:
