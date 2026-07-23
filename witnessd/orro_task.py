@@ -16,6 +16,11 @@ TASK_DESCRIPTOR_KIND = "orro-task-descriptor"
 TASK_DESCRIPTOR_SCHEMA_VERSION = "0.1"
 TASK_DESCRIPTOR_NAME = ".orro-task.json"
 TASK_OPEN_RECEIPT_NAME = "task-open-receipt.json"
+TASK_OPEN_HOOK_DISCLAIMER = (
+    "open hook may open/focus an external workspace; this is a workspace-runtime "
+    "action, not a Codex thread and not proof/evidence"
+)
+TASK_OPEN_OUTPUT_TAIL_CHARS = 2000
 
 ERR_ORRO_TASK_INVALID = "ERR_ORRO_TASK_INVALID"
 ERR_ORRO_TASK_WORKTREE_FAILED = "ERR_ORRO_TASK_WORKTREE_FAILED"
@@ -130,25 +135,51 @@ def _seal_descriptor(worktree: Path, payload: dict[str, Any]) -> dict[str, Any]:
         raise OrroTaskError(ERR_ORRO_TASK_DESCRIPTOR_FAILED, str(exc)) from exc
 
 
-def _run_open_hook(*, repo: Path, worktree: Path, item_id: str, branch: str, command: str) -> int:
+def _output_tail(value: bytes | str | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")[-TASK_OPEN_OUTPUT_TAIL_CHARS:]
+    return str(value)[-TASK_OPEN_OUTPUT_TAIL_CHARS:]
+
+
+def _run_open_hook(*, repo: Path, worktree: Path, item_id: str, branch: str, command: str) -> dict[str, Any]:
     rendered = command.replace("{path}", str(worktree)).replace("{item_id}", item_id).replace("{branch}", branch)
+    stdout: bytes | str | None = ""
+    stderr: bytes | str | None = ""
     try:
-        completed = subprocess.run(shlex.split(rendered), cwd=repo, text=True, capture_output=True, check=False)
+        completed = subprocess.run(shlex.split(rendered), cwd=repo, capture_output=True, check=False)
         exit_code = completed.returncode
+        stdout = completed.stdout
+        stderr = completed.stderr
     except (OSError, ValueError) as exc:
         exit_code = 127
-        rendered = f"{rendered} ({exc})"
-    receipt = {"command": rendered, "exit_code": exit_code}
+        stderr = str(exc)
+    receipt = {
+        "command": rendered,
+        "exit_code": exit_code,
+        "stdout_tail": _output_tail(stdout),
+        "stderr_tail": _output_tail(stderr),
+    }
     receipt_path = worktree / TASK_OPEN_RECEIPT_NAME
     receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     try:
         json.loads(receipt_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise OrroTaskError(ERR_ORRO_TASK_DESCRIPTOR_FAILED, f"open receipt was not readable: {exc}") from exc
-    return exit_code
+    return receipt
 
 
-def begin_task(*, repo: Path, item_id: str, base: str | None = None, no_open: bool = False) -> dict[str, Any]:
+def begin_task(
+    *,
+    repo: Path,
+    item_id: str,
+    base: str | None = None,
+    no_open: bool = False,
+    open: bool = False,
+) -> dict[str, Any]:
+    if open and no_open:
+        raise OrroTaskError(ERR_ORRO_TASK_INVALID, "--open and --no-open are mutually exclusive")
     repo = repo.resolve(strict=False)
     require_roadmap_item(repo, item_id)
     worktree = task_worktree_path(repo, item_id).resolve(strict=False)
@@ -197,10 +228,13 @@ def begin_task(*, repo: Path, item_id: str, base: str | None = None, no_open: bo
         "boundary": "The worktree, its branch, and its commits are workspace state, not proof; task begin output is setup metadata — not proof, not verifier truth, not approval, not assurance. Merge approval and merge execution stay human; ORRO never merges. Panes/agent/session state belong to the workspace runtime, never sealed into evidence.",
     }
     command = os.environ.get("ORRO_TASK_OPEN_COMMAND")
-    if command and not no_open:
-        exit_code = _run_open_hook(repo=repo, worktree=worktree, item_id=item_id, branch=branch, command=command)
-        result["open_hook_exit_code"] = exit_code
-        result["open_hook_command"] = command
+    if command and (open or (state not in {"resumed", "attached"} and not no_open)):
+        receipt = _run_open_hook(repo=repo, worktree=worktree, item_id=item_id, branch=branch, command=command)
+        result["open_hook_exit_code"] = receipt["exit_code"]
+        result["open_hook_command"] = receipt["command"]
+        result["open_hook_disclaimer"] = TASK_OPEN_HOOK_DISCLAIMER
+    elif command and state in {"resumed", "attached"} and not open and not no_open:
+        result["message"] = "open hook skipped on resume (pass --open to re-open)"
     else:
         result["message"] = "open hook not configured (set ORRO_TASK_OPEN_COMMAND)" if not command else "open hook skipped (--no-open)"
     return result

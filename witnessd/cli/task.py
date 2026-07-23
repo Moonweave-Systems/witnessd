@@ -19,7 +19,13 @@ TASK_BOUNDARY_HELP = (
 def _cmd_orro_task(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve(strict=False)
     try:
-        payload = begin_task(repo=repo, item_id=args.item_id, base=args.base, no_open=args.no_open)
+        payload = begin_task(
+            repo=repo,
+            item_id=args.item_id,
+            base=args.base,
+            no_open=args.no_open,
+            open=args.open,
+        )
     except (OrroRoadmapError, OrroTaskError) as exc:
         _emit_orro_error(args, code=exc.code, message=str(exc))
         return 2
@@ -34,6 +40,8 @@ def _cmd_orro_task(args: argparse.Namespace) -> int:
         if payload.get("message"):
             print(f"  {payload['message']}")
         if "open_hook_exit_code" in payload:
+            print(f"  open hook command: {payload['open_hook_command']}")
             print(f"  open hook exit code: {payload['open_hook_exit_code']}")
+            print(f"  {payload['open_hook_disclaimer']}")
         print(f"  Boundary: {payload['boundary']}")
     return int(payload.get("open_hook_exit_code", 0))
