@@ -65,6 +65,60 @@ def _resolve_base(repo: Path, base: str | None) -> str:
         return "main"
 
 
+def _compute_growth(repo: Path, base: str) -> dict[str, object] | None:
+    """Return an advisory numstat receipt, or omit it on unavailable Git state."""
+
+    if not base:
+        return None
+    try:
+        branch = subprocess.run(
+            ["git", "-C", str(repo), "symbolic-ref", "--quiet", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if branch.returncode != 0 or not branch.stdout.strip():
+            return None
+        result = subprocess.run(
+            ["git", "-C", str(repo), "diff", "--numstat", f"{base}..HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            return None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    lines_added = 0
+    lines_deleted = 0
+    grown_files: list[dict[str, object]] = []
+    for row in result.stdout.splitlines():
+        fields = row.split("\t", 2)
+        if len(fields) != 3 or fields[0] == "-" or fields[1] == "-":
+            continue
+        try:
+            added = int(fields[0])
+            deleted = int(fields[1])
+        except ValueError:
+            continue
+        path = fields[2]
+        lines_added += added
+        lines_deleted += deleted
+        if added > deleted:
+            grown_files.append({"path": path, "added": added, "deleted": deleted})
+
+    grown_files.sort(key=lambda item: (-int(item["added"]), str(item["path"])))
+    return {
+        "base": base,
+        "lines_added": lines_added,
+        "lines_deleted": lines_deleted,
+        "net": lines_added - lines_deleted,
+        "top_grown_files": grown_files[:5],
+        "means": "growth is a surfaced signal, not a verdict; no consensus threshold exists",
+    }
+
+
 def _assert_no_execution_adapter(role_lane_plan_path: Path) -> None:
     plan = json.loads(role_lane_plan_path.read_text(encoding="utf-8"))
     for lane in plan.get("lanes", []):
@@ -201,6 +255,14 @@ def _print_human_summary(
                 "--apply for the one-time reformat"
             )
         print()
+    growth = manifest.get("growth")
+    if isinstance(growth, dict):
+        net = int(growth["net"])
+        net_sign = "+" if net >= 0 else ""
+        print(
+            f"  GROWTH   +{growth['lines_added']} / -{growth['lines_deleted']} lines "
+            f"vs {growth['base']} (net {net_sign}{net}) — signal only, not a verdict"
+        )
     declared_intent = manifest.get("declared_intent")
     if isinstance(declared_intent, dict):
         print(f"  DECLARED INTENT   {declared_intent['intent']}")
@@ -582,6 +644,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             )
     sandbox = run_dir / "sandbox"
     base = _resolve_base(repo, args.base)
+    growth = _compute_growth(repo, base)
     goal = f"Review the changes on HEAD relative to {base} without editing files"
     review_goal = _review_goal(goal, declared_intent)
 
@@ -1104,6 +1167,8 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     }
 
     manifest = manifest_partial(decision, verdict_path, team_ledger)
+    if growth is not None:
+        manifest["growth"] = growth
     if health_mode:
         means = (
             "declared deterministic gates ran under observation; the verdict "
