@@ -1178,6 +1178,33 @@ ORRO_COMMAND_MAP: dict[str, str] = {
     "flow": "orro-flow",
     "team": "team",
 }
+PUBLIC_COMMAND_SUMMARIES: dict[str, str] = {
+    "setup": "provision pinned Depone, initialize home, and write engine lock",
+    "init": "setup readiness/provision metadata; does not verify evidence",
+    "scout": "read-only repository exploration and context packaging",
+    "flowplan": "plan-only workflow design; does not run workers",
+    "proofrun": "evidence-backed execution through witnessd",
+    "proofcheck": "offline evidence verification delegated to Depone",
+    "advisory-provenance-check": "offline Depone v110 re-derivation of sealed advisory provenance",
+    "handoff": "maintainer review package gated by proofcheck-verdict.json",
+    "doctor": "ORRO engine/verifier readiness; not runlog health or evidence verification",
+    "engine-lock": "write/check distribution metadata for pinned engine commits",
+    "lock": "alias for engine-lock",
+    "next": "non-executing continuation gate over persisted run artifacts",
+    "advise": "non-executing workstyle router for the smallest safe workflow",
+    "sketch": "validate and seal an agent-authored advisory direction",
+    "trace": "validate, gate, and seal an agent-authored root-cause record",
+    "report": "human-facing summary of observed ORRO artifacts and next action",
+    "review": "advisory read-only reviewer lanes; not proof or assurance",
+    "check": "companion: verify (Depone verdict) plus read-only review; not observed execution",
+    "demo": "AI-free shell guardrail demo with Depone scope-conformance result",
+    "status": "roadmap-bound observed state; not proof, approval, or assurance",
+    "tidy": "dry-run worktree inventory; apply removes only safe eligible worktrees",
+    "task": "manage roadmap task lifecycle metadata; not proof or merge approval",
+    "auto": "dry-run, one-step, bounded post-run, or bounded item-chain automation",
+    "flow": "guided init/scout/flowplan/proofrun/proofcheck with gated blockers",
+    "team": "scaffold team config or run flowplan/proofrun/proofcheck/report",
+}
 ORRO_COMMANDS: frozenset[str] = frozenset(ORRO_COMMAND_MAP)
 
 

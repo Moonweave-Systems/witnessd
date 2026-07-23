@@ -2,11 +2,34 @@ import contextlib
 import io
 import unittest
 
-from orro.__main__ import ORRO_HELP, main as orro_main
-from witnessd.__main__ import ORRO_COMMAND_MAP, _build_parser, _normalize_orro_argv
+from orro.__main__ import ORRO_HELP, _build_orro_help, main as orro_main
+from witnessd.__main__ import (
+    ORRO_COMMAND_MAP,
+    PUBLIC_COMMAND_SUMMARIES,
+    _build_parser,
+    _normalize_orro_argv,
+)
 
 
 class OrroCommandSurfaceTests(unittest.TestCase):
+    def test_public_command_summaries_stay_in_sync_with_command_map(self) -> None:
+        self.assertEqual(set(PUBLIC_COMMAND_SUMMARIES), set(ORRO_COMMAND_MAP))
+
+        missing_summary = dict(PUBLIC_COMMAND_SUMMARIES)
+        missing_summary.pop(next(iter(ORRO_COMMAND_MAP)))
+        with self.assertRaises(KeyError):
+            _build_orro_help(summaries=missing_summary)
+
+    def test_public_command_map_is_present_in_in_process_help(self) -> None:
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            result = orro_main(["--help"])
+
+        self.assertEqual(result, 0)
+        help_text = stdout.getvalue()
+        for command in ORRO_COMMAND_MAP:
+            self.assertIn(command, help_text)
+
     def test_execution_surfaces_expose_explicit_roadmap_item(self) -> None:
         parser = _build_parser()
         proofrun = parser.parse_args(

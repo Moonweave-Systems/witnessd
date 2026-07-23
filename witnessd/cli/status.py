@@ -461,7 +461,14 @@ def _companion_status(run_dir: Path) -> tuple[str, str | None]:
     except (OSError, ValueError, RuntimeError):
         return "companion-unverified", None
 
-    if verdict_ref.get("decision") == "pass":
+    try:
+        verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return "companion-unverified", None
+    if not isinstance(verdict, dict):
+        return "companion-unverified", None
+
+    if verdict.get("decision") == "pass":
         return "companion-pass", str(verdict_path)
     return "companion-blocked", None
 
