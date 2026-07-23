@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -11,6 +12,23 @@ from unittest.mock import patch
 
 from orro.__main__ import main as orro_main
 from witnessd.orro_auto import build_auto_session, run_item_session
+from witnessd.orro_roadmap import write_roadmap
+
+
+def _depone_root() -> Path:
+    env_root = os.environ.get("WITNESSD_DEPONE_ROOT")
+    if env_root:
+        return Path(env_root)
+    return Path(__file__).resolve().parents[1].parent / "depone"
+
+
+def _seed_repo(repo: Path) -> None:
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "orro@example.invalid"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "ORRO"], cwd=repo, check=True)
+    (repo / "README.md").write_text("# live run-item fixture\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
 
 
 def _roadmap_item() -> dict[str, object]:
@@ -42,6 +60,45 @@ def _status(step_states: list[str]) -> dict[str, object]:
 
 
 class OrroAutoRunItemTests(unittest.TestCase):
+    def test_live_run_item_executes_real_proofrun_and_proofcheck(self) -> None:
+        depone_root = _depone_root()
+        if not (depone_root / "depone").is_dir():
+            self.skipTest(f"Depone checkout unavailable: {depone_root}")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = root / "repo", root / "home"
+            repo.mkdir()
+            _seed_repo(repo)
+            write_roadmap(repo, {
+                "kind": "orro-roadmap",
+                "schema_version": "0.1",
+                "items": [{
+                    "id": "item",
+                    "title": "Live item",
+                    "steps": [{
+                        "id": "verify",
+                        "profile": "verification-only",
+                        "checks": ["true"],
+                    }],
+                }],
+            })
+            code, payload = run_item_session(
+                repo=repo, home=home, item_id="item", max_steps=1
+            )
+
+            self.assertEqual(code, 0, payload)
+            self.assertTrue(payload["complete"])
+            self.assertTrue(payload["boundary"]["executes_proofrun"])
+            self.assertTrue(payload["boundary"]["launches_workers"])
+            self.assertEqual(len(payload["steps"]), 1)
+            run_dir = Path(payload["steps"][0]["run_dir"])
+            self.assertTrue(run_dir.is_dir())
+            verdict_path = run_dir / "proofcheck-verdict.json"
+            self.assertTrue(verdict_path.is_file())
+            verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+            self.assertEqual(verdict["decision"], "pass")
+            self.assertTrue((run_dir / "team-ledger.json").is_file())
+
     def test_run_item_requires_repo_max_steps_and_excludes_other_modes(self) -> None:
         cases = [
             (["orro", "auto", "--run-item", "item", "--repo", "/repo", "--json"], "ERR_ORRO_AUTO_MAX_STEPS_REQUIRED"),
