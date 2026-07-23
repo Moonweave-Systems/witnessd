@@ -85,7 +85,9 @@ class HealthDetectionTest(unittest.TestCase):
                 },
             )
             self.assertIn("[tool.black]\nline-length = 88", seeded)
-            self.assertIn('[tool.ruff]\nselect = ["E", "F", "I", "ERA"]', seeded)
+            self.assertIn(
+                '[tool.ruff]\nselect = ["E", "F", "I", "ERA", "S"]', seeded
+            )
             self.assertIn("[tool.ruff.lint.mccabe]\nmax-complexity = 10", seeded)
 
     def test_health_profile_round_trips_and_wins_over_auto_detect_tiers(self) -> None:
