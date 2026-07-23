@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -22,8 +23,9 @@ STATUS_BOUNDARY = (
     "not assurance; marked-done (unverified) items are operator claims."
 )
 TIDY_BOUNDARY = (
-    "tidy manages Git worktrees only; it does not delete run directories, verify "
-    "evidence, approve work, or raise assurance."
+    "tidy manages Git worktrees; it removes only aged check runs when --keep-checks "
+    "is given, never flow/team evidence, and does not verify evidence, approve work, "
+    "or raise assurance."
 )
 
 
@@ -51,7 +53,7 @@ def _cmd_orro_tidy(args: argparse.Namespace) -> int:
     home = resolve_home(args.home, repo)
     payload = build_tidy_inventory(repo=repo, home=home)
     if args.apply:
-        payload = apply_tidy(repo=repo, inventory=payload)
+        payload = apply_tidy(repo=repo, inventory=payload, keep_checks=args.keep_checks)
     if args.json:
         print(json.dumps(payload, sort_keys=True))
     else:
@@ -226,6 +228,11 @@ def build_tidy_inventory(*, repo: Path, home: Path) -> dict[str, Any]:
         _task_tidy_record(record, item_status=task_status.get(str(record["item_id"]), "unknown item"))
         for record in discover_task_workspaces(repo)
     ]
+    check_runs: list[dict[str, Any]] = []
+    for run_dir in run_dirs:
+        if not run_dir.name.startswith("check-") or not (run_dir / "companion-manifest.json").is_file():
+            continue
+        check_runs.append({"path": str(run_dir), "action": "kept", "reason": "dry-run"})
     return {
         "kind": "orro-tidy",
         "schema_version": "0.1",
@@ -235,11 +242,14 @@ def build_tidy_inventory(*, repo: Path, home: Path) -> dict[str, Any]:
         "worktrees": worktrees,
         "task_worktrees": task_worktrees,
         "registered_outside_runs": outside,
+        "check_runs": check_runs,
         "boundary": TIDY_BOUNDARY,
     }
 
 
-def apply_tidy(*, repo: Path, inventory: dict[str, Any]) -> dict[str, Any]:
+def apply_tidy(
+    *, repo: Path, inventory: dict[str, Any], keep_checks: int | None = None
+) -> dict[str, Any]:
     repo = repo.resolve(strict=False)
     actions: list[dict[str, str]] = []
     prune_needed = False
@@ -330,6 +340,39 @@ def apply_tidy(*, repo: Path, inventory: dict[str, Any]) -> dict[str, Any]:
             prune_needed = True
         else:
             actions.append({"path": str(path), "action": "kept", "reason": "outside run directories"})
+    if keep_checks is not None:
+        if keep_checks < 0:
+            raise ValueError("--keep-checks must be zero or greater")
+        evidence_paths: set[Path] = set()
+        status = build_status(
+            repo=repo, home=Path(str(inventory.get("home", repo / ".witnessd")))
+        )
+        for item in status.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            for candidate in [item, *item.get("steps", [])]:
+                if not isinstance(candidate, dict) or candidate.get("state", candidate.get("status")) not in {"done (verified)", "companion-pass", "complete", "ready-for-handoff"}:
+                    continue
+                evidence_ref = candidate.get("evidence_ref")
+                if isinstance(evidence_ref, str):
+                    evidence_paths.add(Path(evidence_ref).resolve(strict=False))
+        check_items = [
+            item for item in inventory.get("check_runs", [])
+            if isinstance(item, dict)
+            and Path(str(item.get("path", ""))).name.startswith("check-")
+            and (Path(str(item.get("path", ""))) / "companion-manifest.json").is_file()
+        ]
+        check_items.sort(key=lambda item: _path_newness(Path(str(item["path"]))))
+        retained = set(str(item["path"]) for item in check_items[-keep_checks:])
+        for item in check_items:
+            path = Path(str(item["path"])).resolve(strict=False)
+            if any(evidence == path or path in evidence.parents for evidence in evidence_paths):
+                actions.append({"path": str(path), "action": "kept", "reason": "kept: item evidence"})
+            elif str(path) in retained:
+                actions.append({"path": str(path), "action": "kept", "reason": f"kept: within newest {keep_checks}"})
+            else:
+                shutil.rmtree(path)
+                actions.append({"path": str(path), "action": "removed", "reason": f"aged check run beyond newest {keep_checks}"})
     prune_error = None
     if prune_needed:
         completed = _git(repo, ["worktree", "prune"])

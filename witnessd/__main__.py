@@ -542,6 +542,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_tidy.add_argument("--repo", "--root", dest="repo", default=".")
     orro_tidy.add_argument("--home", default=None)
     orro_tidy.add_argument("--apply", action="store_true")
+    orro_tidy.add_argument("--keep-checks", type=int, default=None)
     orro_tidy.add_argument("--json", action="store_true")
     orro_tidy.set_defaults(func=_cli_handler("status", "_cmd_orro_tidy"))
 

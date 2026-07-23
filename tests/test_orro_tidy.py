@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import shutil
+import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -8,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.cli.status import apply_tidy, build_tidy_inventory, render_tidy_text
+from witnessd.orro_roadmap import seal_roadmap_binding, write_roadmap
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -35,6 +38,57 @@ def _add_worktree(repo: Path, path: Path, branch: str) -> None:
 
 
 class OrroTidyTests(unittest.TestCase):
+    def test_keep_checks_removes_only_oldest_unreferenced_check_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            write_roadmap(repo, {
+                "kind": "orro-roadmap", "schema_version": "0.1",
+                "items": [{"id": "evidence-item", "title": "Evidence item"}],
+            })
+            home = root / "home"
+            runs = home / "runs"
+            runs.mkdir(parents=True)
+            check_dirs = [runs / f"check-{index:02d}" for index in range(4)]
+            for index, run_dir in enumerate(check_dirs):
+                run_dir.mkdir()
+                verdict = run_dir / "proofcheck-verdict.json"
+                verdict.write_text(json.dumps({"decision": "pass"}) + "\n", encoding="utf-8")
+                manifest = {
+                    "kind": "orro-companion-manifest",
+                    "verdict_ref": {
+                        "path": str(verdict),
+                        "sha256": __import__("hashlib").sha256(verdict.read_bytes()).hexdigest(),
+                    },
+                }
+                (run_dir / "companion-manifest.json").write_text(
+                    json.dumps(manifest) + "\n", encoding="utf-8"
+                )
+                os.utime(run_dir, (index + 1, index + 1))
+            seal_roadmap_binding(
+                repo=repo, run_dir=check_dirs[0], item_id="evidence-item"
+            )
+
+            inventory = build_tidy_inventory(repo=repo, home=home)
+            untouched = apply_tidy(repo=repo, inventory=inventory)
+            self.assertTrue(all(path.is_dir() for path in check_dirs))
+            self.assertFalse(any(item["action"] == "removed" for item in untouched["actions"]))
+
+            inventory = build_tidy_inventory(repo=repo, home=home)
+            result = apply_tidy(repo=repo, inventory=inventory, keep_checks=2)
+
+            self.assertFalse(check_dirs[1].exists())
+            self.assertFalse(check_dirs[2].exists())
+            self.assertTrue(check_dirs[0].is_dir())
+            self.assertTrue(check_dirs[3].is_dir())
+            actions = {Path(item["path"]).name: item for item in result["actions"]}
+            self.assertEqual(actions["check-01"]["action"], "removed")
+            self.assertEqual(actions["check-02"]["action"], "removed")
+            self.assertEqual(actions["check-00"]["reason"], "kept: item evidence")
+            self.assertIn("newest 2", actions["check-03"]["reason"])
+
     def test_dry_run_inventory_uses_live_dirty_check_and_does_not_mutate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
