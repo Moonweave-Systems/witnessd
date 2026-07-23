@@ -1418,6 +1418,79 @@ class OrroCheckReviewTest(unittest.TestCase):
 
 
 class ReviewerUnavailableTest(unittest.TestCase):
+    def test_no_explicit_reviewer_auto_detects_and_reports_info_when_unavailable(self) -> None:
+        from witnessd.cli import companion
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            import shutil
+            real_which = shutil.which
+            with patch(
+                "witnessd.cli.companion.shutil.which",
+                side_effect=lambda name: None if name in {"agy", "gemini", "claude"} else real_which(name),
+            ):
+                code, payload, err = _run(
+                    [
+                        "orro", "check", "--repo", str(repo), "--home", str(root / "home"),
+                        "--run-dir", str(root / "run"), "--check", "true", "--json",
+                    ]
+                )
+            self.assertEqual(code, 0, err)
+            self.assertEqual(payload["review_skipped"]["code"], "ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE")
+            self.assertTrue(payload["review_skipped"]["automatic"])
+            self.assertNotIn("⚠", err)
+            from witnessd.cli.companion import _print_human_summary
+            human = io.StringIO()
+            with redirect_stdout(human):
+                _print_human_summary(payload)
+            self.assertIn(
+                "review: no reviewer binary found (agy/gemini/claude); running verify-only — set ORRO_REVIEWER or pass --reviewer",
+                human.getvalue(),
+            )
+            self.assertNotIn("⚠ review skipped", human.getvalue())
+
+    def test_env_reviewer_is_preferred_when_binary_is_available(self) -> None:
+        from witnessd.cli import companion
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            bindir = root / "bin"
+            bindir.mkdir()
+            fake_claude = bindir / "claude"
+            fake_claude.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_claude.chmod(fake_claude.stat().st_mode | stat.S_IEXEC)
+            import shutil
+            real_which = shutil.which
+            original_invoke = companion._invoke_phase
+            review_argv: list[str] = []
+
+            def capture_review(argv: list[str]) -> tuple[int, object, str]:
+                if argv[0] == "orro-review":
+                    review_argv.extend(argv)
+                    (root / "run" / "orro-review-summary.json").write_text("{}", encoding="utf-8")
+                    return 0, {}, ""
+                return original_invoke(argv)
+
+            with patch.dict(os.environ, {"ORRO_REVIEWER": "claude"}, clear=False), patch(
+                "witnessd.cli.companion.shutil.which",
+                side_effect=lambda name: str(fake_claude) if name == "claude" else (None if name in {"agy", "gemini"} else real_which(name)),
+            ), patch.object(companion, "_invoke_phase", side_effect=capture_review):
+                code, payload, err = _run(
+                    [
+                        "orro", "check", "--repo", str(repo), "--home", str(root / "home"),
+                        "--run-dir", str(root / "run"), "--check", "true", "--json",
+                    ]
+                )
+            self.assertEqual(code, 0, err)
+            self.assertIn("--claude-binary", review_argv)
+            self.assertNotIn("--agy-binary", review_argv)
+
     def test_missing_reviewer_binary_skips_review_and_preserves_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

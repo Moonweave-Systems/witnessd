@@ -421,7 +421,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     orro_check.add_argument(
-        "--reviewer", default="agy", choices=["agy", "gemini", "claude"]
+        "--reviewer", default=None, choices=["agy", "gemini", "claude"]
     )
     orro_check.add_argument("--reviewer-binary", default=None)
     orro_check.add_argument("--no-review", action="store_true")

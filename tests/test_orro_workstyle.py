@@ -121,21 +121,12 @@ class OrroWorkstyleTests(unittest.TestCase):
         self.assertNotIn("agy", EXECUTION_LANE_ADAPTERS)
         self.assertNotIn("gemini", EXECUTION_LANE_ADAPTERS)
 
-    def test_orro_shim_warning_is_suppressed_only_for_wrapper_delegation(self) -> None:
+    def test_orro_module_invocation_is_supported_but_console_shim_warns(self) -> None:
         root = Path(__file__).resolve().parents[1]
         env = os.environ.copy()
         env["PYTHONNOUSERSITE"] = "1"
 
-        delegated_env = env | {"ORRO_WRAPPER_DELEGATION": "1"}
-        delegated = subprocess.run(
-            [sys.executable, "-m", "orro", "--help"],
-            cwd=root,
-            env=delegated_env,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        direct = subprocess.run(
+        module = subprocess.run(
             [sys.executable, "-m", "orro", "--help"],
             cwd=root,
             env=env,
@@ -143,11 +134,19 @@ class OrroWorkstyleTests(unittest.TestCase):
             capture_output=True,
             check=False,
         )
+        self.assertEqual(module.returncode, 0, module.stderr)
+        self.assertNotIn("deprecated", module.stderr)
 
-        self.assertEqual(delegated.returncode, 0, delegated.stderr)
-        self.assertNotIn("deprecated", delegated.stderr)
-        self.assertEqual(direct.returncode, 0, direct.stderr)
-        self.assertIn("deprecated", direct.stderr)
+        shim = subprocess.run(
+            [sys.executable, "-c", "from orro.__main__ import main; main(['--help'])"],
+            cwd=root,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(shim.returncode, 0, shim.stderr)
+        self.assertIn("deprecated", shim.stderr)
 
     def test_boundary_is_non_executing_non_verifying_non_assurance(self) -> None:
         code, payload = self._advise("fix parser bug")
@@ -228,8 +227,7 @@ class OrroWorkstyleTests(unittest.TestCase):
 
         self.assertEqual(module.returncode, 0, module.stderr)
         self.assertEqual(alias.returncode, 0, alias.stderr)
-        self.assertIn("deprecated", module.stderr)
-        self.assertIn("ORRO package", module.stderr)
+        self.assertNotIn("deprecated", module.stderr)
         self.assertEqual(alias.stderr, "")
         module_payload = json.loads(module.stdout)
         alias_payload = json.loads(alias.stdout)
@@ -248,8 +246,7 @@ class OrroWorkstyleTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("deprecated", result.stderr)
-        self.assertIn("ORRO package", result.stderr)
+        self.assertNotIn("deprecated", result.stderr)
         self.assertIn("advise", result.stdout)
         self.assertNotIn("self-test", result.stdout)
 
