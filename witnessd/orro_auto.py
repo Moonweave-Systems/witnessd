@@ -456,6 +456,8 @@ def _base_plan(
             "exit_code": continuation_exit_code,
             "error": continuation.get("error"),
         },
+        "observed_artifacts": continuation.get("observed_artifacts", {}),
+        "next_allowed": list(continuation.get("next_allowed", [])),
         "would_run": [],
         "blocked": blocked,
         "reasons": reasons,

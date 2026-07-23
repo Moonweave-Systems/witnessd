@@ -78,5 +78,30 @@ class Wave4AdviseSurfaceTests(unittest.TestCase):
         )
 
 
+class Wave4AutoSurfaceTests(unittest.TestCase):
+    def test_auto_dry_run_exposes_next_payload_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "missing-run"
+            auto_code, auto_payload, auto_stderr = _run(
+                "auto", "--dry-run", str(run_dir)
+            )
+            next_code, next_payload, next_stderr = _run("next", str(run_dir))
+
+        self.assertEqual(auto_code, 2)
+        self.assertEqual(auto_payload["kind"], "orro-auto-plan")
+        self.assertIn("observed_artifacts", auto_payload)
+        self.assertIn("next_allowed", auto_payload)
+        self.assertEqual(auto_stderr, "")
+        self.assertEqual(next_code, 2)
+        self.assertEqual(next_payload["kind"], "orro-auto-plan")
+        self.assertEqual(next_payload["decision"], "invalid-run-dir")
+        self.assertIn("observed_artifacts", next_payload)
+        self.assertIn("next_allowed", next_payload)
+        self.assertEqual(
+            next_stderr,
+            "deprecated: use orro auto --dry-run (this alias will be removed in a future release; output maps to orro-auto-plan)\n",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

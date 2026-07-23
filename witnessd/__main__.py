@@ -456,6 +456,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_auto.add_argument("--max-steps", type=int, default=None)
     orro_auto.add_argument("--home", default=None)
     orro_auto.add_argument("--out", default=None)
+    orro_auto.add_argument("--_deprecated-alias", dest="_deprecated_alias", default=None, help=argparse.SUPPRESS)
     orro_auto.add_argument("--json", action="store_true")
     orro_auto.set_defaults(func=_cli_handler("advisory", "_cmd_orro_auto"))
 
@@ -1222,6 +1223,14 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
     if len(argv) >= 2 and argv[1] in ORRO_COMMAND_MAP:
         command = argv[1]
         normalized = [ORRO_COMMAND_MAP[command], *argv[2:]]
+        if command == "next":
+            return [
+                "orro-auto",
+                "--dry-run",
+                "--_deprecated-alias",
+                "next",
+                *argv[2:],
+            ]
         if command in {"sketch", "trace"}:
             return [
                 "orro-advise",
