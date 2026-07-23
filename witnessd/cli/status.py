@@ -27,9 +27,13 @@ TIDY_BOUNDARY = (
 )
 
 
+def resolve_home(args_home: str | None, repo: Path) -> Path:
+    return Path(args_home or os.environ.get("WITNESSD_HOME") or (repo / ".witnessd")).resolve(strict=False)
+
+
 def _cmd_orro_status(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve(strict=False)
-    home = Path(args.home).resolve(strict=False) if args.home else repo / ".witnessd"
+    home = resolve_home(args.home, repo)
     try:
         payload = build_status(repo=repo, home=home)
     except OrroRoadmapError as exc:
@@ -44,7 +48,7 @@ def _cmd_orro_status(args: argparse.Namespace) -> int:
 
 def _cmd_orro_tidy(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve(strict=False)
-    home = Path(args.home).resolve(strict=False) if args.home else repo / ".witnessd"
+    home = resolve_home(args.home, repo)
     payload = build_tidy_inventory(repo=repo, home=home)
     if args.apply:
         payload = apply_tidy(repo=repo, inventory=payload)
@@ -660,6 +664,14 @@ def _path_newness(path: Path) -> tuple[int, str]:
         return path.stat().st_mtime_ns, path.name
     except OSError:
         return 0, path.name
+
+
+def latest_run_dir(home: Path) -> Path | None:
+    runs = home / "runs"
+    if not runs.is_dir():
+        return None
+    candidates = [path.resolve(strict=False) for path in runs.iterdir() if path.is_dir()]
+    return max(candidates, key=_path_newness) if candidates else None
 
 
 def _run_worktree_paths(run_dirs: list[Path]) -> list[Path]:

@@ -5,6 +5,7 @@ import json
 import os
 import shlex
 import shutil
+import time
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -632,11 +633,13 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
         except OrroAdvisoryError as exc:
             return _emit_blocker(_structured_error(code=exc.code, message=str(exc)))
 
-    home = Path(args.home).resolve(strict=False) if args.home else repo / ".witnessd"
+    from witnessd.cli.status import resolve_home
+
+    home = resolve_home(args.home, repo)
     run_dir = (
         Path(args.run_dir).resolve(strict=False)
         if args.run_dir
-        else home / "companion-run"
+        else home / "runs" / f"check-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{time.monotonic_ns()}"
     )
     run_dir.mkdir(parents=True, exist_ok=True)
     intent_reference = None

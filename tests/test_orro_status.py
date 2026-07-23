@@ -73,6 +73,19 @@ def _write_companion_verdict(
 
 
 class OrroStatusTests(unittest.TestCase):
+    def test_resolve_home_prefers_explicit_then_environment_then_repo(self) -> None:
+        from witnessd.cli.status import resolve_home
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            explicit = root / "explicit-home"
+            env_home = root / "env-home"
+            with patch.dict(os.environ, {"WITNESSD_HOME": str(env_home)}, clear=False):
+                self.assertEqual(resolve_home(str(explicit), repo), explicit.resolve())
+                self.assertEqual(resolve_home(None, repo), env_home.resolve())
+            with patch.dict(os.environ, {}, clear=True):
+                self.assertEqual(resolve_home(None, repo), (repo / ".witnessd").resolve())
     def test_steps_derive_progress_and_next_command_from_verified_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

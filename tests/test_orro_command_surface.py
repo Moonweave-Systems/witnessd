@@ -185,6 +185,15 @@ class OrroCommandSurfaceTests(unittest.TestCase):
         self.assertIn("rolepack. Never inferred or defaulted.", flowplan_help)
         self.assertIn(expected_help, ORRO_HELP)
 
+    def test_post_run_commands_expose_latest_and_flowplan_points_to_threaded_paths(self) -> None:
+        parser = _build_parser()
+        commands = parser._subparsers._group_actions[0].choices
+        self.assertTrue(parser.parse_args(["orro-report", "--latest"]).latest)
+        self.assertTrue(parser.parse_args(["orro-next", "--latest"]).latest)
+        self.assertTrue(parser.parse_args(["orro-auto", "--latest", "--dry-run"]).latest)
+        self.assertIn("orro flow", commands["flowplan"].format_help())
+        self.assertIn("orro team go", commands["flowplan"].format_help())
+
     def test_flowplan_exposes_declared_shell_command_help(self) -> None:
         parser = _build_parser()
         commands = parser._subparsers._group_actions[0].choices

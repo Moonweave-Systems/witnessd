@@ -241,6 +241,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     orro_next = sub.add_parser("orro-next", help=argparse.SUPPRESS)
     orro_next.add_argument("run_dir", nargs="?")
+    orro_next.add_argument("--latest", action="store_true")
     orro_next.add_argument("--home", default=None)
     orro_next.add_argument("--out", default=None)
     orro_next.add_argument("--json", action="store_true")
@@ -318,6 +319,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     orro_report = sub.add_parser("orro-report", help=argparse.SUPPRESS)
     orro_report.add_argument("run_dir", nargs="?")
+    orro_report.add_argument("--latest", action="store_true")
     orro_report.add_argument("--home", default=None)
     orro_report.add_argument("--out", default=None)
     orro_report.add_argument("--workstyle-decision", default=None)
@@ -440,6 +442,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     orro_auto.add_argument("run_dir", nargs="?")
+    orro_auto.add_argument("--latest", action="store_true")
     orro_auto.add_argument("--dry-run", action="store_true")
     orro_auto.add_argument("--once", action="store_true")
     orro_auto.add_argument("--until-complete", action="store_true")
@@ -1011,6 +1014,7 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
 
 
 def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
+    flowplan.epilog = "For automatic path threading, use `orro flow` / `orro team go`."
     flowplan.add_argument("goal")
     flowplan.add_argument("--root", "--repo", dest="root", default=".")
     flowplan.add_argument("--seed", default="w11")
