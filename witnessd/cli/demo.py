@@ -22,7 +22,15 @@ def _cmd_orro_demo(args: argparse.Namespace) -> int:
     )
     root.mkdir(parents=True, exist_ok=True)
     repo = root / "sample-repo"
-    home = root / ".witnessd"
+    existing_home = next(
+        (
+            candidate
+            for candidate in (Path.cwd() / ".w", Path.cwd() / ".witnessd")
+            if (candidate / "provision.json").is_file()
+        ),
+        None,
+    )
+    home = existing_home or root / ".witnessd"
     run_dir = root / "run"
     runner = root / "runner"
     depone_root = _resolve_depone_root(args.depone_root)
@@ -43,16 +51,17 @@ def _cmd_orro_demo(args: argparse.Namespace) -> int:
     workflow_plan = run_dir / "workflow-plan.json"
     role_lane_plan = run_dir / "role-lane-plan.json"
     verdict_path = run_dir / "proofcheck-verdict.json"
-    phases = [
-        [
-            "init",
-            "--home",
-            str(home),
-            "--repo",
-            str(repo),
-            "--depone-root",
-            str(depone_root),
-        ],
+    phases: list[list[str]] = []
+    try:
+        from witnessd.distribution import validate_depone_pin
+
+        validate_depone_pin(home)
+    except Exception:  # noqa: BLE001 - init emits the actionable blocker
+        init_argv = ["init", "--home", str(home), "--repo", str(repo), "--json"]
+        if args.depone_root:
+            init_argv.extend(["--depone-root", str(depone_root)])
+        phases.append(init_argv)
+    phases.extend([
         [
             "flowplan",
             DEMO_GOAL,
@@ -91,14 +100,27 @@ def _cmd_orro_demo(args: argparse.Namespace) -> int:
             str(run_dir),
             "--json",
         ],
-    ]
+    ])
     for argv in phases:
         code, payload, stderr = _invoke(argv)
         if code != 0:
-            print(
-                "ORRO demo blocked before policy verification: "
-                + _phase_error(payload, stderr)
+            error = payload.get("error") if isinstance(payload, dict) else None
+            if not isinstance(error, dict):
+                error = {
+                    "code": "ERR_ORRO_DEMO_DEPONE_UNAVAILABLE",
+                    "message": _phase_error(payload, stderr),
+                }
+            else:
+                error = dict(error)
+            error.setdefault(
+                "reason", "a pinned Depone verifier is required before the demo can run"
             )
+            error.setdefault(
+                "next_command", f"python3 -m orro setup --home {home} --json"
+            )
+            if phases and phases[0][0] == "init":
+                error["next_command"] = f"python3 -m orro setup --home {home} --json"
+            print(json.dumps({"error": error}, sort_keys=True))
             return code
 
     proofcheck_code, payload, stderr = _invoke(
