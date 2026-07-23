@@ -557,6 +557,14 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
             "Run `orro scout` first, then the `flowplan -> proofrun -> proofcheck` "
             "workflow in the same run directory, or use `orro team go`."
         )
+    untracked_diagnostic = _untracked_evidence_diagnostic(
+        evidence_dir,
+        payload,
+        home=home,
+    )
+    if untracked_diagnostic is not None:
+        result["error"] = untracked_diagnostic
+        result["untracked_evidence"] = untracked_diagnostic["evidence_path"]
     if reference_warning is not None:
         from witnessd.cli.run import (
             _reference_adapter_markers,
@@ -573,8 +581,104 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
             default_code="ERR_ORRO_PROOFCHECK_BLOCKED",
             default_message="proofcheck did not produce a passing verdict",
         )
+    if untracked_diagnostic is not None:
+        result["error"] = untracked_diagnostic
     print(json.dumps(result, sort_keys=True))
     return 0 if code == 0 and result["decision"] == "pass" else 1
+
+
+def _untracked_evidence_diagnostic(
+    evidence_dir: Path,
+    payload: dict[str, object],
+    *,
+    home: Path | None,
+) -> dict[str, object] | None:
+    errors = payload.get("errors")
+    if not isinstance(errors, list):
+        return None
+    ledger_path = evidence_dir / "team-ledger.json"
+    try:
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    repo_value = ledger.get("repo_root") if isinstance(ledger, dict) else None
+    if isinstance(repo_value, str) and repo_value:
+        repo = Path(repo_value).resolve(strict=False)
+    else:
+        try:
+            source_root = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                cwd=Path.cwd(),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            return None
+        if source_root.returncode != 0 or not source_root.stdout.strip():
+            return None
+        repo = Path(source_root.stdout.strip()).resolve(strict=False)
+    if not repo.is_dir():
+        return None
+    for item in errors:
+        if not isinstance(item, dict):
+            continue
+        evidence_path = item.get("evidence_path") or item.get("path")
+        message = item.get("message")
+        if not isinstance(evidence_path, str) or not isinstance(message, str):
+            continue
+        if "missing" not in message.lower():
+            continue
+        relative = Path(evidence_path)
+        if relative.is_absolute() or ".." in relative.parts:
+            continue
+        source_path = (repo / relative).resolve(strict=False)
+        if not source_path.is_file() or repo not in source_path.parents:
+            continue
+        tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", evidence_path],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if tracked.returncode == 0:
+            continue
+        status = subprocess.run(
+            ["git", "status", "--porcelain=v1", "--", evidence_path],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if status.returncode != 0:
+            continue
+        next_command = (
+            f"cd {shlex.quote(str(repo))}\n"
+            f"git status --short -- {shlex.quote(evidence_path)}\n"
+            f"git add -- {shlex.quote(evidence_path)}\n"
+            'git commit -m "Add proof evidence"\n'
+            f"python3 -m orro proofcheck {shlex.quote(str(evidence_dir))}"
+            + (f" --home {shlex.quote(str(home))}" if home is not None else "")
+            + " --json"
+        )
+        return {
+            "code": "ERR_ORRO_UNTRACKED_EVIDENCE_NOT_IN_ISOLATED_WORKTREE",
+            "message": (
+                f"{evidence_path} exists locally but is untracked; isolated "
+                "worktrees only see committed/tracked state"
+            ),
+            "reason": (
+                "the source checkout contains the referenced file, but the "
+                "isolated proofrun worktree cannot see untracked files"
+            ),
+            "required_input_or_grant": "commit or restage the evidence, then re-run proofcheck",
+            "next_command": next_command,
+            "evidence_path": evidence_path,
+            "source_repo": str(repo),
+            "status": status.stdout.strip(),
+        }
+    return None
 
 
 def _derive_command_lane_policy(

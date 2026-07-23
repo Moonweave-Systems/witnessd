@@ -14,6 +14,7 @@ from witnessd.status import render_status
 
 
 ERR_ORRO_REFERENCE_ADAPTER_REFUSED = "ERR_ORRO_REFERENCE_ADAPTER_REFUSED"
+ERR_ORRO_ARTIFACT_RUN_DIR_MISMATCH = "ERR_ORRO_ARTIFACT_RUN_DIR_MISMATCH"
 RUNNER_SANDBOX_DIRECTORY_REASON = (
     "--runner-sandbox is a filesystem directory where the adapter runner "
     "executes; it is not the host Codex sandbox_mode "
@@ -359,6 +360,7 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
                 ),
             )
             return 2
+
         patch_result = (
             apply_task_prompt_to_role_lane_plan(role_lane_plan, task=task or "")
             if placeholder_count
@@ -379,6 +381,41 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
             assert_role_lane_prompts_explicit(role_lane_plan)
         except OrroWorkflowError as exc:
             _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 2
+
+    if args.run_dir and workflow_plan_source is not None:
+        expected_artifact_dir = _workflow_artifact_source_dir(
+            workflow_plan_source,
+            role_lane_plan_source,
+        )
+        actual_run_dir = Path(args.run_dir).resolve(strict=False)
+        if expected_artifact_dir is not None and expected_artifact_dir != actual_run_dir:
+            _emit_orro_error(
+                args,
+                code=ERR_ORRO_ARTIFACT_RUN_DIR_MISMATCH,
+                message=(
+                    "the supplied workflow artifact set belongs to a different "
+                    "run directory than --run-dir"
+                ),
+                reason=(
+                    "manual proofrun must write into the scout/flowplan artifact "
+                    "directory so proofcheck can consume the same artifact set"
+                ),
+                required_input_or_grant=(
+                    f"expected artifact dir {expected_artifact_dir}; "
+                    f"actual --run-dir {actual_run_dir}"
+                ),
+                next_command=_proofrun_same_artifact_dir_command(
+                    args,
+                    workflow_plan_source=workflow_plan_source,
+                    role_lane_plan_source=role_lane_plan_source,
+                    run_dir=expected_artifact_dir,
+                ),
+                extra={
+                    "expected_artifact_dir": str(expected_artifact_dir),
+                    "actual_run_dir": str(actual_run_dir),
+                },
+            )
             return 2
 
     reference_fallback = args.cmd == "proofrun" and role_lane_plan is None
@@ -589,6 +626,50 @@ def _cmd_run_goal(args: argparse.Namespace) -> int:
             return 1
     print(json.dumps(payload, sort_keys=True))
     return 0 if verdict["decision"] == "pass" else 1
+
+
+def _workflow_artifact_source_dir(
+    workflow_plan_source: Path,
+    role_lane_plan_source: Path | None,
+) -> Path | None:
+    candidates = [workflow_plan_source.parent]
+    if role_lane_plan_source is not None:
+        candidates.append(role_lane_plan_source.parent)
+    scout_artifacts = {
+        "repo-profile.json",
+        "context-pack.json",
+        "verification-recipe.json",
+    }
+    for candidate in candidates:
+        if all((candidate / artifact).is_file() for artifact in scout_artifacts):
+            return candidate.resolve(strict=False)
+    return None
+
+
+def _proofrun_same_artifact_dir_command(
+    args: argparse.Namespace,
+    *,
+    workflow_plan_source: Path,
+    role_lane_plan_source: Path | None,
+    run_dir: Path,
+) -> str:
+    command = [
+        "python3 -m orro proofrun",
+        shlex.quote(str(args.goal or args.task or "<goal>")),
+        "--repo",
+        shlex.quote(str(Path(args.repo or args.root or ".").resolve(strict=False))),
+        "--home",
+        shlex.quote(str(Path(args.home or ".witnessd").resolve(strict=False))),
+        "--workflow-plan",
+        shlex.quote(str(workflow_plan_source)),
+    ]
+    if role_lane_plan_source is not None:
+        command.extend(["--role-lane-plan", shlex.quote(str(role_lane_plan_source))])
+    command.extend(["--run-dir", shlex.quote(str(run_dir))])
+    if args.allow_reference_adapter:
+        command.append("--allow-reference-adapter")
+    command.append("--json")
+    return " ".join(command)
 
 
 def _team_ledger_timeout_guidance(path: Path) -> list[str]:
