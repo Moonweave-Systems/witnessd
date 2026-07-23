@@ -56,6 +56,24 @@ def _run(argv: list[str]) -> tuple[int, dict[str, object], str]:
 
 
 class ShellCommandLaneCompilationTests(unittest.TestCase):
+    def test_demo_blocker_is_structured_and_actionable(self) -> None:
+        from witnessd.cli import demo
+
+        with tempfile.TemporaryDirectory() as tmp:
+            args = type(
+                "Args",
+                (),
+                {"work_dir": str(Path(tmp) / "demo"), "depone_root": str(Path(tmp) / "missing"), "violate": False},
+            )()
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                code = demo._cmd_orro_demo(args)
+
+            self.assertEqual(code, 2)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["error"]["code"], "ERR_WITNESSD_DEPONE_ROOT_INVALID")
+            self.assertTrue(payload["error"]["reason"])
+            self.assertIn("python3 -m orro setup", payload["error"]["next_command"])
     def test_code_change_shell_commands_keep_granted_write_scope_region(self) -> None:
         workflow = compile_workflow_plan(
             goal="write generated source", profile="code-change"

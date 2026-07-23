@@ -15,15 +15,36 @@ from witnessd.__main__ import main
 from witnessd.distribution import (
     DEFAULT_DEPONE_REF,
     ERR_WITNESSD_DEPONE_PIN_MISMATCH,
+    WITNESSD_PACKAGE_VERSION_FALLBACK,
     InitConfig,
     ProvisionError,
     classify_depone_pin_state,
     init_witnessd_home,
+    build_orro_engine_lock,
     validate_depone_pin,
 )
 
 
+def _expected_witnessd_version() -> str:
+    import importlib.metadata
+
+    try:
+        return importlib.metadata.version("witnessd")
+    except importlib.metadata.PackageNotFoundError:
+        return WITNESSD_PACKAGE_VERSION_FALLBACK
+
+
 class DistributionInitTests(unittest.TestCase):
+    def test_version_fallback_matches_packaged_version(self) -> None:
+        setup_text = (Path(__file__).resolve().parents[1] / "setup.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            f'version="{WITNESSD_PACKAGE_VERSION_FALLBACK}"',
+            setup_text,
+            "WITNESSD_PACKAGE_VERSION_FALLBACK must match setup.py version",
+        )
+
     def test_default_depone_ref_pins_v023_lane_intent_support(self) -> None:
         self.assertEqual(
             DEFAULT_DEPONE_REF,
@@ -130,6 +151,66 @@ class DistributionInitTests(unittest.TestCase):
             )
             self.assertEqual(provision["witnessd"]["commit"], "unknown")
             self.assertRegex(provision["depone"]["commit"], r"^[0-9a-f]{40}$")
+
+    def test_engine_lock_uses_pip_identity_for_non_git_witnessd_root(self) -> None:
+        depone_root = self._depone_root()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / "home"
+            package_root = root / "site-packages" / "witnessd"
+            package_root.mkdir(parents=True)
+            init_witnessd_home(
+                InitConfig(
+                    home=home,
+                    witnessd_root=package_root,
+                    depone_root=depone_root,
+                    network_allowed=False,
+                )
+            )
+
+            lock = build_orro_engine_lock(home=home, witnessd_root=package_root)
+
+            self.assertEqual(
+                lock["witnessd"],
+                {
+                    "repository": "Moonweave-Systems/witnessd",
+                    "commit": None,
+                    "version": _expected_witnessd_version(),
+                    "source": "pip-package",
+                },
+            )
+
+    def test_engine_lock_compares_version_when_pip_commit_is_null(self) -> None:
+        depone_root = self._depone_root()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / "home"
+            package_root = root / "site-packages" / "witnessd"
+            package_root.mkdir(parents=True)
+            init_witnessd_home(
+                InitConfig(
+                    home=home,
+                    witnessd_root=package_root,
+                    depone_root=depone_root,
+                    network_allowed=False,
+                )
+            )
+            lock = build_orro_engine_lock(home=home, witnessd_root=package_root)
+            lock["witnessd"]["version"] = "0.0.0-mismatch"
+            lock_path = root / "lock.json"
+            lock_path.write_text(json.dumps(lock), encoding="utf-8")
+
+            from witnessd.distribution import check_orro_engine_lock
+
+            result = check_orro_engine_lock(
+                home=home, witnessd_root=package_root, lock_path=lock_path
+            )
+
+            self.assertFalse(result["locked"])
+            self.assertIn(
+                "witnessd.version",
+                {entry["field"] for entry in result["mismatches"]},
+            )
 
     def test_validate_depone_pin_rejects_forged_hash(self) -> None:
         witnessd_root = Path(__file__).resolve().parents[1]

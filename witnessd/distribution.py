@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import json
 import os
 import re
@@ -24,6 +25,7 @@ ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISMATCH = "ERR_ORRO_ENGINE_LOCK_DEPONE_PIN_MISM
 ERR_ORRO_ENGINE_LOCK_LOAD_FAILED = "ERR_ORRO_ENGINE_LOCK_LOAD_FAILED"
 ERR_ORRO_ENGINE_LOCK_INVALID = "ERR_ORRO_ENGINE_LOCK_INVALID"
 ERR_ORRO_ENGINE_LOCK_MISMATCH = "ERR_ORRO_ENGINE_LOCK_MISMATCH"
+ERR_ORRO_ENGINE_LOCK_WITNESSD_IDENTITY = "ERR_ORRO_ENGINE_LOCK_WITNESSD_IDENTITY"
 ERR_ORRO_SETUP_DEPONE_PIN_MISMATCH = "ERR_ORRO_SETUP_DEPONE_PIN_MISMATCH"
 
 PROVISION_KIND = "witnessd-depone-provision"
@@ -32,6 +34,7 @@ ORRO_ENGINE_LOCK_KIND = "orro-engine-lock"
 ORRO_ENGINE_LOCK_SCHEMA_VERSION = "1.0"
 DEFAULT_DEPONE_REPOSITORY = "https://github.com/Moonweave-Systems/Depone.git"
 DEFAULT_DEPONE_REF = "f067a05299f755fe6b3c4b86aace2aa8822cc711"
+WITNESSD_PACKAGE_VERSION_FALLBACK = "2.25.0"
 
 
 class ProvisionError(Exception):
@@ -253,13 +256,11 @@ def build_orro_engine_lock(*, home: Path, witnessd_root: Path) -> dict[str, Any]
 
     depone = provision["depone"]
     depone_root = Path(str(depone["root"])).resolve(strict=False)
+    witnessd_identity = _witnessd_identity(witnessd_root.resolve(strict=False))
     payload: dict[str, Any] = {
         "kind": ORRO_ENGINE_LOCK_KIND,
         "schema_version": ORRO_ENGINE_LOCK_SCHEMA_VERSION,
-        "witnessd": {
-            "repository": "Moonweave-Systems/witnessd",
-            "commit": _git_commit(witnessd_root.resolve(strict=False)),
-        },
+        "witnessd": {"repository": "Moonweave-Systems/witnessd", **witnessd_identity},
         "depone": {
             "repository": "Moonweave-Systems/Depone",
             "commit": str(depone["commit"]),
@@ -338,6 +339,8 @@ def _engine_lock_comparison_fields() -> tuple[str, ...]:
         "schema_version",
         "witnessd.repository",
         "witnessd.commit",
+        "witnessd.version",
+        "witnessd.source",
         "depone.repository",
         "depone.commit",
         "boundary.approves_merge",
@@ -486,6 +489,35 @@ def _git_commit(root: Path) -> str:
     if completed.returncode != 0:
         raise ProvisionError(ERR_WITNESSD_DEPONE_ROOT_INVALID)
     return completed.stdout.strip()
+
+
+def _witnessd_identity(root: Path) -> dict[str, str | None]:
+    try:
+        probe = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise ProvisionError(ERR_ORRO_ENGINE_LOCK_WITNESSD_IDENTITY) from exc
+    output = probe.stdout.strip()
+    if probe.returncode == 0 and output == "true":
+        try:
+            commit = _git_commit(root)
+        except ProvisionError as exc:
+            raise ProvisionError(ERR_ORRO_ENGINE_LOCK_WITNESSD_IDENTITY) from exc
+        source = "git-checkout"
+    elif probe.returncode == 0 and output not in {"", "false"}:
+        raise ProvisionError(ERR_ORRO_ENGINE_LOCK_WITNESSD_IDENTITY)
+    else:
+        commit = None
+        source = "pip-package"
+    try:
+        version = importlib.metadata.version("witnessd")
+    except importlib.metadata.PackageNotFoundError:
+        version = WITNESSD_PACKAGE_VERSION_FALLBACK
+    return {"commit": commit, "version": version, "source": source}
 
 
 def _git_commit_for_ref(root: Path, ref: str) -> str:

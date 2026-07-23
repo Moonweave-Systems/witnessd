@@ -72,6 +72,17 @@ class OrroCommandSurfaceTests(unittest.TestCase):
             self.assertIn("--roadmap-item", help_text)
             self.assertIn("never inferred", help_text)
 
+    def test_first_run_parser_options_have_help_and_json(self) -> None:
+        parser = _build_parser()
+        commands = parser._subparsers._group_actions[0].choices
+        init = parser.parse_args(["init", "--json"])
+        flow = parser.parse_args(["orro-flow", "goal", "--allow-network"])
+        setup_help = commands["orro-setup"].format_help()
+        self.assertTrue(init.json)
+        self.assertTrue(flow.allow_network)
+        self.assertIn("pinned Depone checkout", setup_help)
+        self.assertIn("setup-time provisioning", setup_help)
+
     def test_status_and_tidy_use_distinct_internal_commands(self) -> None:
         parser = _build_parser()
         commands = parser._subparsers._group_actions[0].choices
