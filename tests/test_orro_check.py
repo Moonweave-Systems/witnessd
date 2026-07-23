@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.__main__ import main
+from witnessd.cli.companion import _compute_growth
 from witnessd.orro_roadmap import write_roadmap
 
 
@@ -140,6 +141,57 @@ def _fake_ruff_scope_violator(directory: Path) -> str:
     )
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
     return str(path)
+
+
+class GrowthReceiptTest(unittest.TestCase):
+    def test_growth_parses_numstat_and_orders_only_grown_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            _seed_repo(repo)
+            (repo / "shrinks.py").write_text("\n".join(["x"] * 10) + "\n", encoding="utf-8")
+            subprocess.run(["git", "add", "shrinks.py"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "baseline file"], cwd=repo, check=True)
+            (repo / "large.py").write_text("\n".join(["x"] * 300) + "\n", encoding="utf-8")
+            (repo / "small.py").write_text("\n".join(["x"] * 10) + "\n", encoding="utf-8")
+            (repo / "shrinks.py").write_text("x\n", encoding="utf-8")
+            (repo / "binary.bin").write_bytes(b"\x00binary")
+            subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "growth"], cwd=repo, check=True)
+            growth = _compute_growth(repo, "HEAD~1")
+
+            self.assertEqual(growth["base"], "HEAD~1")
+            self.assertEqual(growth["lines_added"], 310)
+            self.assertEqual(growth["lines_deleted"], 9)
+            self.assertEqual(growth["net"], 301)
+            self.assertEqual(growth["top_grown_files"][0], {"path": "large.py", "added": 300, "deleted": 0})
+            self.assertEqual(growth["top_grown_files"][1], {"path": "small.py", "added": 10, "deleted": 0})
+            self.assertNotIn("shrinks.py", [item["path"] for item in growth["top_grown_files"]])
+            self.assertNotIn("binary.bin", json.dumps(growth))
+            self.assertEqual(
+                growth["means"],
+                "growth is a surfaced signal, not a verdict; no consensus threshold exists",
+            )
+
+    def test_growth_is_omitted_on_git_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(_compute_growth(Path(tmp), "main"))
+
+    def test_growth_is_present_without_changing_failing_gate_exit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            (repo / "grown.py").write_text("\n".join(["x"] * 20) + "\n", encoding="utf-8")
+            subprocess.run(["git", "add", "grown.py"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "growth"], cwd=repo, check=True)
+            code, payload, err = _run(
+                ["orro", "check", "--repo", str(repo), "--home", str(root / "home"),
+                 "--run-dir", str(root / "run"), "--check", "false", "--no-review", "--json"]
+            )
+            self.assertEqual(code, 2, err)
+            self.assertEqual(payload["growth"]["base"], "main")
+            self.assertIn(payload["verdict_ref"]["decision"], {"blocked", "blocked-explicit"})
 
 
 class OrroCheckBlockerTest(unittest.TestCase):
@@ -538,6 +590,9 @@ class OrroCheckVerifyTest(unittest.TestCase):
             self.assertEqual(payload["execution_adapter_lanes_spawned"], 0)
             self.assertIs(payload["boundary"]["depone_verified"], False)
             self.assertEqual(payload["verdict_ref"]["decision"], "pass")
+            self.assertEqual(payload["growth"]["base"], "main")
+            self.assertEqual(payload["growth"]["lines_added"], 0)
+            self.assertEqual(payload["growth"]["lines_deleted"], 0)
             self.assertNotIn("review_ref", payload)
             self.assertNotIn("declared_intent", payload)
             self.assertNotIn("declared_intent_ref", payload)
@@ -1559,7 +1614,8 @@ class OrroCheckHumanOutputTest(unittest.TestCase):
             self.assertEqual(
                 lines[0], "orro check — evidence & review for work you already drove"
             )
-            self.assertIn("Verify the requested boundary.", lines[2])
+            self.assertIn("Verify the requested boundary.", out.getvalue())
+            self.assertIn("GROWTH   +0 / -0 lines vs main", out.getvalue())
             self.assertIn("paper-chat", out.getvalue())
             self.assertLess(
                 out.getvalue().index("Verify the requested boundary."),

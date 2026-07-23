@@ -11,7 +11,7 @@ _VERSION = re.compile(r"(?<!\d)(\d+(?:\.\d+)+(?:[-+._a-zA-Z0-9]*)?)(?!\d)")
 _PRE_COMMIT_CONFIGS = (".pre-commit-config.yaml", ".pre-commit-config.yml")
 _BOOTSTRAP_CONFIG_SECTIONS = (
     ("tool.black", "black", "[tool.black]\nline-length = 88\n"),
-    ("tool.ruff", "ruff", '[tool.ruff]\nselect = ["E", "F", "I"]\n'),
+    ("tool.ruff", "ruff", '[tool.ruff]\nselect = ["E", "F", "I", "ERA"]\n'),
     (
         "tool.ruff.lint.mccabe",
         "ruff.lint.mccabe",
