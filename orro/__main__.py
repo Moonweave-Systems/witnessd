@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 from difflib import get_close_matches
+from pathlib import Path
 
 from witnessd.__main__ import ORRO_COMMANDS, main as witnessd_main
 
@@ -72,7 +73,8 @@ options:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    if os.environ.get("ORRO_WRAPPER_DELEGATION") != "1":
+    module_invocation = Path(sys.argv[0]).name == "__main__.py"
+    if not module_invocation and os.environ.get("ORRO_WRAPPER_DELEGATION") != "1":
         print(DEPRECATION_WARNING, file=sys.stderr)
     if not args or args[0] in {"-h", "--help"}:
         print(ORRO_HELP)

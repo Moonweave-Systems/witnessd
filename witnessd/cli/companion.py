@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shlex
 import shutil
+import time
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -40,6 +43,10 @@ def _invoke_phase(argv: list[str]) -> tuple[int, object, str]:
     except json.JSONDecodeError:
         payload = {}
     return code, payload, stderr.strip()
+
+
+def _render_phase_command(argv: list[str]) -> str:
+    return " ".join(["python3", "-m", "orro", *(shlex.quote(str(arg)) for arg in argv)])
 
 
 def _resolve_base(repo: Path, base: str | None) -> str:
@@ -319,10 +326,16 @@ def _print_human_summary(
         print(f"    → {review_ref['path']}")
     review_skipped = manifest.get("review_skipped")
     if isinstance(review_skipped, dict):
-        print(
-            f"  ⚠ review skipped: {review_skipped['reason']} "
-            f"(install {reviewer or 'the reviewer'}, or pass --no-review)"
-        )
+        if review_skipped.get("automatic") is True:
+            print(
+                "  review: off (no reviewer configured — set ORRO_REVIEWER "
+                "or pass --reviewer agy|gemini|claude)"
+            )
+        else:
+            print(
+                f"  ⚠ review skipped: {review_skipped['reason']} "
+                f"(install {reviewer or 'the reviewer'}, or pass --no-review)"
+            )
     print("  BOUNDARY")
     if isinstance(code_health, dict):
         print(f'    "health: {code_health["verdict"]}" = {code_health["means"]}')
@@ -620,11 +633,13 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
         except OrroAdvisoryError as exc:
             return _emit_blocker(_structured_error(code=exc.code, message=str(exc)))
 
-    home = Path(args.home).resolve(strict=False) if args.home else repo / ".witnessd"
+    from witnessd.cli.status import resolve_home
+
+    home = resolve_home(args.home, repo)
     run_dir = (
         Path(args.run_dir).resolve(strict=False)
         if args.run_dir
-        else home / "companion-run"
+        else home / "runs" / f"check-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{time.monotonic_ns()}"
     )
     run_dir.mkdir(parents=True, exist_ok=True)
     intent_reference = None
@@ -708,14 +723,11 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                         required_input_or_grant=(
                             "resolve the reported scope-bounded fixer plan blocker"
                         ),
-                        next_command=(
-                            "python3 -m orro flowplan ... --profile code-change"
-                        ),
+                        next_command=_render_phase_command(fix_flowplan_argv),
                     )
                 )
             _assert_no_execution_adapter(fix_rlp)
-            _, _, fix_proofrun_err = _invoke_phase(
-                [
+            fix_proofrun_argv = [
                     "proofrun",
                     fix_goal,
                     "--repo",
@@ -740,7 +752,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     *(["--roadmap-step", roadmap_step] if roadmap_step else []),
                     "--json",
                 ]
-            )
+            _, _, fix_proofrun_err = _invoke_phase(fix_proofrun_argv)
             fix_team_ledger = fix_run_dir / "team-ledger.json"
             if not fix_team_ledger.is_file():
                 return _emit_blocker(
@@ -754,11 +766,10 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                         required_input_or_grant=(
                             "resolve the reported scope-bounded fixer blocker"
                         ),
-                        next_command="python3 -m orro proofrun ...",
+                        next_command=_render_phase_command(fix_proofrun_argv),
                     )
                 )
-            _, fix_verdict_payload, fix_verdict_err = _invoke_phase(
-                [
+            fix_proofcheck_argv = [
                     "proofcheck",
                     "--evidence-dir",
                     str(fix_run_dir),
@@ -768,7 +779,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     str(fix_verdict_path),
                     "--json",
                 ]
-            )
+            _, fix_verdict_payload, fix_verdict_err = _invoke_phase(fix_proofcheck_argv)
             try:
                 fix_verdict = json.loads(fix_verdict_path.read_text(encoding="utf-8"))
             except (OSError, UnicodeError, json.JSONDecodeError):
@@ -799,7 +810,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                         required_input_or_grant=(
                             "keep fixer mutations inside every declared --write-scope"
                         ),
-                        next_command="python3 -m orro proofcheck ...",
+                        next_command=_render_phase_command(fix_proofcheck_argv),
                     )
                 )
 
@@ -829,7 +840,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                         required_input_or_grant=(
                             "a valid code-change worktree lane receipt"
                         ),
-                        next_command="python3 -m orro proofcheck ...",
+                        next_command=_render_phase_command(fix_proofcheck_argv),
                     )
                 )
 
@@ -1007,17 +1018,14 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                 message="verification flowplan failed",
                 reason=err or "flowplan returned nonzero",
                 required_input_or_grant="resolve the reported flowplan blocker",
-                next_command=(
-                    "python3 -m orro flowplan ... --profile verification-only"
-                ),
+                next_command=_render_phase_command(flowplan_argv),
             )
         )
 
     _assert_no_execution_adapter(verify_rlp)
 
     team_ledger = run_dir / "team-ledger.json"
-    _, _, proofrun_err = _invoke_phase(
-        [
+    proofrun_argv = [
             "proofrun",
             goal,
             "--repo",
@@ -1042,7 +1050,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
         *(["--roadmap-step", roadmap_step] if roadmap_step else []),
             "--json",
         ]
-    )
+    _, _, proofrun_err = _invoke_phase(proofrun_argv)
     if not team_ledger.is_file():
         return _emit_blocker(
             _structured_error(
@@ -1053,12 +1061,11 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     or "proofrun returned nonzero without sealing team-ledger.json"
                 ),
                 required_input_or_grant="resolve the reported proofrun blocker",
-                next_command="python3 -m orro proofrun ...",
+                next_command=_render_phase_command(proofrun_argv),
             )
         )
 
-    _, verdict_payload, verdict_err = _invoke_phase(
-        [
+    proofcheck_argv = [
             "proofcheck",
             "--evidence-dir",
             str(run_dir),
@@ -1068,7 +1075,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             str(verdict_path),
             "--json",
         ]
-    )
+    _, verdict_payload, verdict_err = _invoke_phase(proofcheck_argv)
     decision = (
         verdict_payload.get("decision") if isinstance(verdict_payload, dict) else None
     )
@@ -1087,25 +1094,38 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                 required_input_or_grant=(
                     "resolve the reported Depone/proofcheck blocker"
                 ),
-                next_command="python3 -m orro proofcheck ...",
+                next_command=_render_phase_command(proofcheck_argv),
             )
         )
 
     review_ref = None
     review_skipped = None
     if not args.no_review:
-        reviewer = args.reviewer
-        reviewer_binary = args.reviewer_binary or reviewer
-        resolved = (
-            reviewer_binary
-            if Path(reviewer_binary).exists()
-            else shutil.which(reviewer_binary)
-        )
-        if not resolved:
+        reviewer = args.reviewer or os.environ.get("ORRO_REVIEWER")
+        if reviewer is None:
             review_skipped = {
-                "reason": f"reviewer '{reviewer}' binary not found: {reviewer_binary}",
+                "reason": "no reviewer configured",
                 "code": "ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE",
+                "automatic": True,
             }
+            reviewer_binary = None
+        else:
+            reviewer_binary = args.reviewer_binary or reviewer
+        if reviewer_binary is None:
+            resolved = None
+        else:
+            resolved = (
+                reviewer_binary
+                if Path(reviewer_binary).exists()
+                else shutil.which(reviewer_binary)
+            )
+        if not resolved:
+            if review_skipped is None:
+                review_skipped = {
+                    "reason": f"reviewer '{reviewer}' binary not found: {reviewer_binary}",
+                    "code": "ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE",
+                    "automatic": False,
+                }
         else:
             review_wp = run_dir / "review-workflow-plan.json"
             review_rlp = run_dir / "review-role-lane-plan.json"

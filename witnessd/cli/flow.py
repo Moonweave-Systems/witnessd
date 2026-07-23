@@ -42,9 +42,9 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
         if args.repo
         else Path.cwd().resolve(strict=False)
     )
-    home = Path(
-        args.home or os.environ.get("WITNESSD_HOME") or (repo / ".witnessd")
-    ).resolve(strict=False)
+    from witnessd.cli.status import resolve_home
+
+    home = resolve_home(args.home, repo)
     run_dir = (
         Path(args.run_dir).resolve(strict=False)
         if args.run_dir

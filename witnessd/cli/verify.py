@@ -84,6 +84,23 @@ def _emit_orro_error(args: argparse.Namespace, *, code: str, message: str) -> No
     )
 
 
+def _proofcheck_next_command(evidence_dir: Path, home: Path | None) -> str:
+    resolved_home = home or evidence_dir.parent.parent
+    return " ".join(
+        [
+            "python3",
+            "-m",
+            "orro",
+            "proofcheck",
+            shlex.quote(str(evidence_dir)),
+            "--home",
+            shlex.quote(str(resolved_home)),
+            "--out",
+            shlex.quote(str(evidence_dir / "proofcheck-verdict.json")),
+        ]
+    )
+
+
 def _with_verify_error(
     args: argparse.Namespace,
     payload: dict[str, object],
@@ -265,10 +282,13 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
 
     evidence_arg = args.evidence_dir_option or args.evidence_dir
     if not evidence_arg:
-        _emit_orro_error(
+        _base_emit_orro_error(
             args,
             code="ERR_ORRO_PROOFCHECK_INPUT_REQUIRED",
             message="evidence directory is required",
+            reason="proofcheck cannot run without the evidence directory",
+            required_input_or_grant="--evidence-dir <dir>",
+            next_command="python3 -m orro proofcheck --evidence-dir <dir> --home <home> --out <dir>/proofcheck-verdict.json",
         )
         return 2
     evidence_dir = Path(evidence_arg).resolve(strict=False)
@@ -281,10 +301,13 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
     try:
         env = _depone_subprocess_env(home)
     except Exception as exc:  # noqa: BLE001 - surface pin/readiness failure as usage
-        _emit_orro_error(
+        _base_emit_orro_error(
             args,
-            code=str(exc),
+            code="ERR_ORRO_VERIFIER_READINESS_BLOCKED",
             message="Depone verifier readiness is blocked",
+            reason=str(exc),
+            required_input_or_grant="a provisioned witnessd home with pinned Depone metadata",
+            next_command="python3 -m orro setup --home <home> && python3 -m orro proofcheck --evidence-dir <dir> --home <home> --out <dir>/proofcheck-verdict.json",
         )
         return 2
 
@@ -952,27 +975,36 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
 
     evidence_arg = args.evidence_dir_option or args.evidence_dir
     if not evidence_arg:
-        _emit_orro_error(
+        _base_emit_orro_error(
             args,
             code="ERR_ORRO_HANDOFF_INPUT_REQUIRED",
             message="evidence directory is required",
+            reason="handoff cannot run without the evidence directory",
+            required_input_or_grant="--evidence-dir <dir>",
+            next_command="python3 -m orro handoff --evidence-dir <dir> --home <home> --out <dir>/orro-handoff.json",
         )
         return 2
     evidence_dir = Path(evidence_arg).resolve(strict=False)
     if not evidence_dir.is_dir():
-        _emit_orro_error(
+        _base_emit_orro_error(
             args,
             code="ERR_ORRO_HANDOFF_EVIDENCE_DIR_MISSING",
             message=f"evidence directory is missing: {evidence_dir}",
+            reason="handoff needs the exact persisted evidence directory",
+            required_input_or_grant="--evidence-dir <dir>",
+            next_command=f"python3 -m orro proofcheck {shlex.quote(str(evidence_dir))} --home {shlex.quote(str(evidence_dir.parent.parent))} --out {shlex.quote(str(evidence_dir / 'proofcheck-verdict.json'))}",
         )
         return 2
 
     proofcheck_path = evidence_dir / "proofcheck-verdict.json"
     if not proofcheck_path.is_file():
-        _emit_orro_error(
+        _base_emit_orro_error(
             args,
             code="ERR_ORRO_HANDOFF_PROOFCHECK_REQUIRED",
             message="proofcheck-verdict.json is required before handoff",
+            reason="run proofcheck for this evidence directory before handoff",
+            required_input_or_grant="a persisted evidence directory with team-ledger.json",
+            next_command=_proofcheck_next_command(evidence_dir, Path(args.home).resolve(strict=False) if args.home else None),
         )
         return 1
     try:
@@ -992,10 +1024,13 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         )
         return 1
     if proofcheck_payload.get("decision") != "pass":
-        _emit_orro_error(
+        _base_emit_orro_error(
             args,
             code="ERR_ORRO_HANDOFF_PROOFCHECK_NOT_PASS",
             message="proofcheck-verdict.json decision must be pass",
+            reason="inspect proofcheck-verdict.json and rerun the failing proofcheck step before handoff",
+            required_input_or_grant="a passing proofcheck verdict bound to this evidence directory",
+            next_command=_proofcheck_next_command(evidence_dir, Path(args.home).resolve(strict=False) if args.home else None),
         )
         return 1
     home = Path(args.home).resolve(strict=False) if args.home else None
@@ -1034,17 +1069,23 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
     expected_binding = _proofcheck_binding(evidence_dir, out_path=out_path)
     proofcheck_binding = proofcheck_payload.get("orro_binding")
     if not isinstance(proofcheck_binding, dict):
-        _emit_orro_error(
+        _base_emit_orro_error(
             args,
             code="ERR_ORRO_HANDOFF_PROOFCHECK_UNBOUND",
             message="proofcheck-verdict.json must include an ORRO proofcheck binding",
+            reason="rerun proofcheck against this evidence directory to create the binding",
+            required_input_or_grant="a proofcheck verdict bound to this evidence directory",
+            next_command=_proofcheck_next_command(evidence_dir, Path(args.home).resolve(strict=False) if args.home else None),
         )
         return 1
     if proofcheck_binding != expected_binding:
-        _emit_orro_error(
+        _base_emit_orro_error(
             args,
             code="ERR_ORRO_HANDOFF_PROOFCHECK_BINDING_MISMATCH",
             message="proofcheck-verdict.json does not match this evidence directory",
+            reason="rerun proofcheck against this evidence directory; do not bypass the binding check",
+            required_input_or_grant="a proofcheck verdict bound to this evidence directory",
+            next_command=_proofcheck_next_command(evidence_dir, Path(args.home).resolve(strict=False) if args.home else None),
         )
         return 1
 

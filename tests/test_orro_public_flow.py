@@ -2155,8 +2155,7 @@ class OrroPublicFlowTests(unittest.TestCase):
         help_result = self._orro_module_run([])
 
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
-        self.assertIn("deprecated", help_result.stderr)
-        self.assertIn("ORRO package", help_result.stderr)
+        self.assertNotIn("deprecated", help_result.stderr)
         self.assertIn("ORRO Flow", help_result.stdout)
         self.assertIn("init", help_result.stdout)
         self.assertIn("report", help_result.stdout)
@@ -3002,7 +3001,7 @@ class OrroPublicFlowTests(unittest.TestCase):
 
     def test_orro_handoff_requires_explicit_passing_proofcheck_verdict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            _home, run_dir, _payload = self._proofrun(Path(tmp))
+            home, run_dir, _payload = self._proofrun(Path(tmp))
             out = run_dir / "orro-handoff.json"
 
             stdout = io.StringIO()
@@ -3011,10 +3010,11 @@ class OrroPublicFlowTests(unittest.TestCase):
 
             self.assertEqual(code, 1)
             self.assertFalse(out.exists())
-            self.assertEqual(
-                json.loads(stdout.getvalue())["error"]["code"],
-                "ERR_ORRO_HANDOFF_PROOFCHECK_REQUIRED",
-            )
+            error = json.loads(stdout.getvalue())["error"]
+            self.assertEqual(error["code"], "ERR_ORRO_HANDOFF_PROOFCHECK_REQUIRED")
+            self.assertIn(str(run_dir), error["next_command"])
+            self.assertIn(str(home), error["next_command"])
+            self.assertIn("proofcheck", error["next_command"])
 
     def test_handoff_rejects_malformed_proofcheck_verdict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3067,10 +3067,10 @@ class OrroPublicFlowTests(unittest.TestCase):
 
                     self.assertEqual(code, 1)
                     self.assertFalse(out.exists())
-                    self.assertEqual(
-                        json.loads(stdout.getvalue())["error"]["code"],
-                        "ERR_ORRO_HANDOFF_PROOFCHECK_NOT_PASS",
-                    )
+                    error = json.loads(stdout.getvalue())["error"]
+                    self.assertEqual(error["code"], "ERR_ORRO_HANDOFF_PROOFCHECK_NOT_PASS")
+                    self.assertIn("inspect", error["reason"])
+                    self.assertIn("proofcheck", error["next_command"])
 
     def test_handoff_rejects_unbound_passing_proofcheck_verdict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3087,10 +3087,9 @@ class OrroPublicFlowTests(unittest.TestCase):
 
             self.assertEqual(code, 1)
             self.assertFalse(out.exists())
-            self.assertEqual(
-                json.loads(stdout.getvalue())["error"]["code"],
-                "ERR_ORRO_HANDOFF_PROOFCHECK_UNBOUND",
-            )
+            error = json.loads(stdout.getvalue())["error"]
+            self.assertEqual(error["code"], "ERR_ORRO_HANDOFF_PROOFCHECK_UNBOUND")
+            self.assertIn(str(run_dir), error["next_command"])
 
     def test_handoff_rejects_stale_passing_proofcheck_verdict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3127,10 +3126,9 @@ class OrroPublicFlowTests(unittest.TestCase):
 
             self.assertEqual(code, 1)
             self.assertFalse(out.exists())
-            self.assertEqual(
-                json.loads(stdout.getvalue())["error"]["code"],
-                "ERR_ORRO_HANDOFF_PROOFCHECK_BINDING_MISMATCH",
-            )
+            error = json.loads(stdout.getvalue())["error"]
+            self.assertEqual(error["code"], "ERR_ORRO_HANDOFF_PROOFCHECK_BINDING_MISMATCH")
+            self.assertIn(str(second_run_dir), error["next_command"])
 
     def test_handoff_ignores_non_object_optional_decision_ref_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3211,10 +3209,9 @@ class OrroPublicFlowTests(unittest.TestCase):
 
             self.assertEqual(code, 2)
             self.assertEqual(stderr.getvalue(), "")
-            self.assertEqual(
-                json.loads(stdout.getvalue())["error"]["code"],
-                "ERR_WITNESSD_DEPONE_PIN_MISSING",
-            )
+            error = json.loads(stdout.getvalue())["error"]
+            self.assertEqual(error["code"], "ERR_ORRO_VERIFIER_READINESS_BLOCKED")
+            self.assertIn("ERR_WITNESSD_DEPONE_PIN_MISSING", error["reason"])
 
     def test_verify_family_failure_includes_structured_remediation(self) -> None:
         stdout = io.StringIO()

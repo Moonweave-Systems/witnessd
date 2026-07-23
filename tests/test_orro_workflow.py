@@ -653,15 +653,20 @@ class OrroWorkflowTests(unittest.TestCase):
             self.assertEqual(error["code"], "ERR_ORRO_ROLE_LANE_WRITE_SCOPE_REQUIRED")
             self.assertEqual(
                 error["reason"],
-                "code-change proofrun lanes need a concrete write_scope from the rolepack",
+                "code-change proofrun lanes need a concrete write_scope: "
+                "--write-scope '<glob>' (repeatable, direct grant), or a rolepack "
+                "via orro team init ... --rolepack-file; docs-only work can use "
+                "--profile docs-change instead",
             )
             self.assertEqual(
                 error["required_input_or_grant"],
-                "a rolepack granting the role's write_scope",
+                "--write-scope '<glob>' (repeatable, direct grant), or a rolepack "
+                "via orro team init ... --rolepack-file",
             )
-            self.assertIn("team init --template developer", error["next_command"])
+            self.assertIn("python3 -m orro flowplan", error["next_command"])
             self.assertIn("--write-scope '<glob>'", error["next_command"])
-            self.assertIn("--model-policy default", error["next_command"])
+            self.assertNotIn("team init --template developer", error["next_command"])
+            self.assertIn("docs-only work can use --profile docs-change instead", error["reason"])
 
     def test_flowplan_write_scope_generates_rolepack_for_code_change(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

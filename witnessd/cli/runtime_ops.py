@@ -182,7 +182,7 @@ def _cmd_faultkit(args: argparse.Namespace) -> int:
             return 1 if exc.reason == "budget_exceeded" else 2
         _emit_orro_error(
             args,
-            code="budget_blowout_not_reproduced",
+            code="ERR_ORRO_BUDGET_BLOWOUT_NOT_REPRODUCED",
             message="faultkit did not reproduce the expected budget blocker",
             reason="the adapter lane completed without raising a budget-exceeded block",
             required_input_or_grant="a budget configuration that exceeds the lane limit",

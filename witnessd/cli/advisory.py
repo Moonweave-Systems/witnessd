@@ -16,6 +16,36 @@ from witnessd.cli._output import (
 from witnessd.__main__ import main
 
 
+def _select_latest_run(args: argparse.Namespace, *, command: str) -> tuple[Path | None, Path | None]:
+    from witnessd.cli.status import latest_run_dir, resolve_home
+
+    if args.latest and args.run_dir:
+        _base_emit_orro_error(
+            args,
+            code=f"ERR_ORRO_{command.upper()}_RUN_DIR_CONFLICT",
+            message=f"orro {command} --latest cannot be combined with a run directory",
+            reason="choose one run directory source",
+            required_input_or_grant="either --latest or <run-dir>, not both",
+            next_command=f"python3 -m orro {command} --latest --home <home> --json",
+        )
+        return None, None
+    if args.latest:
+        home = resolve_home(args.home, Path.cwd())
+        run_dir = latest_run_dir(home)
+        if run_dir is None:
+            _base_emit_orro_error(
+                args,
+                code=f"ERR_ORRO_{command.upper()}_LATEST_NO_RUNS",
+                message=f"no ORRO runs found under {home / 'runs'}",
+                reason=f"the latest run lookup searched {home / 'runs'}",
+                required_input_or_grant="a run directory under <home>/runs",
+                next_command=f"python3 -m orro {command} <run-dir> --home {home} --json",
+            )
+            return None, home
+        return run_dir, home
+    return (Path(args.run_dir).resolve(strict=False) if args.run_dir else None), None
+
+
 ADVISORY_REMEDIATION = {
     "orro-next": (
         "continuation needs a readable run directory with valid persisted ORRO artifacts",
@@ -100,15 +130,17 @@ def _with_advisory_error(
 def _cmd_orro_next(args: argparse.Namespace) -> int:
     from witnessd.orro_next import OrroNextError, decide_next, write_decision
 
-    if not args.run_dir:
+    run_dir, latest_home = _select_latest_run(args, command="next")
+    if args.latest and run_dir is None:
+        return 2
+    if not run_dir:
         _emit_orro_error(
             args,
             code="ERR_ORRO_NEXT_INPUT_REQUIRED",
             message="run directory is required",
         )
         return 2
-    run_dir = Path(args.run_dir).resolve(strict=False)
-    home = Path(args.home).resolve(strict=False) if args.home else None
+    home = latest_home or (Path(args.home).resolve(strict=False) if args.home else None)
     code, payload = decide_next(run_dir, home=home)
     if args.out:
         try:
@@ -280,15 +312,17 @@ def _cmd_orro_report(args: argparse.Namespace) -> int:
         write_report,
     )
 
-    if not args.run_dir:
+    run_dir, latest_home = _select_latest_run(args, command="report")
+    if args.latest and run_dir is None:
+        return 2
+    if not run_dir:
         _emit_orro_error(
             args,
             code="ERR_ORRO_REPORT_INPUT_REQUIRED",
             message="run directory is required",
         )
         return 2
-    run_dir = Path(args.run_dir).resolve(strict=False)
-    home = Path(args.home).resolve(strict=False) if args.home else None
+    home = latest_home or (Path(args.home).resolve(strict=False) if args.home else None)
     workstyle = (
         Path(args.workstyle_decision).resolve(strict=False)
         if args.workstyle_decision
@@ -388,6 +422,16 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
             message="choose exactly one of --dry-run, --once, --until-complete, or --run-item",
         )
         return 2
+    if args.latest and args.run_dir:
+        _base_emit_orro_error(
+            args,
+            code="ERR_ORRO_AUTO_RUN_DIR_CONFLICT",
+            message="orro auto --latest cannot be combined with a run directory",
+            reason="choose one run directory source",
+            required_input_or_grant="either --latest or <run-dir>, not both",
+            next_command="python3 -m orro auto --latest --dry-run --home <home> --json",
+        )
+        return 2
     if run_item:
         if args.run_dir:
             _emit_orro_error(
@@ -461,15 +505,17 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
             message="orro auto --until-complete supports --max-steps 1 or 2 in v0",
         )
         return 2
-    if not args.run_dir:
+    run_dir, latest_home = _select_latest_run(args, command="auto")
+    if args.latest and run_dir is None:
+        return 2
+    if not run_dir:
         _emit_orro_error(
             args,
             code="ERR_ORRO_AUTO_INPUT_REQUIRED",
             message="run directory is required",
         )
         return 2
-    run_dir = Path(args.run_dir).resolve(strict=False)
-    home = Path(args.home).resolve(strict=False) if args.home else None
+    home = latest_home or (Path(args.home).resolve(strict=False) if args.home else None)
     code, payload = build_auto_plan(run_dir, home=home)
     if args.dry_run and args.out:
         try:
