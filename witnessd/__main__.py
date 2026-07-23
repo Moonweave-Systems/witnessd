@@ -551,6 +551,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_status.add_argument("--home", default=None)
     orro_status.add_argument("--out", default=None)
     orro_status.add_argument("--workstyle-decision", default=None)
+    orro_status.add_argument("--intent", default=None, help=argparse.SUPPRESS)
     orro_status.add_argument("--_deprecated-alias", dest="_deprecated_alias", default=None, help=argparse.SUPPRESS)
     orro_status.add_argument("--json", action="store_true")
     orro_status.set_defaults(func=_cli_handler("status", "_cmd_orro_status"))
@@ -1138,11 +1139,19 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    argv = _normalize_run_goal_argv(
-        _normalize_orro_argv(
-            _normalize_superflow_argv(list(sys.argv[1:] if argv is None else argv))
-        )
-    )
+    raw_argv = _normalize_superflow_argv(list(sys.argv[1:] if argv is None else argv))
+    normalized_orro = _normalize_orro_argv(raw_argv)
+    alias_help = raw_argv[0:2] in (
+        ["orro", "next"],
+        ["orro", "report"],
+        ["orro", "sketch"],
+        ["orro", "trace"],
+    ) and "--help" in raw_argv[2:]
+    if raw_argv[:2] in (["orro", "next"], ["orro", "report"], ["orro", "sketch"], ["orro", "trace"]) and not alias_help:
+        normalized_orro = _normalize_orro_alias_argv(raw_argv)
+    elif alias_help:
+        normalized_orro = [ORRO_COMMAND_MAP[raw_argv[1]], *raw_argv[2:]]
+    argv = _normalize_run_goal_argv(normalized_orro)
     parser = _build_parser()
     args = parser.parse_args(argv)
     # argparse.REMAINDER keeps a leading "--"; drop it so command is the argv.
@@ -1211,21 +1220,28 @@ PUBLIC_COMMAND_SUMMARIES: dict[str, str] = {
     "handoff": "maintainer review package gated by proofcheck-verdict.json",
     "doctor": "ORRO engine/verifier readiness; not runlog health or evidence verification",
     "engine-lock": "write/check distribution metadata for pinned engine commits",
-    "lock": "alias for engine-lock",
-    "next": "non-executing continuation gate over persisted run artifacts",
-    "advise": "non-executing workstyle router for the smallest safe workflow",
-    "sketch": "validate and seal an agent-authored advisory direction",
-    "trace": "validate, gate, and seal an agent-authored root-cause record",
-    "report": "human-facing summary of observed ORRO artifacts and next action",
+    "lock": "(deprecated alias for engine-lock)",
+    "next": "(deprecated alias for auto --dry-run)",
+    "advise": "non-executing workstyle router; auto-selects sketch/trace for new work or symptoms; --mode overrides",
     "review": "advisory read-only reviewer lanes; not proof or assurance",
     "check": "companion: verify (Depone verdict) plus read-only review; not observed execution",
     "demo": "AI-free shell guardrail demo with Depone scope-conformance result",
-    "status": "roadmap-bound observed state; not proof, approval, or assurance",
+    "status": "roadmap status, or a run-scoped report with <run-dir> or --latest",
     "tidy": "dry-run worktree inventory; apply removes only safe eligible worktrees",
     "task": "manage roadmap task lifecycle metadata; not proof or merge approval",
     "auto": "dry-run, one-step, bounded post-run, or bounded item-chain automation",
     "flow": "guided init/scout/flowplan/proofrun/proofcheck with gated blockers",
     "team": "scaffold team config or run flowplan/proofrun/proofcheck/report",
+    "sketch": "(deprecated alias for advise --mode sketch)",
+    "trace": "(deprecated alias for advise --mode trace)",
+    "report": "(deprecated alias for status <run-dir>)",
+}
+ORRO_DEPRECATED_ALIASES: dict[str, str] = {
+    "lock": "engine-lock",
+    "next": "auto --dry-run",
+    "sketch": "advise --mode sketch",
+    "trace": "advise --mode trace",
+    "report": "status <run-dir>",
 }
 ORRO_COMMANDS: frozenset[str] = frozenset(ORRO_COMMAND_MAP)
 
@@ -1234,34 +1250,38 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
     if not argv or argv[0] != "orro":
         return argv
     if len(argv) >= 2 and argv[1] in ORRO_COMMAND_MAP:
-        command = argv[1]
-        normalized = [ORRO_COMMAND_MAP[command], *argv[2:]]
-        if command == "next":
-            return [
+        return [ORRO_COMMAND_MAP[argv[1]], *argv[2:]]
+    return argv
+
+
+def _normalize_orro_alias_argv(argv: list[str]) -> list[str]:
+    command = argv[1]
+    normalized = [ORRO_COMMAND_MAP[command], *argv[2:]]
+    if command == "next":
+        return [
                 "orro-auto",
                 "--dry-run",
                 "--_deprecated-alias",
                 "next",
                 *argv[2:],
-            ]
-        if command == "report":
-            return [
+        ]
+    if command == "report":
+        return [
                 "orro-status",
                 "--_deprecated-alias",
                 "report",
                 *argv[2:],
-            ]
-        if command in {"sketch", "trace"}:
-            return [
+        ]
+    if command in {"sketch", "trace"}:
+        return [
                 "orro-advise",
                 "--mode",
                 command,
                 "--_deprecated-alias",
                 command,
                 *argv[2:],
-            ]
-        return normalized
-    return argv
+        ]
+    return normalized
 
 
 if __name__ == "__main__":

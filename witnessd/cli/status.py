@@ -63,13 +63,19 @@ def _cmd_orro_status(args: argparse.Namespace) -> int:
             if args.workstyle_decision
             else None
         )
+        from witnessd.orro_intent import read_declared_intent
+
+        declared_intent = (
+            read_declared_intent(Path(args.intent)) if args.intent else None
+        )
+        intent_source = Path(args.intent).resolve(strict=False) if args.intent else None
         try:
             code, payload = build_report(
                 run_dir,
                 home=home,
                 workstyle_decision=workstyle,
-                declared_intent=None,
-                declared_intent_source=None,
+                declared_intent=declared_intent,
+                declared_intent_source=intent_source,
             )
             if args.out:
                 write_report(Path(args.out).resolve(strict=False), payload)

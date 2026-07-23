@@ -603,93 +603,34 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
             )
             self.assertFalse(payload["recommended_fix_scope"]["fix_proposal_allowed"])
 
-    def test_skillpacks_cite_researched_methods_and_external_signal_rule(self) -> None:
+    def test_skillpacks_point_to_consolidated_advisory_surface(self) -> None:
         root = Path(__file__).resolve().parents[1]
         sketch = (root / "orro" / "skillpacks" / "sketch.md").read_text(encoding="utf-8")
         trace = (root / "orro" / "skillpacks" / "trace.md").read_text(encoding="utf-8")
-        required_sketch_sources = (
-            "designcouncil.org.uk/resources/the-double-diamond",
-            "workingbackwards.com",
-            "basecamp.com/shapeup/1.1-chapter-02",
-            "github.com/rust-lang/rfcs",
-            "dspace.mit.edu/handle/1721.1/49448",
-            "cognitect.com/blog/2011/11/15/documenting-architecture-decisions",
-            "arxiv.org/abs/2203.11171",
-            "arxiv.org/abs/2305.10601",
-            "arxiv.org/abs/2308.09687",
-        )
-        required_trace_sources = (
-            "queue.acm.org/detail.cfm?id=1217270",
-            "git-scm.com/docs/git-bisect",
-            "debuggingrules.com",
-            "arxiv.org/abs/2309.11495",
-            "arxiv.org/abs/2210.03629",
-            "arxiv.org/abs/2303.11366",
-            "arxiv.org/abs/2407.01489",
-            "arxiv.org/abs/2404.05427",
-        )
-        researched_skillpacks_present = all(
-            (
-                all(url in sketch for url in required_sketch_sources),
-                all(url in trace for url in required_trace_sources),
-                "stated confidence is not evidence" in sketch.lower(),
-                "stated confidence is not evidence" in trace.lower(),
-                "arxiv.org/abs/2310.01798" in sketch,
-                "arxiv.org/abs/2310.01798" in trace,
-                "reference knowledge" in sketch.lower(),
-                "reference knowledge" in trace.lower(),
-                "--decision" in sketch,
-                "--decision" in trace,
-                "does not author" in sketch.lower(),
-                "does not author" in trace.lower(),
-            )
-        )
-        self.assertTrue(researched_skillpacks_present)
+        self.assertIn("orro advise", sketch)
+        self.assertIn("--mode sketch", sketch)
+        self.assertIn("deprecated alias", sketch)
+        self.assertIn("orro advise", trace)
+        self.assertIn("--mode trace", trace)
+        self.assertIn("deprecated alias", trace)
 
-    def test_public_help_lists_both_advisory_surfaces(self) -> None:
+    def test_public_help_teaches_consolidated_advisory_surface(self) -> None:
         stdout = io.StringIO()
         with redirect_stdout(stdout):
             with self.assertRaises(SystemExit) as raised:
-                main(["orro", "sketch", "--help"])
+                main(["orro", "advise", "--help"])
         self.assertEqual(raised.exception.code, 0)
-        sketch_help = stdout.getvalue()
-        self.assertIn("advisory", sketch_help.lower())
-        self.assertIn("--decision DECISION_JSON_PATH", sketch_help)
-        self.assertIn("path to a JSON file", sketch_help)
-        self.assertIn("frame", sketch_help)
-        self.assertIn("candidates", sketch_help)
-        self.assertIn("tests/fixtures/orro-sketch-decision.json", sketch_help)
-        self.assertIn("--intent INTENT_JSON_PATH", sketch_help)
-        self.assertIn("tests/fixtures/orro-declared-intent.json", sketch_help)
+        advise_help = stdout.getvalue()
+        self.assertIn("--mode {auto,route,sketch,trace}", advise_help)
+        self.assertNotIn("DECISION_JSON_PATH", advise_help)
 
         stdout = io.StringIO()
         with redirect_stdout(stdout):
-            with self.assertRaises(SystemExit) as raised:
-                main(["orro", "trace", "--help"])
-        self.assertEqual(raised.exception.code, 0)
-        trace_help = stdout.getvalue()
-        self.assertIn("root cause", trace_help.lower())
-        self.assertIn("--decision DECISION_JSON_PATH", trace_help)
-        self.assertIn("path to a JSON file", trace_help)
-        for field in (
-            "check_the_plug",
-            "reproduction",
-            "localization",
-            "hypotheses",
-            "confirmation",
-            "fix_scope",
-            "root_cause",
-            "unconfirmed",
-        ):
-            with self.subTest(field=field):
-                self.assertIn(field, trace_help)
-
-        stdout = io.StringIO()
-        with redirect_stdout(stdout):
-            with self.assertRaises(SystemExit) as raised:
-                main(["--help"])
-        self.assertEqual(raised.exception.code, 0)
-        self.assertIn("Depone v110", stdout.getvalue())
+            self.assertEqual(orro_main(["--help"]), 0)
+        help_text = stdout.getvalue()
+        self.assertIn("Deprecated aliases:", help_text)
+        self.assertIn("next -> auto --dry-run", help_text)
+        self.assertIn("report -> status <run-dir>", help_text)
 
     def test_sketch_decision_rejects_inline_prose_with_actionable_schema(self) -> None:
         stdout = io.StringIO()

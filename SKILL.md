@@ -29,16 +29,13 @@ The cross-engine artifact boundary is summarized in
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo exploration and context-pack creation |
-| `orro sketch` | advisory ideation: frame, diverge, converge, and hand one direction to flowplan |
-| `orro trace` | advisory root-cause investigation before a fix flowplan |
 | `orro advisory-provenance-check` | offline Depone re-derivation of sealed sketch/trace provenance; not correctness |
 | `orro flow` | guided init/scout/flowplan/proofrun/proofcheck with structured blockers |
 | `orro flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
 | `orro proofrun` | precise evidence-backed execution alias |
 | `orro proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
-| `orro next` | non-executing continuation gate over persisted run artifacts |
-| `orro report` | human-facing summary of observed artifacts and next safe action |
+| `orro status` | roadmap status, or a run-scoped report with `<run-dir>` or `--latest` |
 | `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
 | `orro check` | companion: deterministic verify (Depone verdict) + read-only review (advisory); spawns zero execution-adapter lanes; does not claim observed execution |
 | `orro demo` | AI-free deterministic shell guardrail demo; Depone re-derives write-scope PASS/FAIL |
@@ -127,23 +124,15 @@ assurance. It helps non-developers avoid wasteful or risky AI workflows, but it
 does not replace proofrun, proofcheck, handoff, or human review for risky
 changes.
 
-`python3 -m orro sketch "<goal>" --repo <repo> --home .witnessd --json`
-frames the problem, compares distinct candidate approaches, selects one with a
-repository-grounded rationale, and gives each unresolved decision branch one
-recommended answer. Its `orro-sketch` output includes an `orro-flowplan-input`
-handoff whose goal can be passed to `orro flowplan`.
+`python3 -m orro advise "<goal>" --repo <repo> --home .witnessd --json` routes
+workstyle advice and automatically emits the existing `orro-sketch` artifact for
+new-work goals or the existing `orro-trace` artifact for symptom-shaped goals.
+Use `--mode route|sketch|trace` to select the route explicitly. These advisory
+paths remain non-executing and preserve their existing artifact schemas.
 
-`python3 -m orro trace "<goal-or-symptom>" --repo <repo> --home .witnessd --json`
-orders investigation as observe -> reproduce/localize -> hypothesize -> confirm
-root cause. Missing reproduction or confirmation evidence keeps root cause
-unconfirmed and blocks a fix proposal; a later confirmed result can seed a fix
-flowplan and proofrun.
-
-Both are advisory only. They do not mutate the repo, execute commands or
-workers, call Depone, launch proofrun, verify evidence, change an evidence
-verdict, approve work, or raise assurance. Their ORRO-native methods live under
-`orro/skillpacks/` for frontmatter-selected progressive disclosure. The
-external `superpowers` plugin remains untouched as an independent dual path.
+The old `sketch` and `trace` commands remain deprecated aliases for one release.
+Their skillpack files are migration pointers; the external `superpowers` plugin
+remains untouched as an independent dual path.
 
 For deterministic repository health gates and bounded fixer guidance, load
 `orro/skillpacks/code-health.md`. For roadmap status, tidy retention, task
@@ -231,28 +220,17 @@ observation remains ignore-blind, and review lanes still fail on any real
 touched file. This is best-effort coverage for Python development tools;
 caches from other toolchains remain observed and enforced.
 
-`python3 -m orro next <run-dir> --home .witnessd --json` reads persisted
-artifacts and recommends the next safe action. It does not run proofcheck,
-launch workers, retry lanes, repair evidence, write handoff, verify evidence,
-approve merge, or raise assurance. `needs-proofcheck` means run proofcheck next;
-`ready-for-handoff` means a passing bound proofcheck verdict exists; `complete`
-means handoff exists after proofcheck pass. Role status is derived from observed
-artifacts only and is not proof. Malformed workflow bindings, role-lane
-bindings, role dispatch, team ledgers, and team-ledger verdicts block
-continuation instead of counting as execution evidence.
-
-`python3 -m orro report <run-dir> --home .witnessd --json` is the human-facing
-compression layer. It summarizes observed artifacts, proofcheck and handoff
-state, next safe action, reviewer focus, and do-not-trust boundaries. It does
-not execute, run proofcheck, write handoff, verify evidence, approve merge,
-raise assurance, replace proofcheck, or replace human review.
-
 `python3 -m orro auto --dry-run <run-dir> --home .witnessd --json` consumes
-`orro next` state and emits an `orro-auto-plan` with the exact command it would
-run next. It does not run proofcheck, call Depone, launch workers, write
-handoff, mutate worktrees, approve merge, verify evidence, or raise assurance.
-The auto-plan is recommendation context only, not proof. `orro auto` without
-exactly one mode must fail closed.
+the continuation state and emits an `orro-auto-plan` with the decision, observed
+artifact summary, allowed next commands, and the exact command it would run next.
+It does not run proofcheck, call Depone, launch workers, write handoff, mutate
+worktrees, approve merge, verify evidence, or raise assurance. The `next` command
+is a deprecated alias for this mode.
+
+`python3 -m orro status <run-dir> --home .witnessd --json` renders the existing
+human-facing report for one run; `--latest` selects the newest run. Plain
+`status` remains the roadmap view. The `report` command is a deprecated alias
+for the run-scoped status view.
 
 `python3 -m orro auto --once <run-dir> --home .witnessd --json` re-checks
 continuation state and executes at most one allowed step. In v0 that means
