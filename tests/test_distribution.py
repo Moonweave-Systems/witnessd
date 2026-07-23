@@ -1,6 +1,5 @@
 import io
 import hashlib
-import importlib.metadata
 import json
 import os
 import stat
@@ -16,6 +15,7 @@ from witnessd.__main__ import main
 from witnessd.distribution import (
     DEFAULT_DEPONE_REF,
     ERR_WITNESSD_DEPONE_PIN_MISMATCH,
+    WITNESSD_PACKAGE_VERSION_FALLBACK,
     InitConfig,
     ProvisionError,
     classify_depone_pin_state,
@@ -25,7 +25,26 @@ from witnessd.distribution import (
 )
 
 
+def _expected_witnessd_version() -> str:
+    import importlib.metadata
+
+    try:
+        return importlib.metadata.version("witnessd")
+    except importlib.metadata.PackageNotFoundError:
+        return WITNESSD_PACKAGE_VERSION_FALLBACK
+
+
 class DistributionInitTests(unittest.TestCase):
+    def test_version_fallback_matches_packaged_version(self) -> None:
+        setup_text = (Path(__file__).resolve().parents[1] / "setup.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            f'version="{WITNESSD_PACKAGE_VERSION_FALLBACK}"',
+            setup_text,
+            "WITNESSD_PACKAGE_VERSION_FALLBACK must match setup.py version",
+        )
+
     def test_default_depone_ref_pins_v023_lane_intent_support(self) -> None:
         self.assertEqual(
             DEFAULT_DEPONE_REF,
@@ -156,7 +175,7 @@ class DistributionInitTests(unittest.TestCase):
                 {
                     "repository": "Moonweave-Systems/witnessd",
                     "commit": None,
-                    "version": importlib.metadata.version("witnessd"),
+                    "version": _expected_witnessd_version(),
                     "source": "pip-package",
                 },
             )
