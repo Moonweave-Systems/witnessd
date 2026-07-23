@@ -33,6 +33,15 @@ def _cmd_init(args: argparse.Namespace) -> int:
             )
         )
     except ProvisionError as exc:
+        remediation = [
+            "python3", "-m", "witnessd", "init", "--repo", str(args.repo)
+        ]
+        if args.depone_root:
+            remediation.extend(["--depone-root", str(args.depone_root)])
+        if args.allow_network:
+            remediation.append("--allow-network")
+        elif not args.depone_root:
+            remediation.extend(["--depone-root", "<depone-checkout>"])
         _emit_orro_error(
             args,
             code=exc.code,
@@ -41,11 +50,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
             required_input_or_grant=(
                 "--depone-root <depone-checkout> or --allow-network"
             ),
-            next_command=(
-                "python3 -m witnessd init "
-                f"--repo {shlex.quote(str(args.repo))} "
-                "--depone-root <depone-checkout>"
-            ),
+            next_command=shlex.join(remediation),
         )
         return 2
     except RolepackError as exc:

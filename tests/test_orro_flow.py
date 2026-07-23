@@ -105,6 +105,48 @@ class OrroFlowTests(unittest.TestCase):
                 "ERR_TEST_INIT_BLOCKED",
             )
 
+    def test_flow_reuses_a_valid_provisioned_home(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "target-repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            home = root / "home"
+            home.mkdir()
+            calls: list[list[str]] = []
+
+            def invoke(argv: list[str]) -> tuple[int, object, str]:
+                calls.append(argv)
+                return 2, {"error": {"code": "ERR_TEST_SCOUT_BLOCKED"}}, ""
+
+            with (
+                patch("witnessd.distribution.validate_depone_pin", return_value={}),
+                patch("witnessd.cli.flow._invoke_orro_flow_phase", side_effect=invoke),
+            ):
+                code = main(
+                    [
+                        "orro",
+                        "flow",
+                        "make a change",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--write-scope",
+                        "pkg/**",
+                        "--adapter",
+                        "codex",
+                        "--depone-root",
+                        "/tmp/depone",
+                        "--allow-network",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2)
+            self.assertTrue(calls)
+            self.assertEqual(calls[0][0], "scout")
+
     def test_missing_write_scope_is_a_structured_flowplan_blocker(self) -> None:
         stdout = io.StringIO()
         stderr = io.StringIO()

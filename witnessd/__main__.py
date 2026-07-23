@@ -47,6 +47,7 @@ def _build_parser() -> argparse.ArgumentParser:
     init.add_argument("--depone-repository", default=None)
     init.add_argument("--depone-ref", default=None)
     init.add_argument("--team", default=None)
+    init.add_argument("--json", action="store_true", help="emit machine-readable output")
     init.add_argument(
         "--allow-network",
         action="store_true",
@@ -58,11 +59,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "orro-setup",
         help=argparse.SUPPRESS,
     )
-    orro_setup.add_argument("--home", default=".witnessd")
-    orro_setup.add_argument("--depone-root", default=None)
-    orro_setup.add_argument("--depone-repository", default=None)
-    orro_setup.add_argument("--depone-ref", default=None)
-    orro_setup.add_argument("--json", action="store_true")
+    orro_setup.add_argument("--home", default=".witnessd", help="witnessd home directory")
+    orro_setup.add_argument("--depone-root", default=None, help="use this pinned Depone checkout")
+    orro_setup.add_argument("--depone-repository", default=None, help="clone Depone from this repository during setup")
+    orro_setup.add_argument("--depone-ref", default=None, help="pin setup-time Depone provisioning to this ref")
+    orro_setup.add_argument("--json", action="store_true", help="emit machine-readable output")
     orro_setup.add_argument(
         "--yes",
         action="store_true",
@@ -482,6 +483,8 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["shell", "codex", "claude", "agy", "gemini", "opencode"],
     )
     orro_flow.add_argument("--home", default=None)
+    orro_flow.add_argument("--depone-root", default=None, help="pass a local Depone checkout to the init phase")
+    orro_flow.add_argument("--allow-network", action="store_true", help="allow setup-time network provisioning in the init phase")
     orro_flow.add_argument(
         "--runner-sandbox",
         default=None,

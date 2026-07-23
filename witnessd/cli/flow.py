@@ -45,6 +45,11 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
     from witnessd.cli.status import resolve_home
 
     home = resolve_home(args.home, repo)
+    if not args.home and not os.environ.get("WITNESSD_HOME"):
+        for candidate in (repo / ".w", repo / ".witnessd"):
+            if (candidate / "provision.json").is_file():
+                home = candidate.resolve(strict=False)
+                break
     run_dir = (
         Path(args.run_dir).resolve(strict=False)
         if args.run_dir
@@ -148,28 +153,45 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
         else run_dir / "generated-rolepack.json"
     )
 
-    init_argv = ["init", "--home", str(home), "--repo", str(repo)]
-    init_code, init_payload, init_error = _invoke_orro_flow_phase(init_argv)
-    if init_code != 0:
-        return _emit_orro_flow_blocker(
-            args,
-            blocked_phase="init",
-            run_dir=run_dir,
-            phases=phases,
-            error=_orro_flow_phase_error(
-                phase="init",
-                argv=init_argv,
-                payload=init_payload,
-                fallback_message=init_error,
-            ),
+    from witnessd.distribution import ProvisionError, validate_depone_pin
+
+    try:
+        validate_depone_pin(home)
+    except ProvisionError:
+        init_argv = ["init", "--home", str(home), "--repo", str(repo)]
+        if args.depone_root:
+            init_argv.extend(["--depone-root", str(args.depone_root)])
+        if args.allow_network:
+            init_argv.append("--allow-network")
+        init_code, init_payload, init_error = _invoke_orro_flow_phase(init_argv)
+        if init_code != 0:
+            return _emit_orro_flow_blocker(
+                args,
+                blocked_phase="init",
+                run_dir=run_dir,
+                phases=phases,
+                error=_orro_flow_phase_error(
+                    phase="init",
+                    argv=init_argv,
+                    payload=init_payload,
+                    fallback_message=init_error,
+                ),
+            )
+        phases.append(
+            {
+                "phase": "init",
+                "status": "ok",
+                "artifact": str(home / "provision.json"),
+            }
         )
-    phases.append(
-        {
-            "phase": "init",
-            "status": "ok",
-            "artifact": str(home / "provision.json"),
-        }
-    )
+    else:
+        phases.append(
+            {
+                "phase": "init",
+                "status": "reused",
+                "artifact": str(home / "provision.json"),
+            }
+        )
 
     scout_argv = [
         "scout",
