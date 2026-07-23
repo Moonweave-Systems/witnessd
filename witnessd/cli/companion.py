@@ -442,76 +442,25 @@ def _review_goal(goal: str, declared_intent: dict[str, Any] | None) -> str:
     return "\n".join(lines)
 
 
-def _cmd_orro_check(args: argparse.Namespace) -> int:
-    repo = Path(args.repo).resolve(strict=False) if args.repo else Path.cwd()
-    roadmap_item = getattr(args, "roadmap_item", None)
-    roadmap_step = getattr(args, "roadmap_step", None)
-    if roadmap_step is not None and roadmap_item is None:
-        return _emit_blocker(_structured_error(
-            code="ERR_ORRO_ROADMAP_STEP_REQUIRES_ITEM",
-            message="orro check received --roadmap-step without --roadmap-item",
-            reason="a step is scoped to one roadmap item",
-            required_input_or_grant="add --roadmap-item",
-            next_command="python3 -m orro check --roadmap-item <item> --roadmap-step <step>",
-        ))
-    if roadmap_item is not None:
-        try:
-            item = require_roadmap_item(repo, roadmap_item)
-            if roadmap_step is not None:
-                require_roadmap_step(repo, roadmap_item, roadmap_step, item=item)
-        except OrroRoadmapError as exc:
-            return _emit_blocker(
-                _structured_error(
-                    code=exc.code,
-                    message=(
-                        "orro check received an unknown roadmap step"
-                        if exc.code == "ERR_ORRO_ROADMAP_STEP_UNKNOWN"
-                        else "orro check received an unknown roadmap item"
-                    ),
-                    reason=str(exc),
-                    required_input_or_grant=(
-                        "a roadmap step id listed on the roadmap item"
-                        if exc.code == "ERR_ORRO_ROADMAP_STEP_UNKNOWN"
-                        else "a roadmap item id listed in .orro/roadmap.json"
-                    ),
-                    next_command=(
-                        "python3 -m orro status --repo <repo> --home <home>"
-                    ),
-                )
-            )
-    if args.apply and not args.fix:
-        return _emit_blocker(
-            _structured_error(
-                code="ERR_ORRO_HEALTH_APPLY_REQUIRES_FIX",
-                message="orro check --apply requires --fix",
-                reason="apply needs a fix lane to produce a verified diff",
-                required_input_or_grant="add --fix and --write-scope",
-                next_command=(
-                    "python3 -m orro check --health --fix "
-                    "--write-scope '<glob>' --apply --repo <repo>"
-                ),
-            )
-        )
+def _phase_bootstrap_health(
+    args: argparse.Namespace, repo: Path
+) -> tuple[int | None, dict[str, object] | None, bool, list[dict[str, object]], list[str]]:
+    """Seed, detect, and validate code-health inputs before execution."""
     bootstrap_report: dict[str, object] | None = None
     if args.init:
-        from witnessd.health_detect import (
-            ensure_health_profile,
-            seed_missing_gate_config,
-        )
+        from witnessd.health_detect import ensure_health_profile, seed_missing_gate_config
 
         try:
             config_report = seed_missing_gate_config(repo)
             _, profile_written = ensure_health_profile(repo)
         except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
-            return _emit_blocker(
-                _structured_error(
-                    code="ERR_ORRO_HEALTH_INIT_BLOCKED",
-                    message="orro check --init could not seed the health profile",
-                    reason=str(exc),
-                    required_input_or_grant="writable UTF-8 pyproject.toml and .orro",
-                    next_command="python3 -m orro check --health --init --repo <repo>",
-                )
-            )
+            return (_emit_blocker(_structured_error(
+                code="ERR_ORRO_HEALTH_INIT_BLOCKED",
+                message="orro check --init could not seed the health profile",
+                reason=str(exc),
+                required_input_or_grant="writable UTF-8 pyproject.toml and .orro",
+                next_command="python3 -m orro check --health --init --repo <repo>",
+            )), None, False, [], [])
         bootstrap_report = {
             "config": config_report,
             "profile": "written" if profile_written else "present",
@@ -522,33 +471,27 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
         try:
             promote_health_gates(repo, args.promote)
         except FileNotFoundError:
-            return _emit_blocker(
-                _structured_error(
-                    code="ERR_ORRO_HEALTH_NO_PROFILE",
-                    message="orro check --promote requires .orro/health.json",
-                    reason="run --init first",
-                    required_input_or_grant="a persisted health profile",
-                    next_command="python3 -m orro check --health --init --repo <repo>",
-                )
-            )
+            return (_emit_blocker(_structured_error(
+                code="ERR_ORRO_HEALTH_NO_PROFILE",
+                message="orro check --promote requires .orro/health.json",
+                reason="run --init first",
+                required_input_or_grant="a persisted health profile",
+                next_command="python3 -m orro check --health --init --repo <repo>",
+            )), None, False, [], [])
         except ValueError as exc:
-            return _emit_blocker(
-                _structured_error(
-                    code="ERR_ORRO_HEALTH_UNKNOWN_GATE",
-                    message="orro check --promote named an unknown health gate",
-                    reason=str(exc),
-                    required_input_or_grant="a gate named in .orro/health.json",
-                    next_command=("python3 -m orro check --health-plan --repo <repo>"),
-                )
-            )
+            return (_emit_blocker(_structured_error(
+                code="ERR_ORRO_HEALTH_UNKNOWN_GATE",
+                message="orro check --promote named an unknown health gate",
+                reason=str(exc),
+                required_input_or_grant="a gate named in .orro/health.json",
+                next_command="python3 -m orro check --health --health-plan --repo <repo>",
+            )), None, False, [], [])
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-            return _emit_blocker(
-                _structured_error(
-                    code="ERR_ORRO_HEALTH_PROFILE_INVALID",
-                    message="orro check could not update .orro/health.json",
-                    reason=str(exc),
-                )
-            )
+            return (_emit_blocker(_structured_error(
+                code="ERR_ORRO_HEALTH_PROFILE_INVALID",
+                message="orro check could not update .orro/health.json",
+                reason=str(exc),
+            )), None, False, [], [])
         if bootstrap_report is None:
             bootstrap_report = {}
         bootstrap_report["promoted"] = list(dict.fromkeys(args.promote))
@@ -562,67 +505,169 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
         try:
             health_gates = list(detect_health_gates(repo))
         except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
-            return _emit_blocker(
-                _structured_error(
-                    code="ERR_ORRO_HEALTH_PROFILE_INVALID",
-                    message="orro check could not read .orro/health.json",
-                    reason=str(exc),
-                )
-            )
+            return (_emit_blocker(_structured_error(
+                code="ERR_ORRO_HEALTH_PROFILE_INVALID",
+                message="orro check could not read .orro/health.json",
+                reason=str(exc),
+            )), None, False, [], [])
     if args.health_plan:
-        payload: dict[str, object] = {
-            "kind": "orro-health-plan",
-            "gates": health_gates,
-        }
+        payload: dict[str, object] = {"kind": "orro-health-plan", "gates": health_gates}
         if bootstrap_report is not None:
             payload["bootstrap"] = bootstrap_report
         print(json.dumps(payload, sort_keys=True))
-        return 0
+        return (0, bootstrap_report, health_mode, health_gates, [])
 
     checks = list(getattr(args, "check", None) or [])
     if health_mode and not health_gates:
-        return _emit_blocker(
-            _structured_error(
-                code="ERR_ORRO_HEALTH_NO_GATES_DETECTED",
-                message="orro check --health detected no configured health gates",
-                reason=(
-                    "health gates are read from the repo's own tool config and "
-                    "none was found"
-                ),
-                required_input_or_grant=(
-                    "add tool config (e.g. [tool.ruff]) or pass --check '<cmd>'"
-                ),
-                next_command=(
-                    "python3 -m orro check --health --health-plan --repo <repo>"
-                ),
-            )
-        )
+        return (_emit_blocker(_structured_error(
+            code="ERR_ORRO_HEALTH_NO_GATES_DETECTED",
+            message="orro check --health detected no configured health gates",
+            reason=("health gates are read from the repo's own tool config and none was found"),
+            required_input_or_grant="add tool config (e.g. [tool.ruff]) or pass --check '<cmd>'",
+            next_command="python3 -m orro check --health --health-plan --repo <repo>",
+        )), None, False, [], [])
     if health_mode and not checks:
         checks.append("true")
     if args.fix and not [scope for scope in args.write_scope if scope]:
-        return _emit_blocker(
-            _structured_error(
-                code="ERR_ORRO_HEALTH_FIX_SCOPE_REQUIRED",
-                message="orro check --fix requires an explicit write scope",
-                reason="the fixer write scope is never inferred",
-                required_input_or_grant="--write-scope '<glob>' (repeatable)",
-                next_command=(
-                    "python3 -m orro check --health --fix "
-                    "--write-scope '<glob>' --repo <repo>"
-                ),
-            )
-        )
+        return (_emit_blocker(_structured_error(
+            code="ERR_ORRO_HEALTH_FIX_SCOPE_REQUIRED",
+            message="orro check --fix requires an explicit write scope",
+            reason="the fixer write scope is never inferred",
+            required_input_or_grant="--write-scope '<glob>' (repeatable)",
+            next_command="python3 -m orro check --health --fix --write-scope '<glob>' --repo <repo>",
+        )), None, False, [], [])
     if not checks:
-        return _emit_blocker(
-            _structured_error(
-                code="ERR_ORRO_CHECK_NO_CHECKS_DECLARED",
-                message="orro check requires at least one --check command",
-                reason="checks define what 'verified' means and cannot be inferred",
-                required_input_or_grant="--check '<cmd>' (repeatable)",
-                next_command="python3 -m orro check --check '<cmd>' --repo <repo>",
-            )
-        )
+        return (_emit_blocker(_structured_error(
+            code="ERR_ORRO_CHECK_NO_CHECKS_DECLARED",
+            message="orro check requires at least one --check command",
+            reason="checks define what 'verified' means and cannot be inferred",
+            required_input_or_grant="--check '<cmd>' (repeatable)",
+            next_command="python3 -m orro check --check '<cmd>' --repo <repo>",
+        )), None, False, [], [])
+    return (None, bootstrap_report, health_mode, health_gates, checks)
 
+
+def _phase_manifest(
+    *,
+    args: argparse.Namespace,
+    manifest: dict[str, object],
+    growth: dict[str, object] | None,
+    health_mode: bool,
+    health_gates: list[dict[str, object]],
+    decision: str,
+    verdict_payload: object,
+    fix_commands: list[str],
+    fix_diff_ref: dict[str, str] | None,
+    applied_to_worktree: bool,
+    declared_intent: dict[str, Any] | None,
+    intent_reference: dict[str, object] | None,
+    review_ref: dict[str, object] | None,
+    review_skipped: dict[str, object] | None,
+    bootstrap_report: dict[str, object] | None,
+    run_dir: Path,
+) -> int:
+    """Assemble and emit the stable companion manifest/result."""
+    if growth is not None:
+        manifest["growth"] = growth
+    if health_mode:
+        means = (
+            "declared deterministic gates ran under observation; the verdict "
+            "reflects their exit status, and is NOT a claim of good design, "
+            "correct behavior, or structural consistency"
+        )
+        health_conformance = (
+            verdict_payload.get("health_conformance")
+            if isinstance(verdict_payload, dict)
+            else None
+        )
+        if not isinstance(health_conformance, dict):
+            return _emit_blocker(_structured_error(
+                code="ERR_ORRO_HEALTH_CONFORMANCE_MISSING",
+                message="proofcheck did not return health_conformance",
+            ))
+        axes = health_conformance.get("axes")
+        if not isinstance(axes, list):
+            return _emit_blocker(_structured_error(
+                code="ERR_ORRO_HEALTH_CONFORMANCE_INVALID",
+                message="proofcheck returned invalid health_conformance axes",
+            ))
+        surfaced_gates: list[dict[str, object]] = []
+        for axis in axes:
+            if not isinstance(axis, dict):
+                continue
+            detected = next(
+                (
+                    gate for gate in health_gates
+                    if gate.get("gate") == axis.get("gate")
+                    and gate.get("tool") == axis.get("tool")
+                ),
+                {},
+            )
+            surfaced_gates.append({
+                "gate": axis.get("gate"),
+                "tool": axis.get("tool"),
+                "status": axis.get("status"),
+                "enforcement": axis.get("enforcement"),
+                "blocks_handoff": axis.get("blocks_handoff"),
+                "version": detected.get("version", "unresolved"),
+            })
+        code_health: dict[str, object] = {
+            "applied": True,
+            "verdict": decision,
+            "overall": health_conformance.get("overall"),
+            "gates": surfaced_gates,
+            "means": means,
+            "verdict_source": "depone-verification-only",
+            "structural_consistency_covered": False,
+        }
+        if args.fix:
+            assert fix_diff_ref is not None
+            code_health["fixes_applied"] = {
+                "ran": fix_commands,
+                "diff_ref": fix_diff_ref,
+                "applied_to_worktree": applied_to_worktree,
+            }
+        manifest["code_health"] = code_health
+    if declared_intent is not None and intent_reference is not None:
+        manifest["declared_intent"] = declared_intent
+        manifest["declared_intent_ref"] = intent_reference
+    if review_ref is not None:
+        manifest["scope"] = "state-verified-and-reviewed"
+        manifest["review_ref"] = review_ref
+        if declared_intent is not None:
+            from witnessd.orro_intent import INTENT_ALIGNMENT_NOTE, screen_intent_drift
+
+            manifest["intent_drift_advisory"] = screen_intent_drift(
+                _review_summary_text(Path(str(review_ref["path"]))),
+                declared_intent.get("non_goals", []),
+            )
+            manifest["intent_alignment_note"] = INTENT_ALIGNMENT_NOTE
+    if review_skipped is not None:
+        manifest["review_skipped"] = review_skipped
+    if bootstrap_report is not None:
+        manifest["health_bootstrap"] = bootstrap_report
+    manifest_path = run_dir / "companion-manifest.json"
+    _write_json_file(manifest_path, manifest)
+    if args.json:
+        print(json.dumps(manifest, sort_keys=True))
+    else:
+        _print_human_summary(manifest, reviewer=args.reviewer)
+    return 0 if decision == "pass" else 2
+
+
+
+
+def _phase_execute_and_review(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    roadmap_step: str | None,
+    bootstrap_report: dict[str, object] | None,
+    health_mode: bool,
+    health_gates: list[dict[str, object]],
+    checks: list[str],
+) -> int:
+    """Run fixer, observed health, verification, and advisory review phases."""
     declared_intent = None
     if args.intent:
         from witnessd.orro_advisory import OrroAdvisoryError
@@ -1187,97 +1232,79 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     }
 
     manifest = manifest_partial(decision, verdict_path, team_ledger)
-    if growth is not None:
-        manifest["growth"] = growth
-    if health_mode:
-        means = (
-            "declared deterministic gates ran under observation; the verdict "
-            "reflects their exit status, and is NOT a claim of good design, "
-            "correct behavior, or structural consistency"
-        )
-        health_conformance = (
-            verdict_payload.get("health_conformance")
-            if isinstance(verdict_payload, dict)
-            else None
-        )
-        if not isinstance(health_conformance, dict):
+    return _phase_manifest(
+        args=args, manifest=manifest, growth=growth, health_mode=health_mode,
+        health_gates=health_gates, decision=decision, verdict_payload=verdict_payload,
+        fix_commands=fix_commands, fix_diff_ref=fix_diff_ref,
+        applied_to_worktree=applied_to_worktree, declared_intent=declared_intent,
+        intent_reference=intent_reference, review_ref=review_ref,
+        review_skipped=review_skipped, bootstrap_report=bootstrap_report,
+        run_dir=run_dir,
+    )
+def _cmd_orro_check(args: argparse.Namespace) -> int:
+    repo = Path(args.repo).resolve(strict=False) if args.repo else Path.cwd()
+    roadmap_item = getattr(args, "roadmap_item", None)
+    roadmap_step = getattr(args, "roadmap_step", None)
+    if roadmap_step is not None and roadmap_item is None:
+        return _emit_blocker(_structured_error(
+            code="ERR_ORRO_ROADMAP_STEP_REQUIRES_ITEM",
+            message="orro check received --roadmap-step without --roadmap-item",
+            reason="a step is scoped to one roadmap item",
+            required_input_or_grant="add --roadmap-item",
+            next_command="python3 -m orro check --roadmap-item <item> --roadmap-step <step>",
+        ))
+    if roadmap_item is not None:
+        try:
+            item = require_roadmap_item(repo, roadmap_item)
+            if roadmap_step is not None:
+                require_roadmap_step(repo, roadmap_item, roadmap_step, item=item)
+        except OrroRoadmapError as exc:
             return _emit_blocker(
                 _structured_error(
-                    code="ERR_ORRO_HEALTH_CONFORMANCE_MISSING",
-                    message="proofcheck did not return health_conformance",
+                    code=exc.code,
+                    message=(
+                        "orro check received an unknown roadmap step"
+                        if exc.code == "ERR_ORRO_ROADMAP_STEP_UNKNOWN"
+                        else "orro check received an unknown roadmap item"
+                    ),
+                    reason=str(exc),
+                    required_input_or_grant=(
+                        "a roadmap step id listed on the roadmap item"
+                        if exc.code == "ERR_ORRO_ROADMAP_STEP_UNKNOWN"
+                        else "a roadmap item id listed in .orro/roadmap.json"
+                    ),
+                    next_command=(
+                        "python3 -m orro status --repo <repo> --home <home>"
+                    ),
                 )
             )
-        axes = health_conformance.get("axes")
-        if not isinstance(axes, list):
-            return _emit_blocker(
-                _structured_error(
-                    code="ERR_ORRO_HEALTH_CONFORMANCE_INVALID",
-                    message="proofcheck returned invalid health_conformance axes",
-                )
-            )
-        surfaced_gates: list[dict[str, object]] = []
-        for axis in axes:
-            if not isinstance(axis, dict):
-                continue
-            detected = next(
-                (
-                    gate
-                    for gate in health_gates
-                    if gate.get("gate") == axis.get("gate")
-                    and gate.get("tool") == axis.get("tool")
+    if args.apply and not args.fix:
+        return _emit_blocker(
+            _structured_error(
+                code="ERR_ORRO_HEALTH_APPLY_REQUIRES_FIX",
+                message="orro check --apply requires --fix",
+                reason="apply needs a fix lane to produce a verified diff",
+                required_input_or_grant="add --fix and --write-scope",
+                next_command=(
+                    "python3 -m orro check --health --fix "
+                    "--write-scope '<glob>' --apply --repo <repo>"
                 ),
-                {},
             )
-            surfaced_gates.append(
-                {
-                    "gate": axis.get("gate"),
-                    "tool": axis.get("tool"),
-                    "status": axis.get("status"),
-                    "enforcement": axis.get("enforcement"),
-                    "blocks_handoff": axis.get("blocks_handoff"),
-                    "version": detected.get("version", "unresolved"),
-                }
-            )
-        code_health: dict[str, object] = {
-            "applied": True,
-            "verdict": decision,
-            "overall": health_conformance.get("overall"),
-            "gates": surfaced_gates,
-            "means": means,
-            "verdict_source": "depone-verification-only",
-            "structural_consistency_covered": False,
-        }
-        if args.fix:
-            assert fix_diff_ref is not None
-            code_health["fixes_applied"] = {
-                "ran": fix_commands,
-                "diff_ref": fix_diff_ref,
-                "applied_to_worktree": applied_to_worktree,
-            }
-        manifest["code_health"] = code_health
-    if declared_intent is not None and intent_reference is not None:
-        manifest["declared_intent"] = declared_intent
-        manifest["declared_intent_ref"] = intent_reference
-    if review_ref is not None:
-        manifest["scope"] = "state-verified-and-reviewed"
-        manifest["review_ref"] = review_ref
-        if declared_intent is not None:
-            from witnessd.orro_intent import INTENT_ALIGNMENT_NOTE, screen_intent_drift
+        )
+    status, bootstrap_report, health_mode, health_gates, checks = _phase_bootstrap_health(args, repo)
+    if status is not None:
+        return status
+    if health_mode and not health_gates:
+        return _emit_blocker(_structured_error(code="ERR_ORRO_HEALTH_NO_GATES_DETECTED", message="orro check --health detected no configured health gates", reason="health gates are read from the repo's own tool config and none was found", required_input_or_grant="add tool config (e.g. [tool.ruff]) or pass --check '<cmd>'", next_command="python3 -m orro check --health --health-plan --repo <repo>"))
+    if health_mode and not checks:
+        checks.append("true")
+    if args.fix and not [scope for scope in args.write_scope if scope]:
+        return _emit_blocker(_structured_error(code="ERR_ORRO_HEALTH_FIX_SCOPE_REQUIRED", message="orro check --fix requires an explicit write scope", reason="the fixer write scope is never inferred", required_input_or_grant="--write-scope '<glob>' (repeatable)", next_command="python3 -m orro check --health --fix --write-scope '<glob>' --repo <repo>"))
+    if not checks:
+        return _emit_blocker(_structured_error(code="ERR_ORRO_CHECK_NO_CHECKS_DECLARED", message="orro check requires at least one --check command", reason="checks define what 'verified' means and cannot be inferred", required_input_or_grant="--check '<cmd>' (repeatable)", next_command="python3 -m orro check --check '<cmd>' --repo <repo>"))
 
-            manifest["intent_drift_advisory"] = screen_intent_drift(
-                _review_summary_text(Path(str(review_ref["path"]))),
-                declared_intent.get("non_goals", []),
-            )
-            manifest["intent_alignment_note"] = INTENT_ALIGNMENT_NOTE
-    if review_skipped is not None:
-        manifest["review_skipped"] = review_skipped
-    if bootstrap_report is not None:
-        manifest["health_bootstrap"] = bootstrap_report
-    manifest_path = run_dir / "companion-manifest.json"
-    _write_json_file(manifest_path, manifest)
-
-    if args.json:
-        print(json.dumps(manifest, sort_keys=True))
-    else:
-        _print_human_summary(manifest, reviewer=args.reviewer)
-    return 0 if decision == "pass" else 2
+    return _phase_execute_and_review(
+        args=args, repo=repo, roadmap_step=roadmap_step,
+        bootstrap_report=bootstrap_report, health_mode=health_mode,
+        health_gates=health_gates, checks=checks,
+    )
