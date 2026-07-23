@@ -253,6 +253,10 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_advise.add_argument("--repo", "--root", dest="repo", default=".")
     orro_advise.add_argument("--home", default=None)
     orro_advise.add_argument("--out", default=None)
+    orro_advise.add_argument("--mode", choices=["auto", "route", "sketch", "trace"], default="auto")
+    orro_advise.add_argument("--decision", default=None, help=argparse.SUPPRESS)
+    orro_advise.add_argument("--intent", default=None, help=argparse.SUPPRESS)
+    orro_advise.add_argument("--_deprecated-alias", dest="_deprecated_alias", default=None, help=argparse.SUPPRESS)
     orro_advise.add_argument("--json", action="store_true")
     orro_advise.set_defaults(func=_cli_handler("advisory", "_cmd_orro_advise"))
 
@@ -1216,7 +1220,18 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
     if not argv or argv[0] != "orro":
         return argv
     if len(argv) >= 2 and argv[1] in ORRO_COMMAND_MAP:
-        return [ORRO_COMMAND_MAP[argv[1]], *argv[2:]]
+        command = argv[1]
+        normalized = [ORRO_COMMAND_MAP[command], *argv[2:]]
+        if command in {"sketch", "trace"}:
+            return [
+                "orro-advise",
+                "--mode",
+                command,
+                "--_deprecated-alias",
+                command,
+                *argv[2:],
+            ]
+        return normalized
     return argv
 
 
