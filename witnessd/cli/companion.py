@@ -328,8 +328,8 @@ def _print_human_summary(
     if isinstance(review_skipped, dict):
         if review_skipped.get("automatic") is True:
             print(
-                "  review: no reviewer binary found (agy/gemini/claude); "
-                "running verify-only — set ORRO_REVIEWER or pass --reviewer"
+                "  review: off (no reviewer configured — set ORRO_REVIEWER "
+                "or pass --reviewer agy|gemini|claude)"
             )
         else:
             print(
@@ -1101,32 +1101,16 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
     review_ref = None
     review_skipped = None
     if not args.no_review:
-        explicit_reviewer = args.reviewer is not None
-        reviewer = args.reviewer
-        automatic_reviewer = False
+        reviewer = args.reviewer or os.environ.get("ORRO_REVIEWER")
         if reviewer is None:
-            preferred = os.environ.get("ORRO_REVIEWER")
-            candidates = ["agy", "gemini", "claude"]
-            if preferred in candidates:
-                candidates = [preferred, *[item for item in candidates if item != preferred]]
-            for candidate in candidates:
-                candidate_path = shutil.which(candidate)
-                if candidate_path:
-                    reviewer = candidate
-                    reviewer_binary = candidate_path
-                    automatic_reviewer = True
-                    break
-            else:
-                review_skipped = {
-                    "reason": "no reviewer binary found (agy/gemini/claude)",
-                    "code": "ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE",
-                    "automatic": True,
-                }
-                reviewer_binary = None
+            review_skipped = {
+                "reason": "no reviewer configured",
+                "code": "ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE",
+                "automatic": True,
+            }
+            reviewer_binary = None
         else:
             reviewer_binary = args.reviewer_binary or reviewer
-        if reviewer is None:
-            reviewer_binary = None
         if reviewer_binary is None:
             resolved = None
         else:
@@ -1140,7 +1124,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                 review_skipped = {
                     "reason": f"reviewer '{reviewer}' binary not found: {reviewer_binary}",
                     "code": "ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE",
-                    "automatic": automatic_reviewer,
+                    "automatic": False,
                 }
         else:
             review_wp = run_dir / "review-workflow-plan.json"

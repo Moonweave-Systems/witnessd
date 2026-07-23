@@ -1418,7 +1418,7 @@ class OrroCheckReviewTest(unittest.TestCase):
 
 
 class ReviewerUnavailableTest(unittest.TestCase):
-    def test_no_explicit_reviewer_auto_detects_and_reports_info_when_unavailable(self) -> None:
+    def test_no_reviewer_configured_turns_review_off_without_probing(self) -> None:
         from witnessd.cli import companion
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -1426,12 +1426,23 @@ class ReviewerUnavailableTest(unittest.TestCase):
             repo = root / "repo"
             repo.mkdir()
             _seed_repo(repo)
+            invoked: list[list[str]] = []
+            original_invoke = companion._invoke_phase
             import shutil
             real_which = shutil.which
-            with patch(
-                "witnessd.cli.companion.shutil.which",
-                side_effect=lambda name: None if name in {"agy", "gemini", "claude"} else real_which(name),
-            ):
+
+            def capture_invoke(argv: list[str]) -> tuple[int, object, str]:
+                invoked.append(argv)
+                return original_invoke(argv)
+
+            def reject_reviewer_probe(name: str) -> str | None:
+                if name in {"agy", "gemini", "claude"}:
+                    raise AssertionError(f"unexpected reviewer probe: {name}")
+                return real_which(name)
+
+            with patch.dict(os.environ, {}, clear=True), patch(
+                "witnessd.cli.companion.shutil.which", side_effect=reject_reviewer_probe
+            ), patch.object(companion, "_invoke_phase", side_effect=capture_invoke):
                 code, payload, err = _run(
                     [
                         "orro", "check", "--repo", str(repo), "--home", str(root / "home"),
@@ -1440,19 +1451,21 @@ class ReviewerUnavailableTest(unittest.TestCase):
                 )
             self.assertEqual(code, 0, err)
             self.assertEqual(payload["review_skipped"]["code"], "ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE")
-            self.assertTrue(payload["review_skipped"]["automatic"])
+            self.assertEqual(payload["review_skipped"]["reason"], "no reviewer configured")
             self.assertNotIn("⚠", err)
-            from witnessd.cli.companion import _print_human_summary
             human = io.StringIO()
             with redirect_stdout(human):
-                _print_human_summary(payload)
+                companion._print_human_summary(payload)
             self.assertIn(
-                "review: no reviewer binary found (agy/gemini/claude); running verify-only — set ORRO_REVIEWER or pass --reviewer",
+                "review: off (no reviewer configured — set ORRO_REVIEWER or pass --reviewer agy|gemini|claude)",
                 human.getvalue(),
             )
             self.assertNotIn("⚠ review skipped", human.getvalue())
+            self.assertFalse(
+                any(argv[0] in {"flowplan", "orro-review"} and "review-only" in argv for argv in invoked)
+            )
 
-    def test_env_reviewer_is_preferred_when_binary_is_available(self) -> None:
+    def test_env_reviewer_runs_when_configured(self) -> None:
         from witnessd.cli import companion
 
         with tempfile.TemporaryDirectory() as tmp:
