@@ -253,6 +253,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_next.add_argument("--latest", action="store_true")
     orro_next.add_argument("--home", default=None)
     orro_next.add_argument("--out", default=None)
+    orro_next.add_argument("--_deprecated-alias", dest="_deprecated_alias", default=None, help=argparse.SUPPRESS)
     orro_next.add_argument("--json", action="store_true")
     orro_next.set_defaults(func=_cli_handler("advisory", "_cmd_orro_next"))
 
@@ -464,7 +465,6 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_auto.add_argument("--max-steps", type=int, default=None)
     orro_auto.add_argument("--home", default=None)
     orro_auto.add_argument("--out", default=None)
-    orro_auto.add_argument("--_deprecated-alias", dest="_deprecated_alias", default=None, help=argparse.SUPPRESS)
     orro_auto.add_argument("--json", action="store_true")
     orro_auto.set_defaults(func=_cli_handler("advisory", "_cmd_orro_auto"))
 
@@ -1259,11 +1259,10 @@ def _normalize_orro_alias_argv(argv: list[str]) -> list[str]:
     normalized = [ORRO_COMMAND_MAP[command], *argv[2:]]
     if command == "next":
         return [
-                "orro-auto",
-                "--dry-run",
-                "--_deprecated-alias",
-                "next",
-                *argv[2:],
+            "orro-next",
+            "--_deprecated-alias",
+            "next",
+            *argv[2:],
         ]
     if command == "report":
         return [

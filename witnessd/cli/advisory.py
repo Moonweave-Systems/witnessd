@@ -179,6 +179,11 @@ def _cmd_orro_next(args: argparse.Namespace) -> int:
             default_code="ERR_ORRO_NEXT_BLOCKED",
             default_message="ORRO continuation is blocked",
         )
+    if getattr(args, "_deprecated_alias", None) == "next":
+        print(
+            "deprecated: use orro auto --dry-run (this alias will be removed in a future release)",
+            file=os.sys.stderr,
+        )
     print(json.dumps(payload, sort_keys=True))
     return code
 
@@ -456,11 +461,6 @@ def _cmd_orro_auto(args: argparse.Namespace) -> int:
     )
 
     run_item = args.run_item is not None
-    if getattr(args, "_deprecated_alias", None) == "next":
-        print(
-            "deprecated: use orro auto --dry-run (this alias will be removed in a future release; output maps to orro-auto-plan)",
-            file=os.sys.stderr,
-        )
     mode_count = sum(bool(mode) for mode in (args.dry_run, args.once, args.until_complete, run_item))
     if mode_count > 1:
         _emit_orro_error(
