@@ -293,20 +293,21 @@ def _flowplan_role_lane_error_details(
             "python3 -m orro flowplan "
             f"{shlex.quote(str(args.goal))} --root {shlex.quote(str(args.root))} "
             f"--profile {shlex.quote(str(args.profile or 'code-change'))} "
-            f"--role-lanes-out {shlex.quote(str(args.role_lanes_out))} "
-            "--rolepack-file rolepack.json --model-policy default"
+            f"--role-lanes-out {shlex.quote(str(args.role_lanes_out))}"
         )
         return {
             "reason": (
-                "code-change proofrun lanes need a concrete write_scope from the rolepack"
+                "code-change proofrun lanes need a concrete write_scope: "
+                "--write-scope '<glob>' (repeatable, direct grant), or a rolepack "
+                "via orro team init ... --rolepack-file; docs-only work can use "
+                "--profile docs-change instead"
             ),
             "required_input_or_grant": (
-                "a rolepack granting the role's write_scope"
+                "--write-scope '<glob>' (repeatable, direct grant), or a rolepack "
+                "via orro team init ... --rolepack-file"
             ),
             "next_command": (
-                "python3 -m orro team init --template developer "
-                "--write-scope '<glob>' --out rolepack.json && "
-                f"{flowplan_command}"
+                f"{flowplan_command} --write-scope '<glob>'"
             ),
         }
     if code != "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED":
