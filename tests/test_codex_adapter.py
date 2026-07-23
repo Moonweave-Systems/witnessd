@@ -6,7 +6,7 @@ import unittest
 
 from depone.agent_fabric.paired_run import validate_runner_receipt
 
-from witnessd.adapters.codex import CodexAdapterError, run_codex_lane
+from witnessd.adapters.codex import CodexAdapterError, CodexCLIAdapter, run_codex_lane
 
 
 def _fake_codex(directory: str) -> str:
@@ -71,6 +71,13 @@ def _fake_codex_model_probe(directory: str, *, reject_model: str | None = None) 
 
 
 class TestCodexAdapter(unittest.TestCase):
+    def test_compiled_invocation_is_ephemeral(self):
+        invocation = CodexCLIAdapter(codex_binary="true").compile_invocation(
+            {"sandbox": {"mode": "read-only"}, "approval": {"policy": "never"}}
+        )
+
+        self.assertIn("--ephemeral", invocation)
+
     def test_result_shape_and_receipt_valid(self):
         with (
             tempfile.TemporaryDirectory() as repo,
@@ -90,6 +97,7 @@ class TestCodexAdapter(unittest.TestCase):
             self.assertEqual(res.runner_kind, "codex-cli")
             self.assertTrue(res.invocation and res.invocation[0].endswith("codex"))
             self.assertIn("exec", res.invocation)
+            self.assertIn("--ephemeral", res.invocation)
             self.assertIn("--json", res.invocation)
             self.assertIn("--ask-for-approval", res.invocation)
             self.assertEqual(res.exit_code, 0)
