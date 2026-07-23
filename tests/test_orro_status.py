@@ -44,7 +44,7 @@ def _steps_roadmap() -> dict[str, object]:
 
 
 def _write_companion_verdict(
-    run_dir: Path, *, decision: str, tamper: bool = False
+    run_dir: Path, *, decision: str, manifest_decision: str | None = None, tamper: bool = False
 ) -> Path:
     verdict_path = run_dir / "proofcheck-verdict.json"
     verdict_path.write_text(
@@ -57,7 +57,7 @@ def _write_companion_verdict(
         "verdict_ref": {
             "path": str(verdict_path),
             "sha256": _hash_file(verdict_path),
-            "decision": decision,
+            "decision": decision if manifest_decision is None else manifest_decision,
         },
     }
     (run_dir / "companion-manifest.json").write_text(
@@ -345,6 +345,35 @@ class OrroStatusTests(unittest.TestCase):
             item = payload["items"][0]
             self.assertEqual(item["status"], "in-progress")
             self.assertEqual(item["run_state"], "companion-unverified")
+            self.assertNotIn("evidence_ref", item)
+
+    def test_companion_manifest_decision_cannot_override_hashed_verdict_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            home = root / "home"
+            companion = home / "companion-run"
+            companion.mkdir(parents=True)
+            write_roadmap(
+                repo,
+                {
+                    "kind": "orro-roadmap",
+                    "schema_version": "0.1",
+                    "items": [{"id": "companion-item", "title": "Companion"}],
+                },
+            )
+            seal_roadmap_binding(repo=repo, run_dir=companion, item_id="companion-item")
+            _write_companion_verdict(
+                companion, decision="fail", manifest_decision="pass"
+            )
+
+            with patch("witnessd.cli.status.decide_next") as decide:
+                payload = build_status(repo=repo, home=home)
+
+            decide.assert_not_called()
+            item = payload["items"][0]
+            self.assertEqual(item["status"], "in-progress")
+            self.assertEqual(item["run_state"], "companion-blocked")
             self.assertNotIn("evidence_ref", item)
 
     def test_blocked_companion_manifest_stays_in_progress(self) -> None:
