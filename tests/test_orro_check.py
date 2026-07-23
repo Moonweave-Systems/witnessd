@@ -148,11 +148,19 @@ class GrowthReceiptTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             _seed_repo(repo)
-            (repo / "shrinks.py").write_text("\n".join(["x"] * 10) + "\n", encoding="utf-8")
+            (repo / "shrinks.py").write_text(
+                "\n".join(["x"] * 10) + "\n", encoding="utf-8"
+            )
             subprocess.run(["git", "add", "shrinks.py"], cwd=repo, check=True)
-            subprocess.run(["git", "commit", "-qm", "baseline file"], cwd=repo, check=True)
-            (repo / "large.py").write_text("\n".join(["x"] * 300) + "\n", encoding="utf-8")
-            (repo / "small.py").write_text("\n".join(["x"] * 10) + "\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "commit", "-qm", "baseline file"], cwd=repo, check=True
+            )
+            (repo / "large.py").write_text(
+                "\n".join(["x"] * 300) + "\n", encoding="utf-8"
+            )
+            (repo / "small.py").write_text(
+                "\n".join(["x"] * 10) + "\n", encoding="utf-8"
+            )
             (repo / "shrinks.py").write_text("x\n", encoding="utf-8")
             (repo / "binary.bin").write_bytes(b"\x00binary")
             subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
@@ -163,9 +171,17 @@ class GrowthReceiptTest(unittest.TestCase):
             self.assertEqual(growth["lines_added"], 310)
             self.assertEqual(growth["lines_deleted"], 9)
             self.assertEqual(growth["net"], 301)
-            self.assertEqual(growth["top_grown_files"][0], {"path": "large.py", "added": 300, "deleted": 0})
-            self.assertEqual(growth["top_grown_files"][1], {"path": "small.py", "added": 10, "deleted": 0})
-            self.assertNotIn("shrinks.py", [item["path"] for item in growth["top_grown_files"]])
+            self.assertEqual(
+                growth["top_grown_files"][0],
+                {"path": "large.py", "added": 300, "deleted": 0},
+            )
+            self.assertEqual(
+                growth["top_grown_files"][1],
+                {"path": "small.py", "added": 10, "deleted": 0},
+            )
+            self.assertNotIn(
+                "shrinks.py", [item["path"] for item in growth["top_grown_files"]]
+            )
             self.assertNotIn("binary.bin", json.dumps(growth))
             self.assertEqual(
                 growth["means"],
@@ -182,16 +198,32 @@ class GrowthReceiptTest(unittest.TestCase):
             repo = root / "repo"
             repo.mkdir()
             _seed_repo(repo)
-            (repo / "grown.py").write_text("\n".join(["x"] * 20) + "\n", encoding="utf-8")
+            (repo / "grown.py").write_text(
+                "\n".join(["x"] * 20) + "\n", encoding="utf-8"
+            )
             subprocess.run(["git", "add", "grown.py"], cwd=repo, check=True)
             subprocess.run(["git", "commit", "-qm", "growth"], cwd=repo, check=True)
             code, payload, err = _run(
-                ["orro", "check", "--repo", str(repo), "--home", str(root / "home"),
-                 "--run-dir", str(root / "run"), "--check", "false", "--no-review", "--json"]
+                [
+                    "orro",
+                    "check",
+                    "--repo",
+                    str(repo),
+                    "--home",
+                    str(root / "home"),
+                    "--run-dir",
+                    str(root / "run"),
+                    "--check",
+                    "false",
+                    "--no-review",
+                    "--json",
+                ]
             )
             self.assertEqual(code, 2, err)
             self.assertEqual(payload["growth"]["base"], "main")
-            self.assertIn(payload["verdict_ref"]["decision"], {"blocked", "blocked-explicit"})
+            self.assertIn(
+                payload["verdict_ref"]["decision"], {"blocked", "blocked-explicit"}
+            )
 
 
 class OrroCheckBlockerTest(unittest.TestCase):
@@ -320,9 +352,7 @@ class OrroCheckBlockerTest(unittest.TestCase):
             self.assertEqual(code, 2, err)
             self.assertEqual(payload["kind"], "orro-companion-result")
             self.assertEqual(payload["decision"], "blocked")
-            self.assertEqual(
-                payload["error"]["code"], "ERR_ORRO_ROADMAP_ITEM_UNKNOWN"
-            )
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_ROADMAP_ITEM_UNKNOWN")
             self.assertIn("known-item", payload["error"]["reason"])
 
     def test_no_checks_declared_blocks(self) -> None:
@@ -645,6 +675,7 @@ class OrroCheckVerifyTest(unittest.TestCase):
                 )["item_id"],
                 "check-run",
             )
+
     def test_failing_check_yields_blocked_verdict_exit_2(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             (code, payload, err), root = self._run_check(tmp, ["false"])
@@ -1429,6 +1460,7 @@ class ReviewerUnavailableTest(unittest.TestCase):
             invoked: list[list[str]] = []
             original_invoke = companion._invoke_phase
             import shutil
+
             real_which = shutil.which
 
             def capture_invoke(argv: list[str]) -> tuple[int, object, str]:
@@ -1440,18 +1472,41 @@ class ReviewerUnavailableTest(unittest.TestCase):
                     raise AssertionError(f"unexpected reviewer probe: {name}")
                 return real_which(name)
 
-            with patch.dict(os.environ, {}, clear=True), patch(
-                "witnessd.cli.companion.shutil.which", side_effect=reject_reviewer_probe
-            ), patch.object(companion, "_invoke_phase", side_effect=capture_invoke):
+            ambient_env = {
+                key: value
+                for key, value in os.environ.items()
+                if key != "ORRO_REVIEWER"
+            }
+            with (
+                patch.dict(os.environ, ambient_env, clear=True),
+                patch(
+                    "witnessd.cli.companion.shutil.which",
+                    side_effect=reject_reviewer_probe,
+                ),
+                patch.object(companion, "_invoke_phase", side_effect=capture_invoke),
+            ):
                 code, payload, err = _run(
                     [
-                        "orro", "check", "--repo", str(repo), "--home", str(root / "home"),
-                        "--run-dir", str(root / "run"), "--check", "true", "--json",
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--check",
+                        "true",
+                        "--json",
                     ]
                 )
             self.assertEqual(code, 0, err)
-            self.assertEqual(payload["review_skipped"]["code"], "ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE")
-            self.assertEqual(payload["review_skipped"]["reason"], "no reviewer configured")
+            self.assertEqual(
+                payload["review_skipped"]["code"], "ERR_ORRO_CHECK_REVIEWER_UNAVAILABLE"
+            )
+            self.assertEqual(
+                payload["review_skipped"]["reason"], "no reviewer configured"
+            )
             self.assertNotIn("⚠", err)
             human = io.StringIO()
             with redirect_stdout(human):
@@ -1462,7 +1517,10 @@ class ReviewerUnavailableTest(unittest.TestCase):
             )
             self.assertNotIn("⚠ review skipped", human.getvalue())
             self.assertFalse(
-                any(argv[0] in {"flowplan", "orro-review"} and "review-only" in argv for argv in invoked)
+                any(
+                    argv[0] in {"flowplan", "orro-review"} and "review-only" in argv
+                    for argv in invoked
+                )
             )
 
     def test_env_reviewer_runs_when_configured(self) -> None:
@@ -1479,6 +1537,7 @@ class ReviewerUnavailableTest(unittest.TestCase):
             fake_claude.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             fake_claude.chmod(fake_claude.stat().st_mode | stat.S_IEXEC)
             import shutil
+
             real_which = shutil.which
             original_invoke = companion._invoke_phase
             review_argv: list[str] = []
@@ -1486,18 +1545,37 @@ class ReviewerUnavailableTest(unittest.TestCase):
             def capture_review(argv: list[str]) -> tuple[int, object, str]:
                 if argv[0] == "orro-review":
                     review_argv.extend(argv)
-                    (root / "run" / "orro-review-summary.json").write_text("{}", encoding="utf-8")
+                    (root / "run" / "orro-review-summary.json").write_text(
+                        "{}", encoding="utf-8"
+                    )
                     return 0, {}, ""
                 return original_invoke(argv)
 
-            with patch.dict(os.environ, {"ORRO_REVIEWER": "claude"}, clear=False), patch(
-                "witnessd.cli.companion.shutil.which",
-                side_effect=lambda name: str(fake_claude) if name == "claude" else (None if name in {"agy", "gemini"} else real_which(name)),
-            ), patch.object(companion, "_invoke_phase", side_effect=capture_review):
+            with (
+                patch.dict(os.environ, {"ORRO_REVIEWER": "claude"}, clear=False),
+                patch(
+                    "witnessd.cli.companion.shutil.which",
+                    side_effect=lambda name: (
+                        str(fake_claude)
+                        if name == "claude"
+                        else (None if name in {"agy", "gemini"} else real_which(name))
+                    ),
+                ),
+                patch.object(companion, "_invoke_phase", side_effect=capture_review),
+            ):
                 code, payload, err = _run(
                     [
-                        "orro", "check", "--repo", str(repo), "--home", str(root / "home"),
-                        "--run-dir", str(root / "run"), "--check", "true", "--json",
+                        "orro",
+                        "check",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(root / "home"),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--check",
+                        "true",
+                        "--json",
                     ]
                 )
             self.assertEqual(code, 0, err)
