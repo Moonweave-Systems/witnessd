@@ -1185,7 +1185,7 @@ PUBLIC_COMMAND_SUMMARIES: dict[str, str] = {
     "flowplan": "plan-only workflow design; does not run workers",
     "proofrun": "evidence-backed execution through witnessd",
     "proofcheck": "offline evidence verification delegated to Depone",
-    "advisory-provenance-check": "offline Depone re-derivation of sealed advisory provenance",
+    "advisory-provenance-check": "offline Depone v110 re-derivation of sealed advisory provenance",
     "handoff": "maintainer review package gated by proofcheck-verdict.json",
     "doctor": "ORRO engine/verifier readiness; not runlog health or evidence verification",
     "engine-lock": "write/check distribution metadata for pinned engine commits",
