@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -41,6 +42,10 @@ def _invoke_phase(argv: list[str]) -> tuple[int, object, str]:
     except json.JSONDecodeError:
         payload = {}
     return code, payload, stderr.strip()
+
+
+def _render_phase_command(argv: list[str]) -> str:
+    return " ".join(["python3", "-m", "orro", *(shlex.quote(str(arg)) for arg in argv)])
 
 
 def _resolve_base(repo: Path, base: str | None) -> str:
@@ -715,14 +720,11 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                         required_input_or_grant=(
                             "resolve the reported scope-bounded fixer plan blocker"
                         ),
-                        next_command=(
-                            "python3 -m orro flowplan ... --profile code-change"
-                        ),
+                        next_command=_render_phase_command(fix_flowplan_argv),
                     )
                 )
             _assert_no_execution_adapter(fix_rlp)
-            _, _, fix_proofrun_err = _invoke_phase(
-                [
+            fix_proofrun_argv = [
                     "proofrun",
                     fix_goal,
                     "--repo",
@@ -747,7 +749,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     *(["--roadmap-step", roadmap_step] if roadmap_step else []),
                     "--json",
                 ]
-            )
+            _, _, fix_proofrun_err = _invoke_phase(fix_proofrun_argv)
             fix_team_ledger = fix_run_dir / "team-ledger.json"
             if not fix_team_ledger.is_file():
                 return _emit_blocker(
@@ -761,11 +763,10 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                         required_input_or_grant=(
                             "resolve the reported scope-bounded fixer blocker"
                         ),
-                        next_command="python3 -m orro proofrun ...",
+                        next_command=_render_phase_command(fix_proofrun_argv),
                     )
                 )
-            _, fix_verdict_payload, fix_verdict_err = _invoke_phase(
-                [
+            fix_proofcheck_argv = [
                     "proofcheck",
                     "--evidence-dir",
                     str(fix_run_dir),
@@ -775,7 +776,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     str(fix_verdict_path),
                     "--json",
                 ]
-            )
+            _, fix_verdict_payload, fix_verdict_err = _invoke_phase(fix_proofcheck_argv)
             try:
                 fix_verdict = json.loads(fix_verdict_path.read_text(encoding="utf-8"))
             except (OSError, UnicodeError, json.JSONDecodeError):
@@ -806,7 +807,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                         required_input_or_grant=(
                             "keep fixer mutations inside every declared --write-scope"
                         ),
-                        next_command="python3 -m orro proofcheck ...",
+                        next_command=_render_phase_command(fix_proofcheck_argv),
                     )
                 )
 
@@ -836,7 +837,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                         required_input_or_grant=(
                             "a valid code-change worktree lane receipt"
                         ),
-                        next_command="python3 -m orro proofcheck ...",
+                        next_command=_render_phase_command(fix_proofcheck_argv),
                     )
                 )
 
@@ -1014,17 +1015,14 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                 message="verification flowplan failed",
                 reason=err or "flowplan returned nonzero",
                 required_input_or_grant="resolve the reported flowplan blocker",
-                next_command=(
-                    "python3 -m orro flowplan ... --profile verification-only"
-                ),
+                next_command=_render_phase_command(flowplan_argv),
             )
         )
 
     _assert_no_execution_adapter(verify_rlp)
 
     team_ledger = run_dir / "team-ledger.json"
-    _, _, proofrun_err = _invoke_phase(
-        [
+    proofrun_argv = [
             "proofrun",
             goal,
             "--repo",
@@ -1049,7 +1047,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
         *(["--roadmap-step", roadmap_step] if roadmap_step else []),
             "--json",
         ]
-    )
+    _, _, proofrun_err = _invoke_phase(proofrun_argv)
     if not team_ledger.is_file():
         return _emit_blocker(
             _structured_error(
@@ -1060,12 +1058,11 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                     or "proofrun returned nonzero without sealing team-ledger.json"
                 ),
                 required_input_or_grant="resolve the reported proofrun blocker",
-                next_command="python3 -m orro proofrun ...",
+                next_command=_render_phase_command(proofrun_argv),
             )
         )
 
-    _, verdict_payload, verdict_err = _invoke_phase(
-        [
+    proofcheck_argv = [
             "proofcheck",
             "--evidence-dir",
             str(run_dir),
@@ -1075,7 +1072,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
             str(verdict_path),
             "--json",
         ]
-    )
+    _, verdict_payload, verdict_err = _invoke_phase(proofcheck_argv)
     decision = (
         verdict_payload.get("decision") if isinstance(verdict_payload, dict) else None
     )
@@ -1094,7 +1091,7 @@ def _cmd_orro_check(args: argparse.Namespace) -> int:
                 required_input_or_grant=(
                     "resolve the reported Depone/proofcheck blocker"
                 ),
-                next_command="python3 -m orro proofcheck ...",
+                next_command=_render_phase_command(proofcheck_argv),
             )
         )
 
