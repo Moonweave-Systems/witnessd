@@ -145,6 +145,13 @@ verdict, approve work, or raise assurance. Their ORRO-native methods live under
 `orro/skillpacks/` for frontmatter-selected progressive disclosure. The
 external `superpowers` plugin remains untouched as an independent dual path.
 
+For deterministic repository health gates and bounded fixer guidance, load
+`orro/skillpacks/code-health.md`. For roadmap status, tidy retention, task
+workspaces, and bounded `auto --run-item` continuation, load
+`orro/skillpacks/legibility.md`. These are progressive-disclosure references
+for the single ORRO skill surface; they do not create proof or a new assurance
+source.
+
 `python scripts/check_orro_product_reality.py` validates local dogfood scenarios
 for ORRO usefulness: smallest safe workflow, waste avoidance, gate integrity,
 artifact fatigue reduction, and clear next action. It is not proof,
