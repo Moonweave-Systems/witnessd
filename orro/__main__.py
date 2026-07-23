@@ -7,7 +7,12 @@ import sys
 from difflib import get_close_matches
 from pathlib import Path
 
-from witnessd.__main__ import ORRO_COMMANDS, main as witnessd_main
+from witnessd.__main__ import (
+    ORRO_COMMAND_MAP,
+    ORRO_COMMANDS,
+    PUBLIC_COMMAND_SUMMARIES,
+    main as witnessd_main,
+)
 
 
 DEPRECATION_WARNING = (
@@ -16,7 +21,19 @@ DEPRECATION_WARNING = (
     "in the next major witnessd release."
 )
 
-ORRO_HELP = """usage: orro [-h] {setup,init,advise,scout,sketch,trace,flow,flowplan,proofrun,proofcheck,advisory-provenance-check,handoff,next,report,status,tidy,review,check,demo,auto,team,doctor,engine-lock} ...
+
+def _build_orro_help(
+    *,
+    command_map: dict[str, str] = ORRO_COMMAND_MAP,
+    summaries: dict[str, str] = PUBLIC_COMMAND_SUMMARIES,
+) -> str:
+    command_names = ",".join(command_map)
+    width = max(map(len, command_map))
+    public_commands = "\n".join(
+        f"  {command:<{width}}  {summaries[command]}"
+        for command in command_map
+    )
+    return f"""usage: orro [-h] {{{command_names}}} ...
 
 ORRO - Observed Run & Review Orchestrator
 
@@ -24,30 +41,7 @@ ORRO Flow:
   scout -> sketch/trace -> flowplan -> proofrun -> proofcheck -> handoff
 
 public commands:
-  setup       provision pinned Depone, initialize home, and write engine lock
-  init         setup readiness/provision metadata; does not verify evidence
-  advise       non-executing workstyle router for the smallest safe workflow
-  scout        read-only repository exploration and context packaging
-  sketch       validate and seal an agent-authored advisory direction
-  trace        validate, gate, and seal an agent-authored root-cause record
-  flow         guided init/scout/flowplan/proofrun/proofcheck with gated blockers
-  flowplan     plan-only workflow design; does not run workers
-  proofrun     evidence-backed execution through witnessd
-  proofcheck   offline evidence verification delegated to Depone
-  advisory-provenance-check
-               offline Depone v110 re-derivation of sealed advisory provenance
-  handoff      maintainer review package gated by proofcheck-verdict.json
-  next         non-executing continuation gate over persisted run artifacts
-  report       human-facing summary of observed ORRO artifacts and next action
-  status       roadmap-bound observed state; not proof, approval, or assurance
-  tidy         dry-run worktree inventory; --apply removes only safe eligible worktrees
-  review       advisory read-only reviewer lanes; not proof or assurance
-  check        companion: verify (Depone verdict) + read-only review; not observed execution
-  demo         AI-free shell guardrail demo with Depone scope-conformance PASS/FAIL
-  auto         dry-run, one-step, bounded post-run, or bounded item-chain automation
-  team         scaffold team config or run flowplan/proofrun/proofcheck/report
-  doctor       ORRO engine/verifier readiness; not runlog health or evidence verification
-  engine-lock  write/check distribution metadata for pinned engine commits
+{public_commands}
 
 boundary:
   Depone verifies; witnessd executes; ORRO exposes the workflow.
@@ -69,6 +63,9 @@ options:
   --runner-sandbox DIR
                filesystem DIR where the runner executes; NOT a Codex sandbox mode (read-only/workspace-write) and NOT the observer run/out directory
 """
+
+
+ORRO_HELP = _build_orro_help()
 
 
 def main(argv: list[str] | None = None) -> int:
