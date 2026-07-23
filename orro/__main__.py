@@ -8,6 +8,7 @@ from difflib import get_close_matches
 from pathlib import Path
 
 from witnessd.__main__ import (
+    ORRO_DEPRECATED_ALIASES,
     ORRO_COMMAND_MAP,
     ORRO_COMMANDS,
     PUBLIC_COMMAND_SUMMARIES,
@@ -29,9 +30,12 @@ def _build_orro_help(
 ) -> str:
     command_names = ",".join(command_map)
     width = max(map(len, command_map))
+    ordered_commands = [
+        command for command in command_map if command not in ORRO_DEPRECATED_ALIASES
+    ] + [command for command in command_map if command in ORRO_DEPRECATED_ALIASES]
     public_commands = "\n".join(
         f"  {command:<{width}}  {summaries[command]}"
-        for command in command_map
+        for command in ordered_commands
     )
     return f"""usage: orro [-h] {{{command_names}}} ...
 
@@ -43,10 +47,13 @@ ORRO Flow:
 public commands:
 {public_commands}
 
+Deprecated aliases:
+  {"; ".join(f"{alias} -> {target}" for alias, target in ORRO_DEPRECATED_ALIASES.items())}
+
 boundary:
   Depone verifies; witnessd executes; ORRO exposes the workflow.
-  advise, sketch, trace, next, and report read status/intent only; trace consumes a
-  symptom-bound prior-run receipt without executing repo code; auto --dry-run recommends
+  advise, status, and auto --dry-run read status/intent only; advise may route to
+  sketch/trace-shaped advisory artifacts without executing repo code; auto --dry-run recommends
   commands only; auto --once executes at most one proofcheck or handoff step;
   auto --until-complete loops over those post-run steps with --max-steps; auto
   --run-item executes the next declared step's recommended command behind

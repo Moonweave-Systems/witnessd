@@ -73,6 +73,31 @@ def _write_companion_verdict(
 
 
 class OrroStatusTests(unittest.TestCase):
+    def test_workspace_uses_git_registry_and_warns_for_large_total(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess = __import__("subprocess")
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "status@example.invalid"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "ORRO Status"], cwd=repo, check=True)
+            (repo / "README.md").write_text("seed\n", encoding="utf-8")
+            subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
+            registered = root / "registered"
+            subprocess.run(["git", "worktree", "add", "-q", "-b", "registered", str(registered), "HEAD"], cwd=repo, check=True)
+            (repo / "large.bin").write_bytes(b"x" * (1024 * 1024))
+            (registered / "large.bin").write_bytes(b"x" * (1024 * 1024))
+
+            with patch("witnessd.cli.status._tree_size", side_effect=lambda path: 600 * 1024 * 1024):
+                payload = build_status(repo=repo, home=root / "home")
+
+            self.assertEqual(payload["workspace"]["worktree_count"], 2)
+            self.assertEqual(payload["workspace"]["worktree_bytes"], 1200 * 1024 * 1024)
+            self.assertIn("workspace worktrees hold", payload["workspace"]["warning"])
+            self.assertIn("orro tidy --apply", render_status_text(payload))
+
     def test_resolve_home_prefers_explicit_then_environment_then_repo(self) -> None:
         from witnessd.cli.status import resolve_home
 

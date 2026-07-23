@@ -39,16 +39,13 @@ The cross-engine artifact boundary is summarized in
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo profile, context pack, and discovery notes |
-| `orro sketch` | advisory ideation that converges on one flowplan-ready direction |
-| `orro trace` | advisory root-cause investigation before fix planning or execution |
 | `orro advisory-provenance-check` | offline Depone re-derivation of sealed sketch/trace provenance; not correctness |
 | `orro flow` | guided init/scout/flowplan/proofrun/proofcheck with structured blockers |
 | `orro flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
 | `orro proofrun` | precise evidence-backed execution alias |
 | `orro proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
-| `orro next` | non-executing continuation gate over persisted run artifacts |
-| `orro report` | human-facing summary of observed artifacts and next safe action |
+| `orro status` | roadmap status, or a run-scoped report with `<run-dir>` or `--latest` |
 | `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
 | `orro check` | companion: deterministic verify (Depone verdict) + read-only review (advisory); spawns zero execution-adapter lanes; does not claim observed execution |
 | `orro demo` | AI-free deterministic shell guardrail demo; Depone re-derives write-scope PASS/FAIL |

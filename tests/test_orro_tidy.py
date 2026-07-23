@@ -37,7 +37,64 @@ def _add_worktree(repo: Path, path: Path, branch: str) -> None:
     _git(repo, "worktree", "add", "-q", "-b", branch, str(path), "HEAD")
 
 
+def _write_companion_verdict(run_dir: Path, *, decision: str) -> None:
+    import hashlib
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    verdict = run_dir / "proofcheck-verdict.json"
+    verdict.write_text(json.dumps({"decision": decision}) + "\n", encoding="utf-8")
+    manifest = {
+        "kind": "orro-companion-manifest",
+        "verdict_ref": {
+            "path": str(verdict),
+            "sha256": hashlib.sha256(verdict.read_bytes()).hexdigest(),
+        },
+    }
+    (run_dir / "companion-manifest.json").write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+
+
 class OrroTidyTests(unittest.TestCase):
+    def test_inventory_classifies_nested_run_and_never_removes_unknown_external(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            home = repo / ".witnessd"
+            nested_run = repo / ".orro" / "worktrees" / "item-one" / ".witnessd" / "runs" / "run-nested"
+            nested = nested_run / "worktrees" / "runner-one"
+            external = root / "external"
+            _add_worktree(repo, nested, "nested-runner")
+            _add_worktree(repo, external, "external")
+            _write_companion_verdict(nested_run, decision="pass")
+
+            inventory = build_tidy_inventory(repo=repo, home=home)
+
+            nested_record = next(item for item in inventory["worktrees"] if item["path"] == str(nested))
+            self.assertEqual(nested_record["kind"], "nested-run")
+            self.assertEqual(nested_record["run_state"], "companion-pass")
+            outside_record = next(item for item in inventory["registered_outside_runs"] if item["path"] == str(external))
+            self.assertEqual(outside_record["kind"], "unknown-external")
+
+            result = apply_tidy(repo=repo, inventory=inventory)
+            actions = {item["path"]: item for item in result["actions"]}
+            self.assertEqual(actions[str(nested)]["action"], "removed")
+            self.assertEqual(actions[str(external)]["reason"], "unknown external worktree")
+            self.assertTrue(external.exists())
+
+    def test_direct_run_is_distinct_from_nested_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            home = root / "home"
+            direct = home / "runs" / "run-direct" / "worktrees" / "runner"
+            _add_worktree(repo, direct, "direct-runner")
+            with patch("witnessd.cli.status.decide_next", return_value=(0, {"decision": "complete"})):
+                inventory = build_tidy_inventory(repo=repo, home=home)
+            self.assertEqual(inventory["worktrees"][0]["kind"], "direct-run")
+
     def test_keep_checks_removes_only_oldest_unreferenced_check_runs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -178,9 +235,9 @@ class OrroTidyTests(unittest.TestCase):
             missing_action = next(
                 item for item in result["actions"] if item["path"] == str(missing)
             )
-            self.assertEqual(missing_action["action"], "pruned")
+            self.assertEqual(missing_action["action"], "kept")
             registered = _git(repo, "worktree", "list", "--porcelain")
-            self.assertNotIn(str(missing), registered)
+            self.assertIn(str(missing), registered)
 
 
 if __name__ == "__main__":

@@ -5,11 +5,13 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 from witnessd.cli._output import _emit_orro_error, _hash_file
 from witnessd.orro_next import decide_next
+from witnessd.orro_report import OrroReportError, build_report, render_text_report, write_report
 from witnessd.orro_roadmap import (
     OrroRoadmapError,
     read_roadmap,
@@ -36,6 +38,60 @@ def resolve_home(args_home: str | None, repo: Path) -> Path:
 def _cmd_orro_status(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve(strict=False)
     home = resolve_home(args.home, repo)
+    if args.run_dir or args.latest:
+        if args.run_dir and args.latest:
+            _emit_orro_error(
+                args,
+                code="ERR_ORRO_STATUS_RUN_DIR_CONFLICT",
+                message="orro status --latest cannot be combined with a run directory",
+            )
+            return 2
+        run_dir = (
+            Path(args.run_dir).resolve(strict=False)
+            if args.run_dir
+            else latest_run_dir(home)
+        )
+        if run_dir is None:
+            _emit_orro_error(
+                args,
+                code="ERR_ORRO_STATUS_LATEST_NO_RUNS",
+                message=f"no ORRO runs found under {home / 'runs'}",
+            )
+            return 2
+        workstyle = (
+            Path(args.workstyle_decision).resolve(strict=False)
+            if args.workstyle_decision
+            else None
+        )
+        from witnessd.orro_intent import read_declared_intent
+
+        declared_intent = (
+            read_declared_intent(Path(args.intent)) if args.intent else None
+        )
+        intent_source = Path(args.intent).resolve(strict=False) if args.intent else None
+        try:
+            code, payload = build_report(
+                run_dir,
+                home=home,
+                workstyle_decision=workstyle,
+                declared_intent=declared_intent,
+                declared_intent_source=intent_source,
+            )
+            if args.out:
+                write_report(Path(args.out).resolve(strict=False), payload)
+        except OrroReportError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 1
+        if getattr(args, "_deprecated_alias", None) == "report":
+            print(
+                "deprecated: use orro status <run-dir> (this alias will be removed in a future release)",
+                file=sys.stderr,
+            )
+        if args.json:
+            print(json.dumps(payload, sort_keys=True))
+        else:
+            print(render_text_report(payload), end="")
+        return code
     try:
         payload = build_status(repo=repo, home=home)
     except OrroRoadmapError as exc:
@@ -67,6 +123,7 @@ def build_status(*, repo: Path, home: Path) -> dict[str, Any]:
     roadmap = read_roadmap(repo)
     run_dirs = _run_dirs(home)
     runs = [_status_run(run_dir, home=home) for run_dir in run_dirs]
+    run_decisions = {str(run["run_dir"]): str(run["state"]) for run in runs}
     by_item: dict[str, list[dict[str, Any]]] = {}
     off_plan: list[dict[str, Any]] = []
     for run in runs:
@@ -85,11 +142,52 @@ def build_status(*, repo: Path, home: Path) -> dict[str, Any]:
         if workspace is not None:
             item["workspace"] = workspace
     off_plan.sort(key=lambda item: _path_newness(Path(item["run_dir"])), reverse=True)
-    worktrees = _run_worktree_paths(run_dirs)
+    registered = _registered_worktrees(repo)
+    if repo.joinpath(".git").exists():
+        worktrees = [Path(record["path"]) for record in registered]
+    else:
+        worktrees = _run_worktree_paths(run_dirs)
     receipts = _worktree_receipts(run_dirs)
     dirty_count = sum(
         1 for path in worktrees if _status_worktree_dirty(path, receipts.get(str(path)))
     )
+    workspace = {
+        "run_count": len(run_dirs),
+        "worktree_count": len(worktrees),
+        "worktree_bytes": sum(_tree_size(path) for path in worktrees),
+        "dirty_worktree_count": dirty_count,
+        "registered_worktree_count": len(worktrees),
+        "run_worktree_count": 0,
+        "task_worktree_count": 0,
+        "managed_worktree_count": 0,
+        "eligible_worktree_count": 0,
+        "external_worktree_count": 0,
+    }
+    if repo.joinpath(".git").exists():
+        for registration in registered:
+            path = Path(registration["path"])
+            classification = _classify_worktree(path, repo=repo, home=home)
+            if classification["kind"] in {"direct-run", "nested-run"}:
+                workspace["run_worktree_count"] += 1
+                workspace["managed_worktree_count"] += 1
+                owner = classification["run_dir"]
+                state = (
+                    run_decisions.get(str(owner), _run_state(owner, classification["home"]))
+                    if classification["kind"] == "direct-run"
+                    else _run_state(owner, classification["home"])
+                )
+                if state in {"complete", "ready-for-handoff", "companion-pass"} and not _status_worktree_dirty(path, receipts.get(str(path))):
+                    workspace["eligible_worktree_count"] += 1
+            elif classification["kind"] == "task":
+                workspace["task_worktree_count"] += 1
+                workspace["managed_worktree_count"] += 1
+            else:
+                workspace["external_worktree_count"] += 1
+    if workspace["worktree_bytes"] > 1024**3:
+        workspace["warning"] = (
+            f"workspace worktrees hold {_format_size(workspace['worktree_bytes'])}; "
+            "clean finished ones can be removed with orro tidy --apply"
+        )
     return {
         "kind": "orro-status",
         "schema_version": "0.1",
@@ -97,12 +195,7 @@ def build_status(*, repo: Path, home: Path) -> dict[str, Any]:
         "home": str(home),
         "items": items,
         "off_plan": off_plan,
-        "workspace": {
-            "run_count": len(run_dirs),
-            "worktree_count": len(worktrees),
-            "worktree_bytes": sum(_tree_size(path) for path in worktrees),
-            "dirty_worktree_count": dirty_count,
-        },
+        "workspace": workspace,
         "boundary": STATUS_BOUNDARY,
     }
 
@@ -145,9 +238,14 @@ def render_status_text(payload: dict[str, Any]) -> str:
     lines.append(
         "Workspace: "
         f"runs={workspace['run_count']}, worktrees={workspace['worktree_count']}, "
+        f"managed={workspace['managed_worktree_count']}, "
+        f"eligible={workspace['eligible_worktree_count']}, "
+        f"external={workspace['external_worktree_count']}, "
         f"size={workspace['worktree_bytes']} bytes, "
         f"dirty={workspace['dirty_worktree_count']}"
     )
+    if workspace.get("warning"):
+        lines.append(f"Warning: {workspace['warning']}")
     lines.append(f"Boundary: {payload['boundary']}")
     return "\n".join(lines)
 
@@ -156,33 +254,28 @@ def build_tidy_inventory(*, repo: Path, home: Path) -> dict[str, Any]:
     repo = repo.resolve(strict=False)
     home = home.resolve(strict=False)
     run_dirs = _run_dirs(home)
-    decisions = {
-        str(run_dir): str(decide_next(run_dir, home=home)[1].get("decision", "blocked"))
-        for run_dir in run_dirs
-    }
     receipts = _worktree_receipts(run_dirs)
     registered = _registered_worktrees(repo)
-    registered_by_path = {record["path"]: record for record in registered}
     worktrees: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    for run_dir in run_dirs:
-        worktrees_dir = run_dir / "worktrees"
-        if not worktrees_dir.is_dir():
-            continue
-        for path in sorted(
-            (item.resolve(strict=False) for item in worktrees_dir.iterdir() if item.is_dir()),
-            key=str,
-        ):
-            path_text = str(path)
+    for registration in registered:
+        path = Path(registration["path"])
+        path_text = str(path)
+        classification = _classify_worktree(path, repo=repo, home=home)
+        if classification["kind"] in {"direct-run", "nested-run"}:
+            owner = classification["run_dir"]
+            owner_home = classification["home"]
+            run_state = _run_state(owner, owner_home)
             seen.add(path_text)
             worktrees.append(
                 _tidy_worktree_record(
                     path=path,
-                    run_dir=run_dir,
-                    run_state=decisions[str(run_dir)],
+                    run_dir=owner,
+                    run_state=run_state,
                     receipt=receipts.get(path_text),
-                    registration=registered_by_path.get(path_text),
+                    registration=registration,
+                    kind=classification["kind"],
                 )
             )
 
@@ -195,21 +288,9 @@ def build_tidy_inventory(*, repo: Path, home: Path) -> dict[str, Any]:
             continue
         if path.parent == task_root:
             continue
-        owner = _owning_run(path, home=home)
-        if owner is not None and owner in run_dirs:
-            worktrees.append(
-                _tidy_worktree_record(
-                    path=path,
-                    run_dir=owner,
-                    run_state=decisions[str(owner)],
-                    receipt=receipts.get(path_text),
-                    registration=registration,
-                )
-            )
-            seen.add(path_text)
-            continue
         outside.append(
             {
+                "kind": "unknown-external",
                 "path": path_text,
                 "exists": path.is_dir(),
                 "registered": True,
@@ -273,7 +354,7 @@ def apply_tidy(
             )
             continue
         run_state = str(item.get("run_state", "blocked"))
-        if run_state != "complete":
+        if run_state not in {"complete", "ready-for-handoff", "companion-pass"}:
             actions.append(
                 {
                     "path": str(path),
@@ -335,11 +416,7 @@ def apply_tidy(
 
     for item in inventory.get("registered_outside_runs", []):
         path = Path(str(item["path"]))
-        if item.get("registered") and not path.exists():
-            actions.append({"path": str(path), "action": "pruned", "reason": "registered path missing"})
-            prune_needed = True
-        else:
-            actions.append({"path": str(path), "action": "kept", "reason": "outside run directories"})
+        actions.append({"path": str(path), "action": "kept", "reason": "unknown external worktree"})
     if keep_checks is not None:
         if keep_checks < 0:
             raise ValueError("--keep-checks must be zero or greater")
@@ -395,7 +472,8 @@ def render_tidy_text(payload: dict[str, Any]) -> str:
         actions = {item["path"]: item for item in payload.get("actions", [])}
         for item in worktrees:
             lines.append(
-                f"- {item['path']} branch={item.get('branch') or '-'} "
+                f"- {item['path']} kind={item.get('kind', 'direct-run')} "
+                f"branch={item.get('branch') or '-'} "
                 f"base={item.get('base_commit') or '-'} head={item.get('head_commit') or '-'} "
                 f"dirty={str(item.get('dirty')).lower()} size={item.get('size_bytes', 0)} "
                 f"state={item.get('run_state')}"
@@ -764,11 +842,13 @@ def _tidy_worktree_record(
     run_state: str,
     receipt: dict[str, Any] | None,
     registration: dict[str, Any] | None,
+    kind: str = "direct-run",
 ) -> dict[str, Any]:
     live = _live_worktree_state(path)
     head = live.get("head_commit") or (registration or {}).get("head_commit")
     base = receipt.get("base_commit") if receipt is not None else None
     return {
+        "kind": kind,
         "path": str(path),
         "run_dir": str(run_dir),
         "run_state": run_state,
@@ -853,6 +933,49 @@ def _owning_run(path: Path, *, home: Path) -> Path | None:
     return (home / "runs" / relative.parts[0]).resolve(strict=False)
 
 
+def _classify_worktree(path: Path, *, repo: Path, home: Path) -> dict[str, Any]:
+    path = path.resolve(strict=False)
+    task_root = (repo / ".orro" / "worktrees").resolve(strict=False)
+    if path.parent == task_root:
+        return {"kind": "task"}
+    for candidate in [path, *path.parents]:
+        if candidate.name != "runs":
+            continue
+        try:
+            relative = path.relative_to(candidate)
+        except ValueError:
+            continue
+        if len(relative.parts) == 3 and relative.parts[1] == "worktrees":
+            run_dir = (candidate / relative.parts[0]).resolve(strict=False)
+            owner_home = candidate.parent.resolve(strict=False)
+            if owner_home != home.resolve(strict=False):
+                try:
+                    owner_home.relative_to(repo.resolve(strict=False))
+                except ValueError:
+                    continue
+            kind = "direct-run" if owner_home == home.resolve(strict=False) else "nested-run"
+            return {"kind": kind, "run_dir": run_dir, "home": owner_home}
+    return {"kind": "unknown-external"}
+
+
+def _run_state(run_dir: Path, home: Path) -> str:
+    if (run_dir / "companion-manifest.json").is_file():
+        return _companion_status(run_dir)[0]
+    try:
+        return str(decide_next(run_dir, home=home)[1].get("decision", "blocked"))
+    except (OSError, ValueError, RuntimeError):
+        return "blocked"
+
+
+def _format_size(size_bytes: int) -> str:
+    value = float(size_bytes)
+    for unit in ("bytes", "KiB", "MiB", "GiB", "TiB"):
+        if value < 1024 or unit == "TiB":
+            return f"{value:.1f} {unit}" if unit != "bytes" else f"{int(value)} bytes"
+        value /= 1024
+    return f"{size_bytes} bytes"
+
+
 def _tree_size(path: Path) -> int:
     if not path.exists():
         return 0
@@ -867,10 +990,15 @@ def _tree_size(path: Path) -> int:
 
 
 def _git(cwd: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", *args],
-        cwd=cwd,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        return subprocess.CompletedProcess(
+            ["git", *args], returncode=1, stdout="", stderr=str(exc)
+        )

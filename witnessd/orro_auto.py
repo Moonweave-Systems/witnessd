@@ -51,6 +51,9 @@ def build_auto_plan(run_dir: Path, *, home: Path | None = None) -> tuple[int, di
         blocked=bool(continuation.get("blocked", next_code != 0)),
         reasons=reasons,
     )
+    for key, value in continuation.items():
+        if key not in payload and key not in {"kind", "schema_version"}:
+            payload[key] = value
 
     if decision == "needs-proofcheck":
         resolved_home = Path(str(continuation.get("home", home or run_dir.parent.parent)))
@@ -456,6 +459,8 @@ def _base_plan(
             "exit_code": continuation_exit_code,
             "error": continuation.get("error"),
         },
+        "observed_artifacts": continuation.get("observed_artifacts", {}),
+        "next_allowed": list(continuation.get("next_allowed", [])),
         "would_run": [],
         "blocked": blocked,
         "reasons": reasons,

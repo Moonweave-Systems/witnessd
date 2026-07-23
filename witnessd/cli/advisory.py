@@ -4,6 +4,7 @@ import argparse
 import io
 import json
 import os
+import re
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -127,6 +128,29 @@ def _with_advisory_error(
         next_command=next_command,
     )
 
+
+def _emit_deprecation(args: argparse.Namespace, replacement: str) -> None:
+    alias = getattr(args, "_deprecated_alias", None)
+    if alias:
+        mapping = f" (alias: {alias})" if alias == "next" else ""
+        print(
+            f"deprecated: use orro {replacement} (this alias will be removed in a future release){mapping}",
+            file=os.sys.stderr,
+        )
+
+
+def _auto_advisory_mode(goal: str, *, task_class: str) -> str:
+    if re.search(
+        r"\b(?:broken|break|crash|error|exception|fail(?:ure|ing)?|regression|symptom|traceback)\b",
+        goal.lower(),
+    ):
+        return "trace"
+    if task_class == "code-change" and re.search(
+        r"\b(?:add|build|create|implement|introduce|new|feature)\b", goal.lower()
+    ):
+        return "sketch"
+    return "route"
+
 def _cmd_orro_next(args: argparse.Namespace) -> int:
     from witnessd.orro_next import OrroNextError, decide_next, write_decision
 
@@ -155,6 +179,11 @@ def _cmd_orro_next(args: argparse.Namespace) -> int:
             default_code="ERR_ORRO_NEXT_BLOCKED",
             default_message="ORRO continuation is blocked",
         )
+    if getattr(args, "_deprecated_alias", None) == "next":
+        print(
+            "deprecated: use orro auto --dry-run (this alias will be removed in a future release)",
+            file=os.sys.stderr,
+        )
     print(json.dumps(payload, sort_keys=True))
     return code
 
@@ -173,6 +202,20 @@ def _cmd_orro_advise(args: argparse.Namespace) -> int:
             message="goal is required",
         )
         return 2
+    mode = args.mode
+    if mode == "auto":
+        routed = advise_workstyle(
+            str(args.goal),
+            repo=Path(args.repo).resolve(strict=False),
+            home=Path(args.home).resolve(strict=False) if args.home else None,
+        )
+        mode = _auto_advisory_mode(
+            str(args.goal), task_class=str(routed["task_class"])
+        )
+    if mode == "sketch":
+        return _cmd_orro_sketch(args)
+    if mode == "trace":
+        return _cmd_orro_trace(args)
     repo = Path(args.repo).resolve(strict=False)
     home = Path(args.home).resolve(strict=False) if args.home else None
     payload = advise_workstyle(str(args.goal), repo=repo, home=home)
@@ -196,6 +239,8 @@ def _cmd_orro_sketch(args: argparse.Namespace) -> int:
     )
     from witnessd.orro_intent import declared_intent_ref, read_declared_intent
     from witnessd.signing import DsseSigningError
+
+    _emit_deprecation(args, "advise --mode sketch")
 
     if not args.goal or not str(args.goal).strip():
         _emit_orro_error(
@@ -263,6 +308,8 @@ def _cmd_orro_trace(args: argparse.Namespace) -> int:
         write_advisory_decision,
     )
     from witnessd.signing import DsseSigningError
+
+    _emit_deprecation(args, "advise --mode trace")
 
     if not args.goal or not str(args.goal).strip():
         _emit_orro_error(
