@@ -644,6 +644,63 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertFalse(binding["boundary"]["verifies_evidence"])
             self.assertFalse(binding["boundary"]["executes_commands"])
 
+    def test_proofrun_blocks_when_plan_artifacts_and_run_dir_differ(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = self._init_home(root)
+            scout_dir = home / "runs" / "scout-artifacts"
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    main(
+                        [
+                            "scout",
+                            "write proof file",
+                            "--repo",
+                            str(repo),
+                            "--home",
+                            str(home),
+                            "--out-dir",
+                            str(scout_dir),
+                        ]
+                    ),
+                    0,
+                )
+            plan_path = scout_dir / "workflow-plan.json"
+            self._flowplan_out(root, "write proof file")
+            plan_path.write_text(
+                (root / "workflow-plan.json").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            mismatched_dir = home / "runs" / "proofrun-b"
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(
+                    [
+                        "proofrun",
+                        "write proof file",
+                        "--repo",
+                        str(repo),
+                        "--home",
+                        str(home),
+                        "--workflow-plan",
+                        str(plan_path),
+                        "--run-dir",
+                        str(mismatched_dir),
+                        "--allow-reference-adapter",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 2)
+            payload = json.loads(stdout.getvalue())
+            error = payload["error"]
+            self.assertEqual(error["code"], "ERR_ORRO_ARTIFACT_RUN_DIR_MISMATCH")
+            self.assertEqual(error["expected_artifact_dir"], str(scout_dir))
+            self.assertEqual(error["actual_run_dir"], str(mismatched_dir))
+            self.assertIn(str(scout_dir), error["next_command"])
+            self.assertIn("--run-dir", error["next_command"])
+            self.assertFalse(mismatched_dir.exists())
+
     def test_proofrun_workflow_plan_writes_role_dispatch_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -125,6 +125,12 @@ put the flowplan and proofrun artifacts in the scout run directory, or use
 `orro team go`. The front-door workflow above is copy-pasteable and uses a
 verification-only check lane; the separately labeled offline demo uses the
 intentional shell reference adapter and is not real AI work.
+For the manual path, thread one directory through every phase: run `orro scout`
+with `--out-dir "$RUN_DIR"`, write `flowplan` outputs under that same `$RUN_DIR`,
+then pass `--run-dir "$RUN_DIR"` to `orro proofrun` and proofcheck that returned
+run directory. A plan sourced from a scout artifact directory with a different
+run directory now blocks early with the expected path and corrected command.
+Use `orro flow` or `orro team go` for automatic path threading.
 `proofcheck` must write an explicit `proofcheck-verdict.json` before packaging
 the handoff:
 
