@@ -14,6 +14,7 @@ from witnessd.orro_roadmap import (
     read_roadmap,
     read_roadmap_binding,
 )
+from witnessd.orro_task import discover_task_workspaces, task_worktree_path
 
 
 STATUS_BOUNDARY = (
@@ -73,6 +74,10 @@ def build_status(*, repo: Path, home: Path) -> dict[str, Any]:
         _roadmap_item_status(item, by_item.get(str(item["id"]), []), repo=repo)
         for item in (roadmap or {"items": []})["items"]
     ]
+    for item in items:
+        workspace = _task_workspace_status(repo, str(item["id"]))
+        if workspace is not None:
+            item["workspace"] = workspace
     off_plan.sort(key=lambda item: _path_newness(Path(item["run_dir"])), reverse=True)
     worktrees = _run_worktree_paths(run_dirs)
     receipts = _worktree_receipts(run_dirs)
@@ -109,6 +114,8 @@ def render_status_text(payload: dict[str, Any]) -> str:
             elif item.get("latest_run"):
                 line += f" — {item['run_state']}: {item['latest_run']}"
             lines.append(line)
+            if item.get("workspace"):
+                lines.append(f"  workspace: {item['workspace']}")
             for step in item.get("steps", []):
                 step_line = f"  - step {step['id']}: {step['state']}"
                 if step.get("evidence_ref"):
@@ -174,10 +181,13 @@ def build_tidy_inventory(*, repo: Path, home: Path) -> dict[str, Any]:
             )
 
     outside: list[dict[str, Any]] = []
+    task_root = (repo / ".orro" / "worktrees").resolve(strict=False)
     for registration in registered:
         path = Path(registration["path"])
         path_text = str(path)
         if path_text in seen:
+            continue
+        if path.parent == task_root:
             continue
         owner = _owning_run(path, home=home)
         if owner is not None and owner in run_dirs:
@@ -204,6 +214,14 @@ def build_tidy_inventory(*, repo: Path, home: Path) -> dict[str, Any]:
         )
     worktrees.sort(key=lambda item: item["path"])
     outside.sort(key=lambda item: item["path"])
+    task_status = {
+        str(item["id"]): str(item.get("status", "not-started"))
+        for item in build_status(repo=repo, home=home).get("items", [])
+    }
+    task_worktrees = [
+        _task_tidy_record(record, item_status=task_status.get(str(record["item_id"]), "unknown item"))
+        for record in discover_task_workspaces(repo)
+    ]
     return {
         "kind": "orro-tidy",
         "schema_version": "0.1",
@@ -211,6 +229,7 @@ def build_tidy_inventory(*, repo: Path, home: Path) -> dict[str, Any]:
         "repo": str(repo),
         "home": str(home),
         "worktrees": worktrees,
+        "task_worktrees": task_worktrees,
         "registered_outside_runs": outside,
         "boundary": TIDY_BOUNDARY,
     }
@@ -263,6 +282,43 @@ def apply_tidy(*, repo: Path, inventory: dict[str, Any]) -> dict[str, Any]:
                 }
             )
 
+    current_status = {
+        str(item["id"]): str(item.get("status", "not-started"))
+        for item in build_status(
+            repo=repo, home=Path(str(inventory.get("home", repo / ".witnessd")))
+        ).get("items", [])
+    }
+    for item in inventory.get("task_worktrees", []):
+        path = Path(str(item["path"]))
+        if not item.get("descriptor_valid"):
+            actions.append({"path": str(path), "action": "kept", "reason": "unverified descriptor"})
+            continue
+        live = _live_worktree_state(path)
+        if live["dirty"] is True:
+            actions.append({"path": str(path), "action": "kept", "reason": "dirty"})
+            continue
+        if live["dirty"] is None:
+            actions.append({"path": str(path), "action": "kept", "reason": f"live dirty check failed: {live['error']}"})
+            continue
+        item_status = current_status.get(str(item["item_id"]), "unknown item")
+        if item_status != "done (verified)":
+            actions.append({"path": str(path), "action": "kept", "reason": f"item status {item_status}"})
+            continue
+        metadata = []
+        for name in (".orro-task.json", "task-open-receipt.json"):
+            metadata_path = path / name
+            if metadata_path.is_file():
+                metadata.append((metadata_path, metadata_path.read_bytes()))
+                metadata_path.unlink()
+        completed = _git(repo, ["worktree", "remove", str(path)])
+        if completed.returncode == 0:
+            actions.append({"path": str(path), "action": "removed", "reason": "clean done (verified) item"})
+            prune_needed = True
+        else:
+            for metadata_path, content in metadata:
+                metadata_path.write_bytes(content)
+            actions.append({"path": str(path), "action": "kept", "reason": "git worktree remove failed: " + (completed.stderr.strip() or completed.stdout.strip() or "unknown error")})
+
     for item in inventory.get("registered_outside_runs", []):
         path = Path(str(item["path"]))
         if item.get("registered") and not path.exists():
@@ -296,6 +352,25 @@ def render_tidy_text(payload: dict[str, Any]) -> str:
                 f"base={item.get('base_commit') or '-'} head={item.get('head_commit') or '-'} "
                 f"dirty={str(item.get('dirty')).lower()} size={item.get('size_bytes', 0)} "
                 f"state={item.get('run_state')}"
+            )
+            action = actions.get(item["path"])
+            if action is None:
+                lines.append("  kept: dry-run")
+            elif action["action"] == "kept":
+                lines.append(f"  kept: {action['reason']}")
+            else:
+                lines.append(f"  {action['action']}: {action['reason']}")
+    lines.append("Task worktrees:")
+    task_worktrees = payload.get("task_worktrees")
+    if not isinstance(task_worktrees, list) or not task_worktrees:
+        lines.append("  (none)")
+    else:
+        actions = {item["path"]: item for item in payload.get("actions", [])}
+        for item in task_worktrees:
+            lines.append(
+                f"- {item['path']} branch={item.get('branch') or '-'} "
+                f"dirty={str(item.get('dirty')).lower()} item={item.get('item_id')} "
+                f"status={item.get('item_status')}"
             )
             action = actions.get(item["path"])
             if action is None:
@@ -431,6 +506,37 @@ def _roadmap_item_status(
     else:
         result["status"] = "not-started"
     return result
+
+
+def _task_workspace_status(repo: Path, item_id: str) -> str | None:
+    path = task_worktree_path(repo, item_id)
+    if not path.is_dir():
+        return None
+    records = [record for record in discover_task_workspaces(repo) if record["path"] == path.resolve(strict=False)]
+    if not records or not records[0]["valid"]:
+        return "unverified descriptor"
+    live = _live_worktree_state(path)
+    state = "dirty" if live["dirty"] is True else "clean" if live["dirty"] is False else "unverified descriptor"
+    return f".orro/worktrees/{item_id} (branch orro/{item_id}, {state})"
+
+
+def _task_tidy_record(record: dict[str, Any], *, item_status: str) -> dict[str, Any]:
+    path = Path(record["path"])
+    live = _live_worktree_state(path)
+    descriptor = record.get("descriptor") or {}
+    return {
+        "kind": "task",
+        "path": str(path),
+        "item_id": record.get("item_id"),
+        "descriptor_valid": bool(record.get("valid")),
+        "item_status": item_status,
+        "branch": live.get("branch") or descriptor.get("branch"),
+        "base_commit": descriptor.get("base_commit"),
+        "head_commit": live.get("head_commit"),
+        "dirty": live.get("dirty"),
+        "dirty_error": live.get("error"),
+        "size_bytes": _tree_size(path),
+    }
 
 
 def _roadmap_item_steps_status(
@@ -623,7 +729,17 @@ def _live_worktree_state(path: Path) -> dict[str, Any]:
             "dirty": None,
             "error": "path missing",
         }
-    status = _git(path, ["status", "--porcelain"])
+    status = _git(
+        path,
+        [
+            "status",
+            "--porcelain",
+            "--",
+            ":(exclude).orro-task.json",
+            ":(exclude)task-open-receipt.json",
+            ".",
+        ],
+    )
     if status.returncode != 0:
         return {
             "branch": None,

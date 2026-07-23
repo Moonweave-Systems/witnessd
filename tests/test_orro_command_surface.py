@@ -59,12 +59,21 @@ class OrroCommandSurfaceTests(unittest.TestCase):
         tidy = parser.parse_args(
             ["orro-tidy", "--repo", "/tmp/repo", "--home", "/tmp/home", "--apply"]
         )
+        task = parser.parse_args(
+            ["orro-task", "begin", "item-one", "--repo", "/tmp/repo", "--base", "HEAD", "--no-open", "--json"]
+        )
 
         self.assertEqual(status.cmd, "orro-status")
         self.assertEqual(tidy.cmd, "orro-tidy")
         self.assertTrue(status.json)
         self.assertTrue(tidy.apply)
+        self.assertEqual(task.task_command, "begin")
+        self.assertEqual(task.item_id, "item-one")
+        self.assertTrue(task.no_open)
+        self.assertTrue(task.json)
         self.assertNotIn("--force", commands["orro-tidy"].format_help())
+        self.assertIn("not proof", commands["orro-task"].format_help())
+        self.assertIn("Merge approval and merge execution stay human", commands["orro-task"].format_help())
         for command in ("status", "tidy"):
             self.assertIn(command, ORRO_HELP)
 
@@ -122,6 +131,7 @@ class OrroCommandSurfaceTests(unittest.TestCase):
             "demo": "orro-demo",
             "status": "orro-status",
             "tidy": "orro-tidy",
+            "task": "orro-task",
             "auto": "orro-auto",
             "team": "team",
         }
