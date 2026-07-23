@@ -149,9 +149,17 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_flowplan_args(flowplan)
     flowplan.set_defaults(func=_cli_handler("plan", "_cmd_plan"))
 
-    status = sub.add_parser("status", help="render evidence-pending status")
+    status = sub.add_parser("status", help="roadmap status or a run-scoped report")
+    status.add_argument("run_dir", nargs="?")
+    status.add_argument("--latest", action="store_true")
+    status.add_argument("--repo", default=".")
+    status.add_argument("--home", default=None)
+    status.add_argument("--out", default=None)
+    status.add_argument("--workstyle-decision", default=None)
+    status.add_argument("--_deprecated-alias", dest="_deprecated_alias", default=None, help=argparse.SUPPRESS)
     status.add_argument("--evidence-dir", default=".")
     status.add_argument("--runlog", default=None)
+    status.add_argument("--json", action="store_true")
     status.set_defaults(func=_cli_handler("runtime_ops", "_cmd_status"))
 
     verify = sub.add_parser("verify", help="verify a run directory or runlog integrity")
@@ -538,7 +546,12 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Report roadmap-bound observed run state without executing or verifying.",
     )
     orro_status.add_argument("--repo", "--root", dest="repo", default=".")
+    orro_status.add_argument("run_dir", nargs="?")
+    orro_status.add_argument("--latest", action="store_true")
     orro_status.add_argument("--home", default=None)
+    orro_status.add_argument("--out", default=None)
+    orro_status.add_argument("--workstyle-decision", default=None)
+    orro_status.add_argument("--_deprecated-alias", dest="_deprecated_alias", default=None, help=argparse.SUPPRESS)
     orro_status.add_argument("--json", action="store_true")
     orro_status.set_defaults(func=_cli_handler("status", "_cmd_orro_status"))
 
@@ -1229,6 +1242,13 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
                 "--dry-run",
                 "--_deprecated-alias",
                 "next",
+                *argv[2:],
+            ]
+        if command == "report":
+            return [
+                "orro-status",
+                "--_deprecated-alias",
+                "report",
                 *argv[2:],
             ]
         if command in {"sketch", "trace"}:

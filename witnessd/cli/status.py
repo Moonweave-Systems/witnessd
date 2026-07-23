@@ -5,11 +5,13 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 from witnessd.cli._output import _emit_orro_error, _hash_file
 from witnessd.orro_next import decide_next
+from witnessd.orro_report import OrroReportError, build_report, render_text_report, write_report
 from witnessd.orro_roadmap import (
     OrroRoadmapError,
     read_roadmap,
@@ -36,6 +38,54 @@ def resolve_home(args_home: str | None, repo: Path) -> Path:
 def _cmd_orro_status(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve(strict=False)
     home = resolve_home(args.home, repo)
+    if args.run_dir or args.latest:
+        if args.run_dir and args.latest:
+            _emit_orro_error(
+                args,
+                code="ERR_ORRO_STATUS_RUN_DIR_CONFLICT",
+                message="orro status --latest cannot be combined with a run directory",
+            )
+            return 2
+        run_dir = (
+            Path(args.run_dir).resolve(strict=False)
+            if args.run_dir
+            else latest_run_dir(home)
+        )
+        if run_dir is None:
+            _emit_orro_error(
+                args,
+                code="ERR_ORRO_STATUS_LATEST_NO_RUNS",
+                message=f"no ORRO runs found under {home / 'runs'}",
+            )
+            return 2
+        workstyle = (
+            Path(args.workstyle_decision).resolve(strict=False)
+            if args.workstyle_decision
+            else None
+        )
+        try:
+            code, payload = build_report(
+                run_dir,
+                home=home,
+                workstyle_decision=workstyle,
+                declared_intent=None,
+                declared_intent_source=None,
+            )
+            if args.out:
+                write_report(Path(args.out).resolve(strict=False), payload)
+        except OrroReportError as exc:
+            _emit_orro_error(args, code=exc.code, message=str(exc))
+            return 1
+        if getattr(args, "_deprecated_alias", None) == "report":
+            print(
+                "deprecated: use orro status <run-dir> (this alias will be removed in a future release)",
+                file=sys.stderr,
+            )
+        if args.json:
+            print(json.dumps(payload, sort_keys=True))
+        else:
+            print(render_text_report(payload), end="")
+        return code
     try:
         payload = build_status(repo=repo, home=home)
     except OrroRoadmapError as exc:

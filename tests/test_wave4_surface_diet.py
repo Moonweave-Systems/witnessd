@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from witnessd.__main__ import main
 
@@ -101,6 +102,43 @@ class Wave4AutoSurfaceTests(unittest.TestCase):
             next_stderr,
             "deprecated: use orro auto --dry-run (this alias will be removed in a future release; output maps to orro-auto-plan)\n",
         )
+
+
+class Wave4StatusSurfaceTests(unittest.TestCase):
+    def test_status_run_scope_and_latest_render_report_view(self) -> None:
+        report_payload = {
+            "kind": "orro-report",
+            "summary": {"state": "needs-proofcheck", "recommended_next_action": "proofcheck"},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / "home"
+            run_dir = home / "runs" / "run-one"
+            run_dir.mkdir(parents=True)
+            with patch("witnessd.cli.status.build_report", return_value=(0, report_payload)) as build_report:
+                status_code, status_payload, status_stderr = _run(
+                    "status", str(run_dir), "--home", str(home)
+                )
+                latest_code, latest_payload, latest_stderr = _run(
+                    "status", "--latest", "--home", str(home)
+                )
+                report_code, report_payload_alias, report_stderr = _run(
+                    "report", str(run_dir), "--home", str(home)
+                )
+
+        self.assertEqual(status_code, 0)
+        self.assertEqual(status_payload, report_payload)
+        self.assertEqual(latest_code, 0)
+        self.assertEqual(latest_payload, report_payload)
+        self.assertEqual(report_code, 0)
+        self.assertEqual(report_payload_alias, report_payload)
+        self.assertEqual(status_stderr, "")
+        self.assertEqual(latest_stderr, "")
+        self.assertEqual(
+            report_stderr,
+            "deprecated: use orro status <run-dir> (this alias will be removed in a future release)\n",
+        )
+        self.assertEqual(build_report.call_count, 3)
 
 
 if __name__ == "__main__":
