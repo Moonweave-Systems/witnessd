@@ -265,6 +265,8 @@ def _summary(
             state, execution, verification, handoff, reference_adapter
         ),
         "recommended_next_action": next_action,
+        "ship_ready": bool(continuation.get("ship_ready")),
+        "ship_command": continuation.get("ship_command"),
         "complete": state == "complete",
         "blocked": bool(continuation.get("blocked", False)),
         "not_real_ai_work": reference_adapter["not_real_ai_work"],
@@ -482,6 +484,8 @@ def _human_review(
     focus = ["review changed files", "check proofcheck-verdict.json"]
     if summary.get("state") == "ready-for-handoff":
         focus.append("package handoff before merge")
+    if summary.get("ship_ready"):
+        focus.append("ship the branch; merge stays human")
     if workflow.get("workflow_plan_present"):
         focus.append("confirm workflow plan matches the intended work")
     if workstyle and workstyle.get("task_class") == "risky-change":

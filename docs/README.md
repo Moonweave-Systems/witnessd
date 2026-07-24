@@ -50,6 +50,7 @@ Use these names in new user-facing docs:
 | `proofrun` | evidence-backed execution alias |
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
+| `orro ship` | push a ship-ready branch and optionally open a PR; merge approval stays human |
 | `orro next` | non-executing continuation/status gate over persisted run artifacts |
 | `orro report` | human-facing summary of observed ORRO artifacts and next safe action |
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |

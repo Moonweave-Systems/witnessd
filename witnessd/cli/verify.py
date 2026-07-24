@@ -150,6 +150,7 @@ def _collect_orro_artifact_hashes(
 ) -> list[dict[str, str]]:
     generated_names = {
         "orro-handoff.json",
+        "ship-receipt.json",
         "proofcheck-verdict.json",
         "team-ledger-verdict.json",
     }
@@ -1149,6 +1150,12 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
             "approves_merge": False,
             "raises_assurance": False,
         },
+        "ship_ready": True,
+        "ship_command": f"orro ship {evidence_dir} --home {home or evidence_dir.parent.parent}",
+        "ship_message": (
+            f"Ship-ready: orro ship {evidence_dir} --home {home or evidence_dir.parent.parent}; "
+            "merge stays human."
+        ),
     }
     if out_path is not None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1158,6 +1165,42 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         )
     print(json.dumps(payload, sort_keys=True))
     return 0
+
+
+def _cmd_ship(args: argparse.Namespace) -> int:
+    from witnessd.orro_ship import build_ship, ship_run
+
+    run_dir = Path(args.run_dir).resolve(strict=False)
+    home = Path(args.home).resolve(strict=False)
+    repo = Path(args.repo).resolve(strict=False)
+    code, payload = build_ship(run_dir, home=home, repo=repo, remote=args.remote)
+    if code != 0:
+        if args.json:
+            print(json.dumps(payload, sort_keys=True))
+        else:
+            print(json.dumps(payload, sort_keys=True))
+        return code
+    try:
+        code, payload = ship_run(
+            run_dir,
+            home=home,
+            repo=repo,
+            remote=args.remote,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        payload = {
+            "kind": "orro-ship",
+            "run_dir": str(run_dir),
+            "blocked": True,
+            "blockers": [{
+                "code": "ERR_ORRO_SHIP_PUSH_FAILED",
+                "message": str(exc),
+                "next_commands": [f"git push -u {shlex.quote(args.remote)} <current-branch>"],
+            }],
+        }
+        code = 1
+    print(json.dumps(payload, sort_keys=True))
+    return code
 
 
 def _cmd_orro_doctor(args: argparse.Namespace) -> int:

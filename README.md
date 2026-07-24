@@ -217,6 +217,7 @@ witnessd runtime code or Depone verifier logic.
 | `orro proofrun` | precise evidence-backed execution alias |
 | `orro proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
+| `orro ship` | push a ship-ready branch and optionally open a PR; merge approval stays human |
 | `orro status` | roadmap status, or a run-scoped report with `<run-dir>` or `--latest` |
 | `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
 | `orro check` | companion: deterministic verify (Depone verdict) + read-only review (advisory); spawns zero execution-adapter lanes; does not claim observed execution |
