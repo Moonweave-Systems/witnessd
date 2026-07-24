@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -132,6 +133,43 @@ class OrroShipTest(unittest.TestCase):
             self.assertIn("feat/change", _git(bare, "branch"))
             self.assertTrue((run / "ship-receipt.json").is_file())
             self.assertEqual(build_ship(run, home=root / "home", repo=repo)[0], 0)
+
+    def test_ship_cli_stdout_is_one_json_document_in_both_output_modes(self) -> None:
+        for json_flag in ("--json", None):
+            with self.subTest(json_flag=json_flag), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                repo = self._repo(root)
+                bare = root / "bare.git"
+                _git(root, "init", "--bare", str(bare))
+                _git(repo, "remote", "add", "origin", str(bare))
+                _git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+                run = _ready_run(root)
+                command = [
+                    sys.executable,
+                    "-m",
+                    "witnessd",
+                    "ship",
+                    str(run),
+                    "--home",
+                    str(root / "home"),
+                    "--repo",
+                    str(repo),
+                ]
+                if json_flag:
+                    command.append(json_flag)
+                environment = os.environ.copy()
+                environment["PATH"] = "/usr/bin:/bin"
+                environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+                completed = subprocess.run(
+                    command,
+                    cwd=Path(__file__).resolve().parents[1],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    env=environment,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                json.loads(completed.stdout)
 
     def test_completed_bound_run_reports_ship_command(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

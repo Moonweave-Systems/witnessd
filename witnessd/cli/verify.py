@@ -1175,10 +1175,7 @@ def _cmd_ship(args: argparse.Namespace) -> int:
     repo = Path(args.repo).resolve(strict=False)
     code, payload = build_ship(run_dir, home=home, repo=repo, remote=args.remote)
     if code != 0:
-        if args.json:
-            print(json.dumps(payload, sort_keys=True))
-        else:
-            print(json.dumps(payload, sort_keys=True))
+        print(json.dumps(payload, sort_keys=True))
         return code
     try:
         code, payload = ship_run(
@@ -1188,13 +1185,17 @@ def _cmd_ship(args: argparse.Namespace) -> int:
             remote=args.remote,
         )
     except (OSError, subprocess.SubprocessError) as exc:
+        stderr_tail = str(getattr(exc, "stderr", None) or "").strip()[-2000:]
+        message = str(exc)
+        if stderr_tail:
+            message = f"{message}; push stderr tail: {stderr_tail}"
         payload = {
             "kind": "orro-ship",
             "run_dir": str(run_dir),
             "blocked": True,
             "blockers": [{
                 "code": "ERR_ORRO_SHIP_PUSH_FAILED",
-                "message": str(exc),
+                "message": message,
                 "next_commands": [f"git push -u {shlex.quote(args.remote)} <current-branch>"],
             }],
         }

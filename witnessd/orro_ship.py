@@ -135,7 +135,14 @@ def ship_run(
     if blockers:
         return 1, {"kind": "orro-ship", "run_dir": str(run_dir), "blocked": True, "blockers": blockers, "boundary": BOUNDARY}
 
-    subprocess.run(["git", "push", "-u", remote, branch], cwd=repo, check=True, env=os.environ.copy())
+    subprocess.run(
+        ["git", "push", "-u", remote, branch],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=os.environ.copy(),
+    )
     goal = _goal(run_dir)
     verdict_hash = _hash_file(run_dir / "proofcheck-verdict.json")
     handoff_hash = _hash_file(run_dir / "orro-handoff.json")
