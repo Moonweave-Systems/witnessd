@@ -26,3 +26,8 @@ only declared executable steps, stops at the first non-pass state, and records
 the actual run directory. Its execution boundary is distinct from the
 non-executing `auto --dry-run`, `auto --once`, and `auto --until-complete`
 continuation modes.
+
+When a bound passing proofcheck and handoff are present, `orro ship <run-dir>
+--home <home>` can push the current non-default branch and optionally open a
+PR. Shipping is orchestration metadata, never proof or merge approval; merge
+stays human.

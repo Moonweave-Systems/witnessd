@@ -152,6 +152,7 @@ class OrroCommandSurfaceTests(unittest.TestCase):
             "proofcheck": "proofcheck",
             "advisory-provenance-check": "advisory-provenance-check",
             "handoff": "handoff",
+            "ship": "ship",
             "doctor": "orro-doctor",
             "engine-lock": "engine-lock",
             "lock": "engine-lock",

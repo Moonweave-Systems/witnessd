@@ -102,6 +102,8 @@ def build_auto_plan(run_dir: Path, *, home: Path | None = None) -> tuple[int, di
 
     if decision == "complete":
         payload["blocked"] = False
+        if continuation.get("ship_ready"):
+            payload["next_allowed"] = [str(continuation["ship_command"])]
         return 0, payload
 
     payload["blocked"] = True

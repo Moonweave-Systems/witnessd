@@ -201,6 +201,17 @@ def _build_parser() -> argparse.ArgumentParser:
     handoff.add_argument("--json", action="store_true")
     handoff.set_defaults(func=_cli_handler("verify", "_cmd_handoff"))
 
+    ship = sub.add_parser(
+        "ship",
+        help="push a passing evidence-gated branch and optionally open a PR; never merges",
+    )
+    ship.add_argument("run_dir")
+    ship.add_argument("--home", required=True)
+    ship.add_argument("--repo", default=".")
+    ship.add_argument("--remote", default="origin")
+    ship.add_argument("--json", action="store_true")
+    ship.set_defaults(func=_cli_handler("verify", "_cmd_ship"))
+
     route = sub.add_parser("route", help="dry-run W4 model routing")
     route.add_argument("--root", "--repo", dest="root", default=".")
     route.add_argument("--runlog", default=None)
@@ -1116,6 +1127,7 @@ ORRO_COMMAND_MAP: dict[str, str] = {
     "proofcheck": "proofcheck",
     "advisory-provenance-check": "advisory-provenance-check",
     "handoff": "handoff",
+    "ship": "ship",
     "doctor": "orro-doctor",
     "engine-lock": "engine-lock",
     "lock": "engine-lock",
@@ -1139,6 +1151,7 @@ PUBLIC_COMMAND_SUMMARIES: dict[str, str] = {
     "proofcheck": "offline evidence verification delegated to Depone",
     "advisory-provenance-check": "offline Depone v110 re-derivation of sealed advisory provenance",
     "handoff": "maintainer review package gated by proofcheck-verdict.json",
+    "ship": "evidence-gated branch push and optional PR; merge approval stays human",
     "doctor": "ORRO engine/verifier readiness; not runlog health or evidence verification",
     "engine-lock": "write/check distribution metadata for pinned engine commits",
     "lock": "compatibility spelling for engine-lock",

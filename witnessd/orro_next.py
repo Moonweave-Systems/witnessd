@@ -182,6 +182,8 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
             home=home,
             proofcheck_payload=proofcheck_payload,
         )
+        payload["ship_ready"] = True
+        payload["ship_command"] = f"orro ship {run_dir} --home {home}"
         return 0, payload
     if proofcheck_state["decision"] == "pass":
         payload = _base_decision(
@@ -483,6 +485,7 @@ def _collect_artifact_hashes(run_dir: Path) -> list[dict[str, str]]:
     generated_names = {
         "orro-continuation-decision.json",
         "orro-handoff.json",
+        "ship-receipt.json",
         "proofcheck-verdict.json",
         "team-ledger-verdict.json",
     }
