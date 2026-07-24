@@ -16,6 +16,7 @@ Depone verification returns a verdict.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
 RUNNER_SANDBOX_HELP = (
@@ -156,7 +157,6 @@ def _build_parser() -> argparse.ArgumentParser:
     status.add_argument("--home", default=None)
     status.add_argument("--out", default=None)
     status.add_argument("--workstyle-decision", default=None)
-    status.add_argument("--_deprecated-alias", dest="_deprecated_alias", default=None, help=argparse.SUPPRESS)
     status.add_argument("--evidence-dir", default=".")
     status.add_argument("--runlog", default=None)
     status.add_argument("--json", action="store_true")
@@ -248,15 +248,6 @@ def _build_parser() -> argparse.ArgumentParser:
     engine_lock.add_argument("--json", action="store_true")
     engine_lock.set_defaults(func=_cli_handler("verify", "_cmd_orro_engine_lock"))
 
-    orro_next = sub.add_parser("orro-next", help=argparse.SUPPRESS)
-    orro_next.add_argument("run_dir", nargs="?")
-    orro_next.add_argument("--latest", action="store_true")
-    orro_next.add_argument("--home", default=None)
-    orro_next.add_argument("--out", default=None)
-    orro_next.add_argument("--_deprecated-alias", dest="_deprecated_alias", default=None, help=argparse.SUPPRESS)
-    orro_next.add_argument("--json", action="store_true")
-    orro_next.set_defaults(func=_cli_handler("advisory", "_cmd_orro_next"))
-
     orro_advise = sub.add_parser("orro-advise", help=argparse.SUPPRESS)
     orro_advise.add_argument("goal", nargs="?")
     orro_advise.add_argument("--repo", "--root", dest="repo", default=".")
@@ -265,89 +256,8 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_advise.add_argument("--mode", choices=["auto", "route", "sketch", "trace"], default="auto")
     orro_advise.add_argument("--decision", default=None, help=argparse.SUPPRESS)
     orro_advise.add_argument("--intent", default=None, help=argparse.SUPPRESS)
-    orro_advise.add_argument("--_deprecated-alias", dest="_deprecated_alias", default=None, help=argparse.SUPPRESS)
     orro_advise.add_argument("--json", action="store_true")
     orro_advise.set_defaults(func=_cli_handler("advisory", "_cmd_orro_advise"))
-
-    orro_sketch = sub.add_parser(
-        "orro-sketch",
-        help=argparse.SUPPRESS,
-        description=(
-            "Validate and seal an agent-authored advisory sketch decision. Without "
-            "--decision, emits a degraded heuristic scaffold. Not proof or assurance."
-        ),
-    )
-    orro_sketch.add_argument("goal", nargs="?")
-    orro_sketch.add_argument("--repo", "--root", dest="repo", default=".")
-    orro_sketch.add_argument("--home", default=None)
-    orro_sketch.add_argument(
-        "--decision",
-        default=None,
-        metavar="DECISION_JSON_PATH",
-        help=(
-            "path to a JSON file; required schema: frame, non-empty candidates[] "
-            "with axis, summary, benefits[], risks[], and tradeoff or tradeoffs, "
-            "chosen{direction, reason, confidence, what_would_change_it}, rejected[], "
-            "no_gos[], and rabbit_holes[]. Example: "
-            "tests/fixtures/orro-sketch-decision.json"
-        ),
-    )
-    orro_sketch.add_argument(
-        "--intent",
-        default=None,
-        metavar="INTENT_JSON_PATH",
-        help=(
-            "path to a JSON file; schema: {intent: str, non_goals?: [str], "
-            "constraints?: [str]}. Example: tests/fixtures/orro-declared-intent.json"
-        ),
-    )
-    orro_sketch.add_argument("--out", default=None)
-    orro_sketch.add_argument("--json", action="store_true")
-    orro_sketch.set_defaults(func=_cli_handler("advisory", "_cmd_orro_sketch"))
-
-    orro_trace = sub.add_parser(
-        "orro-trace",
-        help=argparse.SUPPRESS,
-        description=(
-            "Validate, gate, and seal an agent-authored root cause decision. Without "
-            "--decision, emits a degraded heuristic scaffold. Not proof or assurance."
-        ),
-    )
-    orro_trace.add_argument("goal", nargs="?")
-    orro_trace.add_argument("--repo", "--root", dest="repo", default=".")
-    orro_trace.add_argument("--home", default=None)
-    orro_trace.add_argument(
-        "--decision",
-        default=None,
-        metavar="DECISION_JSON_PATH",
-        help=(
-            "path to a JSON file; required schema: check_the_plug{}, "
-            "reproduction{path, sha256}, localization, hypotheses[] with mechanism, "
-            "prediction, discriminating_probe, and confidence, confirmation{}, "
-            "fix_scope{}, and exactly one of root_cause{} or unconfirmed"
-        ),
-    )
-    orro_trace.add_argument("--out", default=None)
-    orro_trace.add_argument("--json", action="store_true")
-    orro_trace.set_defaults(func=_cli_handler("advisory", "_cmd_orro_trace"))
-
-    orro_report = sub.add_parser("orro-report", help=argparse.SUPPRESS)
-    orro_report.add_argument("run_dir", nargs="?")
-    orro_report.add_argument("--latest", action="store_true")
-    orro_report.add_argument("--home", default=None)
-    orro_report.add_argument("--out", default=None)
-    orro_report.add_argument("--workstyle-decision", default=None)
-    orro_report.add_argument(
-        "--intent",
-        default=None,
-        metavar="INTENT_JSON_PATH",
-        help=(
-            "path to a JSON file; schema: {intent: str, non_goals?: [str], "
-            "constraints?: [str]}. Example: tests/fixtures/orro-declared-intent.json"
-        ),
-    )
-    orro_report.add_argument("--json", action="store_true")
-    orro_report.set_defaults(func=_cli_handler("advisory", "_cmd_orro_report"))
 
     orro_review = sub.add_parser(
         "orro-review",
@@ -552,7 +462,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_status.add_argument("--out", default=None)
     orro_status.add_argument("--workstyle-decision", default=None)
     orro_status.add_argument("--intent", default=None, help=argparse.SUPPRESS)
-    orro_status.add_argument("--_deprecated-alias", dest="_deprecated_alias", default=None, help=argparse.SUPPRESS)
+    orro_status.add_argument("--write", action="store_true", help="write the generated .orro/STATUS.md projection")
     orro_status.add_argument("--json", action="store_true")
     orro_status.set_defaults(func=_cli_handler("status", "_cmd_orro_status"))
 
@@ -1140,24 +1050,23 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     raw_argv = _normalize_superflow_argv(list(sys.argv[1:] if argv is None else argv))
+    if len(raw_argv) >= 2 and raw_argv[:1] == ["orro"] and raw_argv[1] in ORRO_REMOVED_ALIASES:
+        return _emit_removed_alias_blocker(raw_argv[1], json_output="--json" in raw_argv[2:])
     normalized_orro = _normalize_orro_argv(raw_argv)
-    alias_help = raw_argv[0:2] in (
-        ["orro", "next"],
-        ["orro", "report"],
-        ["orro", "sketch"],
-        ["orro", "trace"],
-    ) and "--help" in raw_argv[2:]
-    if raw_argv[:2] in (["orro", "next"], ["orro", "report"], ["orro", "sketch"], ["orro", "trace"]) and not alias_help:
-        normalized_orro = _normalize_orro_alias_argv(raw_argv)
-    elif alias_help:
-        normalized_orro = [ORRO_COMMAND_MAP[raw_argv[1]], *raw_argv[2:]]
     argv = _normalize_run_goal_argv(normalized_orro)
     parser = _build_parser()
     args = parser.parse_args(argv)
     # argparse.REMAINDER keeps a leading "--"; drop it so command is the argv.
     if getattr(args, "command", None) and args.command[0] == "--":
         args.command = args.command[1:]
-    return args.func(args)
+    try:
+        result = args.func(args)
+    finally:
+        if _is_status_boundary(args):
+            from witnessd.cli.status import refresh_status_document
+
+            refresh_status_document(args)
+    return result
 
 
 def _normalize_run_goal_argv(argv: list[str]) -> list[str]:
@@ -1194,11 +1103,7 @@ ORRO_COMMAND_MAP: dict[str, str] = {
     "doctor": "orro-doctor",
     "engine-lock": "engine-lock",
     "lock": "engine-lock",
-    "next": "orro-next",
     "advise": "orro-advise",
-    "sketch": "orro-sketch",
-    "trace": "orro-trace",
-    "report": "orro-report",
     "review": "orro-review",
     "check": "orro-check",
     "demo": "orro-demo",
@@ -1220,8 +1125,7 @@ PUBLIC_COMMAND_SUMMARIES: dict[str, str] = {
     "handoff": "maintainer review package gated by proofcheck-verdict.json",
     "doctor": "ORRO engine/verifier readiness; not runlog health or evidence verification",
     "engine-lock": "write/check distribution metadata for pinned engine commits",
-    "lock": "(deprecated alias for engine-lock)",
-    "next": "(deprecated alias for auto --dry-run)",
+    "lock": "compatibility spelling for engine-lock",
     "advise": "non-executing workstyle router; auto-selects sketch/trace for new work or symptoms; --mode overrides",
     "review": "advisory read-only reviewer lanes; not proof or assurance",
     "check": "companion: verify (Depone verdict) plus read-only review; not observed execution",
@@ -1232,16 +1136,12 @@ PUBLIC_COMMAND_SUMMARIES: dict[str, str] = {
     "auto": "dry-run, one-step, bounded post-run, or bounded item-chain automation",
     "flow": "guided init/scout/flowplan/proofrun/proofcheck with gated blockers",
     "team": "scaffold team config or run flowplan/proofrun/proofcheck/report",
-    "sketch": "(deprecated alias for advise --mode sketch)",
-    "trace": "(deprecated alias for advise --mode trace)",
-    "report": "(deprecated alias for status <run-dir>)",
 }
-ORRO_DEPRECATED_ALIASES: dict[str, str] = {
-    "lock": "engine-lock",
+ORRO_REMOVED_ALIASES: dict[str, str] = {
     "next": "auto --dry-run",
     "sketch": "advise --mode sketch",
     "trace": "advise --mode trace",
-    "report": "status <run-dir>",
+    "report": "status <run-dir>|--latest",
 }
 ORRO_COMMANDS: frozenset[str] = frozenset(ORRO_COMMAND_MAP)
 
@@ -1254,33 +1154,33 @@ def _normalize_orro_argv(argv: list[str]) -> list[str]:
     return argv
 
 
-def _normalize_orro_alias_argv(argv: list[str]) -> list[str]:
-    command = argv[1]
-    normalized = [ORRO_COMMAND_MAP[command], *argv[2:]]
-    if command == "next":
-        return [
-            "orro-next",
-            "--_deprecated-alias",
-            "next",
-            *argv[2:],
-        ]
-    if command == "report":
-        return [
-                "orro-status",
-                "--_deprecated-alias",
-                "report",
-                *argv[2:],
-        ]
-    if command in {"sketch", "trace"}:
-        return [
-                "orro-advise",
-                "--mode",
-                command,
-                "--_deprecated-alias",
-                command,
-                *argv[2:],
-        ]
-    return normalized
+def _is_status_boundary(args: argparse.Namespace) -> bool:
+    return bool(
+        args.cmd in {"proofrun", "orro-check", "orro-flow", "handoff", "orro-auto"}
+        or (args.cmd == "team" and getattr(args, "team_cmd", None) == "go")
+        or (args.cmd == "orro-task" and getattr(args, "task_command", None) == "begin")
+        or (args.cmd == "orro-tidy" and getattr(args, "apply", False))
+    )
+
+
+def _emit_removed_alias_blocker(alias: str, *, json_output: bool) -> int:
+    from witnessd.cli._output import _structured_error
+
+    replacement = ORRO_REMOVED_ALIASES[alias]
+    error = _structured_error(
+        code="ERR_ORRO_DEPRECATED_ALIAS_REMOVED",
+        message=f"orro {alias} was removed after its deprecation window",
+        reason="the compatibility alias no longer has a command registration",
+        required_input_or_grant=f"use orro {replacement}",
+        next_command=f"python3 -m orro {replacement}",
+    )
+    if json_output:
+        print(json.dumps({"error": error}, sort_keys=True))
+    else:
+        print(error["code"], file=sys.stderr)
+        print(f"message: {error['message']}", file=sys.stderr)
+        print(f"next_command: {error['next_command']}", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":
