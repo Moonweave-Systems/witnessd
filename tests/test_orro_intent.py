@@ -101,7 +101,7 @@ class DeclaredIntentHelpersTest(unittest.TestCase):
         )
 
     def test_all_three_public_surfaces_document_the_fixture_and_schema(self) -> None:
-        for command in ("sketch", "report", "check"):
+        for command in ("advise", "status", "check"):
             with self.subTest(command=command):
                 stdout = io.StringIO()
                 with redirect_stdout(stdout):

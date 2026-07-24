@@ -153,10 +153,12 @@ class OrroRuntimeHardeningTests(unittest.TestCase):
             return main(args)
 
     def _next(self, run_dir: Path, home: Path) -> tuple[int, dict]:
-        return self._json_command(["orro", "next", str(run_dir), "--home", str(home), "--json"])
+        from witnessd.orro_next import decide_next
+
+        return decide_next(run_dir, home=home)
 
     def _report(self, run_dir: Path, home: Path) -> tuple[int, dict]:
-        return self._json_command(["orro", "report", str(run_dir), "--home", str(home), "--json"])
+        return self._json_command(["orro", "status", str(run_dir), "--home", str(home), "--json"])
 
     def _auto_dry_run(self, run_dir: Path, home: Path) -> tuple[int, dict]:
         return self._json_command(["orro", "auto", "--dry-run", str(run_dir), "--home", str(home), "--json"])
@@ -249,12 +251,10 @@ class OrroRuntimeHardeningTests(unittest.TestCase):
             before_runs = set((home / "runs").iterdir())
 
             report_out = run_dir / "orro-report.json"
-            next_out = run_dir / "orro-continuation-decision.json"
             auto_out = run_dir / "orro-auto-plan.json"
             commands = [
                 ["orro", "advise", "fix parser typo", "--repo", str(root), "--json"],
-                ["orro", "report", str(run_dir), "--home", str(home), "--out", str(report_out), "--json"],
-                ["orro", "next", str(run_dir), "--home", str(home), "--out", str(next_out), "--json"],
+                ["orro", "status", str(run_dir), "--home", str(home), "--out", str(report_out), "--json"],
                 ["orro", "auto", "--dry-run", str(run_dir), "--home", str(home), "--out", str(auto_out), "--json"],
             ]
 
@@ -267,7 +267,6 @@ class OrroRuntimeHardeningTests(unittest.TestCase):
             self.assertFalse((run_dir / "proofcheck-verdict.json").exists())
             self.assertFalse((run_dir / "orro-handoff.json").exists())
             self.assertTrue(report_out.is_file())
-            self.assertTrue(next_out.is_file())
             self.assertTrue(auto_out.is_file())
 
     def test_stale_handoff_stops_being_complete_if_proofcheck_changes(self) -> None:

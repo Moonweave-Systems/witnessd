@@ -8,9 +8,9 @@ from difflib import get_close_matches
 from pathlib import Path
 
 from witnessd.__main__ import (
-    ORRO_DEPRECATED_ALIASES,
     ORRO_COMMAND_MAP,
     ORRO_COMMANDS,
+    ORRO_REMOVED_ALIASES,
     PUBLIC_COMMAND_SUMMARIES,
     main as witnessd_main,
 )
@@ -30,9 +30,7 @@ def _build_orro_help(
 ) -> str:
     command_names = ",".join(command_map)
     width = max(map(len, command_map))
-    ordered_commands = [
-        command for command in command_map if command not in ORRO_DEPRECATED_ALIASES
-    ] + [command for command in command_map if command in ORRO_DEPRECATED_ALIASES]
+    ordered_commands = list(command_map)
     public_commands = "\n".join(
         f"  {command:<{width}}  {summaries[command]}"
         for command in ordered_commands
@@ -46,9 +44,6 @@ ORRO Flow:
 
 public commands:
 {public_commands}
-
-Deprecated aliases:
-  {"; ".join(f"{alias} -> {target}" for alias, target in ORRO_DEPRECATED_ALIASES.items())}
 
 boundary:
   Depone verifies; witnessd executes; ORRO exposes the workflow.
@@ -84,6 +79,8 @@ def main(argv: list[str] | None = None) -> int:
         print(ORRO_HELP)
         return 0
     command = args[0]
+    if command in ORRO_REMOVED_ALIASES:
+        return witnessd_main(["orro", *args])
     if command not in ORRO_COMMANDS:
         print(f"orro: unknown command '{command}'", file=sys.stderr)
         suggestion = get_close_matches(command, sorted(ORRO_COMMANDS), n=1)

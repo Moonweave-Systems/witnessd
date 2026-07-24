@@ -65,8 +65,8 @@ class OrroPackagingTests(unittest.TestCase):
             self.assertIn("ORRO Flow", help_result.stdout)
             self.assertIn("init", help_result.stdout)
             self.assertIn("advise", help_result.stdout)
-            self.assertIn("next", help_result.stdout)
-            self.assertIn("report", help_result.stdout)
+            self.assertIn("status", help_result.stdout)
+            self.assertIn("auto", help_result.stdout)
             self.assertIn("auto", help_result.stdout)
             self.assertIn("engine-lock", help_result.stdout)
             self.assertIn("flow", help_result.stdout)
@@ -94,8 +94,8 @@ class OrroPackagingTests(unittest.TestCase):
             )
             self.assertEqual(missing_next.returncode, 2)
             missing_payload = json.loads(missing_next.stdout)
-            self.assertEqual(missing_payload["decision"], "invalid-run-dir")
-            self.assertFalse(missing_payload["boundary"]["executes_commands"])
+            self.assertEqual(missing_payload["error"]["code"], "ERR_ORRO_DEPRECATED_ALIAS_REMOVED")
+            self.assertIn("auto --dry-run", missing_payload["error"]["next_command"])
 
             missing_auto = subprocess.run(
                 [str(orro), "auto", "--dry-run", str(tmp_path / "missing-run"), "--json"],

@@ -241,7 +241,7 @@ class OrroEngineContractTests(unittest.TestCase):
             before_runs = set((home / "runs").iterdir())
 
             report_code, report_payload = self._json_command(
-                ["orro", "report", str(run_dir), "--home", str(home), "--json"]
+                ["orro", "status", str(run_dir), "--home", str(home), "--json"]
             )
             self.assertEqual(report_code, 0)
             self.assertEqual(report_payload["summary"]["state"], "needs-proofcheck")
@@ -294,11 +294,11 @@ class OrroEngineContractTests(unittest.TestCase):
                     encoding="utf-8",
                 )
 
-            next_code, next_payload = self._json_command(
-                ["orro", "next", str(wrapper_dir), "--home", str(home), "--json"]
-            )
+            from witnessd.orro_next import decide_next
+
+            next_code, next_payload = decide_next(wrapper_dir, home=home)
             report_code, report_payload = self._json_command(
-                ["orro", "report", str(wrapper_dir), "--home", str(home), "--json"]
+                ["orro", "status", str(wrapper_dir), "--home", str(home), "--json"]
             )
             auto_code, auto_payload = self._json_command(
                 ["orro", "auto", "--dry-run", str(wrapper_dir), "--home", str(home), "--json"]

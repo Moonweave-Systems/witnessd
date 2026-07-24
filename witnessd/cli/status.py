@@ -93,7 +93,7 @@ def _cmd_orro_status(args: argparse.Namespace) -> int:
     except OrroRoadmapError as exc:
         _emit_orro_error(args, code=exc.code, message=str(exc))
         return 2
-    if args.write:
+    if args.write and (repo / ".orro" / "roadmap.json").is_file():
         try:
             write_status_document(repo, home)
         except Exception as exc:  # noqa: BLE001 - projection must not block status

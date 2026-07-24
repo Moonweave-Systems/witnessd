@@ -123,6 +123,13 @@ class OrroStatusTests(unittest.TestCase):
                     main(["orro", "tidy", "--apply", "--repo", str(repo)])
                     writer.assert_not_called()
 
+    def test_status_write_skips_non_roadmap_repo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            main(["orro", "status", "--repo", str(repo), "--write"])
+            self.assertFalse((repo / ".orro" / "STATUS.md").exists())
+
     def test_workspace_uses_git_registry_and_warns_for_large_total(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
