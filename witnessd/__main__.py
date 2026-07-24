@@ -255,7 +255,15 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_advise.add_argument("--out", default=None)
     orro_advise.add_argument("--mode", choices=["auto", "route", "sketch", "trace"], default="auto")
     orro_advise.add_argument("--decision", default=None, help=argparse.SUPPRESS)
-    orro_advise.add_argument("--intent", default=None, help=argparse.SUPPRESS)
+    orro_advise.add_argument(
+        "--intent",
+        default=None,
+        metavar="INTENT_JSON_PATH",
+        help=(
+            "path to a JSON file; schema: {intent: str, non_goals?: [str], "
+            "constraints?: [str]}. Example: tests/fixtures/orro-declared-intent.json"
+        ),
+    )
     orro_advise.add_argument("--json", action="store_true")
     orro_advise.set_defaults(func=_cli_handler("advisory", "_cmd_orro_advise"))
 
@@ -461,7 +469,15 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_status.add_argument("--home", default=None)
     orro_status.add_argument("--out", default=None)
     orro_status.add_argument("--workstyle-decision", default=None)
-    orro_status.add_argument("--intent", default=None, help=argparse.SUPPRESS)
+    orro_status.add_argument(
+        "--intent",
+        default=None,
+        metavar="INTENT_JSON_PATH",
+        help=(
+            "path to a JSON file; schema: {intent: str, non_goals?: [str], "
+            "constraints?: [str]}. Example: tests/fixtures/orro-declared-intent.json"
+        ),
+    )
     orro_status.add_argument("--write", action="store_true", help="write the generated .orro/STATUS.md projection")
     orro_status.add_argument("--json", action="store_true")
     orro_status.set_defaults(func=_cli_handler("status", "_cmd_orro_status"))

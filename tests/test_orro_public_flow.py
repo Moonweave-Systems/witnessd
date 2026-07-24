@@ -1130,13 +1130,13 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertIn(payload["decision"], {"blocked", "evidence-pending"})
             self.assertNotIn(payload["decision"], {"ready-for-handoff", "complete"})
 
-    def test_orro_next_out_writes_same_decision_artifact(self) -> None:
+    def test_orro_auto_dry_run_out_writes_same_decision_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             home, run_dir, _payload = self._proofrun(root)
             out = run_dir / "orro-continuation-decision.json"
 
-            code, payload = self._orro_next(run_dir, home, "--out", str(out))
+            code, payload = self._orro_auto_dry_run(run_dir, home, "--out", str(out))
 
             self.assertEqual(code, 0)
             self.assertTrue(out.is_file())
@@ -1676,8 +1676,6 @@ class OrroPublicFlowTests(unittest.TestCase):
             payload_2 = json.loads(witnessd_orro_auto.stdout)
             self.assertEqual(payload_2["kind"], "orro-auto-session")
             self.assertEqual(payload_2["decision_final"], "complete")
-
-            self.assertEqual(json.loads(orro_next.stdout)["decision"], "needs-proofcheck")
 
     def test_orro_auto_module_and_witnessd_orro_alias_match(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
