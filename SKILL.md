@@ -130,9 +130,8 @@ new-work goals or the existing `orro-trace` artifact for symptom-shaped goals.
 Use `--mode route|sketch|trace` to select the route explicitly. These advisory
 paths remain non-executing and preserve their existing artifact schemas.
 
-The old `sketch` and `trace` commands remain deprecated aliases for one release.
-Their skillpack files are migration pointers; the external `superpowers` plugin
-remains untouched as an independent dual path.
+The `sketch` and `trace` advisory modes remain available through `orro advise`;
+the external `superpowers` plugin remains untouched as an independent dual path.
 
 For deterministic repository health gates and bounded fixer guidance, load
 `orro/skillpacks/code-health.md`. For roadmap status, tidy retention, task
@@ -224,13 +223,12 @@ caches from other toolchains remain observed and enforced.
 the continuation state and emits an `orro-auto-plan` with the decision, observed
 artifact summary, allowed next commands, and the exact command it would run next.
 It does not run proofcheck, call Depone, launch workers, write handoff, mutate
-worktrees, approve merge, verify evidence, or raise assurance. The `next` command
-is a deprecated alias for this mode.
+worktrees, approve merge, verify evidence, or raise assurance.
 
 `python3 -m orro status <run-dir> --home .witnessd --json` renders the existing
 human-facing report for one run; `--latest` selects the newest run. Plain
-`status` remains the roadmap view. The `report` command is a deprecated alias
-for the run-scoped status view.
+`status` remains the roadmap view and accepts a run directory for the run-scoped
+view.
 
 `python3 -m orro auto --once <run-dir> --home .witnessd --json` re-checks
 continuation state and executes at most one allowed step. In v0 that means

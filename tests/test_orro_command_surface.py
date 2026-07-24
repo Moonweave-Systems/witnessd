@@ -155,11 +155,7 @@ class OrroCommandSurfaceTests(unittest.TestCase):
             "doctor": "orro-doctor",
             "engine-lock": "engine-lock",
             "lock": "engine-lock",
-            "next": "orro-next",
             "advise": "orro-advise",
-            "sketch": "orro-sketch",
-            "trace": "orro-trace",
-            "report": "orro-report",
             "review": "orro-review",
             "check": "orro-check",
             "demo": "orro-demo",
@@ -176,6 +172,22 @@ class OrroCommandSurfaceTests(unittest.TestCase):
                 _normalize_orro_argv(["orro", public_command]),
                 [witnessd_command],
             )
+
+    def test_removed_aliases_emit_replacement_blockers(self) -> None:
+        replacements = {
+            "next": "auto --dry-run",
+            "report": "status <run-dir>|--latest",
+            "sketch": "advise --mode sketch",
+            "trace": "advise --mode trace",
+        }
+        for alias, replacement in replacements.items():
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                result = orro_main([alias, "--json"])
+            self.assertEqual(result, 2, alias)
+            payload = __import__("json").loads(stdout.getvalue())
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_DEPRECATED_ALIAS_REMOVED")
+            self.assertIn(replacement, payload["error"]["next_command"])
 
     def test_repo_root_alias_spellings_reach_existing_handler_attributes(self) -> None:
         parser = _build_parser()
@@ -222,8 +234,8 @@ class OrroCommandSurfaceTests(unittest.TestCase):
     def test_post_run_commands_expose_latest_and_flowplan_points_to_threaded_paths(self) -> None:
         parser = _build_parser()
         commands = parser._subparsers._group_actions[0].choices
-        self.assertTrue(parser.parse_args(["orro-report", "--latest"]).latest)
-        self.assertTrue(parser.parse_args(["orro-next", "--latest"]).latest)
+        self.assertNotIn("orro-report", commands)
+        self.assertNotIn("orro-next", commands)
         self.assertTrue(parser.parse_args(["orro-auto", "--latest", "--dry-run"]).latest)
         self.assertIn("orro flow", commands["flowplan"].format_help())
         self.assertIn("orro team go", commands["flowplan"].format_help())

@@ -372,8 +372,10 @@ class OrroPublicFlowTests(unittest.TestCase):
             code = main(
                 [
                     "orro",
-                    "sketch",
+                    "advise",
                     "seal one bounded advisory direction",
+                    "--mode",
+                    "sketch",
                     "--repo",
                     str(root / "repo"),
                     "--home",
@@ -414,10 +416,9 @@ class OrroPublicFlowTests(unittest.TestCase):
         return json.loads(stdout.getvalue())
 
     def _orro_next(self, run_dir: Path, home: Path, *extra: str) -> tuple[int, dict]:
-        stdout = io.StringIO()
-        with redirect_stdout(stdout):
-            code = main(["orro", "next", str(run_dir), "--home", str(home), "--json", *extra])
-        return code, json.loads(stdout.getvalue())
+        from witnessd.orro_next import decide_next
+
+        return decide_next(run_dir, home=home)
 
     def _orro_auto_dry_run(self, run_dir: Path, home: Path, *extra: str) -> tuple[int, dict]:
         stdout = io.StringIO()
@@ -1129,32 +1130,13 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertIn(payload["decision"], {"blocked", "evidence-pending"})
             self.assertNotIn(payload["decision"], {"ready-for-handoff", "complete"})
 
-    def test_advisory_family_library_failure_includes_structured_remediation(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _repo, home = self._init_home(root)
-
-            code, payload = self._orro_next(root / "missing-run", home)
-
-            self.assertEqual(code, 2)
-            self.assertEqual(
-                set(payload["error"]),
-                {
-                    "code",
-                    "message",
-                    "reason",
-                    "required_input_or_grant",
-                    "next_command",
-                },
-            )
-
-    def test_orro_next_out_writes_same_decision_artifact(self) -> None:
+    def test_orro_auto_dry_run_out_writes_same_decision_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             home, run_dir, _payload = self._proofrun(root)
             out = run_dir / "orro-continuation-decision.json"
 
-            code, payload = self._orro_next(run_dir, home, "--out", str(out))
+            code, payload = self._orro_auto_dry_run(run_dir, home, "--out", str(out))
 
             self.assertEqual(code, 0)
             self.assertTrue(out.is_file())
@@ -1695,21 +1677,6 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(payload_2["kind"], "orro-auto-session")
             self.assertEqual(payload_2["decision_final"], "complete")
 
-    def test_orro_next_module_and_witnessd_orro_alias_match(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            home, run_dir, _payload = self._proofrun(root)
-
-            orro_next = self._orro_module_run(["next", str(run_dir), "--home", str(home), "--json"])
-            witnessd_orro_next = self._module_run(
-                ["orro", "next", str(run_dir), "--home", str(home), "--json"]
-            )
-
-            self.assertEqual(orro_next.returncode, 0, orro_next.stderr)
-            self.assertEqual(witnessd_orro_next.returncode, 0, witnessd_orro_next.stderr)
-            self.assertEqual(json.loads(orro_next.stdout), json.loads(witnessd_orro_next.stdout))
-            self.assertEqual(json.loads(orro_next.stdout)["decision"], "needs-proofcheck")
-
     def test_orro_auto_module_and_witnessd_orro_alias_match(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2133,8 +2100,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             "proofrun",
             "proofcheck",
             "handoff",
-            "next",
-            "report",
+            "status",
             "auto",
             "doctor",
             "engine-lock",
@@ -2158,7 +2124,7 @@ class OrroPublicFlowTests(unittest.TestCase):
         self.assertNotIn("deprecated", help_result.stderr)
         self.assertIn("ORRO Flow", help_result.stdout)
         self.assertIn("init", help_result.stdout)
-        self.assertIn("report", help_result.stdout)
+        self.assertIn("status", help_result.stdout)
         self.assertIn("engine-lock", help_result.stdout)
         self.assertNotIn("self-test", help_result.stdout)
 

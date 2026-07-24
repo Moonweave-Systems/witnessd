@@ -215,8 +215,10 @@ def _run_advisory(
         )
     argv = [
         "orro",
-        mode,
+        "advise",
         goal,
+        "--mode",
+        mode,
         "--repo",
         str(repo),
         "--home",
@@ -260,8 +262,10 @@ def _run_advisory_result(
             code = main(
                 [
                     "orro",
-                    mode,
+                    "advise",
                     goal,
+                    "--mode",
+                    mode,
                     "--repo",
                     str(repo),
                     "--home",

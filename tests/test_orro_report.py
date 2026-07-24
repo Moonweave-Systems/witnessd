@@ -186,7 +186,7 @@ class OrroReportTests(unittest.TestCase):
     def _report(self, run_dir: Path, home: Path, *extra: str) -> tuple[int, dict]:
         stdout = io.StringIO()
         with redirect_stdout(stdout):
-            code = main(["orro", "report", str(run_dir), "--home", str(home), "--json", *extra])
+            code = main(["orro", "status", str(run_dir), "--home", str(home), "--json", *extra])
         return code, json.loads(stdout.getvalue())
 
     def test_report_after_proofrun_recommends_proofcheck_without_executing(self) -> None:
@@ -237,10 +237,9 @@ class OrroReportTests(unittest.TestCase):
 
             next_stdout = io.StringIO()
             with redirect_stdout(next_stdout):
-                next_code = main(
-                    ["orro", "next", str(run_dir), "--home", str(home), "--json"]
-                )
-            next_payload = json.loads(next_stdout.getvalue())
+                from witnessd.orro_next import decide_next
+
+                next_code, next_payload = decide_next(run_dir, home=home)
 
             self.assertEqual(next_code, 1)
             self.assertEqual(next_payload["decision"], "blocked")
@@ -498,7 +497,7 @@ class OrroReportTests(unittest.TestCase):
 
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                text_code = main(["orro", "report", str(run_dir), "--home", str(home)])
+                text_code = main(["orro", "status", str(run_dir), "--home", str(home)])
             text = stdout.getvalue()
             self.assertEqual(text_code, 0)
             self.assertIn("ORRO Report", text)
@@ -581,7 +580,7 @@ class OrroReportTests(unittest.TestCase):
             depone_root = str(_depone_root())
             env["PYTHONPATH"] = depone_root if not env.get("PYTHONPATH") else f"{depone_root}{os.pathsep}{env['PYTHONPATH']}"
             module = subprocess.run(
-                [sys.executable, "-m", "orro", "report", str(run_dir), "--home", str(home), "--json"],
+                [sys.executable, "-m", "orro", "status", str(run_dir), "--home", str(home), "--json"],
                 cwd=repo_root,
                 env=env,
                 text=True,
@@ -589,7 +588,7 @@ class OrroReportTests(unittest.TestCase):
                 check=False,
             )
             alias = subprocess.run(
-                [sys.executable, "-m", "witnessd", "orro", "report", str(run_dir), "--home", str(home), "--json"],
+                [sys.executable, "-m", "witnessd", "orro", "status", str(run_dir), "--home", str(home), "--json"],
                 cwd=repo_root,
                 env=env,
                 text=True,

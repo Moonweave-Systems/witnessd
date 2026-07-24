@@ -501,18 +501,14 @@ def _load_json_if_exists(path: Path) -> object | None:
 
 
 def _write_team_go_report(run_dir: Path, home: Path, report_path: Path) -> object:
-    code, stdout, _stderr = _invoke_cli_capture(
-        [
-            "orro-report",
-            str(run_dir),
-            "--home",
-            str(home),
-            "--out",
-            str(report_path),
-            "--json",
-        ]
-    )
-    payload = _json_or_text(stdout)
+    from witnessd.orro_report import OrroReportError, build_report, write_report
+
+    try:
+        code, payload = build_report(run_dir, home=home)
+        write_report(report_path, payload)
+    except OrroReportError as exc:
+        code = 1
+        payload = {"error": {"code": exc.code, "message": str(exc)}}
     if isinstance(payload, dict):
         payload.setdefault("exit_code", code)
     return payload

@@ -53,8 +53,10 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
             code = main(
                 [
                     "orro",
-                    mode,
+                    "advise",
                     goal,
+                    "--mode",
+                    mode,
                     "--repo",
                     str(repo),
                     "--home",
@@ -136,8 +138,10 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
                 code = main(
                     [
                         "orro",
-                        "sketch",
+                        "advise",
                         "goal",
+                        "--mode",
+                        "sketch",
                         "--repo",
                         str(repo),
                         "--decision",
@@ -609,10 +613,8 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
         trace = (root / "orro" / "skillpacks" / "trace.md").read_text(encoding="utf-8")
         self.assertIn("orro advise", sketch)
         self.assertIn("--mode sketch", sketch)
-        self.assertIn("deprecated alias", sketch)
         self.assertIn("orro advise", trace)
         self.assertIn("--mode trace", trace)
-        self.assertIn("deprecated alias", trace)
 
     def test_public_help_teaches_consolidated_advisory_surface(self) -> None:
         stdout = io.StringIO()
@@ -628,15 +630,12 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
         with redirect_stdout(stdout):
             self.assertEqual(orro_main(["--help"]), 0)
         help_text = stdout.getvalue()
-        self.assertIn("Deprecated aliases:", help_text)
-        self.assertIn("next -> auto --dry-run", help_text)
-        self.assertIn("report -> status <run-dir>", help_text)
 
     def test_sketch_decision_rejects_inline_prose_with_actionable_schema(self) -> None:
         stdout = io.StringIO()
         with redirect_stdout(stdout):
             code = main(
-                ["orro", "sketch", "goal", "--decision", "some prose", "--json"]
+                ["orro", "advise", "goal", "--mode", "sketch", "--decision", "some prose", "--json"]
             )
 
         self.assertEqual(code, 1)
@@ -658,8 +657,10 @@ class OrroAdvisoryMethodTests(unittest.TestCase):
                 code = main(
                     [
                         "orro",
-                        "sketch",
+                        "advise",
                         "goal",
+                        "--mode",
+                        "sketch",
                         "--repo",
                         tmp,
                         "--decision",

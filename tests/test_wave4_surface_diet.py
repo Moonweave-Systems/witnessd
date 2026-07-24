@@ -56,28 +56,6 @@ class Wave4AdviseSurfaceTests(unittest.TestCase):
         self.assertEqual(sketch_payload["kind"], "orro-sketch")
         self.assertEqual(sketch_stderr, "")
 
-    def test_sketch_and_trace_are_deprecated_aliases(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            sketch_code, sketch_payload, sketch_stderr = _run(
-                "sketch", "add feature Y", "--repo", tmp
-            )
-            trace_code, trace_payload, trace_stderr = _run(
-                "trace", "fix crash when X", "--repo", tmp
-            )
-
-        self.assertEqual(sketch_code, 0)
-        self.assertEqual(sketch_payload["kind"], "orro-sketch")
-        self.assertEqual(
-            sketch_stderr,
-            "deprecated: use orro advise --mode sketch (this alias will be removed in a future release)\n",
-        )
-        self.assertEqual(trace_code, 0)
-        self.assertEqual(trace_payload["kind"], "orro-trace")
-        self.assertEqual(
-            trace_stderr,
-            "deprecated: use orro advise --mode trace (this alias will be removed in a future release)\n",
-        )
-
 
 class Wave4AutoSurfaceTests(unittest.TestCase):
     def test_auto_dry_run_exposes_next_payload_fields(self) -> None:
@@ -86,20 +64,12 @@ class Wave4AutoSurfaceTests(unittest.TestCase):
             auto_code, auto_payload, auto_stderr = _run(
                 "auto", "--dry-run", str(run_dir)
             )
-            next_code, next_payload, next_stderr = _run("next", str(run_dir))
 
         self.assertEqual(auto_code, 2)
         self.assertEqual(auto_payload["kind"], "orro-auto-plan")
         self.assertIn("observed_artifacts", auto_payload)
         self.assertIn("next_allowed", auto_payload)
         self.assertEqual(auto_stderr, "")
-        self.assertEqual(next_code, 2)
-        self.assertEqual(next_payload["kind"], "orro-continuation-decision")
-        self.assertEqual(next_payload["decision"], "invalid-run-dir")
-        self.assertEqual(
-            next_stderr,
-            "deprecated: use orro auto --dry-run (this alias will be removed in a future release)\n",
-        )
 
 
 class Wave4StatusSurfaceTests(unittest.TestCase):
@@ -120,23 +90,14 @@ class Wave4StatusSurfaceTests(unittest.TestCase):
                 latest_code, latest_payload, latest_stderr = _run(
                     "status", "--latest", "--home", str(home)
                 )
-                report_code, report_payload_alias, report_stderr = _run(
-                    "report", str(run_dir), "--home", str(home)
-                )
 
         self.assertEqual(status_code, 0)
         self.assertEqual(status_payload, report_payload)
         self.assertEqual(latest_code, 0)
         self.assertEqual(latest_payload, report_payload)
-        self.assertEqual(report_code, 0)
-        self.assertEqual(report_payload_alias, report_payload)
         self.assertEqual(status_stderr, "")
         self.assertEqual(latest_stderr, "")
-        self.assertEqual(
-            report_stderr,
-            "deprecated: use orro status <run-dir> (this alias will be removed in a future release)\n",
-        )
-        self.assertEqual(build_report.call_count, 3)
+        self.assertEqual(build_report.call_count, 2)
 
 
 if __name__ == "__main__":
