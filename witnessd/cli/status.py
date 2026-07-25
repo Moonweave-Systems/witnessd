@@ -134,25 +134,25 @@ def write_status_document(repo: Path, home: Path) -> Path:
         lines.append("- (no roadmap items)")
     else:
         for item in items:
-            line = f"- **{item['id']}** — {item['status']}: {item['title']}"
+            line = f"- **{_escape_status_text(item['id'])}** — {item['status']}: {_escape_status_text(item['title'])}"
             if item.get("evidence_ref"):
-                line += f" — evidence: `{item['evidence_ref']}`"
+                line += f" — evidence: `{_escape_status_text(item['evidence_ref'])}`"
             elif item.get("latest_run"):
-                line += f" — {item['run_state']}: `{item['latest_run']}`"
+                line += f" — {item['run_state']}: `{_escape_status_text(item['latest_run'])}`"
             lines.append(line)
             if item.get("workspace"):
-                lines.append(f"  - workspace: `{item['workspace']}`")
+                lines.append(f"  - workspace: `{_escape_status_text(item['workspace'])}`")
             for step in item.get("steps", []):
-                step_line = f"  - step **{step['id']}**: {step['state']}"
+                step_line = f"  - step **{_escape_status_text(step['id'])}**: {step['state']}"
                 if step.get("evidence_ref"):
-                    step_line += f" — evidence: `{step['evidence_ref']}`"
+                    step_line += f" — evidence: `{_escape_status_text(step['evidence_ref'])}`"
                 elif step.get("run_dir"):
-                    step_line += f" — run: `{step['run_dir']}`"
+                    step_line += f" — run: `{_escape_status_text(step['run_dir'])}`"
                 lines.append(step_line)
             next_step = item.get("next_step")
             if isinstance(next_step, dict):
                 lines.append(
-                    f"  - next step **{next_step['id']}**: `{next_step['suggested_next_command']}`"
+                    f"  - next step **{_escape_status_text(next_step['id'])}**: `{_escape_status_text(next_step['suggested_next_command'])}`"
                 )
     lines.extend(["", "## Off-plan runs"])
     off_plan = payload.get("off_plan")
@@ -160,9 +160,9 @@ def write_status_document(repo: Path, home: Path) -> Path:
         lines.append("- (none)")
     else:
         for run in off_plan:
-            lines.append(f"- `{run['run_dir']}`: {run['state']}")
+            lines.append(f"- `{_escape_status_text(run['run_dir'])}`: {run['state']}")
             if run.get("ship_command"):
-                lines.append(f"  - ship-ready: `{run['ship_command']}`; merge stays human")
+                lines.append(f"  - ship-ready: `{_escape_status_text(run['ship_command'])}`; merge stays human")
     workspace = payload["workspace"]
     lines.extend([
         "",
@@ -181,6 +181,13 @@ def write_status_document(repo: Path, home: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
+
+
+def _escape_status_text(value: object) -> str:
+    text = str(value)
+    for character in "\\`*_{}[]()<>#+-.!|":
+        text = text.replace(character, "\\" + character)
+    return text.replace("\n", "\\n").replace("\r", "\\r")
 
 
 def refresh_status_document(args: argparse.Namespace) -> None:
