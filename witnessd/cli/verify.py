@@ -1193,14 +1193,29 @@ def _cmd_ship(args: argparse.Namespace) -> int:
             "kind": "orro-ship",
             "run_dir": str(run_dir),
             "blocked": True,
+            "pushed": False,
             "blockers": [{
                 "code": "ERR_ORRO_SHIP_PUSH_FAILED",
                 "message": message,
-                "next_commands": [f"git push -u {shlex.quote(args.remote)} <current-branch>"],
+                "next_commands": [" ".join(["git", "push", "-u", shlex.quote(args.remote), "<current-branch>"])],
             }],
+            "boundary": {
+                "merges": False,
+                "approves_merge": False,
+                "forced": False,
+                "orchestration_metadata_not_proof": True,
+            },
         }
         code = 1
-    print(json.dumps(payload, sort_keys=True))
+    if args.json:
+        print(json.dumps(payload, sort_keys=True))
+    else:
+        if payload.get("blocked"):
+            print(f"orro ship blocked: {payload.get('blockers', [{}])[0].get('message', 'unknown blocker')}")
+        elif payload.get("pushed") is True and payload.get("error"):
+            print(f"orro ship pushed, but post-push recording failed: {payload['error'].get('message', 'unknown error')}")
+        else:
+            print("orro ship pushed; merge approval stays human")
     return code
 
 
