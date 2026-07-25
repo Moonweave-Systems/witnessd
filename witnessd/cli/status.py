@@ -552,7 +552,7 @@ def apply_tidy(
             and (Path(str(item.get("path", ""))) / "companion-manifest.json").is_file()
         ]
         check_items.sort(key=lambda item: _path_newness(Path(str(item["path"]))))
-        retained = set(str(item["path"]) for item in check_items[-keep_checks:])
+        retained = set(str(item["path"]) for item in (check_items[-keep_checks:] if keep_checks else []))
         for item in check_items:
             path = Path(str(item["path"])).resolve(strict=False)
             if any(evidence == path or path in evidence.parents for evidence in evidence_paths):
