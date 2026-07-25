@@ -1,187 +1,225 @@
 from __future__ import annotations
 
-import hashlib
+import io
 import json
 import os
+import shlex
 import subprocess
-import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
 
-from witnessd.orro_ship import build_ship, ship_run
-from witnessd.orro_auto import build_auto_plan
+from witnessd.__main__ import main
+from witnessd.cli.status import _suggested_step_command
 from witnessd.orro_next import decide_next
+from witnessd.orro_report import build_report, render_text_report
+from witnessd.orro_ship import _suggested_branch, build_ship, ship_run
 
 
 def _git(path: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", *args], cwd=path, check=True, capture_output=True, text=True
-    ).stdout.strip()
+    return subprocess.run(["git", *args], cwd=path, check=True, capture_output=True, text=True).stdout.strip()
 
 
-def _ready_run(root: Path) -> Path:
+def _depone_root() -> Path:
+    configured = os.environ.get("WITNESSD_DEPONE_ROOT")
+    if configured:
+        return Path(configured)
+    root = Path(__file__).resolve().parents[1].parent
+    for name in ("depone", "Depone"):
+        candidate = root / name
+        if (candidate / "depone").is_dir():
+            return candidate
+    raise RuntimeError("tests require WITNESSD_DEPONE_ROOT or a sibling Depone checkout")
+
+
+def _seed_repo(repo: Path, *, branch: str = "feat/change", content: str = "tracked\n") -> None:
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test")
+    (repo / "tracked.txt").write_text(content, encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "initial")
+    _git(repo, "checkout", "-q", "-b", branch)
+
+
+def _real_run(root: Path, repo: Path, *, goal: str = "ship test") -> tuple[Path, Path]:
+    home = root / "home"
     run = root / "run"
+    sandbox = root / "sandbox"
     run.mkdir()
-    (run / "workflow-plan.json").write_text(
-        json.dumps({"goal": "ship the change", "profile": "code-change"})
-    )
-    binding = {
-        "kind": "orro-proofcheck-binding",
-        "schema_version": "1.0",
-        "evidence_dir": str(run),
-        "artifact_hashes": [
-            {
-                "path": "workflow-plan.json",
-                "sha256": hashlib.sha256((run / "workflow-plan.json").read_bytes()).hexdigest(),
-            }
-        ],
-    }
-    verdict = {"decision": "pass", "orro_binding": binding}
-    verdict_path = run / "proofcheck-verdict.json"
-    verdict_path.write_text(json.dumps(verdict))
-    (run / "orro-handoff.json").write_text(
-        json.dumps(
-            {
-                "kind": "orro-handoff",
-                "evidence_dir": str(run),
-                "decision_refs": [
-                    {
-                        "path": "proofcheck-verdict.json",
-                        "sha256": hashlib.sha256(verdict_path.read_bytes()).hexdigest(),
-                        "decision": "pass",
-                    }
-                ],
-            }
-        )
-    )
-    return run
+    sandbox.mkdir()
+    def invoke(argv: list[str]) -> dict:
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = main(argv)
+        payload = json.loads(output.getvalue())
+        if code != 0:
+            raise AssertionError(payload)
+        return payload
+    invoke(["init", "--home", str(home), "--repo", str(repo), "--depone-root", str(_depone_root())])
+    workflow = run / "workflow-plan.json"
+    lanes = run / "role-lane-plan.json"
+    invoke(["flowplan", goal, "--root", str(repo), "--profile", "verification-only", "--out", str(workflow), "--role-lanes-out", str(lanes), "--lane-adapter", "shell", "--check", "true", "--json"])
+    invoke(["proofrun", goal, "--repo", str(repo), "--home", str(home), "--workflow-plan", str(workflow), "--role-lane-plan", str(lanes), "--adapter", "shell", "--runner-sandbox", str(sandbox), "--run-dir", str(run), "--json"])
+    invoke(["proofcheck", "--evidence-dir", str(run), "--home", str(home), "--out", str(run / "proofcheck-verdict.json"), "--json"])
+    invoke(["handoff", str(run), "--home", str(home), "--out", str(run / "orro-handoff.json"), "--json"])
+    return home, run
 
 
 class OrroShipTest(unittest.TestCase):
-    def _repo(self, root: Path, *, branch: str = "feat/change") -> Path:
-        repo = root / "repo"
-        repo.mkdir()
-        _git(repo, "init", "-b", "main")
-        _git(repo, "config", "user.email", "test@example.com")
-        _git(repo, "config", "user.name", "Test")
-        (repo / "tracked.txt").write_text("tracked\n")
-        _git(repo, "add", ".")
-        _git(repo, "commit", "-m", "initial")
-        _git(repo, "checkout", "-b", branch)
-        return repo
+    def _remote(self, root: Path, repo: Path) -> Path:
+        bare = root / "bare.git"
+        _git(root, "init", "--bare", str(bare))
+        _git(repo, "remote", "add", "origin", str(bare))
+        _git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+        return bare
 
-    def test_each_ship_precondition_returns_structured_blocker(self) -> None:
+    def test_real_chain_is_required_for_happy_path(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            repo = self._repo(root)
-            run = root / "run"
-            result = build_ship(run, home=root / "home", repo=repo)
-            self.assertEqual(result[0], 1)
-            self.assertEqual(result[1]["blockers"][0]["code"], "ERR_ORRO_SHIP_PROOFCHECK_REQUIRED")
-            self.assertTrue(result[1]["blockers"][0]["next_commands"])
+            repo = root / "repo"
+            _seed_repo(repo)
+            home, run = _real_run(root, repo)
+            self._remote(root, repo)
+            code, payload = ship_run(run, home=home, repo=repo)
+            self.assertEqual(code, 0, payload)
+            receipt = payload["ship_receipt"]
+            self.assertEqual(receipt["observed_base_commit"], json.loads((run / "team-ledger.json").read_text())["start_commit"])
+            self.assertEqual(receipt["pushed_head_commit"], _git(repo, "rev-parse", "HEAD"))
+            self.assertIn("commits added after the observed run are NOT covered", _read_pr_body(receipt))
+            self.assertIn("feat/change", _git(root / "bare.git", "branch"))
 
-            ready = _ready_run(root)
-            verdict = json.loads((ready / "proofcheck-verdict.json").read_text())
-            verdict["decision"] = "fail"
-            (ready / "proofcheck-verdict.json").write_text(json.dumps(verdict))
-            result = build_ship(ready, home=root / "home", repo=repo)
-            self.assertEqual(result[1]["blockers"][0]["code"], "ERR_ORRO_SHIP_PROOFCHECK_NOT_PASS")
-            restored = {"decision": "pass", "orro_binding": verdict["orro_binding"]}
-            verdict_path = ready / "proofcheck-verdict.json"
-            verdict_path.write_text(json.dumps(restored))
-            handoff = json.loads((ready / "orro-handoff.json").read_text())
-            handoff["decision_refs"][0]["sha256"] = hashlib.sha256(verdict_path.read_bytes()).hexdigest()
-            (ready / "orro-handoff.json").write_text(json.dumps(handoff))
+    def test_forged_three_file_run_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            _seed_repo(repo)
+            self._remote(root, repo)
+            run = root / "forged"
+            run.mkdir()
+            (run / "workflow-plan.json").write_text(json.dumps({"goal": "forge", "profile": "code-change"}))
+            (run / "proofcheck-verdict.json").write_text(json.dumps({"decision": "pass", "orro_binding": {}}))
+            (run / "orro-handoff.json").write_text(json.dumps({"kind": "orro-handoff", "evidence_dir": str(run), "decision_refs": []}))
+            code, payload = build_ship(run, home=root / "missing-home", repo=repo)
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["blockers"][0]["code"], "ERR_ORRO_SHIP_RUN_EVIDENCE_MISSING")
+            self.assertNotIn("refs/heads/feat/change", subprocess.run(["git", "show-ref"], cwd=root / "bare.git", capture_output=True, text=True).stdout)
+
+    def test_cross_repo_evidence_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo_a = root / "repo-a"
+            repo_b = root / "repo-b"
+            _seed_repo(repo_a)
+            home, run = _real_run(root, repo_a)
+            _seed_repo(repo_b, content="different repository\n")
+            self._remote(root, repo_b)
+            code, payload = build_ship(run, home=home, repo=repo_b)
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["blockers"][0]["code"], "ERR_ORRO_SHIP_EVIDENCE_REPO_MISMATCH")
+            self.assertIn("different repository", payload["blockers"][0]["message"])
+            self.assertNotIn("refs/heads/feat/change", subprocess.run(["git", "show-ref"], cwd=root / "bare.git", capture_output=True, text=True).stdout)
+
+    def _assert_paste_safe(self, command: str, expected: list[str]) -> None:
+        tokens = shlex.split(command)
+        self.assertEqual(tokens, expected)
+        self.assertEqual([token for token in tokens if token in {"&&", "||", ";", "|", "&"}], [], command)
+
+    def test_hostile_emitted_commands_are_single_token_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / "MARK"
+            hostile = f'x" y\' ; $(touch {marker}) `touch {marker}`\nnext'
+            repo = root / "repo"
+            _seed_repo(repo)
+            hostile_home, hostile_run = _real_run(root, repo, goal=hostile)
             (repo / "dirty.txt").write_text("dirty\n")
-            result = build_ship(ready, home=root / "home", repo=repo)
-            self.assertEqual(result[1]["blockers"][0]["code"], "ERR_ORRO_SHIP_WORKTREE_DIRTY")
-            self.assertEqual(result[1]["blockers"][0]["next_commands"], ['git add -A && git commit -m "ship the change"'])
+            commands = build_ship(hostile_run, home=hostile_home, repo=repo)[1]["blockers"][0]["next_commands"]
+            self._assert_paste_safe(commands[0], ["git", "add", "-A"])
+            self._assert_paste_safe(commands[1], ["git", "commit", "-m", hostile])
+            for command in commands:
+                subprocess.run(command, cwd=repo, shell=True, check=False, capture_output=True)
+            self.assertFalse(marker.exists())
+            self.assertEqual(_git(repo, "status", "--porcelain"), "")
+            _git(repo, "checkout", "-q", "--detach", "HEAD")
+            blocker = build_ship(hostile_run, home=hostile_home, repo=repo)[1]["blockers"][0]
+            self.assertEqual(blocker["code"], "ERR_ORRO_SHIP_BRANCH_REQUIRED")
+            self._assert_paste_safe(blocker["next_commands"][0], ["git", "switch", "-c", _suggested_branch(hostile)])
+            item = {"id": hostile, "title": hostile}
+            step = {"id": hostile, "profile": "verification-only", "checks": [hostile]}
+            command = _suggested_step_command(item, step, repo=hostile)
+            self._assert_paste_safe(command, ["orro", "check", "--check", hostile, "--roadmap-item", hostile, "--roadmap-step", hostile, "--repo", hostile])
 
-            _git(repo, "add", "dirty.txt")
-            _git(repo, "commit", "-m", "clean")
-            bare = root / "default.git"
-            _git(root, "init", "--bare", str(bare))
-            _git(repo, "remote", "add", "origin", str(bare))
-            _git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-            _git(repo, "checkout", "main")
-            result = build_ship(ready, home=root / "home", repo=repo)
-            self.assertEqual(result[1]["blockers"][0]["code"], "ERR_ORRO_SHIP_DEFAULT_BRANCH")
-            self.assertIn("git checkout -b", result[1]["blockers"][0]["next_commands"][0])
-
-            _git(repo, "checkout", "feat/change")
-            _git(repo, "remote", "remove", "origin")
-            result = build_ship(ready, home=root / "home", repo=repo)
-            self.assertEqual(result[1]["blockers"][0]["code"], "ERR_ORRO_SHIP_REMOTE_REQUIRED")
-
-    def test_ship_pushes_bare_remote_and_seals_receipt_without_gh(self) -> None:
+    def test_detached_head_is_structured(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            repo = self._repo(root)
-            bare = root / "bare.git"
-            _git(root, "init", "--bare", str(bare))
-            _git(repo, "remote", "add", "origin", str(bare))
-            _git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-            run = _ready_run(root)
-            with patch.dict(os.environ, {"PATH": "/usr/bin:/bin"}, clear=False):
-                code, payload = ship_run(run, home=root / "home", repo=repo)
-            self.assertEqual(code, 0)
-            self.assertIsNone(payload["ship_receipt"]["pr_url"])
-            self.assertIn("gh pr create", payload["ship_receipt"]["pr_command"])
-            self.assertEqual(payload["ship_receipt"]["boundary"]["merges"], False)
-            self.assertIn("feat/change", _git(bare, "branch"))
-            self.assertTrue((run / "ship-receipt.json").is_file())
-            self.assertEqual(build_ship(run, home=root / "home", repo=repo)[0], 0)
+            repo = root / "repo"
+            _seed_repo(repo)
+            home, run = _real_run(root, repo)
+            self._remote(root, repo)
+            _git(repo, "checkout", "-q", "--detach", "HEAD")
+            code, payload = build_ship(run, home=home, repo=repo)
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["blockers"][0]["code"], "ERR_ORRO_SHIP_BRANCH_REQUIRED")
 
-    def test_ship_cli_stdout_is_one_json_document_in_both_output_modes(self) -> None:
-        for json_flag in ("--json", None):
-            with self.subTest(json_flag=json_flag), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                repo = self._repo(root)
-                bare = root / "bare.git"
-                _git(root, "init", "--bare", str(bare))
-                _git(repo, "remote", "add", "origin", str(bare))
-                _git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-                run = _ready_run(root)
-                command = [
-                    sys.executable,
-                    "-m",
-                    "witnessd",
-                    "ship",
-                    str(run),
-                    "--home",
-                    str(root / "home"),
-                    "--repo",
-                    str(repo),
-                ]
-                if json_flag:
-                    command.append(json_flag)
-                environment = os.environ.copy()
-                environment["PATH"] = "/usr/bin:/bin"
-                environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
-                completed = subprocess.run(
-                    command,
-                    cwd=Path(__file__).resolve().parents[1],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    env=environment,
-                )
-                self.assertEqual(completed.returncode, 0, completed.stderr)
-                json.loads(completed.stdout)
-
-    def test_completed_bound_run_reports_ship_command(self) -> None:
+    def test_next_and_report_never_call_evidence_missing_run_complete(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            run = _ready_run(root)
-            code, continuation = decide_next(run, home=root / "home")
-            self.assertEqual(code, 0)
-            self.assertTrue(continuation["ship_ready"])
-            self.assertEqual(continuation["ship_command"], f"orro ship {run} --home {root / 'home'}")
-            code, plan = build_auto_plan(run, home=root / "home")
-            self.assertEqual(code, 0)
-            self.assertEqual(plan["next_allowed"], [continuation["ship_command"]])
+            repo = root / "repo"
+            _seed_repo(repo)
+            home, run = _real_run(root, repo)
+            (run / "team-ledger.json").unlink()
+            from witnessd.cli.verify import _proofcheck_binding
+            verdict_path = run / "proofcheck-verdict.json"
+            verdict = json.loads(verdict_path.read_text())
+            verdict["orro_binding"] = _proofcheck_binding(run)
+            verdict_path.write_text(json.dumps(verdict))
+            handoff = json.loads((run / "orro-handoff.json").read_text())
+            handoff["decision_refs"][0]["sha256"] = __import__("hashlib").sha256(verdict_path.read_bytes()).hexdigest()
+            (run / "orro-handoff.json").write_text(json.dumps(handoff))
+            code, continuation = decide_next(run, home=home)
+            self.assertEqual(code, 1)
+            self.assertEqual(continuation["error"]["code"], "ERR_ORRO_NEXT_EVIDENCE_MISSING")
+            _, report = build_report(run, home=home)
+            text = render_text_report(report)
+            self.assertNotIn("State: complete", text)
+            self.assertNotIn("ship the branch; merge stays human", text)
+
+    def test_symlinked_verdict_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            _seed_repo(repo)
+            home, run = _real_run(root, repo)
+            outside = root / "verdict.json"
+            outside.write_bytes((run / "proofcheck-verdict.json").read_bytes())
+            (run / "proofcheck-verdict.json").unlink()
+            (run / "proofcheck-verdict.json").symlink_to(outside)
+            code, payload = build_ship(run, home=home, repo=repo)
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["blockers"][0]["code"], "ERR_ORRO_SHIP_EVIDENCE_INVALID")
+
+    def test_push_receipt_failure_reports_remote_push(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            _seed_repo(repo)
+            home, run = _real_run(root, repo)
+            self._remote(root, repo)
+            bad_receipt = root / "receipt-dir"
+            bad_receipt.mkdir()
+            code, payload = ship_run(run, home=home, repo=repo, receipt_path=bad_receipt)
+            self.assertEqual(code, 1)
+            self.assertFalse(payload["blocked"])
+            self.assertTrue(payload["pushed"])
+            self.assertEqual(payload["error"]["code"], "ERR_ORRO_SHIP_POST_PUSH_FAILED")
+
+
+def _read_pr_body(receipt: dict) -> str:
+    command = receipt["pr_command"]
+    return command.split(" --body ", 1)[1] if " --body " in command else ""
 
 
 if __name__ == "__main__":

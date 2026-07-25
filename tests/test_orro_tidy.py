@@ -146,6 +146,24 @@ class OrroTidyTests(unittest.TestCase):
             self.assertEqual(actions["check-00"]["reason"], "kept: item evidence")
             self.assertIn("newest 2", actions["check-03"]["reason"])
 
+    def test_keep_checks_zero_one_and_two_retain_exact_newest_count(self) -> None:
+        for keep, expected in ((0, 0), (1, 1), (2, 2)):
+            with self.subTest(keep=keep), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                repo = root / "repo"
+                repo.mkdir()
+                _seed_repo(repo)
+                home = root / "home"
+                runs = home / "runs"
+                runs.mkdir(parents=True)
+                for index in range(4):
+                    _write_companion_verdict(runs / f"check-{index:02d}", decision="pass")
+                    os.utime(runs / f"check-{index:02d}", (index + 1, index + 1))
+                result = apply_tidy(repo=repo, inventory=build_tidy_inventory(repo=repo, home=home), keep_checks=keep)
+                remaining = [path for path in runs.iterdir() if path.is_dir()]
+                self.assertEqual(len(remaining), expected)
+                self.assertEqual(sum(item["action"] == "removed" for item in result["actions"]), 4 - expected)
+
     def test_dry_run_inventory_uses_live_dirty_check_and_does_not_mutate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

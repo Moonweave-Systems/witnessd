@@ -26,6 +26,7 @@ ERR_ORRO_NEXT_HANDOFF_LOAD_FAILED = "ERR_ORRO_NEXT_HANDOFF_LOAD_FAILED"
 ERR_ORRO_NEXT_HANDOFF_UNBOUND = "ERR_ORRO_NEXT_HANDOFF_UNBOUND"
 ERR_ORRO_NEXT_HANDOFF_BINDING_MISMATCH = "ERR_ORRO_NEXT_HANDOFF_BINDING_MISMATCH"
 ERR_ORRO_NEXT_LANE_BLOCKED = "ERR_ORRO_NEXT_LANE_BLOCKED"
+ERR_ORRO_NEXT_EVIDENCE_MISSING = "ERR_ORRO_NEXT_EVIDENCE_MISSING"
 
 _CRITICAL_JSON_ARTIFACTS = (
     "workflow-plan.json",
@@ -162,6 +163,10 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
         return 1, payload
 
     if proofcheck_state["decision"] == "pass" and handoff_exists:
+        if not has_run_evidence:
+            payload = _base_decision(run_dir, decision="blocked", blocked=True, reasons=["run evidence is missing"], home=home, proofcheck_payload=proofcheck_payload)
+            payload["error"] = {"code": ERR_ORRO_NEXT_EVIDENCE_MISSING, "message": "complete and ship-ready require run evidence"}
+            return 1, payload
         handoff_state = _handoff_state(run_dir, handoff_payload)
         if handoff_state["error"] is not None:
             payload = _base_decision(
@@ -237,14 +242,6 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
         proofcheck_payload=proofcheck_payload,
     )
     return 1, payload
-
-
-def write_decision(path: Path, payload: dict[str, Any]) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    except OSError as exc:
-        raise OrroNextError("ERR_ORRO_NEXT_WRITE_FAILED", str(exc)) from exc
 
 
 def team_ledger_block_diagnostics(run_dir: Path) -> dict[str, Any] | None:

@@ -182,14 +182,14 @@ def _validate_roadmap(payload: Any) -> dict[str, Any]:
             _invalid(f".orro/roadmap.json item id is duplicated: {item_id}")
         seen.add(item_id)
         title = item.get("title")
-        if not isinstance(title, str) or not title.strip():
+        if not isinstance(title, str) or not title.strip() or _has_control(title):
             _invalid(f".orro/roadmap.json item {index}.title must be a non-empty string")
         if "status" in item and item.get("status") != "done":
             _invalid(f".orro/roadmap.json item {index}.status must be done")
         if "status" in item and "steps" in item:
             _invalid(f".orro/roadmap.json item {index} may not have both status and steps")
         for key in ("note", "spec"):
-            if key in item and not isinstance(item.get(key), str):
+            if key in item and (not isinstance(item.get(key), str) or _has_control(item[key])):
                 _invalid(f".orro/roadmap.json item {index}.{key} must be a string")
         if "steps" in item:
             steps = item["steps"]
@@ -244,16 +244,20 @@ def _validate_step(
     seen.add(step_id)
     if not isinstance(step.get("profile"), str) or step.get("profile") not in _PROFILES:
         _invalid(f".orro/roadmap.json item {index}.step {step_index}.profile is invalid")
-    if "title" in step and (not isinstance(step["title"], str) or not step["title"].strip()):
+    if "title" in step and (not isinstance(step["title"], str) or not step["title"].strip() or _has_control(step["title"])):
         _invalid(f".orro/roadmap.json item {index}.step {step_index}.title must be a non-empty string")
     for key in ("write_scope", "checks", "commands"):
         if key in step and (
-            not isinstance(step[key], list) or any(not isinstance(value, str) for value in step[key])
+            not isinstance(step[key], list) or any(not isinstance(value, str) or _has_control(value) for value in step[key])
         ):
             _invalid(f".orro/roadmap.json item {index}.step {step_index}.{key} must be a list of strings")
-    if "adapter" in step and not isinstance(step["adapter"], str):
+    if "adapter" in step and (not isinstance(step["adapter"], str) or _has_control(step["adapter"])):
         _invalid(f".orro/roadmap.json item {index}.step {step_index}.adapter must be a string")
 
 
 def _invalid(message: str) -> None:
     raise OrroRoadmapError(ERR_ORRO_ROADMAP_INVALID, message)
+
+
+def _has_control(value: str) -> bool:
+    return any(ord(character) < 32 or ord(character) == 127 for character in value)

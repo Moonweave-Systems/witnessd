@@ -93,6 +93,16 @@ class OrroStatusTests(unittest.TestCase):
             self.assertIn("## Boundary", document)
             self.assertIn("This file is a write-only projection", document)
 
+    def test_markdown_metacharacters_render_inert(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = root / "repo", root / "home"
+            title = "[click](https://phish.invalid) *not a heading* `code`"
+            write_roadmap(repo, {"kind": "orro-roadmap", "schema_version": "0.1", "items": [{"id": "item", "title": title}]})
+            document = write_status_document(repo, home).read_text(encoding="utf-8")
+            self.assertIn(r"\[click\]\(https://phish\.invalid\) \*not a heading\* \`code\`", document)
+            self.assertNotIn("[click](https://phish.invalid)", document)
+
     def test_status_write_failure_is_reported_without_changing_status_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -183,7 +193,7 @@ class OrroStatusTests(unittest.TestCase):
             item = initial["items"][0]
             self.assertEqual(item["status"], "in-progress (0/2 steps)")
             self.assertEqual(item["steps"][0]["state"], "in-progress")
-            self.assertIn("orro flow \"Feature: implement\"", item["steps"][0]["suggested_next_command"])
+            self.assertIn("orro flow 'Feature: implement'", item["steps"][0]["suggested_next_command"])
             self.assertIn("--roadmap-item feature --roadmap-step implement", item["steps"][0]["suggested_next_command"])
 
             verify_run = runs / "run-verify"
