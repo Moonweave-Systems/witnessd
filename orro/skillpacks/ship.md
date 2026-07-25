@@ -15,3 +15,10 @@ force-pushes. It may push the current branch and ask `gh` to open a PR.
 Shipping writes `ship-receipt.json` as orchestration metadata, not proof. It
 never commits, merges, approves a merge, or raises assurance. Merge approval
 stays human forever.
+
+After a successful push, ship also posts one `ORRO guardrail receipt` GitHub
+Check Run when `gh` can reach a GitHub remote with `checks:write`. The Check Run
+is orchestration metadata rather than proof and states the verifier decision,
+observed base, pushed head, and coverage boundary. When `gh`, GitHub remote
+parsing, or permission is unavailable, ship skips it honestly and records the
+reason.
