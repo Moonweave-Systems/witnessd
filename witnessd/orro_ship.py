@@ -152,7 +152,8 @@ def ship_run(
         goal = _goal(run_dir)
         verdict_hash = _hash_file(run_dir / "proofcheck-verdict.json")
         handoff_hash = _hash_file(run_dir / "orro-handoff.json")
-        claim = _ship_claim(observed_base_commit, pushed_head_commit)
+        decision = "pass"
+        claim = _ship_claim(observed_base_commit, pushed_head_commit, decision)
         body = (
             "ORRO guardrail receipt\n\n"
             f"Run directory: {run_dir.name}\n"
@@ -170,17 +171,18 @@ def ship_run(
             )
             if completed.returncode == 0:
                 pr_url = completed.stdout.strip() or None
-        check_run = None
-        check_run_error = None
+        commit_status = None
+        commit_status_error = None
         if not gh_path:
-            check_run_error = "gh CLI is unavailable"
+            commit_status_error = "gh CLI is unavailable"
         elif _github_repo(remote_url) is None:
-            check_run_error = "remote is not a GitHub remote"
+            commit_status_error = "remote is not a GitHub remote"
         else:
-            check_run, check_run_error = _post_check_run(
+            commit_status, commit_status_error = _post_commit_status(
                 remote_url,
                 pushed_head_commit,
-                claim,
+                _status_description(decision, observed_base_commit, pushed_head_commit),
+                target_url=pr_url,
                 cwd=repo,
             )
         receipt = {
@@ -193,8 +195,8 @@ def ship_run(
             "pushed_head_commit": pushed_head_commit,
             "pr_url": pr_url,
             "pr_command": None if pr_url else pr_command,
-            "check_run": check_run,
-            "check_run_error": check_run_error,
+            "commit_status": commit_status,
+            "commit_status_error": commit_status_error,
             "verdict_sha256": verdict_hash,
             "handoff_sha256": handoff_hash,
             "boundary": BOUNDARY,
@@ -340,9 +342,9 @@ def _github_repo(remote_url: str) -> tuple[str, str] | None:
     return owner, repository
 
 
-def _ship_claim(observed_base_commit: str, pushed_head_commit: str) -> str:
+def _ship_claim(observed_base_commit: str, pushed_head_commit: str, decision: str) -> str:
     return (
-        "Verifier decision: pass for the observed run.\n"
+        f"Verifier decision: {decision} for the observed run.\n"
         f"Observed base commit: {observed_base_commit}\n"
         f"Pushed head commit: {pushed_head_commit}\n"
         f"The pushed head {pushed_head_commit} descends from that base; commits added "
@@ -350,40 +352,55 @@ def _ship_claim(observed_base_commit: str, pushed_head_commit: str) -> str:
     )
 
 
-def _check_run_command(owner: str, repository: str, head_sha: str, claim: str) -> list[str]:
-    return [
+def _status_description(
+    decision: str,
+    observed_base_commit: str,
+    pushed_head_commit: str,
+    *,
+    goal: str | None = None,
+) -> str:
+    del pushed_head_commit, goal
+    return f"verifier {decision} for the observed run (base {observed_base_commit[:7]}); merge approval stays human"
+
+
+def _commit_status_command(
+    owner: str,
+    repository: str,
+    head_sha: str,
+    description: str,
+    target_url: str | None = None,
+) -> list[str]:
+    command = [
         "gh",
         "api",
-        f"repos/{owner}/{repository}/check-runs",
+        f"repos/{owner}/{repository}/statuses/{head_sha}",
         "--method",
         "POST",
         "-f",
-        "name=ORRO guardrail receipt",
+        "state=success",
         "-f",
-        f"head_sha={head_sha}",
+        "context=ORRO guardrail receipt",
         "-f",
-        "status=completed",
-        "-f",
-        "conclusion=success",
-        "-f",
-        "output[title]=ORRO guardrail receipt",
-        "-f",
-        f"output[summary]={claim}",
+        f"description={description}",
     ]
+    if target_url:
+        command.extend(["-f", f"target_url={target_url}"])
+    return command
 
 
-def _post_check_run(
+def _post_commit_status(
     remote_url: str,
     head_sha: str,
-    claim: str,
+    description: str,
     *,
+    target_url: str | None = None,
     runner: Any = subprocess.run,
     cwd: Path | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     parsed = _github_repo(remote_url)
     if parsed is None:
         return None, "remote is not a GitHub remote"
-    command = _check_run_command(*parsed, head_sha, claim)
+    command = _commit_status_command(*parsed, head_sha, description, target_url)
     try:
         completed = runner(
             command,
@@ -402,9 +419,11 @@ def _post_check_run(
         payload = json.loads(completed.stdout)
     except (TypeError, json.JSONDecodeError) as exc:
         return None, f"gh api returned invalid JSON: {exc}"
-    if not isinstance(payload, dict) or not isinstance(payload.get("id"), int) or not isinstance(payload.get("html_url"), str):
-        return None, "gh api returned an incomplete check run"
-    return {"id": payload["id"], "url": payload["html_url"]}, None
+    if not isinstance(payload, dict) or not all(
+        isinstance(payload.get(key), str) for key in ("url", "context", "state")
+    ):
+        return None, "gh api returned an incomplete commit status"
+    return {"url": payload["url"], "context": payload["context"], "state": payload["state"]}, None
 
 
 def _git(repo: Path, *args: str) -> str:

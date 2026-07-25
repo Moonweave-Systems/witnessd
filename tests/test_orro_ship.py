@@ -15,10 +15,11 @@ from witnessd.cli.status import _suggested_step_command
 from witnessd.orro_next import decide_next
 from witnessd.orro_report import build_report, render_text_report
 from witnessd.orro_ship import (
-    _check_run_command,
+    _commit_status_command,
     _dirty_blocker,
     _github_repo,
-    _post_check_run,
+    _post_commit_status,
+    _status_description,
     _suggested_branch,
     build_ship,
     ship_run,
@@ -83,26 +84,44 @@ class OrroShipTest(unittest.TestCase):
         self.assertIsNone(_github_repo("https://gitlab.com/owner/repo.git"))
         self.assertIsNone(_github_repo("not a remote URL"))
 
-    def test_check_run_payload_and_argv_are_pinned(self) -> None:
-        claim = "Verifier decision: pass for the observed run."
-        argv = _check_run_command("owner", "repo", "head123", claim)
-        self.assertEqual(argv[:5], ["gh", "api", "repos/owner/repo/check-runs", "--method", "POST"])
-        self.assertIn("name=ORRO guardrail receipt", argv)
-        self.assertIn("head_sha=head123", argv)
-        self.assertIn("output[title]=ORRO guardrail receipt", argv)
-        self.assertIn(f"output[summary]={claim}", argv)
+    def test_commit_status_payload_and_argv_are_pinned(self) -> None:
+        description = _status_description("pass", "base123456789", "head123456789")
+        argv = _commit_status_command("owner", "repo", "head123", description, "https://github.com/owner/repo/pull/1")
+        self.assertEqual(
+            argv,
+            [
+                "gh",
+                "api",
+                "repos/owner/repo/statuses/head123",
+                "--method",
+                "POST",
+                "-f",
+                "state=success",
+                "-f",
+                "context=ORRO guardrail receipt",
+                "-f",
+                f"description={description}",
+                "-f",
+                "target_url=https://github.com/owner/repo/pull/1",
+            ],
+        )
         calls: list[list[str]] = []
 
         def runner(command: list[str], **kwargs: object) -> object:
             calls.append(command)
-            return type("Completed", (), {"returncode": 0, "stdout": '{"id": 42, "html_url": "https://github.com/owner/repo/checks/42"}', "stderr": ""})()
+            return type("Completed", (), {"returncode": 0, "stdout": '{"url": "https://api.github.com/repos/owner/repo/statuses/1", "context": "ORRO guardrail receipt", "state": "success"}', "stderr": ""})()
 
-        result, error = _post_check_run(
-            "https://github.com/owner/repo.git", "head123", claim, runner=runner
+        result, error = _post_commit_status(
+            "https://github.com/owner/repo.git", "head123", description,
+            target_url="https://github.com/owner/repo/pull/1", runner=runner
         )
         self.assertIsNone(error)
-        self.assertEqual(result, {"id": 42, "url": "https://github.com/owner/repo/checks/42"})
+        self.assertEqual(result, {"url": "https://api.github.com/repos/owner/repo/statuses/1", "context": "ORRO guardrail receipt", "state": "success"})
         self.assertEqual(calls, [argv])
+
+    def test_commit_status_description_stays_under_github_limit(self) -> None:
+        description = _status_description("pass", "a" * 64, "b" * 64, goal="goal " + "x" * 500)
+        self.assertLess(len(description), 140)
 
     def test_dirty_status_document_advises_committing_only_status(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -160,6 +179,8 @@ class OrroShipTest(unittest.TestCase):
             code, payload = ship_run(run, home=home, repo=repo)
             self.assertEqual(code, 0, payload)
             receipt = payload["ship_receipt"]
+            self.assertIsNone(receipt["commit_status"])
+            self.assertTrue(receipt["commit_status_error"])
             self.assertEqual(receipt["observed_base_commit"], json.loads((run / "team-ledger.json").read_text())["start_commit"])
             self.assertEqual(receipt["pushed_head_commit"], _git(repo, "rev-parse", "HEAD"))
             self.assertIn("commits added after the observed run are NOT covered", _read_pr_body(receipt))
