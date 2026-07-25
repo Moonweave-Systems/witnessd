@@ -281,7 +281,20 @@ def _read_start_commit(run_dir: Path) -> str:
 
 
 def _dirty_blocker(run_dir: Path, repo: Path, home: Path) -> dict[str, Any]:
-    paths = [line[3:] for line in _git(repo, "status", "--porcelain=v1").splitlines() if len(line) >= 4]
+    status = subprocess.run(
+        ["git", "status", "--porcelain=v1"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    ).stdout
+    paths = [line[3:] for line in status.splitlines() if len(line) >= 4]
+    if paths == [".orro/STATUS.md"]:
+        return _blocker(
+            "ERR_ORRO_SHIP_WORKTREE_DIRTY",
+            "only the generated ORRO status document is dirty; commit it before shipping",
+            [_cmd("git", "add", ".orro/STATUS.md"), _cmd("git", "commit", "-m", "update ORRO status")],
+        )
     home_rel = home.relative_to(repo).as_posix() if home == repo or repo in home.parents else None
     internal_prefixes = tuple(prefix for prefix in (home_rel, ".orro") if prefix)
     if paths and internal_prefixes and all(any(path == prefix or path.startswith(prefix + "/") for prefix in internal_prefixes) for path in paths):
