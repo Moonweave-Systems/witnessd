@@ -72,6 +72,9 @@ and verification remain offline. It does not run ORRO Flow work, verify
 evidence, approve merge, or raise assurance. Use
 `python3 -m orro setup --home .witnessd --depone-root ../Depone` for
 development and tests when you want an explicit local Depone checkout.
+After setup, add the reported home directory entry (normally `.witnessd/`) to
+the repository's `.gitignore`; setup reports the exact repo-relative entry and
+does not modify `.gitignore` for you.
 
 `python3 -m orro team init --template developer --yes`
 creates `.orro/team.json` rolepack readiness configuration. It validates the

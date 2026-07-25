@@ -10,6 +10,17 @@ from pathlib import Path
 from witnessd import __file__
 from witnessd.cli._output import _emit_orro_error
 
+
+def _recommended_gitignore(home: Path, repo: Path | None = None) -> list[str]:
+    repo = (repo or Path.cwd()).resolve(strict=False)
+    home = home.resolve(strict=False)
+    try:
+        relative = home.relative_to(repo).as_posix()
+    except ValueError:
+        return [str(home)]
+    return [f"{relative.rstrip('/')}/"] if relative not in {"", "."} else ["./"]
+
+
 def _cmd_init(args: argparse.Namespace) -> int:
     from witnessd.distribution import InitConfig, ProvisionError, init_witnessd_home
     from witnessd.role_capability import RolepackError
@@ -67,6 +78,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
             ),
         )
         return 2
+    result["recommended_gitignore"] = _recommended_gitignore(home, Path.cwd())
     print(json.dumps(result, sort_keys=True))
     return 0
 
@@ -145,6 +157,7 @@ def _cmd_orro_setup(args: argparse.Namespace) -> int:
         "depone_network_used": bool(depone["network_used"]),
         "engine_lock": str(engine_lock_path),
         "engine_lock_commit": str(engine_lock["depone"]["commit"]),
+        "recommended_gitignore": _recommended_gitignore(home),
         "next_steps": [
             f"python3 -m orro doctor --home {shlex.quote(str(home))} --json",
             "python3 -m orro team init --template developer --yes",
@@ -167,6 +180,11 @@ def _cmd_orro_setup(args: argparse.Namespace) -> int:
     print(f"depone_root: {payload['depone_root']}")
     print(f"depone_commit: {payload['depone_commit']}")
     print(f"engine_lock: {payload['engine_lock']}")
+    print(
+        "gitignore: add "
+        + ", ".join(payload["recommended_gitignore"])
+        + " to .gitignore"
+    )
     print("next:")
     for step in payload["next_steps"]:
         print(f"  {step}")

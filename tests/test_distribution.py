@@ -748,6 +748,29 @@ class DistributionInitTests(unittest.TestCase):
             self.assertTrue((home / "provision.json").is_file())
             self.assertTrue((home / "orro-engine-lock.json").is_file())
 
+    def test_orro_setup_recommends_repo_relative_gitignore_entry(self) -> None:
+        depone_root = self._depone_root()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            home = repo / ".witnessd"
+            out = io.StringIO()
+            err = io.StringIO()
+            previous = os.getcwd()
+            os.chdir(repo)
+            try:
+                with redirect_stdout(out), redirect_stderr(err):
+                    code = main([
+                        "orro", "setup", "--home", ".witnessd",
+                        "--depone-root", str(depone_root), "--json", "--yes",
+                    ])
+            finally:
+                os.chdir(previous)
+            self.assertEqual(code, 0, err.getvalue())
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload["recommended_gitignore"], [".witnessd/"])
+            self.assertFalse((repo / ".gitignore").exists())
+
     def test_orro_setup_rejects_local_depone_checkout_that_misses_default_pin(
         self,
     ) -> None:

@@ -265,6 +265,9 @@ python3 -m orro doctor --home .witnessd --json
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 ```
 
+Setup reports the exact repository-relative home entry to add to `.gitignore`
+(normally `.witnessd/`); it never edits `.gitignore` itself.
+
 `orro doctor` checks readiness, not evidence truth. When
 `<home>/orro-engine-lock.json` exists, doctor compares the provisioned witnessd
 and Depone commits against it by default. A doctor pass means that readiness
