@@ -69,6 +69,19 @@ class OrroRoadmapTests(unittest.TestCase):
                 })
             self.assertEqual(caught.exception.code, ERR_ORRO_ROADMAP_INVALID)
 
+    def test_control_characters_are_rejected_in_untrusted_roadmap_fields(self) -> None:
+        fields = [
+            {"title": "title\nforged"},
+            {"steps": [{"id": "verify", "profile": "verification-only", "checks": ["true\nforged"]}]},
+            {"steps": [{"id": "verify", "profile": "verification-only", "write_scope": ["src\nfile"]}]},
+            {"steps": [{"id": "verify", "profile": "verification-only", "adapter": "shell\r"}]},
+        ]
+        for extra in fields:
+            with self.subTest(extra=extra), tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(OrroRoadmapError) as caught:
+                    write_roadmap(Path(tmp), {"kind": "orro-roadmap", "schema_version": "0.1", "items": [{"id": "item", "title": "safe", **extra}]})
+                self.assertEqual(caught.exception.code, ERR_ORRO_ROADMAP_INVALID)
+
     def test_duplicate_step_id_and_unknown_step_are_structured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
