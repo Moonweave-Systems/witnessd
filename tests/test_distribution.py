@@ -132,10 +132,10 @@ class DistributionInitTests(unittest.TestCase):
             "WITNESSD_PACKAGE_VERSION_FALLBACK must match setup.py version",
         )
 
-    def test_default_depone_ref_pins_v023_lane_intent_support(self) -> None:
+    def test_default_depone_ref_pins_health_substrate_support(self) -> None:
         self.assertEqual(
             DEFAULT_DEPONE_REF,
-            "f067a05299f755fe6b3c4b86aace2aa8822cc711",
+            "b471b47ceb8cc2460e7221375526f63553c18353",
         )
         self.assertRegex(DEFAULT_DEPONE_REF, r"^[0-9a-f]{40}$")
 
