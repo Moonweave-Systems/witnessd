@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import shutil
+import shlex
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -866,15 +867,9 @@ def _suggested_step_command(item: dict[str, Any], step: dict[str, Any], *, repo:
     profile = step["profile"]
     checks = step.get("checks")
     if profile == "verification-only" and checks:
-        return " ".join(
-            ["orro check", *[f"--check '{check}'" for check in checks],
-             f"--roadmap-item {item_id}", f"--roadmap-step {step_id}", f"--repo {repo_arg}"]
-        )
+        return shlex.join(["orro", "check", *sum((["--check", check] for check in checks), []), "--roadmap-item", item_id, "--roadmap-step", step_id, "--repo", repo_arg])
     if profile == "code-change" and step.get("write_scope") and step.get("adapter"):
-        command = f'orro flow "{item["title"]}: {step_id}"'
-        for scope in step["write_scope"]:
-            command += f" --write-scope '{scope}'"
-        return f"{command} --adapter {step['adapter']} --roadmap-item {item_id} --roadmap-step {step_id} --repo {repo_arg}"
+        return shlex.join(["orro", "flow", f"{item['title']}: {step_id}", *sum((["--write-scope", scope] for scope in step["write_scope"]), []), "--adapter", step["adapter"], "--roadmap-item", item_id, "--roadmap-step", step_id, "--repo", repo_arg])
     return f"construct the command manually (profile: {profile})"
 
 
