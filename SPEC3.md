@@ -935,3 +935,5 @@ a new competing architecture document.
 ```text
 Depone verifies; witnessd executes; ORRO exposes the workflow.
 ```
+
+Any surface that reports a verifier decision obtains it from a verifier invocation; a stored verdict artifact may be required as a binding input but is never sufficient on its own.
