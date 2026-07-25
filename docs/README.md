@@ -51,6 +51,7 @@ Use these names in new user-facing docs:
 | `proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro ship` | push a ship-ready branch and optionally open a PR; merge approval stays human |
+
 | `orro next` | non-executing continuation/status gate over persisted run artifacts |
 | `orro report` | human-facing summary of observed ORRO artifacts and next safe action |
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
@@ -61,6 +62,13 @@ Use these names in new user-facing docs:
 | `python3 -m orro` | deprecated witnessd compatibility shim for the ORRO-owned command |
 | `orro engine-lock` | write/check distribution metadata for pinned witnessd and Depone commits |
 | Superflow | historical/compatibility name, superseded by ORRO |
+
+After a successful `orro ship`, a GitHub remote with an available `gh` CLI and
+`checks:write` permission receives one `ORRO guardrail receipt` Check Run on the
+pushed head. The Check Run is orchestration metadata, not proof; it states the
+verifier decision, observed base, pushed head, and coverage boundary. If GitHub,
+`gh`, or the required permission is unavailable, ship skips it honestly and
+records why.
 
 Use `witnessd` only when discussing the engine or CLI. Use `Moonweave` only when
 discussing the publisher/account namespace.

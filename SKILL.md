@@ -40,6 +40,7 @@ The cross-engine artifact boundary is summarized in
 | `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
 | `orro check` | companion: deterministic verify (Depone verdict) + read-only review (advisory); spawns zero execution-adapter lanes; does not claim observed execution |
 | `orro demo` | AI-free deterministic shell guardrail demo; Depone re-derives write-scope PASS/FAIL |
+
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
 | `orro auto --until-complete` | bounded post-run proofcheck/handoff loop; orchestration metadata only |
@@ -47,6 +48,13 @@ The cross-engine artifact boundary is summarized in
 | `orro team go` | one-command flowplan/proofrun/proofcheck/report wrapper; reports Depone verdict |
 | `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
 | `orro auto` | future broader continuation loop behind evidence gates |
+
+After a successful `orro ship`, a GitHub remote with an available `gh` CLI and
+`checks:write` permission receives one `ORRO guardrail receipt` Check Run on the
+pushed head. The Check Run is orchestration metadata, not proof; it states the
+verifier decision, observed base, pushed head, and coverage boundary. If GitHub,
+`gh`, or the required permission is unavailable, ship skips it honestly and
+records why.
 
 ## Repository and install boundary
 
