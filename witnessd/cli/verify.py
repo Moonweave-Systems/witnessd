@@ -1215,8 +1215,8 @@ def _cmd_ship(args: argparse.Namespace) -> int:
         elif payload.get("pushed") is True and payload.get("error"):
             print(f"orro ship pushed, but post-push recording failed: {payload['error'].get('message', 'unknown error')}")
         else:
-            if payload.get("ship_receipt", {}).get("check_run_error"):
-                print(f"orro ship check run not posted: {payload['ship_receipt']['check_run_error']}")
+            if payload.get("ship_receipt", {}).get("commit_status_error"):
+                print(f"orro ship commit status not posted: {payload['ship_receipt']['commit_status_error']}")
             print("orro ship pushed; merge approval stays human")
     return code
 
