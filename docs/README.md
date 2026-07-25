@@ -63,12 +63,13 @@ Use these names in new user-facing docs:
 | `orro engine-lock` | write/check distribution metadata for pinned witnessd and Depone commits |
 | Superflow | historical/compatibility name, superseded by ORRO |
 
-After a successful `orro ship`, a GitHub remote with an available `gh` CLI and
-`checks:write` permission receives one `ORRO guardrail receipt` Check Run on the
-pushed head. The Check Run is orchestration metadata, not proof; it states the
-verifier decision, observed base, pushed head, and coverage boundary. If GitHub,
-`gh`, or the required permission is unavailable, ship skips it honestly and
-records why.
+After a successful `orro ship`, a GitHub remote with an available `gh` CLI
+receives one `ORRO guardrail receipt` commit status on the pushed head. Creating
+check runs requires a GitHub App installation, so ORRO publishes this receipt
+pointer as a commit status, which works with the operator's own credentials.
+The status is orchestration metadata, not proof; the full claim remains in the
+PR body. If GitHub, `gh`, or the required permission is unavailable, ship skips
+it honestly and records why.
 
 Use `witnessd` only when discussing the engine or CLI. Use `Moonweave` only when
 discussing the publisher/account namespace.

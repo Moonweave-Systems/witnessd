@@ -16,9 +16,10 @@ Shipping writes `ship-receipt.json` as orchestration metadata, not proof. It
 never commits, merges, approves a merge, or raises assurance. Merge approval
 stays human forever.
 
-After a successful push, ship also posts one `ORRO guardrail receipt` GitHub
-Check Run when `gh` can reach a GitHub remote with `checks:write`. The Check Run
-is orchestration metadata rather than proof and states the verifier decision,
-observed base, pushed head, and coverage boundary. When `gh`, GitHub remote
-parsing, or permission is unavailable, ship skips it honestly and records the
-reason.
+After a successful push, ship also posts one `ORRO guardrail receipt` commit
+status when `gh` can reach a GitHub remote. Creating check runs requires a
+GitHub App installation, so ORRO publishes this receipt pointer as a commit
+status, which works with the operator's own credentials. The status is
+orchestration metadata rather than proof; the full claim remains in the PR
+body. When `gh`, GitHub remote parsing, or permission is unavailable, ship
+skips it honestly and records the reason.
