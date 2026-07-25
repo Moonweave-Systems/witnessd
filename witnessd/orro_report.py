@@ -257,6 +257,8 @@ def _summary(
     reference_adapter: dict[str, Any],
 ) -> dict[str, Any]:
     state = str(continuation.get("decision", "blocked"))
+    if state not in {"invalid-run-dir", "blocked"} and not execution.get("proofrun_evidence_present"):
+        state = "blocked"
     next_allowed = continuation.get("next_allowed")
     next_action = next_allowed[0] if isinstance(next_allowed, list) and next_allowed else None
     return {

@@ -151,43 +151,6 @@ def _auto_advisory_mode(goal: str, *, task_class: str) -> str:
         return "sketch"
     return "route"
 
-def _cmd_orro_next(args: argparse.Namespace) -> int:
-    from witnessd.orro_next import OrroNextError, decide_next, write_decision
-
-    run_dir, latest_home = _select_latest_run(args, command="next")
-    if args.latest and run_dir is None:
-        return 2
-    if not run_dir:
-        _emit_orro_error(
-            args,
-            code="ERR_ORRO_NEXT_INPUT_REQUIRED",
-            message="run directory is required",
-        )
-        return 2
-    home = latest_home or (Path(args.home).resolve(strict=False) if args.home else None)
-    code, payload = decide_next(run_dir, home=home)
-    if args.out:
-        try:
-            write_decision(Path(args.out).resolve(strict=False), payload)
-        except OrroNextError as exc:
-            _emit_orro_error(args, code=exc.code, message=str(exc))
-            return 1
-    if code != 0:
-        payload = _with_advisory_error(
-            args,
-            payload,
-            default_code="ERR_ORRO_NEXT_BLOCKED",
-            default_message="ORRO continuation is blocked",
-        )
-    if getattr(args, "_deprecated_alias", None) == "next":
-        print(
-            "deprecated: use orro auto --dry-run (this alias will be removed in a future release)",
-            file=os.sys.stderr,
-        )
-    print(json.dumps(payload, sort_keys=True))
-    return code
-
-
 def _cmd_orro_advise(args: argparse.Namespace) -> int:
     from witnessd.orro_workstyle import (
         OrroWorkstyleError,
