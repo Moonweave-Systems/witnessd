@@ -59,7 +59,14 @@ class CommandLaneHealthDerivationTest(unittest.TestCase):
             )
             self.assertEqual(
                 contract,
-                {"schema_version": "v111.code_health", "code_health": {"gates": gates}},
+                {
+                    "schema_version": "v111.code_health",
+                    "code_health": {
+                        "gates": gates,
+                        "manifest_path": "health-gate-artifacts.json",
+                        "bundle_path": "bundle.json",
+                    },
+                },
             )
             self.assertEqual(source["verifier"], "Depone")
 

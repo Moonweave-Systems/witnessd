@@ -51,6 +51,7 @@ ROLE_CAPABILITY_TOOL_CALLS_EVIDENCE_CONTRACT_SCHEMA_VERSION = (
 )
 OBSERVED_TOUCHED_FILES_SUBJECT_NAME = "observed-touched-files.txt"
 OBSERVED_SKILLS_SUBJECT_NAME = "observed-skills.txt"
+HEALTH_GATE_ARTIFACTS_SUBJECT_NAME = "health-gate-artifacts.json"
 EVIDENCE_MODE_CONTEMPORANEOUS = "contemporaneous"
 EVIDENCE_MODE_POST_HOC = "post_hoc"
 DEFAULT_EPOCH_SECONDS = 300
@@ -72,6 +73,26 @@ def _canonical_json(value: Any) -> str:
 
 def _sha256_file(path: str) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def build_health_gate_artifact_manifest(
+    evidence_dir: str,
+    gates: list[dict[str, object]],
+) -> str:
+    records: list[dict[str, object]] = []
+    for gate in sorted(gates, key=lambda item: str(item.get("gate", ""))):
+        exit_path = str(gate["exit_code_path"])
+        log_path = str(gate["log_path"])
+        records.append(
+            {
+                "gate": str(gate["gate"]),
+                "exit_code_path": exit_path,
+                "exit_code_sha256": _sha256_file(str(Path(evidence_dir) / exit_path)),
+                "log_path": log_path,
+                "log_sha256": _sha256_file(str(Path(evidence_dir) / log_path)),
+            }
+        )
+    return _canonical_json({"gates": records}) + "\n"
 
 
 def _artifact_index(subjects: list[dict[str, Any]]) -> list[dict[str, Any]]:

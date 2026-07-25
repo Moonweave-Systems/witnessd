@@ -18,7 +18,12 @@ from witnessd.capture import build_capture_manifest
 from witnessd.observer import build_observer_capture
 from witnessd.runintent import build_run_intent, write_signed_run_intent
 from witnessd.signing import gen_operator_keypair
-from witnessd.substrate import build_bundle, build_evidence_contract
+from witnessd.substrate import (
+    HEALTH_GATE_ARTIFACTS_SUBJECT_NAME,
+    build_bundle,
+    build_evidence_contract,
+    build_health_gate_artifact_manifest,
+)
 
 
 def _fixture() -> dict:
@@ -189,6 +194,28 @@ class TestBundleUnsigned(unittest.TestCase):
 
 
 class TestEvidenceContract(unittest.TestCase):
+    def test_health_gate_manifest_is_canonical_and_sorted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            health = os.path.join(tmp, "health")
+            os.makedirs(health)
+            for name in ("z.exit", "z.log", "a.exit", "a.log"):
+                with open(os.path.join(health, name), "w", encoding="utf-8") as handle:
+                    handle.write(name)
+            content = build_health_gate_artifact_manifest(
+                tmp,
+                [
+                    {"gate": "z", "exit_code_path": "health/z.exit", "log_path": "health/z.log"},
+                    {"gate": "a", "exit_code_path": "health/a.exit", "log_path": "health/a.log"},
+                ],
+            )
+            parsed = json.loads(content)
+            self.assertEqual(HEALTH_GATE_ARTIFACTS_SUBJECT_NAME, "health-gate-artifacts.json")
+            self.assertEqual([item["gate"] for item in parsed["gates"]], ["a", "z"])
+            self.assertEqual(
+                content,
+                json.dumps(parsed, sort_keys=True, separators=(",", ":")) + "\n",
+            )
+
     def _context(self, files: dict[str, str]) -> EvidenceContext:
         evidence_files = [
             EvidenceFile(path=name, content=content, sha256=canonical_hash(content))

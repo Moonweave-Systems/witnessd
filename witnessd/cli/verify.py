@@ -408,6 +408,28 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         payload["health_conformance"] = command_health
         if command_health_source is not None:
             payload["health_conformance_source"] = command_health_source
+        health_contract_errors = (
+            command_health_source.get("errors", [])
+            if isinstance(command_health_source, dict)
+            else []
+        )
+        blocking_health_contract_errors = (
+            [
+                error
+                for error in health_contract_errors
+                if isinstance(error, dict)
+                and error.get("code") != "ERR_HEALTH_GATE_VIOLATION"
+            ]
+            if isinstance(health_contract_errors, list)
+            else []
+        )
+        if blocking_health_contract_errors:
+            code = 1
+            payload["decision"] = "fail"
+            existing_errors = payload.get("errors")
+            base_errors = existing_errors if isinstance(existing_errors, list) else []
+            payload["errors"] = [*base_errors, *blocking_health_contract_errors]
+            payload["error_count"] = len(payload["errors"])
         blocking_health_axes = [
             axis
             for axis in command_health.get("axes", [])
@@ -856,8 +878,17 @@ def _derive_command_lane_health(
 
     contract = {
         "schema_version": "v111.code_health",
-        "code_health": {"gates": gates},
+        "code_health": {
+            "gates": gates,
+            "manifest_path": "health-gate-artifacts.json",
+            "bundle_path": "bundle.json",
+        },
     }
+    for relative in ("health-gate-artifacts.json", "bundle.json"):
+        source_path = evidence_dir / relative
+        if source_path.is_file():
+            target_path = verifier_dir / relative
+            target_path.write_bytes(source_path.read_bytes())
     contract_path = verifier_dir / "evidence-contract.json"
     contract_path.write_text(
         json.dumps(contract, indent=2) + "\n",
@@ -907,6 +938,8 @@ def _derive_command_lane_health(
         "verifier": "Depone",
         "report": str(report_path),
         "contract": str(contract_path),
+        "decision": report.get("decision"),
+        "errors": report.get("evidence_contract", []),
     }
 
 

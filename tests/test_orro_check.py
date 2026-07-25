@@ -750,6 +750,13 @@ class OrroCheckVerifyTest(unittest.TestCase):
             self.assertEqual(architecture["status"], "fail")
             self.assertEqual(architecture["enforcement"], "block")
             self.assertIs(architecture["blocks_handoff"], True)
+            self.assertEqual(architecture["evidence_substrate"], "bound")
+            self.assertTrue((run_dir / "health-gate-artifacts.json").is_file())
+            bundle = json.loads((run_dir / "bundle.json").read_text(encoding="utf-8"))
+            self.assertIn(
+                "health-gate-artifacts.json",
+                [subject["name"] for subject in bundle["statement"]["subject"]],
+            )
             self.assertEqual(
                 (run_dir / "health" / "01-architecture.exit").read_text(
                     encoding="utf-8"
