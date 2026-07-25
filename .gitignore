@@ -14,3 +14,6 @@ fixtures/w10-sandbox/
 build/
 dist/
 __pycache__/
+
+# ORRO home created by `orro setup` (see recommended_gitignore)
+.witnessd/
