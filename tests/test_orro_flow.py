@@ -41,6 +41,7 @@ class OrroFlowTests(unittest.TestCase):
             "--repo",
             "--write-scope",
             "--command",
+            "--check",
             "--adapter",
             "--runner-sandbox",
             "--rolepack-file",
@@ -183,6 +184,52 @@ class OrroFlowTests(unittest.TestCase):
         self.assertIn("--verification-only", payload["error"]["next_command"])
         self.assertNotIn("Traceback", stdout.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_verification_check_threads_shell_lane_without_scope_or_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            _seed_repo(repo)
+            home = root / "home"
+            run_dir = root / "run"
+            runner = root / "runner"
+            calls: list[list[str]] = []
+
+            def invoke(argv: list[str]) -> tuple[int, object, str]:
+                calls.append(argv)
+                if argv[0] == "scout":
+                    return 0, {}, ""
+                return 2, {"error": {"code": "ERR_TEST_STOP"}}, ""
+
+            with (
+                patch("witnessd.distribution.validate_depone_pin", return_value={}),
+                patch("witnessd.cli.flow._invoke_orro_flow_phase", side_effect=invoke),
+            ):
+                code = main([
+                    "orro", "flow", "verify readme", "--verification-only",
+                    "--check", "test -f README.md", "--repo", str(repo),
+                    "--home", str(home), "--run-dir", str(run_dir),
+                    "--runner-sandbox", str(runner), "--json",
+                ])
+
+            self.assertEqual(code, 2)
+            flowplan = next(argv for argv in calls if argv[0] == "flowplan")
+            self.assertIn("--profile", flowplan)
+            self.assertEqual(flowplan[flowplan.index("--profile") + 1], "verification-only")
+            self.assertIn("--lane-adapter", flowplan)
+            self.assertEqual(flowplan[flowplan.index("--lane-adapter") + 1], "shell")
+            self.assertIn("--check", flowplan)
+            self.assertNotIn("--write-scope", flowplan)
+            self.assertNotIn("--command", flowplan)
+
+    def test_check_requires_verification_only(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(["orro", "flow", "check readme", "--check", "true", "--json"])
+        self.assertEqual(code, 2)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["error"]["code"], "ERR_ORRO_FLOW_CHECK_PROFILE_REQUIRED")
 
     def test_shell_reference_flow_returns_a_structured_first_phase_blocker(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

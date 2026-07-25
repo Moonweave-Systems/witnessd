@@ -59,7 +59,41 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
     )
     phases: list[dict[str, object]] = []
 
-    if not args.write_scope:
+    verification_check = bool(args.verification_only and args.check)
+    if args.check and not args.verification_only:
+        return _emit_orro_flow_blocker(
+            args,
+            blocked_phase="flowplan",
+            run_dir=None,
+            phases=phases,
+            error=_structured_error(
+                code="ERR_ORRO_FLOW_CHECK_PROFILE_REQUIRED",
+                message="--check requires --verification-only",
+                reason="declared checks are verification-only intent",
+                required_input_or_grant="--verification-only --check '<shell>'",
+                next_command=(
+                    "python3 -m orro flow "
+                    f"{shlex.quote(str(args.goal))} --verification-only "
+                    + " ".join(f"--check {shlex.quote(str(check))}" for check in args.check)
+                    + " --json"
+                ),
+            ),
+        )
+    if args.command and args.check:
+        return _emit_orro_flow_blocker(
+            args,
+            blocked_phase="flowplan",
+            run_dir=None,
+            phases=phases,
+            error=_structured_error(
+                code="ERR_ORRO_FLOW_COMMAND_CHECK_CONFLICT",
+                message="--command and --check are mutually exclusive",
+                reason="implementation commands and verification checks have different lane intent",
+                required_input_or_grant="choose exactly one of --command or --check",
+            ),
+        )
+    flow_adapter = "shell" if verification_check else args.adapter
+    if not args.write_scope and not verification_check:
         return _emit_orro_flow_blocker(
             args,
             blocked_phase="flowplan",
@@ -76,12 +110,12 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
                 next_command=(
                     "python3 -m orro flow "
                     f"{shlex.quote(str(args.goal))} --write-scope '<glob>' "
-                    f"--adapter {shlex.quote(str(args.adapter))} --json"
+                    f"--adapter {shlex.quote(str(args.adapter or '<adapter>'))} --json"
                     + (" --verification-only" if args.verification_only else "")
                 ),
             ),
         )
-    if not args.adapter:
+    if not flow_adapter:
         return _emit_orro_flow_blocker(
             args,
             blocked_phase="flowplan",
@@ -92,7 +126,7 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
                 message="orro flow requires --adapter",
                 reason="the executing adapter must be chosen explicitly",
                 required_input_or_grant=(
-                    "--adapter codex|claude|agy|gemini|opencode"
+                    "--adapter shell|codex|claude|agy|gemini|opencode"
                 ),
                 next_command=(
                     "python3 -m orro flow "
@@ -239,7 +273,7 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
                     required_input_or_grant="--rolepack-file <valid-rolepack.json>",
                     next_command=(
                         "python3 -m witnessd team init "
-                        f"--role runner:{shlex.quote(str(args.adapter))} "
+                        f"--role runner:{shlex.quote(str(flow_adapter))} "
                         + " ".join(
                             f"--write-scope {shlex.quote(scope)}"
                             for scope in args.write_scope
@@ -277,7 +311,7 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
                     ),
                     next_command=(
                         "python3 -m witnessd team init "
-                        f"--role runner:{shlex.quote(str(args.adapter))} "
+                        f"--role runner:{shlex.quote(str(flow_adapter))} "
                         + " ".join(
                             f"--write-scope {shlex.quote(scope)}"
                             for scope in args.write_scope
@@ -297,7 +331,7 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
         try:
             generated_rolepack = build_rolepack_scaffold(
                 template=None,
-                roles=[f"runner:{args.adapter}"],
+            roles=[f"runner:{flow_adapter}"],
                 write_scope=list(args.write_scope),
             )
             write_rolepack_scaffold(rolepack_path, generated_rolepack, yes=True)
@@ -315,7 +349,7 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
                     required_input_or_grant="--rolepack-file <rolepack.json>",
                     next_command=(
                         "python3 -m witnessd team init "
-                        f"--role runner:{shlex.quote(str(args.adapter))} "
+                        f"--role runner:{shlex.quote(str(flow_adapter))} "
                         + " ".join(
                             f"--write-scope {shlex.quote(scope)}"
                             for scope in args.write_scope
@@ -354,7 +388,7 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
             workflow_plan_path=workflow_plan_path,
             role_lane_plan_path=role_lane_plan_path,
             rolepack_path=rolepack_path,
-            adapter=str(args.adapter),
+            adapter=str(flow_adapter),
             tier=str(args.role_lane_tier),
             verification_only=args.verification_only,
         )
@@ -380,23 +414,25 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
         "--root",
         str(repo),
         "--profile",
-        "code-change",
+        "verification-only" if verification_check else "code-change",
         "--out",
         str(workflow_plan_path),
         "--role-lanes-out",
         str(role_lane_plan_path),
         "--lane-adapter",
-        str(args.adapter),
+        str(flow_adapter),
         "--role-lane-tier",
         str(args.role_lane_tier),
         "--model-policy",
-        "off" if args.command else "default",
+        "off" if args.command or verification_check else "default",
         "--rolepack-file",
         str(rolepack_path),
         "--json",
     ]
     for command in args.command or []:
         flowplan_argv += ["--command", str(command)]
+    for check in args.check or []:
+        flowplan_argv += ["--check", str(check)]
     if args.verification_only:
         flowplan_argv += ["--lane-intent", "verification-only"]
     flowplan_code, flowplan_payload, flowplan_error = _invoke_orro_flow_phase(
@@ -439,7 +475,7 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
         "--role-lane-plan",
         str(role_lane_plan_path),
         "--adapter",
-        str(args.adapter),
+        str(flow_adapter),
         "--runner-sandbox",
         str(runner_sandbox),
         "--run-dir",

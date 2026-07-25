@@ -420,6 +420,16 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     orro_flow.add_argument(
+        "--check",
+        action="append",
+        default=None,
+        metavar="'<shell>'",
+        help=(
+            "--check '<shell>' (repeatable): declared deterministic checks for "
+            "--verification-only shell lanes"
+        ),
+    )
+    orro_flow.add_argument(
         "--adapter",
         default=None,
         choices=["shell", "codex", "claude", "agy", "gemini", "opencode"],

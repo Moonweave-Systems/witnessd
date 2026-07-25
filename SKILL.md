@@ -215,6 +215,10 @@ for the deterministic shell lane. `python3 -m orro demo [--violate]` exercises t
 path against a generated sample repo; it is a shell stand-in for an agent, not
 evidence of AI execution, approval, or assurance.
 
+`orro flow "verify readme" --verification-only --check 'test -f README.md'`
+threads the same deterministic shell check through init, scout, flowplan,
+proofrun, and proofcheck without `--write-scope` or `--adapter`.
+
 AI adapter execution and review subprocesses receive per-lane Python cache
 shaping under witnessd state outside the worktree:
 `PYTHONDONTWRITEBYTECODE=1`, `PYTHONPYCACHEPREFIX`, `RUFF_CACHE_DIR`,
