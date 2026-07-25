@@ -25,6 +25,93 @@ from witnessd.distribution import (
 )
 
 
+class RecommendedGitignoreTests(unittest.TestCase):
+    def _seed_git_repo(self, root: Path) -> None:
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.invalid"],
+            cwd=root,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "test"], cwd=root, check=True
+        )
+        (root / "README.md").write_text("test\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README.md"], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "seed"], cwd=root, check=True)
+
+    def test_home_inside_repo_is_repo_relative_and_has_trailing_slash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            self._seed_git_repo(repo)
+
+            self.assertEqual(
+                witnessd_cli._recommended_gitignore(repo / ".witnessd"),
+                [".witnessd/"],
+            )
+            self.assertEqual(
+                witnessd_cli._recommended_gitignore(repo / "tools" / ".witnessd"),
+                ["tools/.witnessd/"],
+            )
+
+    def test_home_outside_repo_and_non_git_directory_emit_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            self._seed_git_repo(repo)
+
+            values = [
+                witnessd_cli._recommended_gitignore(root / "outside"),
+                witnessd_cli._recommended_gitignore(root / "plain"),
+            ]
+            for entries in values:
+                self.assertEqual(entries, [])
+                self.assertTrue(all(not entry.startswith("/") for entry in entries))
+                self.assertTrue(all(str(root) not in entry for entry in entries))
+
+    def test_init_emits_empty_gitignore_for_home_outside_repo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            depone_root = root / "depone"
+            depone_root.mkdir()
+            (depone_root / "depone").mkdir()
+            self._seed_git_repo(depone_root)
+            repo = root / "repo"
+            repo.mkdir()
+            self._seed_git_repo(repo)
+            home = root / "outside"
+            out = io.StringIO()
+            err = io.StringIO()
+
+            with redirect_stdout(out), redirect_stderr(err):
+                code = main(
+                    [
+                        "init",
+                        "--home",
+                        str(home),
+                        "--repo",
+                        str(repo),
+                        "--depone-root",
+                        str(depone_root),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(code, 0, err.getvalue())
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload["recommended_gitignore"], [])
+            self.assertTrue(
+                all(not entry.startswith("/") for entry in payload["recommended_gitignore"])
+            )
+            self.assertTrue(
+                all(str(root) not in entry for entry in payload["recommended_gitignore"])
+            )
+            self.assertEqual(err.getvalue(), "")
+
+
 def _expected_witnessd_version() -> str:
     import importlib.metadata
 
@@ -747,12 +834,14 @@ class DistributionInitTests(unittest.TestCase):
             self.assertFalse(payload["depone_network_used"])
             self.assertTrue((home / "provision.json").is_file())
             self.assertTrue((home / "orro-engine-lock.json").is_file())
+            self.assertEqual(payload["recommended_gitignore"], [])
 
     def test_orro_setup_recommends_repo_relative_gitignore_entry(self) -> None:
         depone_root = self._depone_root()
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
             repo.mkdir()
+            self._seed_git_repo(repo, {"README.md": "repo\n"})
             home = repo / ".witnessd"
             out = io.StringIO()
             err = io.StringIO()
@@ -770,6 +859,61 @@ class DistributionInitTests(unittest.TestCase):
             payload = json.loads(out.getvalue())
             self.assertEqual(payload["recommended_gitignore"], [".witnessd/"])
             self.assertFalse((repo / ".gitignore").exists())
+
+    def test_orro_setup_human_gitignore_line_only_appears_for_repo_home(self) -> None:
+        depone_root = self._depone_root()
+        depone_commit = subprocess.run(
+            ["git", "-C", str(depone_root), "rev-parse", "HEAD"],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            self._seed_git_repo(repo, {"README.md": "repo\n"})
+            inside_out = io.StringIO()
+            previous = os.getcwd()
+            os.chdir(repo)
+            try:
+                with redirect_stdout(inside_out):
+                    inside_code = main(
+                        [
+                            "orro",
+                            "setup",
+                            "--home",
+                            ".witnessd",
+                            "--depone-root",
+                            str(depone_root),
+                            "--depone-ref",
+                            depone_commit,
+                            "--yes",
+                        ]
+                    )
+            finally:
+                os.chdir(previous)
+
+            outside_out = io.StringIO()
+            with redirect_stdout(outside_out):
+                outside_code = main(
+                    [
+                        "orro",
+                        "setup",
+                        "--home",
+                        str(root / "outside"),
+                        "--depone-root",
+                        str(depone_root),
+                        "--depone-ref",
+                        depone_commit,
+                        "--yes",
+                    ]
+                )
+
+            self.assertEqual(inside_code, 0)
+            self.assertIn("gitignore: add .witnessd/ to .gitignore", inside_out.getvalue())
+            self.assertEqual(outside_code, 0)
+            self.assertNotIn("gitignore:", outside_out.getvalue())
 
     def test_orro_setup_rejects_local_depone_checkout_that_misses_default_pin(
         self,
