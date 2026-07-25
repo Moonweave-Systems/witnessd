@@ -52,6 +52,7 @@ from witnessd.runintent import (
 )
 from witnessd.signing import DEFAULT_OPERATOR_KEY_ID, derive_public_key_id
 from witnessd.substrate import (
+    HEALTH_GATE_ARTIFACTS_SUBJECT_NAME,
     OBSERVED_TOUCHED_FILES_SUBJECT_NAME,
     OBSERVED_SKILLS_SUBJECT_NAME,
     build_bundle,
@@ -434,6 +435,8 @@ def emit_lane_evidence(
                 if subject_name == "tool-call-decision-advisory"
                 else "tool-call-decision-receipts.json"
                 if subject_name == "tool-call-decision-receipts"
+                else HEALTH_GATE_ARTIFACTS_SUBJECT_NAME
+                if subject_name == HEALTH_GATE_ARTIFACTS_SUBJECT_NAME
                 else f"{subject_name}.jsonl"
             )
             artifacts[subject_name] = _emit_artifact_bytes(artifact_name, data)

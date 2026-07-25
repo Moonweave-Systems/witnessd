@@ -17,6 +17,11 @@ from witnessd.cli._output import (
     _write_json_file,
 )
 from witnessd.orro_roadmap import OrroRoadmapError, require_roadmap_item, require_roadmap_step
+from witnessd.substrate import (
+    HEALTH_GATE_ARTIFACTS_SUBJECT_NAME,
+    build_bundle,
+    build_health_gate_artifact_manifest,
+)
 
 
 def _emit_blocker(error: dict[str, object]) -> int:
@@ -207,6 +212,10 @@ def _record_command_lane_health(
             }
         )
     _write_json_file(health_dir / "gates.json", {"gates": contract_gates})
+    (evidence_dir / HEALTH_GATE_ARTIFACTS_SUBJECT_NAME).write_text(
+        build_health_gate_artifact_manifest(str(evidence_dir), contract_gates),
+        encoding="utf-8",
+    )
     _write_json_file(
         health_dir / "observation.json",
         {
@@ -608,6 +617,8 @@ def _phase_manifest(
                 "tool": axis.get("tool"),
                 "status": axis.get("status"),
                 "enforcement": axis.get("enforcement"),
+                "evidence_substrate": axis.get("evidence_substrate"),
+                "means": axis.get("means"),
                 "blocks_handoff": axis.get("blocks_handoff"),
                 "version": detected.get("version", "unresolved"),
             })
@@ -1026,6 +1037,21 @@ def _phase_execute_and_review(
                 health_run_dir=health_run_dir,
                 gates=health_gates,
             )
+            private_key = home / "keys" / "operator-ed25519.pem"
+            public_key = home / "keys" / "operator-ed25519.pub.pem"
+            manifest_path = run_dir / HEALTH_GATE_ARTIFACTS_SUBJECT_NAME
+            bundle = build_bundle(
+                {
+                    "kind": "orro-health-gate-artifacts",
+                    "assurance": "A1-local-observed",
+                    "decision": "observed",
+                    "evidence_mode": "contemporaneous",
+                },
+                {HEALTH_GATE_ARTIFACTS_SUBJECT_NAME: str(manifest_path)},
+                str(private_key),
+                str(public_key),
+            )
+            _write_json_file(run_dir / "bundle.json", bundle)
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             return _emit_blocker(
                 _structured_error(
