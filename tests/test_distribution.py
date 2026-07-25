@@ -795,7 +795,14 @@ class DistributionInitTests(unittest.TestCase):
             self.assertEqual(payload["depone_source"], "setup-clone")
             self.assertTrue(payload["depone_network_used"])
             self.assertRegex(payload["depone_commit"], r"^[0-9a-f]{40}$")
-            self.assertIn("python3 -m orro doctor", payload["next_steps"][0])
+            self.assertIn("orro demo", payload["next_steps"][0])
+            self.assertIn("orro flow", payload["next_steps"][1])
+            self.assertIn("--write-scope", payload["next_steps"][1])
+            self.assertIn("--adapter", payload["next_steps"][1])
+            self.assertIn("orro check", payload["next_steps"][2])
+            self.assertNotIn("team go", payload["next_steps"][1])
+            self.assertIn("doctor", payload["diagnostic"])
+            self.assertTrue(all("None" not in step for step in payload["next_steps"]))
 
     def test_orro_setup_with_depone_root_uses_local_checkout_without_network(
         self,

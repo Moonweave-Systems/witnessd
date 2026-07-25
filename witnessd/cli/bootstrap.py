@@ -185,10 +185,18 @@ def _cmd_orro_setup(args: argparse.Namespace) -> int:
         "engine_lock_commit": str(engine_lock["depone"]["commit"]),
         "recommended_gitignore": _recommended_gitignore(home),
         "next_steps": [
-            f"python3 -m orro doctor --home {shlex.quote(str(home))} --json",
-            "python3 -m orro team init --template developer --yes",
-            f'python3 -m orro team go "<goal>" --repo <repo> --home {shlex.quote(str(home))} --json',
+            "python3 -m orro demo --json",
+            (
+                "python3 -m orro flow '<goal>' --write-scope '<glob>' "
+                "--adapter '<adapter>' "
+                f"--home {shlex.quote(str(home))} --json"
+            ),
+            (
+                "python3 -m orro check --repo '<repo>' "
+                f"--home {shlex.quote(str(home))} --json"
+            ),
         ],
+        "diagnostic": f"Diagnostic only: python3 -m orro doctor --home {shlex.quote(str(home))} --json",
         "boundary": {
             "setup_may_use_network": True,
             "runtime_may_use_network": False,
@@ -215,6 +223,7 @@ def _cmd_orro_setup(args: argparse.Namespace) -> int:
     print("next:")
     for step in payload["next_steps"]:
         print(f"  {step}")
+    print(f"  {payload['diagnostic']}")
     return 0
 
 
