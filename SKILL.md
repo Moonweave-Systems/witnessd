@@ -72,6 +72,9 @@ and verification remain offline. It does not run ORRO Flow work, verify
 evidence, approve merge, or raise assurance. Use
 `python3 -m orro setup --home .witnessd --depone-root ../Depone` for
 development and tests when you want an explicit local Depone checkout.
+After setup, add the reported home directory entry (normally `.witnessd/`) to
+the repository's `.gitignore`; setup reports the exact repo-relative entry and
+does not modify `.gitignore` for you.
 
 `python3 -m orro team init --template developer --yes`
 creates `.orro/team.json` rolepack readiness configuration. It validates the
@@ -211,6 +214,10 @@ prompt-driven AI adapters. `orro flow` threads it with model-policy routing off
 for the deterministic shell lane. `python3 -m orro demo [--violate]` exercises this
 path against a generated sample repo; it is a shell stand-in for an agent, not
 evidence of AI execution, approval, or assurance.
+
+`orro flow "verify readme" --verification-only --check 'test -f README.md'`
+threads the same deterministic shell check through init, scout, flowplan,
+proofrun, and proofcheck without `--write-scope` or `--adapter`.
 
 AI adapter execution and review subprocesses receive per-lane Python cache
 shaping under witnessd state outside the worktree:

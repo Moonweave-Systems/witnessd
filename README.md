@@ -90,6 +90,14 @@ directory. It is created outside the observer run directory unless
 Every first-phase failure is returned as an actionable structured blocker. No
 risky-change, reference-adapter, write-scope, or Depone gate is bypassed.
 
+For the AI-free verification path, guided flow accepts repeatable `--check`
+commands with no write scope or adapter:
+
+```bash
+python3 -m orro flow "verify readme" --verification-only \
+  --check 'test -f README.md' --home .witnessd --json
+```
+
 `orro team init` only writes readiness configuration (`.orro/team.json`). It is
 not execution, verification, proof, or assurance. `orro team go` is the ergonomic
 wrapper for the longer `flowplan -> proofrun -> proofcheck -> report` path: it
@@ -264,6 +272,9 @@ python3 -m orro setup --home .witnessd --depone-root ../Depone --json
 python3 -m orro doctor --home .witnessd --json
 python3 -m orro engine-lock --home .witnessd --check .witnessd/orro-engine-lock.json --json
 ```
+
+Setup reports the exact repository-relative home entry to add to `.gitignore`
+(normally `.witnessd/`); it never edits `.gitignore` itself.
 
 `orro doctor` checks readiness, not evidence truth. When
 `<home>/orro-engine-lock.json` exists, doctor compares the provisioned witnessd

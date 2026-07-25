@@ -331,6 +331,7 @@ scripts/quickstart_check.sh
 - Pre-verification user status is `evidence-pending`.
 - Worker output is not its own trust verdict; the observer and emitter create the
   evidence that Depone later re-derives.
+- Any surface that reports a verifier decision obtains it from a verifier invocation; a stored verdict artifact may be required as a binding input but is never sufficient on its own.
 - Skill text, MCP output, IDE/tmux views, and session transcripts are not
   verdicts by themselves.
 - Role-capability write-scope verdicts re-derive consistency between sealed

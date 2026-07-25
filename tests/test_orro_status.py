@@ -73,6 +73,48 @@ def _write_companion_verdict(
 
 
 class OrroStatusTests(unittest.TestCase):
+    def test_status_document_keeps_bytes_when_only_timestamp_and_machine_stats_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = root / "repo", root / "home"
+            write_roadmap(repo, {
+                "kind": "orro-roadmap", "schema_version": "0.1", "items": [
+                    {"id": "item", "title": "Status item"},
+                ],
+            })
+            path = write_status_document(repo, home)
+            first = path.read_bytes()
+            self.assertNotIn(b"size=", first)
+            self.assertNotIn(b"dirty=", first)
+            with patch("witnessd.cli.status.datetime") as clock:
+                clock.now.return_value.strftime.return_value = "2099-01-01T00:00:00Z"
+                write_status_document(repo, home)
+            self.assertEqual(path.read_bytes(), first)
+
+    def test_status_document_changes_body_and_header_after_state_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo, home = root / "repo", root / "home"
+            write_roadmap(repo, {
+                "kind": "orro-roadmap", "schema_version": "0.1", "items": [
+                    {"id": "item", "title": "Status item"},
+                ],
+            })
+            path = write_status_document(repo, home)
+            first = path.read_text(encoding="utf-8")
+            write_roadmap(repo, {
+                "kind": "orro-roadmap", "schema_version": "0.1", "items": [
+                    {"id": "item", "title": "Changed status item"},
+                ],
+            })
+            with patch("witnessd.cli.status.datetime") as clock:
+                clock.now.return_value.strftime.return_value = "2099-01-01T00:00:01Z"
+                write_status_document(repo, home)
+            second = path.read_text(encoding="utf-8")
+            self.assertNotEqual(first, second)
+            self.assertIn("Changed status item", second)
+            self.assertIn("2099-01-01T00:00:01Z", second)
+
     def test_write_status_document_projects_the_evidence_view(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

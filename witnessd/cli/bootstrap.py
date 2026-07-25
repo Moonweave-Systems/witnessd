@@ -4,11 +4,48 @@ import argparse
 import json
 import os
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 
 from witnessd import __file__
 from witnessd.cli._output import _emit_orro_error
+
+
+def _git_worktree_root(directory: Path) -> Path | None:
+    while not directory.exists() and directory != directory.parent:
+        directory = directory.parent
+    probe = subprocess.run(
+        ["git", "-C", str(directory), "rev-parse", "--show-toplevel"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if probe.returncode != 0:
+        return None
+    root = probe.stdout.strip()
+    return Path(root).resolve(strict=False) if root else None
+
+
+def _recommended_gitignore(home: Path, repo: Path | None = None) -> list[str]:
+    home = home.resolve(strict=False)
+    candidates = [repo] if repo is not None else [home, Path.cwd()]
+    worktree = next(
+        (
+            root
+            for candidate in candidates
+            if (root := _git_worktree_root(candidate.resolve(strict=False))) is not None
+        ),
+        None,
+    )
+    if worktree is None:
+        return []
+    try:
+        relative = home.relative_to(worktree).as_posix()
+    except ValueError:
+        return []
+    return [f"{relative.rstrip('/')}/"] if relative not in {"", "."} else ["./"]
+
 
 def _cmd_init(args: argparse.Namespace) -> int:
     from witnessd.distribution import InitConfig, ProvisionError, init_witnessd_home
@@ -67,6 +104,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
             ),
         )
         return 2
+    result["recommended_gitignore"] = _recommended_gitignore(home, Path(args.repo))
     print(json.dumps(result, sort_keys=True))
     return 0
 
@@ -145,6 +183,7 @@ def _cmd_orro_setup(args: argparse.Namespace) -> int:
         "depone_network_used": bool(depone["network_used"]),
         "engine_lock": str(engine_lock_path),
         "engine_lock_commit": str(engine_lock["depone"]["commit"]),
+        "recommended_gitignore": _recommended_gitignore(home),
         "next_steps": [
             f"python3 -m orro doctor --home {shlex.quote(str(home))} --json",
             "python3 -m orro team init --template developer --yes",
@@ -167,6 +206,12 @@ def _cmd_orro_setup(args: argparse.Namespace) -> int:
     print(f"depone_root: {payload['depone_root']}")
     print(f"depone_commit: {payload['depone_commit']}")
     print(f"engine_lock: {payload['engine_lock']}")
+    if payload["recommended_gitignore"]:
+        print(
+            "gitignore: add "
+            + ", ".join(payload["recommended_gitignore"])
+            + " to .gitignore"
+        )
     print("next:")
     for step in payload["next_steps"]:
         print(f"  {step}")

@@ -14,7 +14,7 @@ from witnessd.__main__ import main
 from witnessd.cli.status import _suggested_step_command
 from witnessd.orro_next import decide_next
 from witnessd.orro_report import build_report, render_text_report
-from witnessd.orro_ship import _suggested_branch, build_ship, ship_run
+from witnessd.orro_ship import _dirty_blocker, _suggested_branch, build_ship, ship_run
 
 
 def _git(path: Path, *args: str) -> str:
@@ -69,6 +69,45 @@ def _real_run(root: Path, repo: Path, *, goal: str = "ship test") -> tuple[Path,
 
 
 class OrroShipTest(unittest.TestCase):
+    def test_dirty_status_document_advises_committing_only_status(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            _seed_repo(repo)
+            status = repo / ".orro" / "STATUS.md"
+            status.parent.mkdir()
+            status.write_text("status\n", encoding="utf-8")
+            _git(repo, "add", ".orro/STATUS.md")
+            _git(repo, "commit", "-qm", "add status")
+            status.write_text("changed status\n", encoding="utf-8")
+            blocker = _dirty_blocker(Path(directory) / "run", repo, Path(directory) / "home")
+            self.assertEqual(
+                blocker["next_commands"],
+                ["git add .orro/STATUS.md", "git commit -m 'update ORRO status'"],
+            )
+
+    def test_dirty_internal_artifacts_advise_gitignore(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            _seed_repo(repo)
+            (repo / ".orro").mkdir()
+            (repo / ".orro" / "run.json").write_text("{}\n", encoding="utf-8")
+            (repo / ".witnessd").mkdir()
+            (repo / ".witnessd" / "state.json").write_text("{}\n", encoding="utf-8")
+            blocker = _dirty_blocker(root / "run", repo, repo / ".witnessd")
+            self.assertEqual(blocker["next_commands"][0], "Add these exact lines to .gitignore:")
+            self.assertIn(".witnessd/", blocker["next_commands"])
+            self.assertIn(".orro/", blocker["next_commands"])
+
+    def test_dirty_source_tree_keeps_generic_commit_advice(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            _seed_repo(repo)
+            (repo / "tracked.txt").write_text("changed\n", encoding="utf-8")
+            blocker = _dirty_blocker(root / "run", repo, root / "home")
+            self.assertEqual(blocker["next_commands"], ["git add -A", "git commit -m 'ship run'"])
+
     def _remote(self, root: Path, repo: Path) -> Path:
         bare = root / "bare.git"
         _git(root, "init", "--bare", str(bare))
