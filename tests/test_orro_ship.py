@@ -14,7 +14,15 @@ from witnessd.__main__ import main
 from witnessd.cli.status import _suggested_step_command
 from witnessd.orro_next import decide_next
 from witnessd.orro_report import build_report, render_text_report
-from witnessd.orro_ship import _dirty_blocker, _suggested_branch, build_ship, ship_run
+from witnessd.orro_ship import (
+    _check_run_command,
+    _dirty_blocker,
+    _github_repo,
+    _post_check_run,
+    _suggested_branch,
+    build_ship,
+    ship_run,
+)
 
 
 def _git(path: Path, *args: str) -> str:
@@ -69,6 +77,33 @@ def _real_run(root: Path, repo: Path, *, goal: str = "ship test") -> tuple[Path,
 
 
 class OrroShipTest(unittest.TestCase):
+    def test_github_remote_parser_supports_ssh_and_https_and_rejects_other_urls(self) -> None:
+        self.assertEqual(_github_repo("git@github.com:owner/repo.git"), ("owner", "repo"))
+        self.assertEqual(_github_repo("https://github.com/owner/repo"), ("owner", "repo"))
+        self.assertIsNone(_github_repo("https://gitlab.com/owner/repo.git"))
+        self.assertIsNone(_github_repo("not a remote URL"))
+
+    def test_check_run_payload_and_argv_are_pinned(self) -> None:
+        claim = "Verifier decision: pass for the observed run."
+        argv = _check_run_command("owner", "repo", "head123", claim)
+        self.assertEqual(argv[:5], ["gh", "api", "repos/owner/repo/check-runs", "--method", "POST"])
+        self.assertIn("name=ORRO guardrail receipt", argv)
+        self.assertIn("head_sha=head123", argv)
+        self.assertIn("output[title]=ORRO guardrail receipt", argv)
+        self.assertIn(f"output[summary]={claim}", argv)
+        calls: list[list[str]] = []
+
+        def runner(command: list[str], **kwargs: object) -> object:
+            calls.append(command)
+            return type("Completed", (), {"returncode": 0, "stdout": '{"id": 42, "html_url": "https://github.com/owner/repo/checks/42"}', "stderr": ""})()
+
+        result, error = _post_check_run(
+            "https://github.com/owner/repo.git", "head123", claim, runner=runner
+        )
+        self.assertIsNone(error)
+        self.assertEqual(result, {"id": 42, "url": "https://github.com/owner/repo/checks/42"})
+        self.assertEqual(calls, [argv])
+
     def test_dirty_status_document_advises_committing_only_status(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory) / "repo"
