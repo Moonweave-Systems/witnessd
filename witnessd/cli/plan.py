@@ -168,9 +168,25 @@ def _cmd_plan(args: argparse.Namespace) -> int:
             if write_scope and workflow_plan.get("profile") == "code-change":
                 from witnessd.orro_team_surface import build_rolepack_scaffold
 
+                generated_adapter = args.lane_adapter
+                if args.model_policy == "default":
+                    from witnessd.model_policy import resolve_policy_route
+
+                    policy_tier = (
+                        args.role_lane_tier
+                        if args.role_lane_tier != "auto"
+                        else "agentic"
+                    )
+                    route = resolve_policy_route(
+                        DEFAULT_MODEL_POLICY,
+                        role_kind="runner",
+                        tier=policy_tier,
+                    )
+                    if route is not None:
+                        generated_adapter = str(route["adapter"])
                 rolepack = build_rolepack_scaffold(
                     template=None,
-                    roles=[f"runner:{args.lane_adapter}"],
+                    roles=[f"runner:{generated_adapter}"],
                     write_scope=write_scope,
                 )
             else:
@@ -356,13 +372,30 @@ def _flowplan_role_lane_error_details(
             "; pass --model-policy default (routes to the granted adapter) or ensure "
             "the rolepack grants the adapter you intend"
         )
+    explicit_rolepack = any(
+        bool(value)
+        for value in (
+            getattr(args, "rolepack", None),
+            getattr(args, "rolepack_file", None),
+            getattr(args, "team", None),
+        )
+    )
+    if explicit_rolepack:
+        reason += (
+            "; explicit rolepack override takes precedence over --model-policy; "
+            "remove the override or regenerate it with the policy adapter"
+        )
     rolepack_arg = (
         f"--rolepack-file {shlex.quote(str(args.rolepack_file))}"
         if args.rolepack_file
         else (
             f"--team {shlex.quote(str(args.team))}"
             if getattr(args, "team", None)
-            else f"--rolepack {shlex.quote(str(args.rolepack))}"
+            else (
+                f"--rolepack {shlex.quote(str(args.rolepack))}"
+                if getattr(args, "rolepack", None)
+                else "--rolepack-file <rolepack.json>"
+            )
         )
     )
     next_command = (
@@ -370,9 +403,8 @@ def _flowplan_role_lane_error_details(
         f"{shlex.quote(str(args.goal))} --root {shlex.quote(str(args.root))} "
         f"--profile {shlex.quote(str(args.profile or 'code-change'))} "
         f"--role-lanes-out {shlex.quote(str(args.role_lanes_out))} "
-        f"{rolepack_arg} --model-policy default; or scaffold a matching rolepack: "
-        "python3 -m orro team init --role <role> --write-scope '<glob>' "
-        "--out rolepack.json"
+        f"{rolepack_arg} --model-policy default; or remove the explicit rolepack "
+        "override so the policy can select its adapter"
     )
     return {
         "reason": reason,
