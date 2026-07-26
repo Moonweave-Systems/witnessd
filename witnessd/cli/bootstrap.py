@@ -227,6 +227,29 @@ def _cmd_orro_setup(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_orro_skill_install(args: argparse.Namespace) -> int:
+    from witnessd.skill_install import install_skill
+
+    try:
+        result = install_skill(force=args.force)
+    except FileExistsError as exc:
+        _emit_orro_error(
+            args,
+            code="ERR_ORRO_SKILL_OWNERSHIP_REQUIRED",
+            message=str(exc),
+            reason="the existing skill is not marked as written by witnessd",
+            required_input_or_grant="--force to explicitly replace the existing file",
+            next_command="python3 -m orro skill install --force --json",
+        )
+        return 2
+    except (OSError, ValueError) as exc:
+        _emit_orro_error(args, code="ERR_ORRO_SKILL_INSTALL_FAILED", message=str(exc))
+        return 1
+    payload = {"kind": "orro-skill-install", "command": "orro skill install", **result}
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
 def _cmd_scout(args: argparse.Namespace) -> int:
     from witnessd.superflow import run_scout
 

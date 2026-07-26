@@ -216,6 +216,7 @@ witnessd runtime code or Depone verifier logic.
 | ORRO Flow | `scout -> flowplan -> proofrun -> proofcheck -> handoff` |
 | `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
 | `orro setup` | one-command setup: provision pinned Depone, initialize home, and write engine lock |
+| `orro skill install` | install or refresh the packaged ORRO session skill |
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo exploration, repo profile, context pack, and discovery notes |
@@ -615,6 +616,13 @@ This repo ships two in-session guidance files:
 
 - `SKILL.md` for host skill installation
 - `AGENTS.md` for Codex sessions
+
+Install or refresh the packaged ORRO session skill in the standard operator
+location with `python3 -m orro skill install --json`. It is safe to rerun. If
+that location contains a file not written by witnessd, the command refuses to
+overwrite it unless `--force` is supplied. `orro doctor --home .witnessd --json`
+reports whether the installed skill is missing, stale, or current and names the
+refresh command for every non-healthy skill state.
 
 Both instruct the session agent to scout when useful, design lanes, run witnessd,
 then report the Depone verdict. `team-ledger-verdict.json` records the proofrun

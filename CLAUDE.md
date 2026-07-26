@@ -36,6 +36,7 @@ The cross-engine artifact boundary is summarized in
 | ORRO Flow | scout -> flowplan -> proofrun -> proofcheck -> handoff |
 | `orro` | flagship goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
 | `orro setup` | one-command setup: provision pinned Depone, initialize home, and write engine lock |
+| `orro skill install` | install or refresh the packaged ORRO session skill |
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo profile, context pack, and discovery notes |
