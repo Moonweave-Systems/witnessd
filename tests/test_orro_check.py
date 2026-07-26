@@ -1304,12 +1304,20 @@ class ZeroExecutionInvariantTest(unittest.TestCase):
             )
             self.assertEqual(_execution_adapter_lane_count(ledger), 2)
 
-    def test_unreadable_ledger_falls_back_to_zero(self) -> None:
+    def test_unreadable_ledger_is_unknown_not_empty(self) -> None:
         from witnessd.cli.companion import _execution_adapter_lane_count
 
         with tempfile.TemporaryDirectory() as tmp:
             ledger = Path(tmp) / "team-ledger.json"
             ledger.write_text("not-json", encoding="utf-8")
+            self.assertIsNone(_execution_adapter_lane_count(ledger))
+
+    def test_empty_ledger_is_zero(self) -> None:
+        from witnessd.cli.companion import _execution_adapter_lane_count
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "team-ledger.json"
+            ledger.write_text(json.dumps({"lanes": []}), encoding="utf-8")
             self.assertEqual(_execution_adapter_lane_count(ledger), 0)
 
     def test_non_shell_adapter_is_rejected(self) -> None:

@@ -43,6 +43,8 @@ def build_tool_declaration(
         "kind": TOOL_DECLARATION_KIND,
         "schema_version": TOOL_DECLARATION_SCHEMA_VERSION,
         "can_change_evidence_verdict": False,
+        "evidence_substrate": "producer-transcribed",
+        "means": "producer-reported declaration; not bundle-bound or verifier-re-derived",
         "role_id": role_id,
         "lane_id": lane_id,
         "capability": capability,

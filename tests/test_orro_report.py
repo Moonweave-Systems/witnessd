@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.__main__ import main
-from witnessd.orro_report import render_text_report
+from witnessd.orro_report import _execution_summary, render_text_report
 from witnessd.orro_team_surface import apply_task_prompt_to_role_lane_plan
 
 
@@ -57,6 +57,76 @@ def _write_shell_rolepack(root: Path) -> Path:
 
 
 class OrroReportTests(unittest.TestCase):
+    def test_execution_summary_uses_observed_identity_over_requested_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            (run_dir / "team-ledger.json").write_text(
+                json.dumps(
+                    {"lanes": [{"lane_id": "runner", "runner_adapter_kind": "codex"}]}
+                ),
+                encoding="utf-8",
+            )
+            (run_dir / "role-lane-plan.json").write_text(
+                json.dumps(
+                    {"lanes": [{"lane_id": "runner", "adapter": "agy", "model": "planned"}]}
+                ),
+                encoding="utf-8",
+            )
+
+            summary = _execution_summary(
+                run_dir,
+                {"role_status": []},
+                {"team_ledger": True, "team_ledger_verdict": False},
+            )
+
+            self.assertEqual(summary["adapter_values"], ["codex"])
+            self.assertEqual(summary["adapter_value_source"], "observed")
+            text = render_text_report(
+                {
+                    "summary": {},
+                    "workflow": {},
+                    "execution": summary,
+                    "verification": {},
+                    "handoff": {},
+                    "human_review": {},
+                    "do_not_trust": [],
+                }
+            )
+            self.assertIn("adapter=codex (observed)", text)
+            self.assertNotIn("agy", text)
+
+    def test_execution_summary_labels_plan_only_identity_as_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            (run_dir / "team-ledger.json").write_text(
+                json.dumps({"lanes": [{"lane_id": "runner"}]}),
+                encoding="utf-8",
+            )
+            (run_dir / "role-lane-plan.json").write_text(
+                json.dumps(
+                    {"lanes": [{"lane_id": "runner", "adapter": "agy", "model": "planned"}]}
+                ),
+                encoding="utf-8",
+            )
+
+            summary = _execution_summary(
+                run_dir,
+                {"role_status": []},
+                {"team_ledger": True, "team_ledger_verdict": False},
+            )
+
+            self.assertEqual(summary["adapter_values"], ["agy"])
+            self.assertEqual(summary["adapter_value_source"], "requested")
+            self.assertIn("requested", render_text_report({
+                "summary": {},
+                "workflow": {},
+                "execution": summary,
+                "verification": {},
+                "handoff": {},
+                "human_review": {},
+                "do_not_trust": [],
+            }))
+
     def test_text_report_renders_actionable_lane_timeout_guidance(self) -> None:
         text = render_text_report(
             {
@@ -569,6 +639,31 @@ class OrroReportTests(unittest.TestCase):
 
         self.assertIn("single-lane execution", execution_line)
         self.assertNotIn("policy", execution_line.lower())
+
+    def test_requested_execution_values_are_labelled_requested(self) -> None:
+        payload = {
+            "goal": "fix parser",
+            "summary": {"state": "needs-proofcheck", "recommended_next_action": "proofcheck"},
+            "workflow": {"profile": "code-change"},
+            "execution": {
+                "proofrun_evidence_present": True,
+                "lane_count": 1,
+                "distinct_adapter_count": 1,
+                "distinct_model_count": 1,
+                "adapter_value_source": "requested",
+                "model_value_source": "requested",
+                "policy_selected": False,
+            },
+            "verification": {"proofcheck_verdict_present": True, "decision": "pass"},
+            "handoff": {"handoff_present": False},
+            "human_review": {"focus": []},
+            "do_not_trust": [],
+        }
+        execution_line = next(
+            line for line in render_text_report(payload).splitlines()
+            if line.startswith("Execution:")
+        )
+        self.assertIn("requested:", execution_line)
 
     def test_report_module_aliases_and_no_artifact_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

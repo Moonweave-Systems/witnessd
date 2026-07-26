@@ -36,7 +36,15 @@ DO_NOT_TRUST = [
     "model confidence",
     "handoff prose as approval",
     "engine-lock as proof",
+    "model-declaration, write-scope-declaration, skill-routing-declaration, and tool-declaration as verifier-re-derived claims",
 ]
+
+DECLARATION_ARTIFACTS = (
+    "model-declaration.json",
+    "write-scope-declaration.json",
+    "skill-routing-declaration.json",
+    "tool-declaration.json",
+)
 
 
 class OrroReportError(ValueError):
@@ -89,6 +97,7 @@ def build_report(
         "workstyle": _workstyle_summary(workstyle),
         "execution": execution,
         "verification": verification,
+        "declarations": _declaration_summary(run_dir),
         "handoff": handoff,
         "reference_adapter": reference_adapter,
         "not_real_ai_work": reference_adapter["not_real_ai_work"],
@@ -165,6 +174,12 @@ def render_text_report(payload: dict[str, Any]) -> str:
         "Do not treat as proof:",
         ]
     )
+    declarations = payload.get("declarations")
+    if isinstance(declarations, list) and declarations:
+        lines.append(
+            "Declarations: producer-reported; not re-derived by Depone "
+            "(signed bytes only)"
+        )
     timeout_guidance = execution.get("timeout_guidance")
     if isinstance(timeout_guidance, list):
         lines.extend(
@@ -221,25 +236,36 @@ def _execution_line(execution: dict[str, Any]) -> str:
     lane_count = execution.get("lane_count", 0)
     adapter_count = execution.get("distinct_adapter_count", 0)
     model_count = execution.get("distinct_model_count", 0)
+    source = _execution_value_source(execution)
     if lane_count == 1:
         label = (
             "single-lane policy selection"
             if execution.get("policy_selected")
             else "single-lane execution"
         )
-        return (
+        line = (
             f"Execution: evidence present; {label} "
-            f"({adapter_count} adapter, {model_count} model)"
+            f"({_execution_counts_text(adapter_count, model_count, source)})"
         )
-    if execution.get("multi_model_execution"):
-        return (
+    elif execution.get("multi_model_execution"):
+        line = (
             f"Execution: evidence present; multi-model execution across {lane_count} lanes "
-            f"({adapter_count} adapters, {model_count} models)"
+            f"({_execution_counts_text(adapter_count, model_count, source, plural=True)})"
         )
-    return (
-        f"Execution: evidence present; {lane_count} lanes "
-        f"({adapter_count} adapters, {model_count} models)"
-    )
+    else:
+        line = (
+            f"Execution: evidence present; {lane_count} lanes "
+            f"({_execution_counts_text(adapter_count, model_count, source, plural=True)})"
+        )
+    identities = []
+    for axis in ("adapter", "model"):
+        values = execution.get(f"{axis}_values")
+        value_source = execution.get(f"{axis}_value_source")
+        if isinstance(values, list) and values and isinstance(value_source, str):
+            identities.append(
+                f"{axis}={','.join(map(str, values))} ({value_source})"
+            )
+    return f"{line}; " + "; ".join(identities) if identities else line
 
 
 def _verification_line(verification: dict[str, Any]) -> str:
@@ -247,6 +273,29 @@ def _verification_line(verification: dict[str, Any]) -> str:
         decision = verification.get("decision") or "unknown"
         return f"Verification: Depone proofcheck {decision}"
     return "Verification: proofcheck missing"
+
+
+def _execution_value_source(execution: dict[str, Any]) -> str:
+    sources = {
+        execution.get("adapter_value_source"), execution.get("model_value_source")
+    } - {None, "unknown"}
+    if sources == {"observed"}:
+        return "observed"
+    if sources == {"requested"}:
+        return "requested"
+    if sources:
+        return "mixed"
+    return "unknown"
+
+
+def _execution_counts_text(
+    adapter_count: int, model_count: int, source: str, *, plural: bool = False
+) -> str:
+    counts = (
+        f"{adapter_count} {'adapters' if plural else 'adapter'}, "
+        f"{model_count} {'models' if plural else 'model'}"
+    )
+    return counts if source in {"observed", "unknown"} else f"{source}: {counts}"
 
 
 def _summary(
@@ -367,7 +416,9 @@ def _execution_summary(
         if not isinstance(lane, dict):
             continue
         planned = planned_by_id.get(str(lane.get("lane_id")), {})
-        summary_lanes.append({**lane, **planned})
+        merged = dict(planned)
+        merged.update(lane)
+        summary_lanes.append(merged)
     execution_summary = summarize_executable_lanes(summary_lanes)
     policy_selected = len(summary_lanes) == 1 and (
         summary_lanes[0].get("model_source") == "model-policy"
@@ -548,6 +599,30 @@ def _observed(run_dir: Path) -> dict[str, bool]:
         "proofcheck_verdict": (run_dir / "proofcheck-verdict.json").is_file(),
         "handoff": (run_dir / "orro-handoff.json").is_file(),
     }
+
+
+def _declaration_summary(run_dir: Path) -> list[dict[str, Any]]:
+    declarations: list[dict[str, Any]] = []
+    for name in DECLARATION_ARTIFACTS:
+        for path in sorted(run_dir.rglob(name)):
+            payload = _load_json_object(path)
+            if payload is None:
+                continue
+            declarations.append(
+                {
+                    "artifact": name.removesuffix(".json"),
+                    "path": str(path.relative_to(run_dir)),
+                    "evidence_substrate": "producer-transcribed",
+                    "means": "producer-reported declaration; not bundle-bound or verifier-re-derived",
+                    "can_change_evidence_verdict": False,
+                    **{
+                        f"producer_{key}": payload[key]
+                        for key in ("verification_status", "conformance")
+                        if key in payload
+                    },
+                }
+            )
+    return declarations
 
 
 def _first_string(*items: Any) -> str | None:

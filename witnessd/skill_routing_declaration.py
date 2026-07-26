@@ -62,6 +62,8 @@ def build_skill_routing_declaration(
         "role_id": role_id,
         "lane_id": lane_id,
         "capability": capability,
+        "evidence_substrate": "producer-transcribed",
+        "means": "producer-reported declaration; not bundle-bound or verifier-re-derived",
         "declared_forbidden": forbidden,
         "declared_preferred": preferred,
         "enforcement": enforcement,

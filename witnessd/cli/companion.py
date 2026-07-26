@@ -227,7 +227,7 @@ def _record_command_lane_health(
     )
 
 
-def _execution_adapter_lane_count(team_ledger_path: Path) -> int:
+def _execution_adapter_lane_count(team_ledger_path: Path) -> int | None:
     try:
         ledger = json.loads(team_ledger_path.read_text(encoding="utf-8"))
         lanes = ledger.get("lanes", []) if isinstance(ledger, dict) else []
@@ -241,7 +241,7 @@ def _execution_adapter_lane_count(team_ledger_path: Path) -> int:
             not in {None, "shell"}
         )
     except (OSError, UnicodeError, json.JSONDecodeError):
-        return 0
+        return None
 
 
 def _print_human_summary(
@@ -349,9 +349,10 @@ def _print_human_summary(
     if isinstance(code_health, dict):
         print(f'    "health: {code_health["verdict"]}" = {code_health["means"]}')
     adapter_count = manifest["execution_adapter_lanes_spawned"]
+    adapter_count_text = "unknown" if adapter_count is None else str(adapter_count)
     print(
         "    reviewed work was NOT observed-executed · "
-        f"{adapter_count} execution-adapter lanes · does not approve merge"
+        f"{adapter_count_text} execution-adapter lanes · does not approve merge"
     )
     print(f"\n  verdict: {verdict}")
 

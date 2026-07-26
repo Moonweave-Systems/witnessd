@@ -404,21 +404,25 @@ def summarize_executable_lanes(lanes: list[dict[str, Any]]) -> dict[str, Any]:
         if lane.get("may_execute") is not False
         and lane.get("phase", "proofrun") == "proofrun"
     ]
-    adapters = {
-        str(adapter)
-        for lane in executable_lanes
-        if (
-            adapter := lane.get("adapter")
-            or lane.get("runner_adapter_kind")
-            or lane.get("team_adapter_kind")
-            or ("shell" if "commands" in lane else None)
+    adapters: set[str] = set()
+    models: set[str] = set()
+    adapter_sources: set[str] = set()
+    model_sources: set[str] = set()
+    for lane in executable_lanes:
+        observed_adapter = lane.get("runner_adapter_kind") or lane.get(
+            "team_adapter_kind"
         )
-    }
-    models = {
-        str(model)
-        for lane in executable_lanes
-        if (model := lane.get("model")) is not None and str(model)
-    }
+        adapter = observed_adapter or lane.get("adapter") or (
+            "shell" if "commands" in lane else None
+        )
+        if adapter:
+            adapters.add(str(adapter))
+            adapter_sources.add("observed" if observed_adapter else "requested")
+        observed_model = lane.get("runner_model") or lane.get("observed_model")
+        model = observed_model or lane.get("model")
+        if model is not None and str(model):
+            models.add(str(model))
+            model_sources.add("observed" if observed_model else "requested")
     lane_count = len(executable_lanes)
     distinct_adapter_count = len(adapters)
     distinct_model_count = len(models)
@@ -426,9 +430,23 @@ def summarize_executable_lanes(lanes: list[dict[str, Any]]) -> dict[str, Any]:
         "lane_count": lane_count,
         "distinct_adapter_count": distinct_adapter_count,
         "distinct_model_count": distinct_model_count,
+        "adapter_values": sorted(adapters),
+        "model_values": sorted(models),
+        "adapter_value_source": _summary_value_source(adapter_sources),
+        "model_value_source": _summary_value_source(model_sources),
         "multi_model_execution": lane_count > 1
         and (distinct_adapter_count > 1 or distinct_model_count > 1),
     }
+
+
+def _summary_value_source(sources: set[str]) -> str:
+    if sources == {"observed"}:
+        return "observed"
+    if sources == {"requested"}:
+        return "requested"
+    if sources == {"observed", "requested"}:
+        return "mixed"
+    return "unknown"
 
 
 def _whole_goal_lane_scope_advisory(lanes: list[dict[str, Any]]) -> list[str]:

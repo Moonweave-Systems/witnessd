@@ -650,6 +650,16 @@ goal -> scout -> flowplan -> proofrun -> proofcheck -> handoff summary
 ORRO is the public story: a goal becomes an evidence-backed workflow. It scouts,
 plans, runs, seals, checks what the bytes support, and prepares a human handoff.
 
+### Signed declarations are not re-derived evidence
+
+Signing proves that sealed bytes were not altered after sealing. It does not
+mean that Depone re-derived the declaration or that the declaration supports a
+conformance claim. The current signed examples are `model-declaration`,
+`write-scope-declaration`, `skill-routing-declaration`, and `tool-declaration`.
+Witnessd labels these as producer-reported, producer-transcribed declarations;
+Depone must re-derive a claim from bound observations before its verdict can
+support that claim.
+
 ### 6.6 `orro handoff`
 
 Maintainer handoff mode.

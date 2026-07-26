@@ -606,6 +606,8 @@ class TestAgyAdapter(unittest.TestCase):
                     "kind": "moonweave-model-declaration",
                     "schema_version": "1.0",
                     "can_change_evidence_verdict": False,
+                    "evidence_substrate": "producer-transcribed",
+                    "means": "producer-reported declaration; not bundle-bound or verifier-re-derived",
                     "adapter": "agy",
                     "requested_model": "gemini-3.5-flash",
                     "verification_status": "requested-unverified",
