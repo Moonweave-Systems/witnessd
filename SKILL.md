@@ -1,6 +1,6 @@
 ---
 name: orro
-description: ORRO, the Observed Run & Review Orchestrator, turns a goal into an evidence-backed workflow: scout the repo, plan it, run it through witnessd, seal the evidence, and check what the bytes support through Depone. Use for orro, scout, flowplan, proofrun, proofcheck, verdict-backed team execution, evidence-backed automation, and 증거 실행. Published by Moonweave.
+description: ORRO, the Observed Run & Review Orchestrator, runs evidence-backed repository work through witnessd and Depone. Use when an operator wants to plan, execute, verify, review, hand off, or ship work. Published by Moonweave.
 witnessd_version: {witnessd_version}
 witnessd_generated: true
 ---
@@ -28,9 +28,8 @@ The cross-engine artifact boundary is summarized in
 | --- | --- |
 | `orro` | goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
 | `orro setup` | one-command setup: provision pinned Depone, initialize home, and write engine lock |
-| `orro skill install` | install or refresh the packaged ORRO session skill |
+| `orro skill install` | install or refresh the packaged ORRO session skills |
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
-| `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo exploration and context-pack creation |
 | `orro advisory-provenance-check` | offline Depone re-derivation of sealed sketch/trace provenance; not correctness |
 | `orro flow` | guided init/scout/flowplan/proofrun/proofcheck with structured blockers |
@@ -39,7 +38,6 @@ The cross-engine artifact boundary is summarized in
 | `orro proofcheck` | offline evidence verification alias |
 | `orro handoff` | maintainer review package bound to an explicit passing `proofcheck-verdict.json` |
 | `orro ship` | push a ship-ready branch and optionally open a PR; merge approval stays human |
-| `orro status` | roadmap status, or a run-scoped report with `<run-dir>` or `--latest` |
 | `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
 | `orro check` | companion: deterministic verify (Depone verdict) + read-only review (advisory); spawns zero execution-adapter lanes; does not claim observed execution |
 | `orro demo` | AI-free deterministic shell guardrail demo; Depone re-derives write-scope PASS/FAIL |
@@ -49,8 +47,10 @@ The cross-engine artifact boundary is summarized in
 | `orro auto --until-complete` | bounded post-run proofcheck/handoff loop; orchestration metadata only |
 | `orro team init` | scaffold `.orro/team.json` rolepack readiness config; not proof or assurance |
 | `orro team go` | one-command flowplan/proofrun/proofcheck/report wrapper; reports Depone verdict |
-| `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
 | `orro auto` | future broader continuation loop behind evidence gates |
+
+Compatibility and lifecycle metadata also use `orro engine-lock`, `orro lock`,
+and `orro task`.
 
 After a successful `orro ship`, a GitHub remote with an available `gh` CLI and
 `checks:write` permission receives one `ORRO guardrail receipt` Check Run on the
@@ -107,7 +107,7 @@ create a new assurance source.
 
 `python3 -m orro team go "<task>" --repo <repo> --home .witnessd --json`
 is the one-command wrapper for `flowplan -> proofrun -> proofcheck -> report`.
-If `--profile` is omitted, it calls `orro advise` and uses the recommended
+If `--profile` is omitted, it uses the recommended
 profile. If `--team` is omitted, it selects the deterministic default rolepack
 for that profile. Explicit `--profile` and `--team` override automatic routing.
 It writes `moonweave-routing-decision.json` with the advisory rule matches,
@@ -129,23 +129,10 @@ lock is readiness alignment only. A mismatch is readiness-blocked, not
 verifier-refuted. The lock is not proof, evidence verification, merge approval,
 or assurance.
 
-`orro doctor` checks readiness, not evidence truth.
+The companion inspection skill documents readiness checks; those checks do not
+establish evidence truth.
 
-`python3 -m orro advise "<goal>" --repo <repo> --home .witnessd --json` is the
-developer-judgment/workstyle layer. It returns an `orro-workstyle-decision` with
-the recommended task class, profile, path, skip list, gates, and reasons. It is
-non-executing advice only and is not proof, verifier truth, approval, or
-assurance. It helps non-developers avoid wasteful or risky AI workflows, but it
-does not replace proofrun, proofcheck, handoff, or human review for risky
-changes.
-
-`python3 -m orro advise "<goal>" --repo <repo> --home .witnessd --json` routes
-workstyle advice and automatically emits the existing `orro-sketch` artifact for
-new-work goals or the existing `orro-trace` artifact for symptom-shaped goals.
-Use `--mode route|sketch|trace` to select the route explicitly. These advisory
-paths remain non-executing and preserve their existing artifact schemas.
-
-The `sketch` and `trace` advisory modes remain available through `orro advise`;
+The `sketch` and `trace` advisory modes remain available through the advisory
 the external `superpowers` plugin remains untouched as an independent dual path.
 
 For deterministic repository health gates and bounded fixer guidance, load
@@ -222,8 +209,8 @@ commands are declared intent, the lane region remains exactly the granted write
 scope, and the observer captures actual touched files for Depone to re-derive.
 `--command` is repeatable, mutually exclusive with `--check`, and invalid for
 prompt-driven AI adapters. `orro flow` threads it with model-policy routing off
-for the deterministic shell lane. `python3 -m orro demo [--violate]` exercises this
-path against a generated sample repo; it is a shell stand-in for an agent, not
+for the deterministic shell lane. The deterministic shell guardrail is exercised
+against a generated sample repo; it is a shell stand-in for an agent, not
 evidence of AI execution, approval, or assurance.
 
 `orro flow "verify readme" --verification-only --check 'test -f README.md'`
@@ -243,11 +230,6 @@ the continuation state and emits an `orro-auto-plan` with the decision, observed
 artifact summary, allowed next commands, and the exact command it would run next.
 It does not run proofcheck, call Depone, launch workers, write handoff, mutate
 worktrees, approve merge, verify evidence, or raise assurance.
-
-`python3 -m orro status <run-dir> --home .witnessd --json` renders the existing
-human-facing report for one run; `--latest` selects the newest run. Plain
-`status` remains the roadmap view and accepts a run directory for the run-scoped
-view.
 
 `python3 -m orro auto --once <run-dir> --home .witnessd --json` re-checks
 continuation state and executes at most one allowed step. In v0 that means
@@ -346,7 +328,6 @@ output as verifier truth.
    ```bash
    python3 -m orro setup --home .witnessd --json
    python3 -m orro team init --template developer --yes
-   python3 -m orro doctor --home .witnessd --json
    ```
 
 4. Run the goal:

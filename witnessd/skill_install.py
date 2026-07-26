@@ -1,4 +1,4 @@
-"""Install the packaged ORRO session skill into the operator's Claude home."""
+"""Install the packaged ORRO session skills into the operator's Claude home."""
 
 from __future__ import annotations
 
@@ -11,7 +11,11 @@ from pathlib import Path
 from witnessd.distribution import WITNESSD_PACKAGE_VERSION_FALLBACK
 
 
-SKILL_RELATIVE_PATH = Path(".claude") / "skills" / "orro" / "SKILL.md"
+SKILL_RELATIVE_PATHS = {
+    "orro": Path(".claude") / "skills" / "orro" / "SKILL.md",
+    "orro-inspect": Path(".claude") / "skills" / "orro-inspect" / "SKILL.md",
+}
+SKILL_RELATIVE_PATH = SKILL_RELATIVE_PATHS["orro"]
 SKILL_VERSION_RE = re.compile(r"^witnessd_version:\s*(\S+)\s*$", re.MULTILINE)
 SKILL_GENERATED_MARKER = "witnessd_generated: true"
 
@@ -23,28 +27,29 @@ def package_version() -> str:
         return WITNESSD_PACKAGE_VERSION_FALLBACK
 
 
-def installed_skill_path() -> Path:
-    return Path.home() / SKILL_RELATIVE_PATH
+def installed_skill_path(name: str = "orro") -> Path:
+    return Path.home() / SKILL_RELATIVE_PATHS[name]
 
 
-def _skill_source() -> str:
+def _skill_source(name: str = "orro") -> str:
+    source_name = "SKILL.md" if name == "orro" else "SKILL_INSPECT.md"
     try:
         packaged = importlib.metadata.distribution("witnessd").locate_file(
-            "share/witnessd/SKILL.md"
+            f"share/witnessd/{source_name}"
         )
         if packaged.is_file():
             return packaged.read_text(encoding="utf-8")
     except (importlib.metadata.PackageNotFoundError, OSError, UnicodeDecodeError):
         pass
-    source = Path(__file__).resolve().parents[1] / "SKILL.md"
+    source = Path(__file__).resolve().parents[1] / source_name
     if not source.is_file():
         raise FileNotFoundError("packaged ORRO skill source is unavailable")
     return source.read_text(encoding="utf-8")
 
 
-def skill_text() -> str:
+def skill_text(name: str = "orro") -> str:
     version = package_version()
-    source = _skill_source()
+    source = _skill_source(name)
     lines = source.splitlines()
     if lines[:1] != ["---"]:
         raise ValueError("packaged ORRO skill is missing front matter")
@@ -65,29 +70,38 @@ def _is_owned(path: Path) -> bool:
         return False
 
 
-def install_skill(*, force: bool = False) -> dict[str, str]:
-    path = installed_skill_path()
-    existed = path.exists()
-    if existed and not force and not _is_owned(path):
-        raise FileExistsError(
-            "installed skill exists but witnessd did not write it; refusing to overwrite "
-            "an operator-edited file without --force"
+def install_skill(*, force: bool = False) -> dict[str, object]:
+    installed = []
+    for name in SKILL_RELATIVE_PATHS:
+        path = installed_skill_path(name)
+        existed = path.exists()
+        if existed and not force and not _is_owned(path):
+            raise FileExistsError(
+                f"installed skill {name!r} exists but witnessd did not write it; refusing "
+                "to overwrite an operator-edited file without --force"
+            )
+        content = skill_text(name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        installed.append(
+            {"name": name, "action": "refreshed" if existed else "installed", "path": str(path)}
         )
-    content = skill_text()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
-    ) as handle:
-        temporary = Path(handle.name)
-        handle.write(content)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temporary, path)
-    return {"action": "refreshed" if existed else "installed", "path": str(path)}
+    return {
+        "action": "refreshed" if all(item["action"] == "refreshed" for item in installed) else "installed",
+        "path": str(installed[0]["path"]),
+        "skills": installed,
+    }
 
 
-def inspect_skill(path: Path | None = None) -> dict[str, object]:
-    path = path or installed_skill_path()
+def inspect_skill(name: str = "orro", path: Path | None = None) -> dict[str, object]:
+    path = path or installed_skill_path(name)
     if not path.is_file():
         return {"status": "missing", "path": str(path), "version": None, "version_matches": False, "removed_commands": []}
     try:
