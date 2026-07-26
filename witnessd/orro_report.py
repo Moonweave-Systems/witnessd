@@ -212,9 +212,10 @@ def render_text_report(payload: dict[str, Any]) -> str:
         lines.append(
             f"    adapter | requested: {_display_value(requested.get('adapter'))} | observed: {_display_value(observed.get('adapter') or observed.get('adapter_status'))}"
         )
-        lines.append(
-            f"    model   | requested: {_display_value(requested.get('model'))} | observed: {_display_value(observed.get('model') or observed.get('model_status') or observed.get('status'))}"
-        )
+        if requested.get("model") is not None or observed.get("model") is not None or observed.get("model_status"):
+            lines.append(
+                f"    model   | requested: {_display_value(requested.get('model'))} | observed: {_display_value(observed.get('model') or observed.get('model_status') or observed.get('status'))}"
+            )
     timeout_guidance = execution.get("timeout_guidance")
     if isinstance(timeout_guidance, list):
         lines.extend(f"  Timeout guidance: {item}" for item in timeout_guidance if isinstance(item, str))
@@ -228,9 +229,15 @@ def render_text_report(payload: dict[str, Any]) -> str:
             "  Declarations: producer-reported; not re-derived by Depone "
             "(signed bytes only)"
         )
-        lines.extend(
-            f"  - {item.get('artifact', 'unknown')}" for item in declarations if isinstance(item, dict)
-        )
+        seen_declarations = set()
+        for item in declarations:
+            if not isinstance(item, dict):
+                continue
+            artifact = item.get("artifact", "unknown")
+            if artifact in seen_declarations:
+                continue
+            seen_declarations.add(artifact)
+            lines.append(f"  - {artifact}")
     else:
         lines.append("  none recorded")
     lines.append("Evidence:")
@@ -495,6 +502,8 @@ def _lane_identity_columns(lane: dict[str, Any]) -> dict[str, Any]:
     observed_model = lane.get("runner_model") or lane.get("observed_model")
     adapter_status = None if observed_adapter else "no observation recorded"
     if observed_model:
+        model_status = None
+    elif requested_model is None:
         model_status = None
     elif observed_adapter == "agy":
         model_status = "provider returned no identity signal"
