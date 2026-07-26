@@ -24,8 +24,11 @@ def build_write_scope_declaration(
     declared_write_scope: list[str],
     allowed_touched_files: list[str],
     touched_files: list[str],
+    conforms: bool | None = None,
+    emitted_values_redacted: bool = False,
 ) -> dict[str, Any]:
-    conforms = write_scope_allows_paths(touched_files, declared_write_scope)
+    if conforms is None:
+        conforms = write_scope_allows_paths(touched_files, declared_write_scope)
     return {
         "kind": WRITE_SCOPE_DECLARATION_KIND,
         "schema_version": WRITE_SCOPE_DECLARATION_SCHEMA_VERSION,
@@ -36,6 +39,12 @@ def build_write_scope_declaration(
         "declared_write_scope": list(declared_write_scope),
         "allowed_touched_files": list(allowed_touched_files),
         "touched_files": list(touched_files),
+        "conformance_evaluation": {
+            "emitted_scope_and_path_values": (
+                "redacted" if emitted_values_redacted else "unredacted"
+            ),
+            "evaluated_on": "unredacted scope and path values",
+        },
         "verification_status": VERIFICATION_CONFIRMED
         if conforms
         else VERIFICATION_REJECTED,

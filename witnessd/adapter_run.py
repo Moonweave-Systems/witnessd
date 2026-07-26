@@ -369,7 +369,7 @@ def run_adapter_lane(
             redaction_context = build_redaction_context(
                 run_id=task_id,
                 prompt=prompt,
-                paths=allowed_for_manifest,
+                paths=[*allowed_for_manifest, *(write_scope or [])],
                 worktree=worktree,
                 env=codex_env,
             )
@@ -482,6 +482,25 @@ def run_adapter_lane(
             )
         else:
             breaker.record_unmeasured(task_id=task_id, adapter=adapter)
+        raw_touched_files = list(adapter_result.touched_files)
+        raw_conforms = (
+            write_scope_allows_paths(raw_touched_files, list(write_scope))
+            if write_scope is not None
+            else None
+        )
+        declaration_redaction_context = redaction_context
+        if redaction_context is not None:
+            declaration_redaction_context = build_redaction_context(
+                run_id=task_id,
+                prompt=prompt,
+                paths=[
+                    *allowed_for_manifest,
+                    *(write_scope or []),
+                    *raw_touched_files,
+                ],
+                worktree=worktree,
+                env=codex_env,
+            )
         diff_patch = _git_diff_patch(worktree, adapter_result.touched_files)
         provider_artifacts = {}
         invalid_agy_context = (
@@ -611,7 +630,11 @@ def run_adapter_lane(
                 capability=role_capability or "execute",
                 declared_write_scope=redacted_write_scope,
                 allowed_touched_files=redacted_allowed_for_manifest,
-                touched_files=list(lane_result.get("touched_files", [])),
+                touched_files=list(
+                    redact_value(raw_touched_files, declaration_redaction_context)
+                ),
+                conforms=raw_conforms,
+                emitted_values_redacted=declaration_redaction_context is not None,
             )
             write_scope_declaration_path = task_dir / "write-scope-declaration.json"
             write_scope_declaration_path.write_text(
