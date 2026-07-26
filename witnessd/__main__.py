@@ -1215,6 +1215,32 @@ ORRO_REMOVED_ALIASES: dict[str, str] = {
     "report": "status <run-dir>|--latest",
 }
 ORRO_COMMANDS: frozenset[str] = frozenset(ORRO_COMMAND_MAP)
+# Internal parser targets whose public surfaces can launch work, write artifacts,
+# mutate a repository, or incur external execution cost. Conditional operations
+# such as `tidy --apply` remain inspectable inventory commands when no apply flag
+# is requested.
+ORRO_RISKY_COMMAND_TARGETS: frozenset[str] = frozenset(
+    {
+        "orro-setup",
+        "orro-skill",
+        "init",
+        "scout",
+        "flowplan",
+        "proofrun",
+        "proofcheck",
+        "advisory-provenance-check",
+        "handoff",
+        "ship",
+        "engine-lock",
+        "orro-review",
+        "orro-check",
+        "orro-demo",
+        "orro-auto",
+        "orro-flow",
+        "team",
+        "orro-task",
+    }
+)
 
 
 def _normalize_orro_argv(argv: list[str]) -> list[str]:

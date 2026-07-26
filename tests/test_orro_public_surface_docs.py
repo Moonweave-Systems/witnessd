@@ -48,13 +48,15 @@ def _cli_commands() -> set[str]:
 
 class OrroPublicSurfaceDocsTest(unittest.TestCase):
     def test_public_surface_tables_match_skill_and_real_cli(self) -> None:
-        canonical = _documented_commands(ROOT / "SKILL.md")
+        execution = _documented_commands(ROOT / "SKILL.md")
+        inspection = _documented_commands(ROOT / "SKILL_INSPECT.md")
+        canonical = execution | inspection
         for filename in ("CLAUDE.md", "README.md"):
             actual = _documented_commands(ROOT / filename)
             self.assertEqual(
                 actual,
                 canonical,
-                f"{filename} ORRO public-command table drifted from SKILL.md",
+                f"{filename} ORRO public-command table drifted from the split skills",
             )
 
         self.assertIn("orro setup", canonical)
