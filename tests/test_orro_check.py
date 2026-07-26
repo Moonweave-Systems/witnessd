@@ -1519,7 +1519,7 @@ class ReviewerUnavailableTest(unittest.TestCase):
             with redirect_stdout(human):
                 companion._print_human_summary(payload)
             self.assertIn(
-                "review: off (no reviewer configured — set ORRO_REVIEWER or pass --reviewer agy|gemini|claude)",
+                "review: off (no reviewer configured — set ORRO_REVIEWER or pass --reviewer agy|claude)",
                 human.getvalue(),
             )
             self.assertNotIn("⚠ review skipped", human.getvalue())

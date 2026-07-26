@@ -95,7 +95,7 @@ class OrroWorkstyleTests(unittest.TestCase):
         )
 
     def test_orro_doctor_accepts_review_adapters_and_emits_readiness_receipts(self) -> None:
-        for adapter in ("agy", "gemini"):
+        for adapter in ("agy",):
             with self.subTest(adapter=adapter):
                 stdout = io.StringIO()
                 with patch(

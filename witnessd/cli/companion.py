@@ -338,7 +338,7 @@ def _print_human_summary(
         if review_skipped.get("automatic") is True:
             print(
                 "  review: off (no reviewer configured — set ORRO_REVIEWER "
-                "or pass --reviewer agy|gemini|claude)"
+                "or pass --reviewer agy|claude)"
             )
         else:
             print(

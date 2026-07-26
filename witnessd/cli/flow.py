@@ -126,7 +126,7 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
                 message="orro flow requires --adapter",
                 reason="the executing adapter must be chosen explicitly",
                 required_input_or_grant=(
-                    "--adapter shell|codex|claude|agy|gemini|opencode"
+                    "--adapter shell|codex|claude|agy|opencode"
                 ),
                 next_command=(
                     "python3 -m orro flow "

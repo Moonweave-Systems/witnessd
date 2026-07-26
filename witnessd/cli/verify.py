@@ -1406,7 +1406,7 @@ def _cmd_orro_doctor(args: argparse.Namespace) -> int:
         }
     )
 
-    for adapter in args.adapter or ["codex", "claude", "agy", "gemini", "opencode"]:
+    for adapter in args.adapter or ["codex", "claude", "agy", "opencode"]:
         receipt = probe_adapter_capability(adapter, repo=os.getcwd())
         checks.append(
             {

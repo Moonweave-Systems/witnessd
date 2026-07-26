@@ -68,6 +68,11 @@ def probe_adapter_capability(
     require_ready: bool = False,
     **kwargs: object,
 ) -> dict[str, object]:
+    if adapter == "gemini":
+        raise PreflightError(
+            "ERR_GEMINI_ADAPTER_RETIRED",
+            "the Gemini adapter is retired and unavailable; use agy instead",
+        )
     if adapter == "codex":
         receipt = build_codex_local_capability(
             repo=Path(repo),
@@ -81,10 +86,6 @@ def probe_adapter_capability(
     elif adapter == "agy":
         receipt = _local_adapter_capability(
             "agy", binary=agy_binary, repo=repo
-        )
-    elif adapter == "gemini":
-        receipt = _local_adapter_capability(
-            "gemini", binary=gemini_binary, repo=repo
         )
     elif adapter == "opencode":
         receipt = _local_adapter_capability(

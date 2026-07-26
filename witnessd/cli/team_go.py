@@ -274,8 +274,6 @@ def _cmd_team_go(args: argparse.Namespace) -> int:
             args.claude_binary,
             "--agy-binary",
             args.agy_binary,
-            "--gemini-binary",
-            args.gemini_binary,
             "--opencode-binary",
             args.opencode_binary,
         ]

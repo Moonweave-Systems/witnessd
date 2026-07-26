@@ -4,7 +4,7 @@ Records whether a lane's explicitly requested model was actually accepted by
 the real CLI, when the CLI's own signal makes that determinable. This is
 deliberately NOT part of Depone's evidence contract -- run-intent.json and
 runner-receipt.json schemas are untouched (per moonweave/CLAUDE.md: contract
-capability changes land in Depone first). Like agy/gemini's
+capability changes land in Depone first). Like agy's
 review-receipt.json, this is a witnessd-local advisory record: it cannot
 change the evidence verdict, and it only ever exists alongside a raw
 invocation (-m/--model argv) that already carries the requested model name

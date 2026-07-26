@@ -115,7 +115,7 @@ class OrroWorkflowTests(unittest.TestCase):
             lane_adapter="agy",
         )
 
-        self.assertEqual(REVIEW_ONLY_ADAPTERS, ("agy", "gemini"))
+        self.assertEqual(REVIEW_ONLY_ADAPTERS, ("agy",))
         self.assertEqual(plan["profile"], "critic-only")
         self.assertNotIn("proofrun", plan["flow"])
         self.assertFalse(role_lanes["execution_allowed"])
@@ -361,35 +361,6 @@ class OrroWorkflowTests(unittest.TestCase):
         self.assertEqual(role_lane_plan["distinct_adapter_count"], 2)
         self.assertEqual(role_lane_plan["distinct_model_count"], 2)
         self.assertTrue(role_lane_plan["multi_model_execution"])
-
-    def test_flowplan_role_lanes_review_only_can_route_to_gemini_reviewer(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "role-lane-plan.json"
-            code, _payload = self._flowplan(
-                [
-                    "review safely",
-                    "--root",
-                    tmp,
-                    "--profile",
-                    "review-only",
-                    "--role-lanes-out",
-                    str(out),
-                    "--lane-adapter",
-                    "gemini",
-                ]
-            )
-
-            self.assertEqual(code, 0)
-            role_lanes = json.loads(out.read_text(encoding="utf-8"))
-            self.assertFalse(role_lanes["execution_allowed"])
-            self.assertEqual(role_lanes["workflow_profile"], "review-only")
-            self.assertEqual(len(role_lanes["lanes"]), 1)
-            lane = role_lanes["lanes"][0]
-            self.assertEqual(lane["role_id"], "reviewer")
-            self.assertEqual(lane["adapter"], "gemini")
-            self.assertFalse(lane["may_execute"])
-            self.assertFalse(lane["may_verify"])
-            self.assertEqual(lane["phase"], "review")
 
     def test_flowplan_role_lanes_review_only_can_route_to_agy_reviewer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -818,6 +789,76 @@ class OrroWorkflowTests(unittest.TestCase):
             )
             self.assertIn("adapter 'shell'", error["required_input_or_grant"])
             self.assertIn("--model-policy default", error["next_command"])
+
+    def test_flowplan_write_scope_default_policy_aligns_generated_runner_grant(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            role_lanes = root / "role-lane-plan.json"
+            workflow = root / "workflow-plan.json"
+            code, text = self._flowplan_raw(
+                [
+                    "audit routing",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--write-scope",
+                    "src/**",
+                    "--role-lanes-out",
+                    str(role_lanes),
+                    "--out",
+                    str(workflow),
+                    "--model-policy",
+                    "default",
+                    "--role-lane-tier",
+                    "auto",
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 0, text)
+            plan = json.loads(role_lanes.read_text(encoding="utf-8"))
+            runner = next(lane for lane in plan["lanes"] if lane["role_id"] == "runner")
+            self.assertEqual(runner["adapter"], "codex")
+            self.assertEqual(runner["tier"], "agentic")
+            self.assertEqual(runner["granted_adapters"], ["codex"])
+            self.assertEqual(runner["granted_write_scope"], ["src/**"])
+
+    def test_flowplan_explicit_rolepack_override_error_is_actionable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            role_lanes = root / "role-lane-plan.json"
+            rolepack = root / "rolepack.json"
+            rolepack.write_text(
+                json.dumps(_runner_rolepack(adapters=["shell"], write_scope=["src/**"]))
+                + "\n",
+                encoding="utf-8",
+            )
+
+            code, text = self._flowplan_raw(
+                [
+                    "audit routing",
+                    "--root",
+                    tmp,
+                    "--profile",
+                    "code-change",
+                    "--role-lanes-out",
+                    str(role_lanes),
+                    "--rolepack-file",
+                    str(rolepack),
+                    "--model-policy",
+                    "default",
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertFalse(role_lanes.exists())
+            error = json.loads(text)["error"]
+            self.assertEqual(error["code"], "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED")
+            self.assertIn("explicit rolepack override", error["reason"])
+            self.assertIn("--rolepack-file", error["next_command"])
+            self.assertNotIn("rolepack None", json.dumps(error))
 
     def test_flowplan_rolepack_developer_inlines_grants(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
