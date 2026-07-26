@@ -57,6 +57,127 @@ def _write_shell_rolepack(root: Path) -> Path:
 
 
 class OrroReportTests(unittest.TestCase):
+    def test_text_report_uses_six_run_scoped_blocks(self) -> None:
+        text = render_text_report(
+            {
+                "goal": "ship the view",
+                "identity": {
+                    "lanes": [{
+                        "lane_id": "runner",
+                        "base_commit": "abc123",
+                        "working_tree": "baseline status recorded; final clean",
+                        "branch": "feature/view",
+                        "worktree": "worktrees/runner",
+                        "task_id": "runner",
+                    }]
+                },
+                "intent": {
+                    "profile": "code-change",
+                    "roadmap_item": "legibility",
+                    "roadmap_step": "status",
+                    "roadmap_binding_status": "recorded-not-bound",
+                },
+                "execution": {
+                    "proofrun_evidence_present": True,
+                    "execution_lane_count": 1,
+                    "reviewer_lane_count": 0,
+                    "lanes": [{
+                        "lane_id": "runner",
+                        "requested": {"adapter": "codex", "model": "gpt-requested"},
+                        "observed": {"adapter": "codex", "model": "gpt-observed"},
+                    }],
+                },
+                "verification": {"proofcheck_verdict_present": True, "decision": "pass"},
+                "declarations": [{
+                    "artifact": "model-declaration",
+                    "evidence_substrate": "producer-transcribed",
+                }],
+                "evidence": {
+                    "run_dir": "/tmp/run",
+                    "artifacts": [{"name": "team-ledger", "sha256": "deadbeef"}],
+                },
+                "summary": {"state": "needs-proofcheck"},
+                "workflow": {"profile": "code-change"},
+                "handoff": {},
+                "human_review": {"focus": []},
+                "do_not_trust": [],
+            }
+        )
+        headings = [line.split(" ", 1)[0] for line in text.splitlines() if line.startswith(("Identity:", "Intent:", "Execution:", "Verification:", "Producer declarations", "Evidence:"))]
+        self.assertEqual(
+            headings[:6],
+            [
+                "Identity:",
+                "Intent:",
+                "Execution:",
+                "Verification:",
+                "Producer",
+                "Evidence:",
+            ],
+        )
+        self.assertLess(text.index("Identity:"), text.index("Intent:"))
+        self.assertLess(text.index("Intent:"), text.index("Execution:"))
+        self.assertLess(text.index("Execution:"), text.index("Verification:"))
+        self.assertLess(text.index("Verification:"), text.index("Producer declarations"))
+        self.assertLess(text.index("Producer declarations"), text.index("Evidence:"))
+        self.assertIn("requested", text)
+        self.assertIn("observed", text)
+        self.assertIn("1 execution lane, 0 reviewer lanes", text)
+        self.assertNotIn("repository:", text.lower())
+
+    def test_text_report_does_not_repeat_requested_value_as_missing_observation(self) -> None:
+        text = render_text_report(
+            {
+                "goal": "review",
+                "identity": {"lanes": []},
+                "intent": {"profile": "review-only"},
+                "execution": {
+                    "proofrun_evidence_present": True,
+                    "execution_lane_count": 0,
+                    "reviewer_lane_count": 1,
+                    "lanes": [{
+                        "lane_id": "reviewer",
+                        "requested": {"adapter": "agy", "model": "gemini-3.5-flash"},
+                        "observed": {
+                            "adapter": "agy",
+                            "model": None,
+                            "status": "provider returned no identity signal",
+                        },
+                    }],
+                },
+                "verification": {"proofcheck_verdict_present": False},
+                "declarations": [],
+                "evidence": {"run_dir": "/tmp/run", "artifacts": []},
+                "summary": {},
+                "workflow": {},
+                "handoff": {},
+                "human_review": {},
+                "do_not_trust": [],
+            }
+        )
+        self.assertIn("gemini-3.5-flash", text)
+        self.assertIn("provider returned no identity signal", text)
+        self.assertNotIn("observed: gemini-3.5-flash", text)
+
+    def test_execution_summary_exposes_distinct_requested_and_observed_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            (run_dir / "team-ledger.json").write_text(
+                json.dumps({"lanes": [{"lane_id": "runner", "runner_adapter_kind": "codex"}]}),
+                encoding="utf-8",
+            )
+            (run_dir / "role-lane-plan.json").write_text(
+                json.dumps({"lanes": [{"lane_id": "runner", "adapter": "agy", "model": "planned"}]}),
+                encoding="utf-8",
+            )
+            summary = _execution_summary(
+                run_dir,
+                {"role_status": []},
+                {"team_ledger": True, "team_ledger_verdict": False},
+            )
+            self.assertEqual(summary["lanes"][0]["requested"]["adapter"], "agy")
+            self.assertEqual(summary["lanes"][0]["observed"]["adapter"], "codex")
+            self.assertIsNone(summary["lanes"][0]["observed"]["model"])
     def test_execution_summary_uses_observed_identity_over_requested_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp)
@@ -93,7 +214,7 @@ class OrroReportTests(unittest.TestCase):
                 }
             )
             self.assertIn("adapter=codex (observed)", text)
-            self.assertNotIn("agy", text)
+            self.assertIn("adapter | requested: agy | observed: codex", text)
 
     def test_execution_summary_labels_plan_only_identity_as_requested(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
