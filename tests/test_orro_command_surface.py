@@ -144,6 +144,7 @@ class OrroCommandSurfaceTests(unittest.TestCase):
     def test_recognized_commands_keep_existing_normalization(self) -> None:
         expected = {
             "setup": "orro-setup",
+            "skill": "orro-skill",
             "init": "init",
             "scout": "scout",
             "flow": "orro-flow",
