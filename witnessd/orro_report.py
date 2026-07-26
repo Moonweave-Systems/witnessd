@@ -221,6 +221,7 @@ def _execution_line(execution: dict[str, Any]) -> str:
     lane_count = execution.get("lane_count", 0)
     adapter_count = execution.get("distinct_adapter_count", 0)
     model_count = execution.get("distinct_model_count", 0)
+    source = _execution_value_source(execution)
     if lane_count == 1:
         label = (
             "single-lane policy selection"
@@ -229,16 +230,16 @@ def _execution_line(execution: dict[str, Any]) -> str:
         )
         return (
             f"Execution: evidence present; {label} "
-            f"({adapter_count} adapter, {model_count} model)"
+            f"({_execution_counts_text(adapter_count, model_count, source)})"
         )
     if execution.get("multi_model_execution"):
         return (
             f"Execution: evidence present; multi-model execution across {lane_count} lanes "
-            f"({adapter_count} adapters, {model_count} models)"
+            f"({_execution_counts_text(adapter_count, model_count, source, plural=True)})"
         )
     return (
         f"Execution: evidence present; {lane_count} lanes "
-        f"({adapter_count} adapters, {model_count} models)"
+        f"({_execution_counts_text(adapter_count, model_count, source, plural=True)})"
     )
 
 
@@ -247,6 +248,29 @@ def _verification_line(verification: dict[str, Any]) -> str:
         decision = verification.get("decision") or "unknown"
         return f"Verification: Depone proofcheck {decision}"
     return "Verification: proofcheck missing"
+
+
+def _execution_value_source(execution: dict[str, Any]) -> str:
+    sources = {
+        execution.get("adapter_value_source"), execution.get("model_value_source")
+    } - {None, "unknown"}
+    if sources == {"observed"}:
+        return "observed"
+    if sources == {"requested"}:
+        return "requested"
+    if sources:
+        return "mixed"
+    return "unknown"
+
+
+def _execution_counts_text(
+    adapter_count: int, model_count: int, source: str, *, plural: bool = False
+) -> str:
+    counts = (
+        f"{adapter_count} {'adapters' if plural else 'adapter'}, "
+        f"{model_count} {'models' if plural else 'model'}"
+    )
+    return counts if source in {"observed", "unknown"} else f"{source}: {counts}"
 
 
 def _summary(
@@ -367,7 +391,9 @@ def _execution_summary(
         if not isinstance(lane, dict):
             continue
         planned = planned_by_id.get(str(lane.get("lane_id")), {})
-        summary_lanes.append({**lane, **planned})
+        merged = dict(planned)
+        merged.update(lane)
+        summary_lanes.append(merged)
     execution_summary = summarize_executable_lanes(summary_lanes)
     policy_selected = len(summary_lanes) == 1 and (
         summary_lanes[0].get("model_source") == "model-policy"

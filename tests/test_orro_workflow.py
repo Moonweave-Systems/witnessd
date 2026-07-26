@@ -17,6 +17,7 @@ from witnessd.orro_workflow import (
     assert_workflow_phase_allowed,
     compile_role_lane_plan,
     compile_workflow_plan,
+    summarize_executable_lanes,
     validate_role_lane_plan,
 )
 
@@ -2095,6 +2096,26 @@ class OrroWorkflowTests(unittest.TestCase):
 
         with self.assertRaises(SystemExit):
             main(["orro", "flowplan", "bad", "--draft-adapter", "codex"])
+
+
+class ObservedExecutionSummaryTests(unittest.TestCase):
+    def test_ledger_adapter_beats_requested_adapter(self) -> None:
+        summary = summarize_executable_lanes([
+            {
+                "lane_id": "lane-a",
+                "adapter": "planned-adapter",
+                "runner_adapter_kind": "observed-adapter",
+            }
+        ])
+        self.assertEqual(summary["distinct_adapter_count"], 1)
+        self.assertEqual(summary["adapter_value_source"], "observed")
+
+    def test_plan_only_value_is_requested(self) -> None:
+        summary = summarize_executable_lanes([
+            {"lane_id": "lane-a", "adapter": "planned-adapter", "model": "m1"}
+        ])
+        self.assertEqual(summary["adapter_value_source"], "requested")
+        self.assertEqual(summary["model_value_source"], "requested")
 
 
 if __name__ == "__main__":
