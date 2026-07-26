@@ -230,7 +230,7 @@ witnessd runtime code or Depone verifier logic.
 | `orro status` | roadmap status, or a run-scoped report with `<run-dir>` or `--latest` |
 | `orro tidy` | dry-run worktree inventory |
 | `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
-| `orro check` | companion: deterministic verify (Depone verdict) + read-only review (advisory); spawns zero execution-adapter lanes; does not claim observed execution |
+| `orro check` | companion: deterministic verify (Depone verdict) + read-only review (advisory); spawns a verification lane and produces evidence; does not claim observed execution |
 | `orro demo` | AI-free deterministic shell guardrail demo; Depone re-derives write-scope PASS/FAIL |
 | `orro auto --dry-run` | non-executing automation planner that recommends the next command |
 | `orro auto --once` | one-step executor for proofcheck or handoff only |
