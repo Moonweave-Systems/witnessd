@@ -145,6 +145,41 @@ def _fake_codex_writes_env_and_code(directory: str) -> str:
     return str(path)
 
 
+def _fake_codex_writes_src_app(directory: str) -> str:
+    path = pathlib.Path(directory) / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
+        "mkdir -p src\n"
+        "printf '%s\\n' 'generated' > src/app.py\n"
+        "while [ $# -gt 0 ]; do shift; done\n"
+        "cat >/dev/null\n"
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T1"}\'\n'
+        'printf \'%s\\n\' \'{"type":"item.completed","item":{"type":"command_execution","command":"write src/app.py"}}\'\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
+def _fake_codex_writes_outside_src_scope(directory: str) -> str:
+    path = pathlib.Path(directory) / "codex"
+    path.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo \'codex-cli 0.0.0\'; exit 0; fi\n'
+        "printf '%s\\n' 'generated' > outside.py\n"
+        "while [ $# -gt 0 ]; do shift; done\n"
+        "cat >/dev/null\n"
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"T1"}\'\n'
+        'printf \'%s\\n\' \'{"type":"item.completed","item":{"type":"command_execution","command":"write outside.py"}}\'\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
 def _fake_codex_reads_forbidden_skill(directory: str) -> str:
     path = pathlib.Path(directory) / "codex"
     event = json.dumps(
@@ -864,6 +899,90 @@ class TestAdapterRun(unittest.TestCase):
                 otel_spans=out["bundle"]["otel_spans"],
             )
             self.assertEqual(verdict["decision"], "pass")
+
+    def test_redacted_conforming_glob_write_scope_declaration(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "redacted-glob-write-scope-evidence")
+            _init_repo(sandbox)
+
+            run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="t-redacted-glob-write-scope",
+                prompt="write src/app.py",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=_fake_codex_writes_src_app(bindir),
+                evidence_dir=evidence_dir,
+                allowed_touched_files=["src/**"],
+                write_scope=["src/**"],
+                role_id="runner",
+                role_capability="execute",
+                capture_profile="redacted",
+            )
+
+            declaration = json.loads(
+                (pathlib.Path(evidence_dir) / "write-scope-declaration.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(declaration["conformance"], "pass")
+            self.assertEqual(declaration["verification_status"], "verified")
+            self.assertEqual(
+                declaration["conformance_evaluation"],
+                {
+                    "emitted_scope_and_path_values": "redacted",
+                    "evaluated_on": "unredacted scope and path values",
+                },
+            )
+            self.assertNotIn("src/app.py", json.dumps(declaration))
+
+    def test_redacted_out_of_scope_write_seals_rejection(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as bindir,
+        ):
+            sandbox = os.path.join(root, "repo")
+            evidence_dir = os.path.join(root, "redacted-out-of-scope-evidence")
+            _init_repo(sandbox)
+
+            run_adapter_lane(
+                root=root,
+                sandbox=sandbox,
+                adapter="codex",
+                task_id="t-redacted-out-of-scope",
+                prompt="write outside.py",
+                arm="direct",
+                tier="agentic",
+                is_supported=lambda _model: True,
+                budget={"max_tokens": 10**9, "max_usd": 10**9, "max_depth": 3},
+                codex_binary=_fake_codex_writes_outside_src_scope(bindir),
+                evidence_dir=evidence_dir,
+                allowed_touched_files=["src/**"],
+                write_scope=["src/**"],
+                role_id="runner",
+                role_capability="execute",
+                capture_profile="redacted",
+            )
+
+            declaration = json.loads(
+                (pathlib.Path(evidence_dir) / "write-scope-declaration.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(declaration["conformance"], "fail")
+            self.assertEqual(declaration["verification_status"], "rejected")
+            self.assertEqual(
+                declaration["detail"],
+                "touched_files are not a subset of declared_write_scope",
+            )
 
     def test_same_run_intent_codex_and_claude_emit_same_contract_shape(self):
         with (
