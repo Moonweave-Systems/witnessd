@@ -24,6 +24,7 @@ from witnessd.orro_workflow import (
 
 REPORT_KIND = "orro-report"
 REPORT_SCHEMA_VERSION = "0.1"
+EMPTY_STATUS_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 ERR_ORRO_REPORT_ARTIFACT_LOAD_FAILED = "ERR_ORRO_REPORT_ARTIFACT_LOAD_FAILED"
 ERR_ORRO_REPORT_WRITE_FAILED = "ERR_ORRO_REPORT_WRITE_FAILED"
@@ -73,6 +74,9 @@ def build_report(
     execution = _execution_summary(run_dir, continuation, observed)
     verification = _verification_summary(run_dir, continuation, observed)
     handoff = _handoff_summary(run_dir, continuation, observed)
+    identity = _identity_summary(run_dir)
+    intent = _intent_summary(run_dir, workflow)
+    evidence = _evidence_summary(run_dir)
     reference_adapter = _reference_adapter_summary(run_dir)
     summary = _summary(
         continuation, execution, verification, handoff, reference_adapter
@@ -94,10 +98,13 @@ def build_report(
         "goal": _goal(workflow, workstyle),
         "summary": summary,
         "workflow": workflow,
+        "identity": identity,
+        "intent": intent,
         "workstyle": _workstyle_summary(workstyle),
         "execution": execution,
         "verification": verification,
         "declarations": _declaration_summary(run_dir),
+        "evidence": evidence,
         "handoff": handoff,
         "reference_adapter": reference_adapter,
         "not_real_ai_work": reference_adapter["not_real_ai_work"],
@@ -148,52 +155,100 @@ def render_text_report(payload: dict[str, Any]) -> str:
     execution = payload.get("execution", {})
     verification = payload.get("verification", {})
     handoff = payload.get("handoff", {})
-    human_review = payload.get("human_review", {})
-    lines = [
-        "ORRO Report",
-        f"Goal: {payload.get('goal') or 'unknown'}",
-    ]
+    identity = payload.get("identity", {})
+    intent = payload.get("intent", {})
+    evidence = payload.get("evidence", {})
+    lines = ["ORRO Report", "Identity:"]
+    identity_lanes = identity.get("lanes", []) if isinstance(identity, dict) else []
+    if identity_lanes:
+        for lane in identity_lanes:
+            if not isinstance(lane, dict):
+                continue
+            for label, key in (
+                ("lane", "lane_id"),
+                ("base commit", "base_commit"),
+                ("working tree", "working_tree"),
+                ("branch", "branch"),
+                ("worktree", "worktree"),
+                ("task id", "task_id"),
+            ):
+                if lane.get(key) is not None:
+                    lines.append(f"  {label}: {_display_value(lane.get(key))}")
+    else:
+        lines.append("  no identity observation recorded")
+
+    lines.append("Intent:")
+    lines.append(f"  Goal: {_display_value(payload.get('goal'))}")
+    lines.append(f"  profile: {_display_value(intent.get('profile') or workflow.get('profile'))}")
     declared_intent = payload.get("declared_intent")
     if isinstance(declared_intent, dict):
-        lines.append(f"Declared intent: {declared_intent['intent']}")
+        lines.append(f"  Declared intent: {declared_intent.get('intent', 'not recorded')}")
         non_goals = declared_intent.get("non_goals")
         if isinstance(non_goals, list) and non_goals:
-            lines.append(f"Non-goals: {'; '.join(non_goals)}")
+            lines.append(f"  Non-goals: {'; '.join(map(str, non_goals))}")
         constraints = declared_intent.get("constraints")
         if isinstance(constraints, list) and constraints:
-            lines.append(f"Constraints: {'; '.join(constraints)}")
-    lines.extend(
-        [
-        f"State: {summary.get('state', 'blocked')}",
-        f"Profile: {workflow.get('profile') or 'unknown'}",
-        _execution_line(execution),
-        _verification_line(verification),
-        "Handoff: packaged" if handoff.get("handoff_present") else "Handoff: not packaged",
-        f"Next: {summary.get('recommended_next_action') or 'none'}",
-        "",
-        "Do not treat as proof:",
-        ]
-    )
+            lines.append(f"  Constraints: {'; '.join(map(str, constraints))}")
+    if intent.get("roadmap_item") is not None:
+        lines.append(
+            f"  roadmap item: {intent['roadmap_item']} ({intent.get('roadmap_binding_status', 'recorded-not-bound')})"
+        )
+    if intent.get("roadmap_step") is not None:
+        lines.append(
+            f"  roadmap step: {intent['roadmap_step']} ({intent.get('roadmap_binding_status', 'recorded-not-bound')})"
+        )
+
+    lines.append(_execution_line(execution))
+    for lane in execution.get("lanes", []):
+        if not isinstance(lane, dict):
+            continue
+        lines.append(f"  lane {lane.get('lane_id', 'unknown')}")
+        requested = lane.get("requested", {})
+        observed = lane.get("observed", {})
+        lines.append(
+            f"    adapter | requested: {_display_value(requested.get('adapter'))} | observed: {_display_value(observed.get('adapter') or observed.get('adapter_status'))}"
+        )
+        if requested.get("model") is not None or observed.get("model") is not None or observed.get("model_status"):
+            lines.append(
+                f"    model   | requested: {_display_value(requested.get('model'))} | observed: {_display_value(observed.get('model') or observed.get('model_status') or observed.get('status'))}"
+            )
+    timeout_guidance = execution.get("timeout_guidance")
+    if isinstance(timeout_guidance, list):
+        lines.extend(f"  Timeout guidance: {item}" for item in timeout_guidance if isinstance(item, str))
+
+    lines.append(_verification_line(verification))
+    lines.append(f"  State: {summary.get('state', 'blocked')}")
+    lines.append("Producer declarations (not verified):")
     declarations = payload.get("declarations")
     if isinstance(declarations, list) and declarations:
         lines.append(
-            "Declarations: producer-reported; not re-derived by Depone "
+            "  Declarations: producer-reported; not re-derived by Depone "
             "(signed bytes only)"
         )
-    timeout_guidance = execution.get("timeout_guidance")
-    if isinstance(timeout_guidance, list):
-        lines.extend(
-            f"Timeout guidance: {item}"
-            for item in timeout_guidance
-            if isinstance(item, str)
-        )
-    lines.extend(f"- {item}" for item in payload.get("do_not_trust", []))
-    lines.extend(["", "Human review:"])
-    focus = human_review.get("focus")
-    if isinstance(focus, list) and focus:
-        lines.extend(f"- {item}" for item in focus)
+        seen_declarations = set()
+        for item in declarations:
+            if not isinstance(item, dict):
+                continue
+            artifact = item.get("artifact", "unknown")
+            if artifact in seen_declarations:
+                continue
+            seen_declarations.add(artifact)
+            lines.append(f"  - {artifact}")
     else:
-        lines.append("- no specific reviewer focus recorded")
+        lines.append("  none recorded")
+    lines.append("Evidence:")
+    lines.append(f"  run directory: {_display_value(evidence.get('run_dir') or payload.get('run_dir'))}")
+    for artifact in evidence.get("artifacts", []):
+        if isinstance(artifact, dict):
+            lines.append(f"  {artifact.get('name', 'artifact')}: {artifact.get('sha256', 'hash unavailable')}")
+    lines.append(f"  Handoff: {'packaged' if handoff.get('handoff_present') else 'not packaged'}")
+    lines.append(f"  Next: {summary.get('recommended_next_action') or 'none'}")
+    lines.append("  Human review:")
+    focus = payload.get("human_review", {}).get("focus") if isinstance(payload.get("human_review"), dict) else None
+    if isinstance(focus, list) and focus:
+        lines.extend(f"  - {item}" for item in focus)
+    else:
+        lines.append("  - no specific reviewer focus recorded")
     return "\n".join(lines) + "\n"
 
 
@@ -233,39 +288,9 @@ def _verified_declared_intent(
 def _execution_line(execution: dict[str, Any]) -> str:
     if not execution.get("proofrun_evidence_present"):
         return "Execution: evidence missing"
-    lane_count = execution.get("lane_count", 0)
-    adapter_count = execution.get("distinct_adapter_count", 0)
-    model_count = execution.get("distinct_model_count", 0)
-    source = _execution_value_source(execution)
-    if lane_count == 1:
-        label = (
-            "single-lane policy selection"
-            if execution.get("policy_selected")
-            else "single-lane execution"
-        )
-        line = (
-            f"Execution: evidence present; {label} "
-            f"({_execution_counts_text(adapter_count, model_count, source)})"
-        )
-    elif execution.get("multi_model_execution"):
-        line = (
-            f"Execution: evidence present; multi-model execution across {lane_count} lanes "
-            f"({_execution_counts_text(adapter_count, model_count, source, plural=True)})"
-        )
-    else:
-        line = (
-            f"Execution: evidence present; {lane_count} lanes "
-            f"({_execution_counts_text(adapter_count, model_count, source, plural=True)})"
-        )
-    identities = []
-    for axis in ("adapter", "model"):
-        values = execution.get(f"{axis}_values")
-        value_source = execution.get(f"{axis}_value_source")
-        if isinstance(values, list) and values and isinstance(value_source, str):
-            identities.append(
-                f"{axis}={','.join(map(str, values))} ({value_source})"
-            )
-    return f"{line}; " + "; ".join(identities) if identities else line
+    lane_count = execution.get("execution_lane_count", execution.get("lane_count", 0))
+    reviewer_count = execution.get("reviewer_lane_count", 0)
+    return f"Execution: {lane_count} execution lane{'s' if lane_count != 1 else ''}, {reviewer_count} reviewer lane{'s' if reviewer_count != 1 else ''}"
 
 
 def _verification_line(verification: dict[str, Any]) -> str:
@@ -420,6 +445,8 @@ def _execution_summary(
         merged.update(lane)
         summary_lanes.append(merged)
     execution_summary = summarize_executable_lanes(summary_lanes)
+    detail_lanes = [_lane_identity_columns(lane) for lane in summary_lanes]
+    reviewer_lane_count = sum(1 for lane in executed_lanes if _is_reviewer_lane(lane))
     policy_selected = len(summary_lanes) == 1 and (
         summary_lanes[0].get("model_source") == "model-policy"
     )
@@ -429,6 +456,10 @@ def _execution_summary(
         "team_ledger_present": bool(observed.get("team_ledger")),
         "team_ledger_verdict_present": bool(observed.get("team_ledger_verdict")),
         **execution_summary,
+        "lanes": detail_lanes,
+        "observed_lane_count": len(executed_lanes),
+        "execution_lane_count": max(0, len(executed_lanes) - reviewer_lane_count),
+        "reviewer_lane_count": reviewer_lane_count,
         "policy_selected": policy_selected,
         **lane_block,
         "runner_roles": [
@@ -444,6 +475,121 @@ def _execution_summary(
             and isinstance(lane.get("guidance"), str)
         ],
     }
+
+
+def _lane_identity_columns(lane: dict[str, Any]) -> dict[str, Any]:
+    requested_adapter = lane.get("adapter") or lane.get("team_adapter_kind")
+    requested_model = lane.get("model")
+    observed_adapter = lane.get("runner_adapter_kind") or lane.get("team_adapter_kind")
+    observed_model = lane.get("runner_model") or lane.get("observed_model")
+    adapter_status = None if observed_adapter else "no observation recorded"
+    if observed_model:
+        model_status = None
+    elif requested_model is None:
+        model_status = None
+    elif observed_adapter == "agy":
+        model_status = "provider returned no identity signal"
+    else:
+        model_status = "no observation recorded"
+    return {
+        "lane_id": lane.get("lane_id"),
+        "requested": {"adapter": requested_adapter, "model": requested_model},
+        "observed": {
+            "adapter": observed_adapter,
+            "model": observed_model,
+            "adapter_status": adapter_status,
+            "model_status": model_status,
+        },
+    }
+
+
+def _is_reviewer_lane(lane: dict[str, Any]) -> bool:
+    return (
+        lane.get("phase") == "review"
+        or lane.get("lane_intent") == "review"
+        or lane.get("role_id") == "reviewer"
+        or str(lane.get("lane_id", "")).startswith("reviewer")
+    )
+
+
+def _identity_summary(run_dir: Path) -> dict[str, Any]:
+    ledger = _load_json_object(run_dir / "team-ledger.json") or {}
+    identities = []
+    for lane in ledger.get("lanes", []) if isinstance(ledger.get("lanes"), list) else []:
+        if not isinstance(lane, dict):
+            continue
+        lane_id = str(lane.get("lane_id", "unknown"))
+        lane_dir = run_dir / str(lane.get("evidence_dir") or lane_id)
+        intent_path = _find_lane_artifact(lane_dir, "run-intent.json")
+        intent_payload = _load_json_object(intent_path) if intent_path else None
+        signed_intent = intent_payload.get("intent", intent_payload) if isinstance(intent_payload, dict) else {}
+        baseline = signed_intent.get("baseline", {}) if isinstance(signed_intent, dict) else {}
+        worktree_path = run_dir / str(lane.get("worktree_receipt")) if lane.get("worktree_receipt") else None
+        worktree = _load_json_object(worktree_path) if worktree_path else None
+        if worktree is None:
+            receipt_path = _find_lane_artifact(lane_dir, "worktree-lane-receipt.json")
+            worktree = _load_json_object(receipt_path) if receipt_path else None
+        runner_path = _find_lane_artifact(lane_dir, "runner-receipt.json")
+        runner = _load_json_object(runner_path) if runner_path else None
+        baseline_hash = baseline.get("git_status_sha256")
+        working_tree = baseline.get("git_status_state") or "no observation recorded"
+        if baseline_hash and baseline_hash != EMPTY_STATUS_SHA256:
+            working_tree = f"{working_tree}; baseline status hash {baseline_hash}"
+        if isinstance(worktree, dict) and isinstance(worktree.get("dirty"), bool):
+            working_tree += f"; final {'dirty' if worktree['dirty'] else 'clean'}"
+        identities.append({
+            "lane_id": lane_id,
+            "base_commit": baseline.get("git_head"),
+            "working_tree": working_tree,
+            "branch": worktree.get("branch") if isinstance(worktree, dict) else None,
+            "worktree": worktree.get("worktree") if isinstance(worktree, dict) else None,
+            "task_id": runner.get("task_id") if isinstance(runner, dict) else None,
+        })
+    return {"lanes": identities}
+
+
+def _intent_summary(run_dir: Path, workflow: dict[str, Any]) -> dict[str, Any]:
+    binding = _load_json_object(run_dir / "roadmap-binding.json")
+    result: dict[str, Any] = {
+        "profile": workflow.get("profile"),
+        "roadmap_binding_status": "recorded-not-bound",
+    }
+    if isinstance(binding, dict):
+        result["roadmap_item"] = binding.get("item_id")
+        if binding.get("step_id") is not None:
+            result["roadmap_step"] = binding.get("step_id")
+    return result
+
+
+def _evidence_summary(run_dir: Path) -> dict[str, Any]:
+    names = (
+        ("workflow-plan-binding", "workflow-plan-binding.json"),
+        ("workflow-role-dispatch", "workflow-role-dispatch.json"),
+        ("team-ledger", "team-ledger.json"),
+        ("team-ledger-verdict", "team-ledger-verdict.json"),
+        ("proofcheck-verdict", "proofcheck-verdict.json"),
+    )
+    artifacts = []
+    for name, relative in names:
+        path = run_dir / relative
+        if path.is_file():
+            artifacts.append({"name": name, "path": relative, "sha256": _hash_file(path)})
+    return {"run_dir": str(run_dir), "artifacts": artifacts}
+
+
+def _find_lane_artifact(lane_dir: Path, name: str) -> Path | None:
+    direct = lane_dir / name
+    if direct.is_file():
+        return direct
+    if lane_dir.is_dir():
+        return next(iter(sorted(lane_dir.rglob(name))), None)
+    return None
+
+
+def _display_value(value: Any) -> str:
+    if value is None or value == "":
+        return "not recorded"
+    return str(value)
 
 
 def _verification_summary(
