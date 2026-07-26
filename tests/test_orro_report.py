@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.__main__ import main
-from witnessd.orro_report import _execution_summary, render_text_report
+from witnessd.orro_report import _execution_summary, _identity_summary, render_text_report
 from witnessd.orro_team_surface import apply_task_prompt_to_role_lane_plan
 
 
@@ -57,6 +57,99 @@ def _write_shell_rolepack(root: Path) -> Path:
 
 
 class OrroReportTests(unittest.TestCase):
+    def test_text_report_execution_header_contains_only_lane_counts(self) -> None:
+        text = render_text_report(
+            {
+                "summary": {},
+                "workflow": {},
+                "execution": {
+                    "proofrun_evidence_present": True,
+                    "execution_lane_count": 1,
+                    "reviewer_lane_count": 0,
+                    "policy_selected": True,
+                    "adapter_values": ["codex"],
+                    "adapter_value_source": "observed",
+                    "model_values": ["gpt-5.6-sol"],
+                    "model_value_source": "requested",
+                    "lanes": [],
+                },
+                "verification": {},
+                "handoff": {},
+                "human_review": {},
+                "do_not_trust": [],
+            }
+        )
+        execution_line = next(line for line in text.splitlines() if line.startswith("Execution:"))
+        self.assertEqual(execution_line, "Execution: 1 execution lane, 0 reviewer lanes")
+
+    def test_text_report_identity_places_each_field_on_its_own_line(self) -> None:
+        text = render_text_report(
+            {
+                "goal": "ship the view",
+                "identity": {
+                    "lanes": [{
+                        "lane_id": "runner",
+                        "base_commit": "abc123",
+                        "working_tree": "baseline status recorded; final clean",
+                        "branch": "feature/view",
+                        "worktree": "worktrees/runner",
+                        "task_id": "runner-task",
+                    }]
+                },
+                "intent": {},
+                "execution": {},
+                "verification": {},
+                "declarations": [],
+                "evidence": {},
+                "summary": {},
+                "workflow": {},
+                "handoff": {},
+                "human_review": {},
+                "do_not_trust": [],
+            }
+        )
+        identity = text.split("Intent:", 1)[0]
+        self.assertIn("  lane: runner\n", identity)
+        self.assertIn("  base commit: abc123\n", identity)
+        self.assertIn("  working tree: baseline status recorded; final clean\n", identity)
+        self.assertIn("  branch: feature/view\n", identity)
+        self.assertIn("  worktree: worktrees/runner\n", identity)
+        self.assertIn("  task id: runner-task\n", identity)
+        self.assertNotIn("lane: runner;", identity)
+
+    def test_identity_summary_hides_empty_status_hash_but_keeps_nonempty_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            (run_dir / "team-ledger.json").write_text(
+                json.dumps({
+                    "lanes": [
+                        {"lane_id": "clean", "evidence_dir": "clean"},
+                        {"lane_id": "dirty", "evidence_dir": "dirty"},
+                    ]
+                }),
+                encoding="utf-8",
+            )
+            for lane_id, status_hash in (
+                ("clean", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+                ("dirty", "0123456789abcdef"),
+            ):
+                lane_dir = run_dir / lane_id
+                lane_dir.mkdir()
+                (lane_dir / "run-intent.json").write_text(
+                    json.dumps({
+                        "baseline": {
+                            "git_head": "abc123",
+                            "git_status_state": "baseline status recorded",
+                            "git_status_sha256": status_hash,
+                        }
+                    }),
+                    encoding="utf-8",
+                )
+
+            identities = _identity_summary(run_dir)["lanes"]
+            self.assertEqual(identities[0]["working_tree"], "baseline status recorded")
+            self.assertIn("baseline status hash 0123456789abcdef", identities[1]["working_tree"])
+
     def test_text_report_uses_six_run_scoped_blocks(self) -> None:
         text = render_text_report(
             {
@@ -214,7 +307,7 @@ class OrroReportTests(unittest.TestCase):
                     "do_not_trust": [],
                 }
             )
-            self.assertIn("adapter=codex (observed)", text)
+            self.assertNotIn("adapter=codex (observed)", text)
             self.assertIn("adapter | requested: agy | observed: codex", text)
 
     def test_execution_summary_labels_plan_only_identity_as_requested(self) -> None:
@@ -726,7 +819,7 @@ class OrroReportTests(unittest.TestCase):
             line for line in text.splitlines() if line.startswith("Execution:")
         )
 
-        self.assertIn("single-lane policy selection", execution_line)
+        self.assertEqual(execution_line, "Execution: 1 execution lane, 0 reviewer lanes")
         self.assertNotIn("team", execution_line.lower())
         self.assertNotIn("multi-model", execution_line.lower())
         self.assertNotIn("parallel", execution_line.lower())
@@ -759,10 +852,9 @@ class OrroReportTests(unittest.TestCase):
             if line.startswith("Execution:")
         )
 
-        self.assertIn("single-lane execution", execution_line)
-        self.assertNotIn("policy", execution_line.lower())
+        self.assertEqual(execution_line, "Execution: 1 execution lane, 0 reviewer lanes")
 
-    def test_requested_execution_values_are_labelled_requested(self) -> None:
+    def test_execution_header_does_not_repeat_requested_values(self) -> None:
         payload = {
             "goal": "fix parser",
             "summary": {"state": "needs-proofcheck", "recommended_next_action": "proofcheck"},
@@ -785,7 +877,7 @@ class OrroReportTests(unittest.TestCase):
             line for line in render_text_report(payload).splitlines()
             if line.startswith("Execution:")
         )
-        self.assertIn("requested:", execution_line)
+        self.assertNotIn("requested:", execution_line)
 
     def test_report_module_aliases_and_no_artifact_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

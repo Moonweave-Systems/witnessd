@@ -24,6 +24,7 @@ from witnessd.orro_workflow import (
 
 REPORT_KIND = "orro-report"
 REPORT_SCHEMA_VERSION = "0.1"
+EMPTY_STATUS_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 ERR_ORRO_REPORT_ARTIFACT_LOAD_FAILED = "ERR_ORRO_REPORT_ARTIFACT_LOAD_FAILED"
 ERR_ORRO_REPORT_WRITE_FAILED = "ERR_ORRO_REPORT_WRITE_FAILED"
@@ -163,21 +164,16 @@ def render_text_report(payload: dict[str, Any]) -> str:
         for lane in identity_lanes:
             if not isinstance(lane, dict):
                 continue
-            lines.append(
-                "  "
-                + "; ".join(
-                    f"{label}: {_display_value(lane.get(key))}"
-                    for label, key in (
-                        ("lane", "lane_id"),
-                        ("base commit", "base_commit"),
-                        ("working tree", "working_tree"),
-                        ("branch", "branch"),
-                        ("worktree", "worktree"),
-                        ("task id", "task_id"),
-                    )
-                    if lane.get(key) is not None
-                )
-            )
+            for label, key in (
+                ("lane", "lane_id"),
+                ("base commit", "base_commit"),
+                ("working tree", "working_tree"),
+                ("branch", "branch"),
+                ("worktree", "worktree"),
+                ("task id", "task_id"),
+            ):
+                if lane.get(key) is not None:
+                    lines.append(f"  {label}: {_display_value(lane.get(key))}")
     else:
         lines.append("  no identity observation recorded")
 
@@ -294,21 +290,7 @@ def _execution_line(execution: dict[str, Any]) -> str:
         return "Execution: evidence missing"
     lane_count = execution.get("execution_lane_count", execution.get("lane_count", 0))
     reviewer_count = execution.get("reviewer_lane_count", 0)
-    if execution.get("proofrun_evidence_present"):
-        label = ""
-        if lane_count == 1:
-            label = " (single-lane policy selection)" if execution.get("policy_selected") else " (single-lane execution)"
-        identities = []
-        for axis in ("adapter", "model"):
-            values = execution.get(f"{axis}_values")
-            source = execution.get(f"{axis}_value_source")
-            if isinstance(values, list) and values and source:
-                identities.append(f"{axis}={','.join(map(str, values))} ({source})")
-        suffix = "; requested: see columns; observed: see columns"
-        if identities:
-            suffix += "; " + "; ".join(identities)
-        return f"Execution: {lane_count} execution lane{'s' if lane_count != 1 else ''}, {reviewer_count} reviewer lane{'s' if reviewer_count != 1 else ''}{label}{suffix}"
-    return "Execution: evidence missing"
+    return f"Execution: {lane_count} execution lane{'s' if lane_count != 1 else ''}, {reviewer_count} reviewer lane{'s' if reviewer_count != 1 else ''}"
 
 
 def _verification_line(verification: dict[str, Any]) -> str:
@@ -551,7 +533,7 @@ def _identity_summary(run_dir: Path) -> dict[str, Any]:
         runner = _load_json_object(runner_path) if runner_path else None
         baseline_hash = baseline.get("git_status_sha256")
         working_tree = baseline.get("git_status_state") or "no observation recorded"
-        if baseline_hash:
+        if baseline_hash and baseline_hash != EMPTY_STATUS_SHA256:
             working_tree = f"{working_tree}; baseline status hash {baseline_hash}"
         if isinstance(worktree, dict) and isinstance(worktree.get("dirty"), bool):
             working_tree += f"; final {'dirty' if worktree['dirty'] else 'clean'}"
