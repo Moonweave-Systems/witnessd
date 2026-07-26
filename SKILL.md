@@ -1,6 +1,8 @@
 ---
 name: orro
 description: ORRO, the Observed Run & Review Orchestrator, turns a goal into an evidence-backed workflow: scout the repo, plan it, run it through witnessd, seal the evidence, and check what the bytes support through Depone. Use for orro, scout, flowplan, proofrun, proofcheck, verdict-backed team execution, evidence-backed automation, and 증거 실행. Published by Moonweave.
+witnessd_version: {witnessd_version}
+witnessd_generated: true
 ---
 
 # orro - evidence-backed workflow runs
@@ -26,6 +28,7 @@ The cross-engine artifact boundary is summarized in
 | --- | --- |
 | `orro` | goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
 | `orro setup` | one-command setup: provision pinned Depone, initialize home, and write engine lock |
+| `orro skill install` | install or refresh the packaged ORRO session skill |
 | `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 | `orro scout` | read-only repo exploration and context-pack creation |

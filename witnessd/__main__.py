@@ -90,6 +90,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     orro_setup.set_defaults(func=_cli_handler("bootstrap", "_cmd_orro_setup"))
 
+    orro_skill = sub.add_parser("orro-skill", help=argparse.SUPPRESS)
+    skill_sub = orro_skill.add_subparsers(dest="skill_command", required=True)
+    orro_skill_install = skill_sub.add_parser("install", help="install or refresh the session skill")
+    orro_skill_install.add_argument("--force", action="store_true")
+    orro_skill_install.add_argument("--json", action="store_true")
+    orro_skill_install.set_defaults(func=_cli_handler("bootstrap", "_cmd_orro_skill_install"))
+
     scout = sub.add_parser("scout", help="run read-only ORRO repo scout")
     scout.add_argument("goal")
     scout.add_argument("--repo", "--root", dest="repo", default=".")
@@ -1153,6 +1160,7 @@ def _normalize_superflow_argv(argv: list[str]) -> list[str]:
 
 ORRO_COMMAND_MAP: dict[str, str] = {
     "setup": "orro-setup",
+    "skill": "orro-skill",
     "init": "init",
     "scout": "scout",
     "flowplan": "flowplan",
@@ -1177,6 +1185,7 @@ ORRO_COMMAND_MAP: dict[str, str] = {
 }
 PUBLIC_COMMAND_SUMMARIES: dict[str, str] = {
     "setup": "provision pinned Depone, initialize home, and write engine lock",
+    "skill": "refresh the packaged session skill",
     "init": "setup readiness/provision metadata; does not verify evidence",
     "scout": "read-only repository exploration and context packaging",
     "flowplan": "plan-only workflow design; does not run workers",

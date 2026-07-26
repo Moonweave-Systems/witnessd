@@ -1261,6 +1261,15 @@ def _cmd_orro_doctor(args: argparse.Namespace) -> int:
     checks.append({"name": "witnessd_import", "status": "pass"})
     home = Path(args.home).resolve(strict=False) if args.home else None
     env = os.environ.copy()
+    from witnessd.skill_install import inspect_skill
+
+    skill_check = inspect_skill()
+    if skill_check["status"] != "pass":
+        skill_check["remediation"] = {
+            "command": "python3 -m orro skill install --json",
+            "effect": "refreshes the installed ORRO session skill",
+        }
+    checks.append({"name": "installed_skill", **skill_check})
     if home is not None:
         from witnessd.distribution import classify_depone_pin_state
 
