@@ -26,7 +26,7 @@ to JCS, CBOR, or OVERT Protocol Profile 1.0 BLS threshold receipts.
 | Signature | Ed25519 via the local `openssl` CLI |
 | Runtime dependency | Python stdlib plus `openssl` CLI only |
 | Trust root | Operator public key distributed out-of-band |
-| Transparency log | Not implemented |
+| Transparency log | Optional Sigstore Fulcio/Rekor sidecar; not part of every receipt |
 | Notary independence | Operator-controlled Depone verifier |
 
 Key rotation and operator-key handling are documented in
@@ -54,10 +54,13 @@ Key rotation and operator-key handling are documented in
 independent timestamp authority. `parent_attestation_id` is content-free: only
 the hash reference crosses the boundary.
 
-`evidence_mode` is not enforced by bytes in W8/W9. witnessd has no live notary
-co-signature, co-epoch anchor, transparency-log timestamp, or independent
-timestamp authority that can prove `contemporaneous` versus `post_hoc`.
-`DELAYED_NOTARY` (`0x01`) is not modeled.
+`evidence_mode` is not enforced by bytes in W8/W9 or by the current runtime.
+The optional `keyless_attestation` sidecar can carry Fulcio identity material
+and a Rekor inclusion proof, but it does not provide independent control-
+execution attestation, apply to every receipt, or engage the two monitors
+required by OVERT §4.7.2. witnessd still has no live notary co-signature,
+independent co-epoch authority, or timestamp authority that can prove
+`contemporaneous` versus `post_hoc`. `DELAYED_NOTARY` (`0x01`) is not modeled.
 
 ## Validation
 
