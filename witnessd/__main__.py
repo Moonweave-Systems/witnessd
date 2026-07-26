@@ -482,6 +482,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     orro_flow.add_argument("--run-dir", default=None)
     orro_flow.add_argument(
+        "--keep-worktree",
+        action="store_true",
+        help="keep this run's worktree for inspection (default reclaims it after evidence is sealed)",
+    )
+    orro_flow.add_argument(
         "--roadmap-item",
         default=None,
         metavar="ID",

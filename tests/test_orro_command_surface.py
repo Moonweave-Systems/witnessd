@@ -121,6 +121,13 @@ class OrroCommandSurfaceTests(unittest.TestCase):
             self.assertIn("public Rekor", help_text)
             self.assertIn("fails closed", help_text)
 
+    def test_run_worktree_retention_is_explicitly_documented(self) -> None:
+        parser = _build_parser()
+        commands = parser._subparsers._group_actions[0].choices
+        for command in ("orro-flow",):
+            self.assertIn("--keep-worktree", commands[command].format_help())
+            self.assertIn("evidence is sealed", commands[command].format_help())
+
     def test_unknown_command_names_token_and_valid_commands(self) -> None:
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
