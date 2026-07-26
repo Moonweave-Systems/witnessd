@@ -464,7 +464,7 @@ def _execution_summary(
         summary_lanes.append(merged)
     execution_summary = summarize_executable_lanes(summary_lanes)
     detail_lanes = [_lane_identity_columns(lane) for lane in summary_lanes]
-    reviewer_lane_count = sum(1 for lane in summary_lanes if _is_reviewer_lane(lane))
+    reviewer_lane_count = sum(1 for lane in executed_lanes if _is_reviewer_lane(lane))
     policy_selected = len(summary_lanes) == 1 and (
         summary_lanes[0].get("model_source") == "model-policy"
     )

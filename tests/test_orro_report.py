@@ -167,7 +167,7 @@ class OrroReportTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (run_dir / "role-lane-plan.json").write_text(
-                json.dumps({"lanes": [{"lane_id": "runner", "adapter": "agy", "model": "planned"}]}),
+                json.dumps({"lanes": [{"lane_id": "runner", "phase": "review", "adapter": "agy", "model": "planned"}]}),
                 encoding="utf-8",
             )
             summary = _execution_summary(
@@ -178,6 +178,7 @@ class OrroReportTests(unittest.TestCase):
             self.assertEqual(summary["lanes"][0]["requested"]["adapter"], "agy")
             self.assertEqual(summary["lanes"][0]["observed"]["adapter"], "codex")
             self.assertIsNone(summary["lanes"][0]["observed"]["model"])
+            self.assertEqual(summary["reviewer_lane_count"], 0)
     def test_execution_summary_uses_observed_identity_over_requested_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp)
