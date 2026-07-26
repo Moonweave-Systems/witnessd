@@ -430,6 +430,8 @@ def summarize_executable_lanes(lanes: list[dict[str, Any]]) -> dict[str, Any]:
         "lane_count": lane_count,
         "distinct_adapter_count": distinct_adapter_count,
         "distinct_model_count": distinct_model_count,
+        "adapter_values": sorted(adapters),
+        "model_values": sorted(models),
         "adapter_value_source": _summary_value_source(adapter_sources),
         "model_value_source": _summary_value_source(model_sources),
         "multi_model_execution": lane_count > 1

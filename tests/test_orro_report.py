@@ -81,6 +81,19 @@ class OrroReportTests(unittest.TestCase):
 
             self.assertEqual(summary["adapter_values"], ["codex"])
             self.assertEqual(summary["adapter_value_source"], "observed")
+            text = render_text_report(
+                {
+                    "summary": {},
+                    "workflow": {},
+                    "execution": summary,
+                    "verification": {},
+                    "handoff": {},
+                    "human_review": {},
+                    "do_not_trust": [],
+                }
+            )
+            self.assertIn("adapter=codex (observed)", text)
+            self.assertNotIn("agy", text)
 
     def test_execution_summary_labels_plan_only_identity_as_requested(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

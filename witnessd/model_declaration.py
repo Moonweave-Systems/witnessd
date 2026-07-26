@@ -45,6 +45,8 @@ def build_model_declaration(
         "kind": MODEL_DECLARATION_KIND,
         "schema_version": MODEL_DECLARATION_SCHEMA_VERSION,
         "can_change_evidence_verdict": False,
+        "evidence_substrate": "producer-transcribed",
+        "means": "producer-reported declaration; not bundle-bound or verifier-re-derived",
         "adapter": adapter,
         "requested_model": requested_model,
         "verification_status": verification_status,

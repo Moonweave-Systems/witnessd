@@ -33,6 +33,8 @@ def build_write_scope_declaration(
         "kind": WRITE_SCOPE_DECLARATION_KIND,
         "schema_version": WRITE_SCOPE_DECLARATION_SCHEMA_VERSION,
         "can_change_evidence_verdict": False,
+        "evidence_substrate": "producer-transcribed",
+        "means": "producer-reported declaration; not bundle-bound or verifier-re-derived",
         "role_id": role_id,
         "lane_id": lane_id,
         "capability": capability,
