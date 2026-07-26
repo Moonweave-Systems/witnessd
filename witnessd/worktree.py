@@ -21,6 +21,63 @@ class WorktreeError(RuntimeError):
         self.message = message
 
 
+def reclaim_run_worktrees(
+    *, repo: Path, run_dir: Path, keep: bool = False
+) -> dict[str, Any]:
+    """Remove only worktrees owned by this run, leaving their branches intact."""
+    worktrees_dir = (run_dir / "worktrees").resolve(strict=False)
+    if keep:
+        return {
+            "action": "kept",
+            "reason": "--keep-worktree",
+            "paths": [str(path.resolve(strict=False)) for path in _run_worktree_dirs(worktrees_dir)],
+            "branch_refs_preserved": True,
+            "errors": [],
+        }
+
+    removed: list[str] = []
+    errors: list[str] = []
+    for path in _run_worktree_dirs(worktrees_dir):
+        try:
+            completed = subprocess.run(
+                ["git", "worktree", "remove", "--force", str(path)],
+                cwd=repo.resolve(strict=False),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as exc:
+            errors.append(f"git worktree remove failed: {exc}")
+            continue
+        if completed.returncode == 0:
+            removed.append(str(path))
+        else:
+            errors.append(
+                "git worktree remove failed: "
+                + (completed.stderr.strip() or completed.stdout.strip() or "unknown error")
+            )
+    return {
+        "action": "reclaim-failed" if errors else "reclaimed",
+        "paths": removed,
+        "branch_refs_preserved": True,
+        "errors": errors,
+    }
+
+
+def _run_worktree_dirs(worktrees_dir: Path) -> list[Path]:
+    if not worktrees_dir.is_dir() or worktrees_dir.is_symlink():
+        return []
+    try:
+        paths = (
+            path.resolve(strict=False)
+            for path in worktrees_dir.iterdir()
+            if path.is_dir() and not path.is_symlink()
+        )
+        return sorted(paths, key=str)
+    except OSError:
+        return []
+
+
 def _lane_slug(lane_id: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", lane_id).strip("-")
     digest = hashlib.sha256(lane_id.encode("utf-8")).hexdigest()[:12]

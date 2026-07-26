@@ -47,6 +47,7 @@ class OrroFlowTests(unittest.TestCase):
             "--rolepack-file",
             "--role-lane-tier",
             "--run-dir",
+            "--keep-worktree",
             "--allow-reference-adapter",
             "--verification-only",
             "--json",

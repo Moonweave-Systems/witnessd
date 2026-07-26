@@ -147,6 +147,7 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
         else Path(tempfile.mkdtemp(prefix="orro-flow-runner-")).resolve(strict=False)
     )
     from witnessd.cli.team_ops import _paths_overlap
+    from witnessd.worktree import reclaim_run_worktrees
 
     if _paths_overlap(runner_sandbox, run_dir):
         return _emit_orro_flow_blocker(
@@ -181,6 +182,7 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
     workflow_plan_path = run_dir / "workflow-plan.json"
     role_lane_plan_path = run_dir / "role-lane-plan.json"
     proofcheck_path = run_dir / "proofcheck-verdict.json"
+    worktree_reclamation: dict[str, object] | None = None
     rolepack_path = (
         Path(args.rolepack_file).resolve(strict=False)
         if args.rolepack_file
@@ -491,6 +493,17 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
     proofrun_code, proofrun_payload, proofrun_error = _invoke_orro_flow_phase(
         proofrun_argv
     )
+    worktree_reclamation = reclaim_run_worktrees(
+        repo=repo,
+        run_dir=run_dir,
+        keep=args.keep_worktree,
+    )
+    if worktree_reclamation.get("errors"):
+        print(
+            "warning: could not reclaim run worktree: "
+            + "; ".join(str(error) for error in worktree_reclamation["errors"]),
+            file=sys.stderr,
+        )
     if proofrun_code != 0:
         return _emit_orro_flow_blocker(
             args,
@@ -503,6 +516,7 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
                 payload=proofrun_payload,
                 fallback_message=proofrun_error,
             ),
+            worktree_reclamation=worktree_reclamation,
         )
     phases.append(
         {
@@ -537,6 +551,7 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
                 payload=proofcheck_payload,
                 fallback_message=proofcheck_error,
             ),
+            worktree_reclamation=worktree_reclamation,
         )
     phases.append(
         {
@@ -556,6 +571,7 @@ def _run_orro_flow(args: argparse.Namespace) -> int:
         "run_dir": str(run_dir),
         "verdict": str(proofcheck_path),
         "runner_sandbox": str(runner_sandbox),
+        "worktree_reclamation": worktree_reclamation,
         "phases": phases,
     }
     print(json.dumps(result, sort_keys=True))
@@ -600,6 +616,7 @@ def _emit_orro_flow_blocker(
     run_dir: Path | None,
     phases: list[dict[str, object]],
     error: dict[str, object],
+    worktree_reclamation: dict[str, object] | None = None,
 ) -> int:
     payload = {
         "kind": "orro-flow-result",
@@ -609,6 +626,8 @@ def _emit_orro_flow_blocker(
         "error": error,
         "phases": phases,
     }
+    if worktree_reclamation is not None:
+        payload["worktree_reclamation"] = worktree_reclamation
     print(json.dumps(payload, sort_keys=True))
     return 2
 
