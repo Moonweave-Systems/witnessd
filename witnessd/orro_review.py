@@ -19,7 +19,6 @@ from witnessd.adapters.claude import (
     ClaudeAdapterError,
     run_claude_critic_lane,
 )
-from witnessd.adapters.gemini import GeminiAdapterError, run_gemini_review_lane
 from witnessd.model_declaration import (
     VERIFICATION_REQUESTED_UNCONFIRMED,
     build_model_declaration,
@@ -248,27 +247,6 @@ def _run_review_lane(
                 env=adapter_env,
                 model=model_arg,
             )
-        elif adapter == "gemini":
-            result = run_gemini_review_lane(
-                sandbox=str(repo),
-                prompt=str(lane["prompt"]),
-                gemini_binary=gemini_binary,
-                transcript_path=str(adapter_evidence_dir / "events.raw.jsonl"),
-                review_receipt_path=str(adapter_evidence_dir / "review-receipt.json"),
-                log_path=str(adapter_evidence_dir / "command-log.json"),
-                timeout_seconds=timeout_seconds,
-                env=adapter_env,
-            )
-            if model_arg is not None:
-                result = _with_model_declaration(
-                    result,
-                    build_model_declaration(
-                        adapter="gemini",
-                        requested_model=model_arg,
-                        verification_status=VERIFICATION_REQUESTED_UNCONFIRMED,
-                        detail="gemini review model routing is not live-verified by witnessd",
-                    ),
-                )
         else:
             raise OrroReviewError(
                 ERR_ORRO_REVIEW_LANE_UNSUPPORTED,
@@ -277,7 +255,6 @@ def _run_review_lane(
     except (
         AgyAdapterError,
         ClaudeAdapterError,
-        GeminiAdapterError,
         AdapterExecutionError,
     ) as exc:
         code = getattr(exc, "code", ERR_ORRO_REVIEW_LANE_UNSUPPORTED)

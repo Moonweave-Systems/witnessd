@@ -355,7 +355,7 @@ def _flowplan_role_lane_error_details(
     resolved_adapter = next(
         (
             adapter
-            for adapter in ("shell", "codex", "claude", "agy", "gemini", "opencode")
+            for adapter in ("shell", "codex", "claude", "agy", "opencode")
             if f"adapter {adapter!r}" in message
         ),
         str(args.lane_adapter),

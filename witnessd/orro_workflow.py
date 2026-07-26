@@ -44,6 +44,7 @@ ERR_ORRO_COMMAND_CHECK_CONFLICT = "ERR_ORRO_COMMAND_CHECK_CONFLICT"
 ERR_ORRO_COMMAND_PROFILE_UNSUPPORTED = "ERR_ORRO_COMMAND_PROFILE_UNSUPPORTED"
 ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED = "ERR_ROLE_CAPABILITY_ADAPTER_NOT_GRANTED"
 ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION = "ERR_ROLE_CAPABILITY_WRITE_SCOPE_VIOLATION"
+ERR_GEMINI_ADAPTER_RETIRED = "ERR_GEMINI_ADAPTER_RETIRED"
 
 WORKFLOW_PLAN_KIND = "orro-workflow-plan"
 WORKFLOW_PLAN_SCHEMA_VERSION = "0.1"
@@ -56,11 +57,11 @@ ROLE_LANE_PLAN_BINDING_SCHEMA_VERSION = "0.1"
 ROLE_DISPATCH_KIND = "orro-role-dispatch"
 ROLE_DISPATCH_SCHEMA_VERSION = "0.1"
 ROLE_LANE_PLACEHOLDER_PROMPT_PREFIX = "Execute ORRO role "
-ROLE_LANE_ADAPTERS = ("shell", "codex", "claude", "agy", "gemini", "opencode")
-# Review-only vendors (agy/gemini) must never land in an execution/proofrun
+ROLE_LANE_ADAPTERS = ("shell", "codex", "claude", "agy", "opencode")
+# Review-only vendors must never land in an execution/proofrun
 # lane, policy-resolved or not -- they have no execution role in this design,
 # only a read-only review one (enforced in _validate_role_lane).
-REVIEW_ONLY_ADAPTERS = ("agy", "gemini")
+REVIEW_ONLY_ADAPTERS = ("agy",)
 CLAUDE_CRITIC_CONTRACT = "claude-critic-v2.1"
 EXECUTION_LANE_ADAPTERS = tuple(
     adapter for adapter in ROLE_LANE_ADAPTERS if adapter not in REVIEW_ONLY_ADAPTERS
@@ -258,6 +259,11 @@ def compile_role_lane_plan(
     command_commands: list[str] | None = None,
 ) -> dict[str, Any]:
     validate_workflow_plan(workflow_plan)
+    if lane_adapter == "gemini":
+        raise OrroWorkflowError(
+            ERR_GEMINI_ADAPTER_RETIRED,
+            "the Gemini adapter is retired and unavailable; use agy instead",
+        )
     if lane_adapter not in ROLE_LANE_ADAPTERS:
         raise OrroWorkflowError(
             ERR_ORRO_ROLE_LANE_ADAPTER_UNSUPPORTED,
@@ -356,7 +362,7 @@ def compile_role_lane_plan(
                     )
                 )
     elif profile == "review-only" and (
-        policy is not None or rolepack is not None or lane_adapter in {"agy", "gemini"}
+        policy is not None or rolepack is not None or lane_adapter == "agy"
     ):
         for role in workflow_plan["roles"]:
             if isinstance(role, dict) and role.get("role_id") == "reviewer":

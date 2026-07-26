@@ -115,7 +115,7 @@ class OrroWorkflowTests(unittest.TestCase):
             lane_adapter="agy",
         )
 
-        self.assertEqual(REVIEW_ONLY_ADAPTERS, ("agy", "gemini"))
+        self.assertEqual(REVIEW_ONLY_ADAPTERS, ("agy",))
         self.assertEqual(plan["profile"], "critic-only")
         self.assertNotIn("proofrun", plan["flow"])
         self.assertFalse(role_lanes["execution_allowed"])
@@ -361,35 +361,6 @@ class OrroWorkflowTests(unittest.TestCase):
         self.assertEqual(role_lane_plan["distinct_adapter_count"], 2)
         self.assertEqual(role_lane_plan["distinct_model_count"], 2)
         self.assertTrue(role_lane_plan["multi_model_execution"])
-
-    def test_flowplan_role_lanes_review_only_can_route_to_gemini_reviewer(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "role-lane-plan.json"
-            code, _payload = self._flowplan(
-                [
-                    "review safely",
-                    "--root",
-                    tmp,
-                    "--profile",
-                    "review-only",
-                    "--role-lanes-out",
-                    str(out),
-                    "--lane-adapter",
-                    "gemini",
-                ]
-            )
-
-            self.assertEqual(code, 0)
-            role_lanes = json.loads(out.read_text(encoding="utf-8"))
-            self.assertFalse(role_lanes["execution_allowed"])
-            self.assertEqual(role_lanes["workflow_profile"], "review-only")
-            self.assertEqual(len(role_lanes["lanes"]), 1)
-            lane = role_lanes["lanes"][0]
-            self.assertEqual(lane["role_id"], "reviewer")
-            self.assertEqual(lane["adapter"], "gemini")
-            self.assertFalse(lane["may_execute"])
-            self.assertFalse(lane["may_verify"])
-            self.assertEqual(lane["phase"], "review")
 
     def test_flowplan_role_lanes_review_only_can_route_to_agy_reviewer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

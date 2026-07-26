@@ -45,7 +45,6 @@ RUNNER_KIND_BY_ADAPTER = {
     "codex": "codex-cli",
     "agy": "manual",
     "claude": "manual",
-    "gemini": "manual",
     "opencode": "manual",
 }
 

@@ -25,6 +25,24 @@ RUNNER_SANDBOX_HELP = (
 )
 
 
+GEMINI_MIGRATION_ERROR = (
+    "ERR_GEMINI_ADAPTER_RETIRED: the Gemini adapter is retired and unavailable; "
+    "use agy instead, for example `python3 -m orro flowplan <goal> --lane-adapter agy` "
+    "or `python3 -m orro review --agy-binary <path>`"
+)
+
+
+def _public_adapter(value: str) -> str:
+    if value == "gemini":
+        raise argparse.ArgumentTypeError(GEMINI_MIGRATION_ERROR)
+    return value
+
+
+class _RetiredGeminiBinaryAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        raise argparse.ArgumentError(self, GEMINI_MIGRATION_ERROR)
+
+
 def _cli_handler(module: str, name: str):
     def _invoke(args: argparse.Namespace) -> int:
         import importlib
@@ -243,7 +261,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--adapter",
         action="append",
         default=None,
-        choices=["codex", "claude", "agy", "gemini", "opencode"],
+        type=_public_adapter,
+        choices=["codex", "claude", "agy", "opencode"],
     )
     orro_doctor.add_argument("--json", action="store_true")
     orro_doctor.add_argument("--engine-lock", default=None)
@@ -292,7 +311,7 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_review.add_argument("--role-lane-plan", required=True)
     orro_review.add_argument("--claude-binary", default="claude")
     orro_review.add_argument("--agy-binary", default="agy")
-    orro_review.add_argument("--gemini-binary", default="gemini")
+    orro_review.add_argument("--gemini-binary", action=_RetiredGeminiBinaryAction, default="gemini", help=argparse.SUPPRESS)
     orro_review.add_argument("--timeout-seconds", type=int, default=120)
     orro_review.add_argument("--json", action="store_true")
     orro_review.set_defaults(func=_cli_handler("advisory", "_cmd_orro_review"))
@@ -366,7 +385,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     orro_check.add_argument(
-        "--reviewer", default=None, choices=["agy", "gemini", "claude"]
+        "--reviewer", default=None, type=_public_adapter, choices=["agy", "claude"]
     )
     orro_check.add_argument("--reviewer-binary", default=None)
     orro_check.add_argument("--no-review", action="store_true")
@@ -432,7 +451,8 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_flow.add_argument(
         "--adapter",
         default=None,
-        choices=["shell", "codex", "claude", "agy", "gemini", "opencode"],
+        type=_public_adapter,
+        choices=["shell", "codex", "claude", "agy", "opencode"],
     )
     orro_flow.add_argument("--home", default=None)
     orro_flow.add_argument("--depone-root", default=None, help="pass a local Depone checkout to the init phase")
@@ -662,7 +682,7 @@ def _build_parser() -> argparse.ArgumentParser:
     team_go.add_argument("--codex-binary", default="codex")
     team_go.add_argument("--claude-binary", default="claude")
     team_go.add_argument("--agy-binary", default="agy")
-    team_go.add_argument("--gemini-binary", default="gemini")
+    team_go.add_argument("--gemini-binary", action=_RetiredGeminiBinaryAction, default="gemini", help=argparse.SUPPRESS)
     team_go.add_argument("--opencode-binary", default="opencode")
     team_go.add_argument("--json", action="store_true")
     team_go.set_defaults(func=_cli_handler("team_go", "_cmd_team_go"))
@@ -705,7 +725,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     team_plan_run.add_argument(
         "--lane-adapter",
-        choices=["shell", "codex", "claude", "agy", "gemini", "opencode"],
+        type=_public_adapter,
+        choices=["shell", "codex", "claude", "agy", "opencode"],
         default="shell",
     )
     team_plan_run.add_argument("--tier", default="agentic")
@@ -723,7 +744,7 @@ def _build_parser() -> argparse.ArgumentParser:
     team_plan_run.add_argument("--codex-binary", default="codex")
     team_plan_run.add_argument("--claude-binary", default="claude")
     team_plan_run.add_argument("--agy-binary", default="agy")
-    team_plan_run.add_argument("--gemini-binary", default="gemini")
+    team_plan_run.add_argument("--gemini-binary", action=_RetiredGeminiBinaryAction, default="gemini", help=argparse.SUPPRESS)
     team_plan_run.add_argument("--opencode-binary", default="opencode")
     team_plan_run.add_argument("--max-parallel", type=int, default=None)
     team_plan_run.add_argument("--fail-fast", action="store_true")
@@ -871,7 +892,7 @@ def _add_plan_args(plan: argparse.ArgumentParser) -> None:
     plan.add_argument("--root", "--repo", dest="root", default=".")
     plan.add_argument("--seed", default="w11")
     plan.add_argument(
-        "--draft-adapter", choices=["codex", "claude", "agy", "gemini", "opencode"]
+        "--draft-adapter", type=_public_adapter, choices=["codex", "claude", "agy", "opencode"]
     )
     plan.add_argument("--draft-out", default=None)
     plan.add_argument(
@@ -880,7 +901,7 @@ def _add_plan_args(plan: argparse.ArgumentParser) -> None:
     plan.add_argument("--codex-binary", default="codex")
     plan.add_argument("--claude-binary", default="claude")
     plan.add_argument("--agy-binary", default="agy")
-    plan.add_argument("--gemini-binary", default="gemini")
+    plan.add_argument("--gemini-binary", action=_RetiredGeminiBinaryAction, default="gemini", help=argparse.SUPPRESS)
     plan.add_argument("--opencode-binary", default="opencode")
     plan.add_argument("--max-tokens", type=int, default=10**9)
     plan.add_argument("--max-usd", type=float, default=10**9)
@@ -903,7 +924,8 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
     run.add_argument(
         "--adapter",
         default="shell",
-        choices=["shell", "codex", "claude", "agy", "gemini", "opencode"],
+        type=_public_adapter,
+        choices=["shell", "codex", "claude", "agy", "opencode"],
     )
     run.add_argument("--root", default=".")
     run.add_argument(
@@ -933,7 +955,7 @@ def _add_run_args(run: argparse.ArgumentParser) -> None:
     run.add_argument("--codex-binary", default="codex")
     run.add_argument("--claude-binary", default="claude")
     run.add_argument("--agy-binary", default="agy")
-    run.add_argument("--gemini-binary", default="gemini")
+    run.add_argument("--gemini-binary", action=_RetiredGeminiBinaryAction, default="gemini", help=argparse.SUPPRESS)
     run.add_argument("--opencode-binary", default="opencode")
     run.add_argument("--max-tokens", type=int, default=10**9)
     run.add_argument("--max-usd", type=float, default=10**9)
@@ -1028,7 +1050,8 @@ def _add_flowplan_args(flowplan: argparse.ArgumentParser) -> None:
     flowplan.add_argument(
         "--lane-adapter",
         default="shell",
-        choices=["shell", "codex", "claude", "agy", "gemini", "opencode"],
+        type=_public_adapter,
+        choices=["shell", "codex", "claude", "agy", "opencode"],
     )
     flowplan.add_argument(
         "--role-lane-tier",

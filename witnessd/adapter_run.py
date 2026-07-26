@@ -13,7 +13,6 @@ from typing import Any, Callable
 from witnessd.adapters.claude import run_claude_lane
 from witnessd.adapters.codex import run_codex_lane
 from witnessd.adapters.agy import ERR_AGY_INVALID_CONTEXT, run_agy_review_lane
-from witnessd.adapters.gemini import run_gemini_review_lane
 from witnessd.adapters.opencode import run_opencode_lane
 from witnessd.budget import BudgetExceededError, CostBreaker
 from witnessd.emitter import emit_lane_evidence
@@ -169,19 +168,6 @@ def _run_adapter(
             timeout_seconds=timeout_seconds,
             env=adapter_env,
             model=model,
-        )
-    if adapter == "gemini":
-        return run_gemini_review_lane(
-            sandbox=sandbox,
-            prompt=prompt,
-            gemini_binary=gemini_binary,
-            transcript_path=transcript_path,
-            review_receipt_path=str(
-                Path(transcript_path).with_name("review-receipt.json")
-            ),
-            log_path=log_path,
-            timeout_seconds=timeout_seconds,
-            env=adapter_env,
         )
     if adapter == "opencode":
         return run_opencode_lane(

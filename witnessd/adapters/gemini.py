@@ -39,6 +39,11 @@ class GeminiAdapterError(AdapterExecutionError):
     pass
 
 
+GEMINI_RETIREMENT_MESSAGE = (
+    "the Gemini adapter is retired and unavailable; use agy instead"
+)
+
+
 class GeminiCLIAdapter:
     provider = "google-gemini"
 
@@ -247,6 +252,7 @@ def run_gemini_review_lane(
     timeout_seconds: int = 120,
     env: dict[str, str] | None = None,
 ) -> AdapterResult:
+    raise GeminiAdapterError("ERR_GEMINI_ADAPTER_RETIRED", GEMINI_RETIREMENT_MESSAGE)
     if not prompt.strip():
         raise GeminiAdapterError(
             "ERR_GEMINI_PROMPT_MISSING", "gemini review prompt must not be empty"

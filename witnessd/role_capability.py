@@ -12,7 +12,12 @@ ROLEPACK_KIND = "moonweave-rolepack"
 ROLEPACK_SCHEMA_VERSION = "0.2"
 ROLE_CAPABILITY_SCHEMA_VERSION = "0.2"
 ROLE_CAPABILITY_CAPABILITIES = ("execute", "review")
-ROLE_CAPABILITY_ADAPTERS = ("shell", "codex", "claude", "agy", "gemini", "opencode")
+ROLE_CAPABILITY_ADAPTERS = ("shell", "codex", "claude", "agy", "opencode")
+ERR_GEMINI_ADAPTER_RETIRED = "ERR_GEMINI_ADAPTER_RETIRED"
+GEMINI_MIGRATION_MESSAGE = (
+    "the Gemini adapter is retired and unavailable; use agy instead, for example "
+    "`python3 -m orro flowplan <goal> --lane-adapter agy`"
+)
 
 _GRANT_FIELDS = {
     "schema_version",
@@ -82,6 +87,8 @@ class RoleCapabilityGrant:
         unknown_adapters = [
             adapter for adapter in adapters if adapter not in ROLE_CAPABILITY_ADAPTERS
         ]
+        if "gemini" in adapters:
+            raise RolepackError(ERR_GEMINI_ADAPTER_RETIRED, GEMINI_MIGRATION_MESSAGE)
         if unknown_adapters:
             raise ValueError(
                 "role capability grant adapters are unsupported: "
