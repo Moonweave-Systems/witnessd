@@ -286,6 +286,7 @@ def _run_claimed_lanes_parallel(
                 time.sleep(0.02)
                 continue
 
+            fail_fast_triggered = False
             for handle in completed:
                 job = active.pop(handle)
                 exit_code = supervisor.wait(handle)
@@ -295,36 +296,38 @@ def _run_claimed_lanes_parallel(
                 schedule_lanes.append(schedule)
                 lane = _read_lane_exec_result(job, base_commit, exit_code)
                 lane["_order"] = int(job["order"])
-                outputs.append(lane)
-                if fail_fast and _lane_failed(lane) and (active or pending):
-                    cancelling = True
-                    cancelled_jobs = list(active.items()) + [
-                        (None, queued) for queued in pending
-                    ]
-                    pending.clear()
-                    _cancel_active_lanes(
-                        active=active,
-                        log=log,
-                        run_id=run_id,
-                        schedule_lanes=schedule_lanes,
-                        outputs=outputs,
-                        base_commit=base_commit,
-                        supervisor=supervisor,
-                    )
-                    for _handle, queued in cancelled_jobs:
-                        if _handle is None:
-                            schedule = _unspawned_cancel_schedule(queued)
-                            schedule_lanes.append(schedule)
-                            outputs.append(
-                                _cancelled_lane(
-                                    str(queued["lane_id"]),
-                                    queued["spec"],
-                                    base_commit,
-                                )
-                            )
-                            outputs[-1]["_order"] = int(queued["order"])
-                    active.clear()
-                    break
+                _record_lane_output(outputs, lane, terminal_kind="own")
+                fail_fast_triggered = fail_fast_triggered or (
+                    fail_fast and _lane_failed(lane)
+                )
+            if fail_fast_triggered and (active or pending):
+                cancelling = True
+                cancelled_jobs = list(active.items()) + [
+                    (None, queued) for queued in pending
+                ]
+                pending.clear()
+                _cancel_active_lanes(
+                    active=active,
+                    log=log,
+                    run_id=run_id,
+                    schedule_lanes=schedule_lanes,
+                    outputs=outputs,
+                    base_commit=base_commit,
+                    supervisor=supervisor,
+                )
+                for _handle, queued in cancelled_jobs:
+                    if _handle is None:
+                        schedule = _unspawned_cancel_schedule(queued)
+                        schedule_lanes.append(schedule)
+                        cancelled = _cancelled_lane(
+                            str(queued["lane_id"]), queued["spec"], base_commit
+                        )
+                        cancelled["_order"] = int(queued["order"])
+                        _record_lane_output(
+                            outputs, cancelled, terminal_kind="fail-fast-cancel"
+                        )
+                active.clear()
+                break
     finally:
         _reap_remaining(supervisor, log, run_id)
     return sorted(outputs, key=lambda lane: int(lane.get("_order", 0)))
@@ -789,9 +792,32 @@ def _cancel_active_lanes(
         schedule = job["schedule"]
         _finish_schedule_lane(schedule, exit_code)
         schedule_lanes.append(schedule)
-        outputs.append(_cancelled_lane(handle.lane_id, job["spec"], base_commit))
-        outputs[-1]["_order"] = int(job["order"])
+        cancelled = _cancelled_lane(handle.lane_id, job["spec"], base_commit)
+        cancelled["_order"] = int(job["order"])
+        _record_lane_output(outputs, cancelled, terminal_kind="fail-fast-cancel")
         supervisor.forget(handle)
+
+
+def _record_lane_output(
+    outputs: list[dict[str, Any]],
+    lane: dict[str, Any],
+    *,
+    terminal_kind: str,
+) -> None:
+    """Record one terminal lane outcome without allowing cancellation to win."""
+    lane_id = str(lane["lane_id"])
+    for index, existing in enumerate(outputs):
+        if str(existing.get("lane_id")) != lane_id:
+            continue
+        existing_reason = existing.get("ledger_lane", {}).get("blocked_reason")
+        if terminal_kind == "fail-fast-cancel":
+            if existing_reason != ERR_TEAM_LANE_CANCELLED_FAIL_FAST:
+                return
+            return
+        if existing_reason == ERR_TEAM_LANE_CANCELLED_FAIL_FAST:
+            outputs[index] = lane
+        return
+    outputs.append(lane)
 
 
 def _kill_target_from_handle(handle: WorkerHandle):
