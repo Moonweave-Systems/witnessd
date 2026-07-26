@@ -17,7 +17,12 @@ from depone.agent_fabric.team_ledger import (
 )
 
 from witnessd.eventlog import EventLog
-from witnessd.fanin import _read_lane_exec_result, run_team
+from witnessd.fanin import (
+    _cancelled_lane,
+    _read_lane_exec_result,
+    _record_lane_output,
+    run_team,
+)
 from witnessd.killswitch import active_targets_from_runlog
 from witnessd.__main__ import main
 from witnessd.cli.team_ops import _codex_specs_are_isolated
@@ -67,6 +72,43 @@ class TestW15ParallelExecution(unittest.TestCase):
         )
         result["repo"] = repo
         return result
+
+    def test_fail_fast_cancellation_yields_to_later_own_failure(self):
+        outputs = []
+        cancelled = _cancelled_lane("fail-lane", {}, "base-commit")
+        failed = {
+            "lane_id": "fail-lane",
+            "ledger_lane": {
+                "lane_id": "fail-lane",
+                "verification_state": "blocked",
+                "blocked_reason": "ERR_TEAM_LANE_FAILED",
+            },
+        }
+
+        _record_lane_output(outputs, cancelled, terminal_kind="fail-fast-cancel")
+        _record_lane_output(outputs, failed, terminal_kind="own")
+
+        self.assertEqual(
+            outputs[0]["ledger_lane"]["blocked_reason"], "ERR_TEAM_LANE_FAILED"
+        )
+
+    def test_fail_fast_does_not_cancel_lane_with_own_success(self):
+        outputs = []
+        succeeded = {
+            "lane_id": "complete-lane",
+            "ledger_lane": {
+                "lane_id": "complete-lane",
+                "verification_state": "pass",
+            },
+        }
+        cancelled = _cancelled_lane("complete-lane", {}, "base-commit")
+
+        _record_lane_output(outputs, succeeded, terminal_kind="own")
+        _record_lane_output(outputs, cancelled, terminal_kind="fail-fast-cancel")
+
+        self.assertEqual(
+            outputs[0]["ledger_lane"]["verification_state"], "pass"
+        )
 
     def test_parallel_lanes_emit_depone_schedule_receipt_with_overlap(self):
         result = self._run(
