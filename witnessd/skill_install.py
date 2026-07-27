@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.metadata
 import os
 import re
+import sys
 import tempfile
 from pathlib import Path
 
@@ -33,18 +34,23 @@ def installed_skill_path(name: str = "orro") -> Path:
 
 def _skill_source(name: str = "orro") -> str:
     source_name = "SKILL.md" if name == "orro" else "SKILL_INSPECT.md"
+    candidates: list[Path] = []
     try:
-        packaged = importlib.metadata.distribution("witnessd").locate_file(
+        candidates.append(importlib.metadata.distribution("witnessd").locate_file(
             f"share/witnessd/{source_name}"
-        )
-        if packaged.is_file():
-            return packaged.read_text(encoding="utf-8")
+        ))
     except (importlib.metadata.PackageNotFoundError, OSError, UnicodeDecodeError):
         pass
-    source = Path(__file__).resolve().parents[1] / source_name
-    if not source.is_file():
-        raise FileNotFoundError("packaged ORRO skill source is unavailable")
-    return source.read_text(encoding="utf-8")
+    for prefix in dict.fromkeys((sys.prefix, sys.base_prefix)):
+        candidates.append(Path(prefix) / "share" / "witnessd" / source_name)
+    candidates.append(Path(__file__).resolve().parents[1] / source_name)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.read_text(encoding="utf-8")
+    tried = ", ".join(str(candidate) for candidate in candidates)
+    raise FileNotFoundError(
+        f"packaged ORRO skill source is unavailable; tried: {tried}"
+    )
 
 
 def skill_text(name: str = "orro") -> str:
