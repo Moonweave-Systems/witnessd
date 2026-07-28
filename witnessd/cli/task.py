@@ -32,7 +32,7 @@ def _cmd_orro_task(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(payload, sort_keys=True))
     else:
-        print(f"ORRO task begin: {payload['item_id']} ({payload['state']})")
+        print(f"ORRO workspace begin: {payload['item_id']} ({payload['state']})")
         print(f"  worktree: {payload['worktree']}")
         print(f"  branch: {payload['branch']}")
         print(f"  base commit: {payload['base_commit']}")

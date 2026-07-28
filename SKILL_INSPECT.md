@@ -7,7 +7,7 @@ witnessd_generated: true
 
 # orro-inspect - read-only ORRO lookup
 
-Use this skill when an operator wants to look something up: run status, tidy
+Use this skill when an operator wants to look something up: run status, workspace
 inventory, doctor readiness, or advise routing. These commands
 are observation and planning surfaces; they do not launch repository work or
 change the repository.
@@ -17,7 +17,7 @@ change the repository.
 | Mode | Meaning |
 | --- | --- |
 | `orro status` | roadmap status, or a run-scoped report with `<run-dir>` or `--latest` |
-| `orro tidy` | dry-run worktree inventory |
+| `orro workspace tidy` | dry-run worktree inventory |
 | `orro doctor` | engine, verifier, adapter, key, MCP, and policy readiness check |
 | `orro advise` | non-executing workstyle router for the smallest safe workflow |
 
@@ -43,7 +43,7 @@ new-work goals or symptom-shaped goals. Use `--mode route|sketch|trace` to
 select the route explicitly. These advisory paths remain non-executing and
 preserve their existing artifact schemas.
 
-For roadmap status, tidy retention, task workspaces, and bounded continuation,
+For roadmap status, workspace retention, task workspaces, and bounded continuation,
 load the relevant progressive-disclosure reference. These references do not
 create proof or a new assurance source.
 
@@ -61,5 +61,5 @@ surfaces.
 ## Boundaries
 
 - Do not launch adapter lanes or workers.
-- Do not apply tidy changes or otherwise mutate a repository.
+- Do not apply workspace tidy changes or otherwise mutate a repository.
 - Do not treat skill text, terminal state, or advisory output as proof.

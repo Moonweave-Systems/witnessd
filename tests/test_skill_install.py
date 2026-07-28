@@ -158,12 +158,25 @@ class SkillInstallTests(unittest.TestCase):
         }
         inspect_verbs = set(ORRO_COMMAND_MAP) - risky_verbs
         for verb in ORRO_COMMAND_MAP:
+            if verb == "workspace":
+                continue
             matches = [
                 name
                 for name, text in texts.items()
                 if re.search(rf"\borro\s+{re.escape(verb)}\b", text)
             ]
             self.assertEqual(matches, ["orro-inspect"] if verb in inspect_verbs else ["orro"], verb)
+        workspace_surfaces = {
+            "begin": "orro",
+            "tidy": "orro-inspect",
+        }
+        for subcommand, expected_skill in workspace_surfaces.items():
+            matches = [
+                name
+                for name, text in texts.items()
+                if re.search(rf"\borro\s+workspace\s+{subcommand}\b", text)
+            ]
+            self.assertEqual(matches, [expected_skill], subcommand)
 
     def test_inspect_skill_contains_no_risky_public_command(self) -> None:
         from witnessd.__main__ import ORRO_COMMAND_MAP
@@ -175,7 +188,10 @@ class SkillInstallTests(unittest.TestCase):
             verb for verb, target in ORRO_COMMAND_MAP.items() if target in ORRO_RISKY_COMMAND_TARGETS
         }
         for verb in risky_verbs:
+            if verb == "workspace":
+                continue
             self.assertIsNone(re.search(rf"\borro\s+{re.escape(verb)}\b", inspect_text), verb)
+        self.assertIsNone(re.search(r"\borro\s+workspace\s+begin\b", inspect_text))
 
     def test_install_refuses_unowned_file_unless_forced(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
