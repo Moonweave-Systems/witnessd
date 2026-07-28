@@ -5,6 +5,7 @@ import unittest
 from orro.__main__ import ORRO_HELP, _build_orro_help, main as orro_main
 from witnessd.__main__ import (
     ORRO_COMMAND_MAP,
+    ORRO_REMOVED_ALIASES,
     PUBLIC_COMMAND_SUMMARIES,
     _build_parser,
     _normalize_orro_argv,
@@ -20,7 +21,7 @@ class OrroCommandSurfaceTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             _build_orro_help(summaries=missing_summary)
 
-    def test_public_command_map_is_present_in_in_process_help(self) -> None:
+    def test_public_command_map_is_grouped_in_in_process_help(self) -> None:
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
             result = orro_main(["--help"])
@@ -29,6 +30,19 @@ class OrroCommandSurfaceTests(unittest.TestCase):
         help_text = stdout.getvalue()
         for command in ORRO_COMMAND_MAP:
             self.assertIn(command, help_text)
+        primary_help = help_text.split("primary commands:\n", 1)[1].split(
+            "\n\nsetup and diagnostics:\n", 1
+        )[0]
+        diagnostic_help = help_text.split("\n\nsetup and diagnostics:\n", 1)[1].split(
+            "\n\nboundary:\n", 1
+        )[0]
+        for command in (
+            "init",
+            "engine-lock",
+            "advisory-provenance-check",
+        ):
+            self.assertNotIn(f"  {command} ", primary_help)
+            self.assertIn(f"  {command} ", diagnostic_help)
 
     def test_execution_surfaces_expose_explicit_roadmap_item(self) -> None:
         parser = _build_parser()
@@ -83,7 +97,7 @@ class OrroCommandSurfaceTests(unittest.TestCase):
         self.assertIn("pinned Depone checkout", setup_help)
         self.assertIn("setup-time provisioning", setup_help)
 
-    def test_status_and_tidy_use_distinct_internal_commands(self) -> None:
+    def test_workspace_groups_task_begin_and_tidy_without_changing_options(self) -> None:
         parser = _build_parser()
         commands = parser._subparsers._group_actions[0].choices
 
@@ -91,24 +105,47 @@ class OrroCommandSurfaceTests(unittest.TestCase):
             ["orro-status", "--repo", "/tmp/repo", "--home", "/tmp/home", "--json"]
         )
         tidy = parser.parse_args(
-            ["orro-tidy", "--repo", "/tmp/repo", "--home", "/tmp/home", "--apply"]
+            [
+                "orro-workspace",
+                "tidy",
+                "--repo",
+                "/tmp/repo",
+                "--home",
+                "/tmp/home",
+                "--apply",
+            ]
         )
         task = parser.parse_args(
-            ["orro-task", "begin", "item-one", "--repo", "/tmp/repo", "--base", "HEAD", "--no-open", "--json"]
+            [
+                "orro-workspace",
+                "begin",
+                "item-one",
+                "--repo",
+                "/tmp/repo",
+                "--base",
+                "HEAD",
+                "--no-open",
+                "--json",
+            ]
         )
 
         self.assertEqual(status.cmd, "orro-status")
-        self.assertEqual(tidy.cmd, "orro-tidy")
+        self.assertEqual(tidy.cmd, "orro-workspace")
+        self.assertEqual(tidy.workspace_command, "tidy")
         self.assertTrue(status.json)
         self.assertTrue(tidy.apply)
-        self.assertEqual(task.task_command, "begin")
+        self.assertEqual(task.workspace_command, "begin")
         self.assertEqual(task.item_id, "item-one")
         self.assertTrue(task.no_open)
         self.assertTrue(task.json)
-        self.assertNotIn("--force", commands["orro-tidy"].format_help())
-        self.assertIn("not proof", commands["orro-task"].format_help())
-        self.assertIn("Merge approval and merge execution stay human", commands["orro-task"].format_help())
-        for command in ("status", "tidy"):
+        workspace_commands = commands["orro-workspace"]._subparsers._group_actions[0].choices
+        self.assertNotIn("--force", workspace_commands["tidy"].format_help())
+        self.assertIn("not proof", workspace_commands["begin"].format_help())
+        self.assertIn(
+            "Merge approval and merge execution stay human",
+            commands["orro-workspace"].format_help(),
+        )
+        for command in ("status", "workspace"):
             self.assertIn(command, ORRO_HELP)
 
     def test_run_and_proofrun_expose_honest_keyless_opt_in(self) -> None:
@@ -163,14 +200,12 @@ class OrroCommandSurfaceTests(unittest.TestCase):
             "ship": "ship",
             "doctor": "orro-doctor",
             "engine-lock": "engine-lock",
-            "lock": "engine-lock",
             "advise": "orro-advise",
             "review": "orro-review",
             "check": "orro-check",
             "demo": "orro-demo",
             "status": "orro-status",
-            "tidy": "orro-tidy",
-            "task": "orro-task",
+            "workspace": "orro-workspace",
             "auto": "orro-auto",
             "team": "team",
         }
@@ -184,11 +219,13 @@ class OrroCommandSurfaceTests(unittest.TestCase):
 
     def test_removed_aliases_emit_replacement_blockers(self) -> None:
         replacements = {
+            "lock": "engine-lock",
             "next": "auto --dry-run",
             "report": "status <run-dir>|--latest",
             "sketch": "advise --mode sketch",
             "trace": "advise --mode trace",
         }
+        self.assertEqual(ORRO_REMOVED_ALIASES, replacements)
         for alias, replacement in replacements.items():
             stdout = io.StringIO()
             with contextlib.redirect_stdout(stdout):

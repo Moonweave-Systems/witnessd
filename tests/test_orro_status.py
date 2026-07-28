@@ -165,14 +165,14 @@ class OrroStatusTests(unittest.TestCase):
             repo = root / "repo"
             repo.mkdir()
             with patch("witnessd.cli.status.write_status_document") as writer:
-                main(["orro", "tidy", "--apply", "--repo", str(repo)])
+                main(["orro", "workspace", "tidy", "--apply", "--repo", str(repo)])
                 writer.assert_not_called()
             write_roadmap(repo, {
                 "kind": "orro-roadmap", "schema_version": "0.1", "items": [],
             })
             with patch.dict(os.environ, {"ORRO_NO_STATUS_DOC": "1"}, clear=False):
                 with patch("witnessd.cli.status.write_status_document") as writer:
-                    main(["orro", "tidy", "--apply", "--repo", str(repo)])
+                    main(["orro", "workspace", "tidy", "--apply", "--repo", str(repo)])
                     writer.assert_not_called()
 
     def test_status_write_skips_non_roadmap_repo(self) -> None:
@@ -205,7 +205,7 @@ class OrroStatusTests(unittest.TestCase):
             self.assertEqual(payload["workspace"]["worktree_count"], 2)
             self.assertEqual(payload["workspace"]["worktree_bytes"], 1200 * 1024 * 1024)
             self.assertIn("workspace worktrees hold", payload["workspace"]["warning"])
-            self.assertIn("orro tidy --apply", render_status_text(payload))
+            self.assertIn("orro workspace tidy --apply", render_status_text(payload))
 
     def test_resolve_home_prefers_explicit_then_environment_then_repo(self) -> None:
         from witnessd.cli.status import resolve_home

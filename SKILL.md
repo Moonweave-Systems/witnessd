@@ -29,9 +29,7 @@ The cross-engine artifact boundary is summarized in
 | `orro` | goal -> scout -> plan -> run -> evidence -> verifier summary -> handoff |
 | `orro setup` | one-command setup: provision pinned Depone, initialize home, and write engine lock |
 | `orro skill install` | install or refresh the packaged ORRO session skills |
-| `orro init` | setup readiness/provision metadata; not proof or assurance |
 | `orro scout` | read-only repo exploration and context-pack creation |
-| `orro advisory-provenance-check` | offline Depone re-derivation of sealed sketch/trace provenance; not correctness |
 | `orro flow` | guided init/scout/flowplan/proofrun/proofcheck with structured blockers |
 | `orro flowplan` | plan-only workflow design and rolepack/workflow compiler surface |
 | `orro proofrun` | precise evidence-backed execution alias |
@@ -41,6 +39,7 @@ The cross-engine artifact boundary is summarized in
 | `orro review` | advisory read-only reviewer-lane execution; emits review receipts only |
 | `orro check` | companion: deterministic verify (Depone verdict) + read-only review (advisory); spawns a verification lane and produces evidence; does not claim observed execution |
 | `orro demo` | AI-free deterministic shell guardrail demo; Depone re-derives write-scope PASS/FAIL |
+| `orro workspace begin` | create or resume a persistent roadmap-item task worktree; workspace metadata only |
 
 | `orro auto --dry-run` | non-executing automation planner; recommendation context only |
 | `orro auto --once` | one-step proofcheck/handoff executor; orchestration metadata only |
@@ -49,8 +48,13 @@ The cross-engine artifact boundary is summarized in
 | `orro team go` | one-command flowplan/proofrun/proofcheck/report wrapper; reports Depone verdict |
 | `orro auto` | future broader continuation loop behind evidence gates |
 
-Compatibility and lifecycle metadata also use `orro engine-lock`, `orro lock`,
-and `orro task`.
+## Setup and diagnostics
+
+| Mode | Meaning |
+| --- | --- |
+| `orro init` | setup readiness/provision metadata; not proof or assurance |
+| `orro engine-lock` | write or check pinned engine distribution metadata |
+| `orro advisory-provenance-check` | offline Depone re-derivation of sealed sketch/trace provenance; not correctness |
 
 After a successful `orro ship`, a GitHub remote with an available `gh` CLI and
 `checks:write` permission receives one `ORRO guardrail receipt` Check Run on the
@@ -136,7 +140,7 @@ The `sketch` and `trace` advisory modes remain available through the advisory
 the external `superpowers` plugin remains untouched as an independent dual path.
 
 For deterministic repository health gates and bounded fixer guidance, load
-`orro/skillpacks/code-health.md`. For roadmap status, tidy retention, task
+`orro/skillpacks/code-health.md`. For roadmap status, workspace retention, task
 workspaces, and bounded `auto --run-item` continuation, load
 `orro/skillpacks/legibility.md`. These are progressive-disclosure references
 for the single ORRO skill surface; they do not create proof or a new assurance

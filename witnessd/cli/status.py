@@ -306,7 +306,7 @@ def build_status(*, repo: Path, home: Path) -> dict[str, Any]:
     if workspace["worktree_bytes"] > 1024**3:
         workspace["warning"] = (
             f"workspace worktrees hold {_format_size(workspace['worktree_bytes'])}; "
-            "clean finished ones can be removed with orro tidy --apply"
+            "clean finished ones can be removed with orro workspace tidy --apply"
         )
     return {
         "kind": "orro-status",
@@ -586,7 +586,7 @@ def apply_tidy(
 
 
 def render_tidy_text(payload: dict[str, Any]) -> str:
-    lines = [f"ORRO tidy ({payload['mode']})", "Run worktrees:"]
+    lines = [f"ORRO workspace tidy ({payload['mode']})", "Run worktrees:"]
     worktrees = payload.get("worktrees")
     if not isinstance(worktrees, list) or not worktrees:
         lines.append("  (none)")

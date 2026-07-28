@@ -11,6 +11,7 @@ from witnessd.__main__ import (
     ORRO_COMMAND_MAP,
     ORRO_COMMANDS,
     ORRO_REMOVED_ALIASES,
+    ORRO_SETUP_DIAGNOSTIC_COMMANDS,
     PUBLIC_COMMAND_SUMMARIES,
     main as witnessd_main,
 )
@@ -30,10 +31,20 @@ def _build_orro_help(
 ) -> str:
     command_names = ",".join(command_map)
     width = max(map(len, command_map))
-    ordered_commands = list(command_map)
-    public_commands = "\n".join(
+    diagnostic_commands = [
+        command for command in ORRO_SETUP_DIAGNOSTIC_COMMANDS
+        if command in command_map
+    ]
+    primary_commands = [
+        command for command in command_map if command not in diagnostic_commands
+    ]
+    primary_help = "\n".join(
         f"  {command:<{width}}  {summaries[command]}"
-        for command in ordered_commands
+        for command in primary_commands
+    )
+    diagnostic_help = "\n".join(
+        f"  {command:<{width}}  {summaries[command]}"
+        for command in diagnostic_commands
     )
     return f"""usage: orro [-h] {{{command_names}}} ...
 
@@ -42,8 +53,11 @@ ORRO - Observed Run & Review Orchestrator
 ORRO Flow:
   scout -> sketch/trace -> flowplan -> proofrun -> proofcheck -> handoff
 
-public commands:
-{public_commands}
+primary commands:
+{primary_help}
+
+setup and diagnostics:
+{diagnostic_help}
 
 boundary:
   Depone verifies; witnessd executes; ORRO exposes the workflow.

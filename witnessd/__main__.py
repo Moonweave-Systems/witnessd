@@ -535,32 +535,19 @@ def _build_parser() -> argparse.ArgumentParser:
     orro_status.add_argument("--json", action="store_true")
     orro_status.set_defaults(func=_cli_handler("status", "_cmd_orro_status"))
 
-    orro_tidy = sub.add_parser(
-        "orro-tidy",
-        help=argparse.SUPPRESS,
-        description="Inventory ORRO worktrees or safely remove eligible clean worktrees.",
-    )
-    orro_tidy.add_argument("--repo", "--root", dest="repo", default=".")
-    orro_tidy.add_argument("--home", default=None)
-    orro_tidy.add_argument("--apply", action="store_true")
-    orro_tidy.add_argument("--keep-checks", type=int, default=None)
-    orro_tidy.add_argument("--json", action="store_true")
-    orro_tidy.set_defaults(func=_cli_handler("status", "_cmd_orro_tidy"))
-
-    orro_task = sub.add_parser(
-        "orro-task",
+    orro_workspace = sub.add_parser(
+        "orro-workspace",
         help=argparse.SUPPRESS,
         description=(
-            "Manage a roadmap-item task worktree; setup metadata only, not proof. "
-            "The worktree, its branch, and its commits are workspace state, not proof; "
-            "task begin output is setup metadata — not proof, not verifier truth, not "
-            "approval, not assurance. Merge approval and merge execution stay human; "
-            "ORRO never merges. Panes/agent/session state belong to the workspace "
-            "runtime, never sealed into evidence."
+            "Manage ORRO workspace lifecycle. Task worktrees, branches, and commits "
+            "are workspace state, not proof. Merge approval and merge execution stay "
+            "human; ORRO never merges."
         ),
     )
-    task_sub = orro_task.add_subparsers(dest="task_command", required=True)
-    task_begin = task_sub.add_parser(
+    workspace_sub = orro_workspace.add_subparsers(
+        dest="workspace_command", required=True
+    )
+    workspace_begin = workspace_sub.add_parser(
         "begin",
         help="create or resume a roadmap-item task worktree",
         description=(
@@ -568,22 +555,45 @@ def _build_parser() -> argparse.ArgumentParser:
             "metadata only, not proof, verifier truth, approval, or assurance."
         ),
     )
-    task_begin.add_argument("item_id")
-    task_begin.add_argument("--repo", "--root", dest="repo", default=".")
-    task_begin.add_argument("--base", default=None, help="base ref for a new task branch (default: current HEAD)")
-    open_group = task_begin.add_mutually_exclusive_group()
-    open_group.add_argument(
+    workspace_begin.add_argument("item_id")
+    workspace_begin.add_argument(
+        "--repo", "--root", dest="repo", default="."
+    )
+    workspace_begin.add_argument(
+        "--base",
+        default=None,
+        help="base ref for a new task branch (default: current HEAD)",
+    )
+    workspace_open_group = workspace_begin.add_mutually_exclusive_group()
+    workspace_open_group.add_argument(
         "--open",
         action="store_true",
         help="run ORRO_TASK_OPEN_COMMAND even when resuming an existing task",
     )
-    open_group.add_argument(
+    workspace_open_group.add_argument(
         "--no-open",
         action="store_true",
         help="skip ORRO_TASK_OPEN_COMMAND (recommended for non-interactive use)",
     )
-    task_begin.add_argument("--json", action="store_true")
-    task_begin.set_defaults(func=_cli_handler("task", "_cmd_orro_task"))
+    workspace_begin.add_argument("--json", action="store_true")
+    workspace_begin.set_defaults(func=_cli_handler("task", "_cmd_orro_task"))
+
+    workspace_tidy = workspace_sub.add_parser(
+        "tidy",
+        help="inventory worktrees or safely remove eligible clean worktrees",
+        description=(
+            "Inventory ORRO worktrees or safely remove eligible clean worktrees. "
+            "Dry-run is the default."
+        ),
+    )
+    workspace_tidy.add_argument(
+        "--repo", "--root", dest="repo", default="."
+    )
+    workspace_tidy.add_argument("--home", default=None)
+    workspace_tidy.add_argument("--apply", action="store_true")
+    workspace_tidy.add_argument("--keep-checks", type=int, default=None)
+    workspace_tidy.add_argument("--json", action="store_true")
+    workspace_tidy.set_defaults(func=_cli_handler("status", "_cmd_orro_tidy"))
 
     isolation = sub.add_parser("isolation", help="isolation contract checks")
     isolation.add_argument("--self-test", action="store_true")
@@ -1176,14 +1186,12 @@ ORRO_COMMAND_MAP: dict[str, str] = {
     "ship": "ship",
     "doctor": "orro-doctor",
     "engine-lock": "engine-lock",
-    "lock": "engine-lock",
     "advise": "orro-advise",
     "review": "orro-review",
     "check": "orro-check",
     "demo": "orro-demo",
     "status": "orro-status",
-    "tidy": "orro-tidy",
-    "task": "orro-task",
+    "workspace": "orro-workspace",
     "auto": "orro-auto",
     "flow": "orro-flow",
     "team": "team",
@@ -1201,19 +1209,23 @@ PUBLIC_COMMAND_SUMMARIES: dict[str, str] = {
     "ship": "evidence-gated branch push and optional PR; merge approval stays human",
     "doctor": "ORRO engine/verifier readiness; not runlog health or evidence verification",
     "engine-lock": "write/check distribution metadata for pinned engine commits",
-    "lock": "compatibility spelling for engine-lock",
     "advise": "non-executing workstyle router; auto-selects sketch/trace for new work or symptoms; --mode overrides",
     "review": "advisory read-only reviewer lanes; not proof or assurance",
     "check": "companion: verify (Depone verdict) plus read-only review; not observed execution",
     "demo": "AI-free shell guardrail demo with Depone scope-conformance result",
     "status": "roadmap status, or a run-scoped report with <run-dir> or --latest",
-    "tidy": "dry-run worktree inventory; apply removes only safe eligible worktrees",
-    "task": "manage roadmap task lifecycle metadata; not proof or merge approval",
+    "workspace": "begin task worktrees or inventory and safely tidy eligible worktrees",
     "auto": "dry-run, one-step, bounded post-run, or bounded item-chain automation",
     "flow": "guided init/scout/flowplan/proofrun/proofcheck with gated blockers",
     "team": "scaffold team config or run flowplan/proofrun/proofcheck/report",
 }
+ORRO_SETUP_DIAGNOSTIC_COMMANDS: tuple[str, ...] = (
+    "init",
+    "engine-lock",
+    "advisory-provenance-check",
+)
 ORRO_REMOVED_ALIASES: dict[str, str] = {
+    "lock": "engine-lock",
     "next": "auto --dry-run",
     "sketch": "advise --mode sketch",
     "trace": "advise --mode trace",
@@ -1243,7 +1255,7 @@ ORRO_RISKY_COMMAND_TARGETS: frozenset[str] = frozenset(
         "orro-auto",
         "orro-flow",
         "team",
-        "orro-task",
+        "orro-workspace",
     }
 )
 
@@ -1260,8 +1272,16 @@ def _is_status_boundary(args: argparse.Namespace) -> bool:
     return bool(
         args.cmd in {"proofrun", "orro-check", "orro-flow", "handoff", "orro-auto"}
         or (args.cmd == "team" and getattr(args, "team_cmd", None) == "go")
-        or (args.cmd == "orro-task" and getattr(args, "task_command", None) == "begin")
-        or (args.cmd == "orro-tidy" and getattr(args, "apply", False))
+        or (
+            args.cmd == "orro-workspace"
+            and (
+                getattr(args, "workspace_command", None) == "begin"
+                or (
+                    getattr(args, "workspace_command", None) == "tidy"
+                    and getattr(args, "apply", False)
+                )
+            )
+        )
     )
 
 

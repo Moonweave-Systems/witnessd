@@ -149,7 +149,16 @@ class OrroTaskTests(unittest.TestCase):
             command = "/bin/echo WORKSPACE-42 {item_id} {path}"
             output = io.StringIO()
             with patch.dict(os.environ, {"ORRO_TASK_OPEN_COMMAND": command}), redirect_stdout(output):
-                code = main(["orro-task", "begin", "item-one", "--repo", str(repo)])
+                code = main(
+                    [
+                        "orro",
+                        "workspace",
+                        "begin",
+                        "item-one",
+                        "--repo",
+                        str(repo),
+                    ]
+                )
             rendered = command.replace("{item_id}", "item-one").replace("{path}", str(repo / ".orro" / "worktrees" / "item-one"))
             self.assertEqual(code, 0)
             self.assertIn(f"open hook command: {rendered}", output.getvalue())
