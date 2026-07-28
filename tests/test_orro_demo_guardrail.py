@@ -291,10 +291,10 @@ class ShellGuardrailDeponeEndToEndTests(unittest.TestCase):
             self.assertEqual(code, 0, payload)
         self.assertTrue(verdict_path.is_file())
         verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
-        self.assertEqual(
-            payload.get("policy_conformance"), verdict["policy_conformance"]
-        )
-        return verdict
+        self.assertNotIn("policy_conformance", verdict)
+        self.assertEqual(payload.get("verdict_authorship"), "depone")
+        self.assertEqual(payload.get("composition_authorship"), "witnessd")
+        return payload
 
     def test_in_scope_command_reaches_real_depone_policy_pass(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

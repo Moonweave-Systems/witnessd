@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from witnessd.__main__ import main
-from witnessd.orro_report import build_report
+from witnessd.orro_report import build_report, render_text_report
 from witnessd.orro_roadmap import write_roadmap
 from witnessd.orro_team_surface import apply_task_prompt_to_role_lane_plan
 from witnessd.orro_workflow import OrroWorkflowError
@@ -468,8 +468,8 @@ class OrroPublicFlowTests(unittest.TestCase):
             verdict = json.loads(
                 (run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(verdict["trust_anchor"], "self-signed")
-            self.assertFalse(verdict["independent_trust_anchor"])
+            self.assertNotIn("trust_anchor", verdict)
+            self.assertNotIn("independent_trust_anchor", verdict)
             self.assertNotIn("assurance", verdict)
 
     def test_external_operator_key_unlocks_independent_trust_anchor(self) -> None:
@@ -506,8 +506,8 @@ class OrroPublicFlowTests(unittest.TestCase):
             verdict = json.loads(
                 (run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(verdict["trust_anchor"], "operator-provided")
-            self.assertTrue(verdict["independent_trust_anchor"])
+            self.assertNotIn("trust_anchor", verdict)
+            self.assertNotIn("independent_trust_anchor", verdict)
 
     def test_orro_proofrun_normalizes_to_proofrun(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -582,10 +582,11 @@ class OrroPublicFlowTests(unittest.TestCase):
                 ledger,
                 team_verdict,
                 proofcheck,
-                proofcheck_verdict,
             ):
                 self.assertTrue(artifact["not_real_ai_work"])
                 self.assertTrue(artifact["placeholder_fallback"])
+            self.assertNotIn("not_real_ai_work", proofcheck_verdict)
+            self.assertNotIn("placeholder_fallback", proofcheck_verdict)
             self.assertTrue(report["not_real_ai_work"])
             self.assertTrue(report["placeholder_fallback"])
             self.assertTrue(report["summary"]["not_real_ai_work"])
@@ -1010,6 +1011,71 @@ class OrroPublicFlowTests(unittest.TestCase):
             after = sorted(path.relative_to(run_dir) for path in run_dir.rglob("*"))
             self.assertEqual(after, before)
 
+    def test_forged_stored_pass_is_unrevalidated_across_read_only_surfaces(self) -> None:
+        from witnessd.cli.verify import _proofcheck_binding
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / "home"
+            run_dir = home / "runs" / "forged"
+            run_dir.mkdir(parents=True)
+            (run_dir / "workflow-plan.json").write_text("{}\n", encoding="utf-8")
+            (run_dir / "team-ledger.json").write_text("{}\n", encoding="utf-8")
+            (run_dir / "proofcheck-verdict.json").write_text(
+                json.dumps(
+                    {
+                        "decision": "pass",
+                        "orro_binding": _proofcheck_binding(run_dir),
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            next_code, next_payload = self._orro_next(run_dir, home)
+            auto_code, auto_payload = self._orro_auto_dry_run(run_dir, home)
+
+            handoff_stdout = io.StringIO()
+            with redirect_stdout(handoff_stdout):
+                handoff_code = main(
+                    [
+                        "orro",
+                        "handoff",
+                        str(run_dir),
+                        "--home",
+                        str(home),
+                        "--out",
+                        str(run_dir / "orro-handoff.json"),
+                        "--json",
+                    ]
+                )
+            handoff_payload = json.loads(handoff_stdout.getvalue())
+
+            status_code, status_payload = build_report(run_dir, home=home)
+            status_text = render_text_report(status_payload)
+
+            self.assertEqual(next_code, 1)
+            self.assertEqual(next_payload["decision"], "blocked")
+            self.assertEqual(
+                next_payload["error"]["code"],
+                "ERR_ORRO_NEXT_PROOFCHECK_UNREVALIDATED",
+            )
+            self.assertEqual(auto_code, 1)
+            self.assertEqual(auto_payload["would_run"], [])
+            self.assertEqual(handoff_code, 1)
+            self.assertEqual(
+                handoff_payload["error"]["code"],
+                "ERR_ORRO_HANDOFF_PROOFCHECK_UNREVALIDATED",
+            )
+            self.assertFalse((run_dir / "orro-handoff.json").exists())
+            self.assertEqual(status_code, 1)
+            self.assertEqual(
+                status_payload["verification"]["validation_status"],
+                "unrevalidated",
+            )
+            self.assertIn("unrevalidated", status_text)
+            self.assertNotIn("Depone proofcheck pass", status_text)
+
     def test_orro_next_after_passing_proofcheck_is_ready_for_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1027,6 +1093,69 @@ class OrroPublicFlowTests(unittest.TestCase):
             handoff = next(role for role in payload["role_status"] if role["phase"] == "handoff")
             self.assertEqual(verifier["status"], "verified")
             self.assertEqual(handoff["status"], "pending")
+
+    def test_signed_validation_cache_is_reused_and_invalidates_on_evidence_change(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home, run_dir, _payload = self._proofrun(root)
+            self._proofcheck_out(home, run_dir)
+            cache_path = run_dir / "proofcheck-validation.json"
+
+            self.assertTrue(cache_path.is_file())
+            cache_before = cache_path.read_bytes()
+            mtime_before = cache_path.stat().st_mtime_ns
+
+            with patch(
+                "witnessd.cli.verify._run_depone_json",
+                side_effect=AssertionError("status invoked Depone"),
+            ):
+                first_code, first_payload = build_report(run_dir, home=home)
+                second_code, second_payload = build_report(run_dir, home=home)
+
+            self.assertEqual(first_code, 0)
+            self.assertEqual(second_code, 0)
+            self.assertEqual(first_payload["summary"]["state"], "ready-for-handoff")
+            self.assertEqual(second_payload["summary"]["state"], "ready-for-handoff")
+            self.assertEqual(cache_path.read_bytes(), cache_before)
+            self.assertEqual(cache_path.stat().st_mtime_ns, mtime_before)
+
+            ledger_path = run_dir / "team-ledger.json"
+            ledger_path.write_bytes(ledger_path.read_bytes() + b" ")
+
+            next_code, next_payload = self._orro_next(run_dir, home)
+            report_code, report_payload = build_report(run_dir, home=home)
+
+            self.assertEqual(next_code, 1)
+            self.assertEqual(
+                next_payload["error"]["code"],
+                "ERR_ORRO_NEXT_PROOFCHECK_UNREVALIDATED",
+            )
+            self.assertEqual(report_code, 1)
+            self.assertEqual(
+                report_payload["verification"]["validation_status"],
+                "unrevalidated",
+            )
+            self.assertNotIn(
+                report_payload["summary"]["state"],
+                {"ready-for-handoff", "complete"},
+            )
+
+    def test_validation_digest_includes_nested_files_with_derived_names(self) -> None:
+        from witnessd.verdict_validation import collect_evidence_artifact_hashes
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            nested = run_dir / "lane" / "proofcheck-verdict.json"
+            nested.parent.mkdir()
+            nested.write_text('{"decision":"lane-observation"}\n', encoding="utf-8")
+
+            paths = {
+                item["path"] for item in collect_evidence_artifact_hashes(run_dir)
+            }
+
+            self.assertIn("lane/proofcheck-verdict.json", paths)
 
     def test_orro_next_after_handoff_is_complete(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1090,10 +1219,10 @@ class OrroPublicFlowTests(unittest.TestCase):
                     self.assertEqual(code, 1)
                     self.assertEqual(decision["decision"], "blocked")
                     self.assertTrue(decision["blocked"])
-                    self.assertIn(decision["error"]["code"], {
-                        "ERR_ORRO_NEXT_PROOFCHECK_NOT_PASS",
-                        "ERR_ORRO_NEXT_PROOFCHECK_UNBOUND",
-                    })
+                    self.assertEqual(
+                        decision["error"]["code"],
+                        "ERR_ORRO_NEXT_PROOFCHECK_UNREVALIDATED",
+                    )
 
             other_root = root / "other"
             other_root.mkdir()
@@ -1106,7 +1235,10 @@ class OrroPublicFlowTests(unittest.TestCase):
             code, decision = self._orro_next(run_dir, home)
             self.assertEqual(code, 1)
             self.assertEqual(decision["decision"], "blocked")
-            self.assertEqual(decision["error"]["code"], "ERR_ORRO_NEXT_PROOFCHECK_BINDING_MISMATCH")
+            self.assertEqual(
+                decision["error"]["code"],
+                "ERR_ORRO_NEXT_PROOFCHECK_UNREVALIDATED",
+            )
 
     def test_orro_next_invalid_and_scout_only_dirs_do_not_continue(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2432,6 +2564,69 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(payload["orro_binding"]["kind"], "orro-proofcheck-binding")
             self.assertTrue(out.is_file())
 
+    def test_proofcheck_preserves_verifier_file_and_records_runtime_composition(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _repo, home = self._init_home(root)
+            gen_operator_keypair(str(home / "keys"))
+            run_dir = home / "runs" / "authorship"
+            run_dir.mkdir(parents=True)
+            (run_dir / "team-ledger.json").write_text("{}\n", encoding="utf-8")
+            out = run_dir / "proofcheck-verdict.json"
+            verifier_bytes = (
+                b'{\n  "decision": "pass",\n'
+                b'  "verifier_command": "proofcheck"\n}\n'
+            )
+
+            def fake_depone(
+                _command: list[str], *, env: dict[str, str]
+            ) -> tuple[int, dict]:
+                out.write_bytes(verifier_bytes)
+                return (
+                    0,
+                    {
+                        "decision": "pass",
+                        "verifier_command": "proofcheck",
+                        "out": str(out),
+                    },
+                )
+
+            stdout = io.StringIO()
+            with (
+                patch(
+                    "witnessd.cli.verify._run_depone_json",
+                    side_effect=fake_depone,
+                ),
+                patch(
+                    "witnessd.cli.verify._derive_command_lane_policy",
+                    return_value=(None, None),
+                ),
+                patch(
+                    "witnessd.cli.verify._derive_command_lane_health",
+                    return_value=(None, None),
+                ),
+                redirect_stdout(stdout),
+            ):
+                code = main(
+                    [
+                        "proofcheck",
+                        str(run_dir),
+                        "--home",
+                        str(home),
+                        "--out",
+                        str(out),
+                    ]
+                )
+
+            self.assertEqual(code, 0, stdout.getvalue())
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(out.read_bytes(), verifier_bytes)
+            self.assertEqual(payload["verdict_authorship"], "depone")
+            self.assertEqual(payload["composition_authorship"], "witnessd")
+            self.assertTrue((run_dir / "proofcheck-validation.json").is_file())
+
     def test_proofcheck_preserves_workflow_plan_binding_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2455,10 +2650,10 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(payload["workflow_plan"]["path"], str(run_dir / "workflow-plan.json"))
             self.assertEqual(payload["role_lane_plan"]["path"], str(run_dir / "role-lane-plan.json"))
             verdict_payload = json.loads(out.read_text(encoding="utf-8"))
-            self.assertEqual(verdict_payload["workflow_plan"], payload["workflow_plan"])
-            self.assertEqual(verdict_payload["role_lane_plan"], payload["role_lane_plan"])
-            self.assertFalse(verdict_payload["workflow_plan"]["boundary"]["raises_assurance"])
-            self.assertFalse(verdict_payload["role_lane_plan"]["boundary"]["raises_assurance"])
+            self.assertNotIn("workflow_plan", verdict_payload)
+            self.assertNotIn("role_lane_plan", verdict_payload)
+            self.assertFalse(payload["workflow_plan"]["boundary"]["raises_assurance"])
+            self.assertFalse(payload["role_lane_plan"]["boundary"]["raises_assurance"])
 
     def test_proofcheck_preserves_role_dispatch_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2477,10 +2672,7 @@ class OrroPublicFlowTests(unittest.TestCase):
                 proofrun_payload["workflow_role_dispatch"]["sha256"],
             )
             verdict_payload = json.loads(out.read_text(encoding="utf-8"))
-            self.assertEqual(
-                verdict_payload["workflow_role_dispatch"]["sha256"],
-                proofrun_payload["workflow_role_dispatch"]["sha256"],
-            )
+            self.assertNotIn("workflow_role_dispatch", verdict_payload)
 
     def test_proofcheck_without_out_does_not_write_verdict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2591,8 +2783,8 @@ class OrroPublicFlowTests(unittest.TestCase):
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["trust_anchor"], "self-signed")
             verdict = json.loads(out.read_text(encoding="utf-8"))
-            self.assertEqual(verdict["trust_anchor"], "self-signed")
-            self.assertFalse(verdict["independent_trust_anchor"])
+            self.assertNotIn("trust_anchor", verdict)
+            self.assertNotIn("independent_trust_anchor", verdict)
             self.assertNotIn("orro_binding", verdict)
 
     def test_orro_proofcheck_blocks_scout_only_artifacts(self) -> None:
@@ -2774,10 +2966,7 @@ class OrroPublicFlowTests(unittest.TestCase):
             proofcheck_payload = json.loads(
                 (run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(
-                proofcheck_payload["orro_binding"]["artifact_hashes"],
-                payload["artifact_hashes"],
-            )
+            self.assertNotIn("orro_binding", proofcheck_payload)
             hashed_paths = {item["path"] for item in payload["artifact_hashes"]}
             self.assertIn("team-ledger.json", hashed_paths)
             self.assertNotIn("proofcheck-verdict.json", hashed_paths)
@@ -2833,9 +3022,7 @@ class OrroPublicFlowTests(unittest.TestCase):
                 (run_dir / "proofcheck-verdict.json").read_text(encoding="utf-8")
             )
             self.assertEqual(written["decision"], "pass")
-            self.assertEqual(
-                written["advisory_provenance"]["decision"], "REFUTE"
-            )
+            self.assertNotIn("advisory_provenance", written)
 
     def test_handoff_rederives_advisory_provenance_and_refutes_tamper(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2886,9 +3073,8 @@ class OrroPublicFlowTests(unittest.TestCase):
             error = json.loads(stdout.getvalue())
             self.assertEqual(
                 error["error"]["code"],
-                "ERR_ORRO_HANDOFF_ADVISORY_PROVENANCE_REFUTED",
+                "ERR_ORRO_HANDOFF_PROOFCHECK_UNREVALIDATED",
             )
-            self.assertEqual(error["advisory_provenance"]["decision"], "REFUTE")
 
     def test_handoff_includes_workflow_plan_binding_when_present(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3034,8 +3220,10 @@ class OrroPublicFlowTests(unittest.TestCase):
                     self.assertEqual(code, 1)
                     self.assertFalse(out.exists())
                     error = json.loads(stdout.getvalue())["error"]
-                    self.assertEqual(error["code"], "ERR_ORRO_HANDOFF_PROOFCHECK_NOT_PASS")
-                    self.assertIn("inspect", error["reason"])
+                    self.assertEqual(
+                        error["code"],
+                        "ERR_ORRO_HANDOFF_PROOFCHECK_UNREVALIDATED",
+                    )
                     self.assertIn("proofcheck", error["next_command"])
 
     def test_handoff_rejects_unbound_passing_proofcheck_verdict(self) -> None:
@@ -3054,7 +3242,10 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertFalse(out.exists())
             error = json.loads(stdout.getvalue())["error"]
-            self.assertEqual(error["code"], "ERR_ORRO_HANDOFF_PROOFCHECK_UNBOUND")
+            self.assertEqual(
+                error["code"],
+                "ERR_ORRO_HANDOFF_PROOFCHECK_UNREVALIDATED",
+            )
             self.assertIn(str(run_dir), error["next_command"])
 
     def test_handoff_rejects_stale_passing_proofcheck_verdict(self) -> None:
@@ -3093,7 +3284,10 @@ class OrroPublicFlowTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertFalse(out.exists())
             error = json.loads(stdout.getvalue())["error"]
-            self.assertEqual(error["code"], "ERR_ORRO_HANDOFF_PROOFCHECK_BINDING_MISMATCH")
+            self.assertEqual(
+                error["code"],
+                "ERR_ORRO_HANDOFF_PROOFCHECK_UNREVALIDATED",
+            )
             self.assertIn(str(second_run_dir), error["next_command"])
 
     def test_handoff_ignores_non_object_optional_decision_ref_metadata(self) -> None:

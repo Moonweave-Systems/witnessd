@@ -443,16 +443,16 @@ class OrroStatusTests(unittest.TestCase):
                 },
             )
             seal_roadmap_binding(repo=repo, run_dir=companion, item_id="companion-item")
-            verdict_path = _write_companion_verdict(companion, decision="pass")
+            _write_companion_verdict(companion, decision="pass")
 
             with patch("witnessd.cli.status.decide_next") as decide:
                 payload = build_status(repo=repo, home=home)
 
             decide.assert_not_called()
             item = payload["items"][0]
-            self.assertEqual(item["status"], "done (verified)")
-            self.assertEqual(item["run_state"], "companion-pass")
-            self.assertEqual(item["evidence_ref"], str(verdict_path))
+            self.assertEqual(item["status"], "in-progress")
+            self.assertEqual(item["run_state"], "companion-unrevalidated")
+            self.assertNotIn("evidence_ref", item)
 
     def test_tampered_companion_verdict_is_unverified_and_not_done(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -507,7 +507,7 @@ class OrroStatusTests(unittest.TestCase):
             decide.assert_not_called()
             item = payload["items"][0]
             self.assertEqual(item["status"], "in-progress")
-            self.assertEqual(item["run_state"], "companion-blocked")
+            self.assertEqual(item["run_state"], "companion-unrevalidated")
             self.assertNotIn("evidence_ref", item)
 
     def test_blocked_companion_manifest_stays_in_progress(self) -> None:
@@ -534,7 +534,7 @@ class OrroStatusTests(unittest.TestCase):
             decide.assert_not_called()
             item = payload["items"][0]
             self.assertEqual(item["status"], "in-progress")
-            self.assertEqual(item["run_state"], "companion-blocked")
+            self.assertEqual(item["run_state"], "companion-unrevalidated")
 
     def test_malformed_ledger_is_structured_exit_two(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

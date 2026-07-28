@@ -276,7 +276,10 @@ class OrroShipTest(unittest.TestCase):
             (run / "orro-handoff.json").write_text(json.dumps(handoff))
             code, continuation = decide_next(run, home=home)
             self.assertEqual(code, 1)
-            self.assertEqual(continuation["error"]["code"], "ERR_ORRO_NEXT_EVIDENCE_MISSING")
+            self.assertEqual(
+                continuation["error"]["code"],
+                "ERR_ORRO_NEXT_PROOFCHECK_UNREVALIDATED",
+            )
             _, report = build_report(run, home=home)
             text = render_text_report(report)
             self.assertNotIn("State: complete", text)

@@ -37,6 +37,7 @@ DO_NOT_TRUST = [
     "model confidence",
     "handoff prose as approval",
     "engine-lock as proof",
+    "stored proofcheck verdict without signed validation",
     "model-declaration, write-scope-declaration, skill-routing-declaration, and tool-declaration as verifier-re-derived claims",
 ]
 
@@ -294,9 +295,19 @@ def _execution_line(execution: dict[str, Any]) -> str:
 
 
 def _verification_line(verification: dict[str, Any]) -> str:
+    if not verification.get("proofcheck_verdict_present"):
+        return "Verification: proofcheck missing"
+    if verification.get("validation_status") != "validated":
+        return "Verification: stored verdict unrevalidated"
+    verifier_decision = verification.get("verifier_decision") or "unknown"
+    effective_decision = verification.get("decision") or "unknown"
+    if verifier_decision != effective_decision:
+        return (
+            f"Verification: Depone proofcheck {verifier_decision}; "
+            f"witnessd composition {effective_decision}"
+        )
     if verification.get("proofcheck_verdict_present"):
-        decision = verification.get("decision") or "unknown"
-        return f"Verification: Depone proofcheck {decision}"
+        return f"Verification: Depone proofcheck {verifier_decision}"
     return "Verification: proofcheck missing"
 
 
@@ -598,15 +609,36 @@ def _verification_summary(
     observed: dict[str, Any],
 ) -> dict[str, Any]:
     verdict = _load_json_object(run_dir / "proofcheck-verdict.json")
-    decision = verdict.get("decision") if isinstance(verdict, dict) else None
+    validation = continuation.get("proofcheck_validation")
+    if not isinstance(validation, dict):
+        validation = {}
+    validation_status = str(validation.get("validation_status", "unrevalidated"))
+    if bool(observed.get("proofcheck_verdict")) and validation_status == "missing":
+        validation_status = "unrevalidated"
+    decision = (
+        validation.get("effective_decision")
+        if validation_status == "validated"
+        else None
+    )
+    verifier_decision = (
+        validation.get("verifier_decision")
+        if validation_status == "validated"
+        else None
+    )
     state = str(continuation.get("decision", "blocked"))
     return {
         "proofcheck_verdict_present": bool(observed.get("proofcheck_verdict")),
         "decision": decision,
+        "verifier_decision": verifier_decision,
+        "validation_status": validation_status,
+        "validation_reason": validation.get("reason"),
         "verifier_command": verdict.get("verifier_command") if isinstance(verdict, dict) else None,
-        "verified_by": "Depone",
+        "verified_by": "Depone" if validation_status == "validated" else None,
+        "verdict_authorship": validation.get("verdict_authorship"),
+        "composition_authorship": validation.get("composition_authorship"),
+        "verifier_commit": validation.get("verifier_commit"),
         "blocked": state == "blocked",
-        "refuted": decision in {"fail", "refuted"},
+        "refuted": verifier_decision in {"fail", "refuted"},
         "error": continuation.get("error") if isinstance(continuation.get("error"), dict) else None,
     }
 

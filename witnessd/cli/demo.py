@@ -141,10 +141,9 @@ def _cmd_orro_demo(args: argparse.Namespace) -> int:
             + _phase_error(payload, stderr)
         )
         return proofcheck_code or 2
-    verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
-    policy = verdict.get("policy_conformance")
+    policy = payload.get("policy_conformance") if isinstance(payload, dict) else None
     if not isinstance(policy, dict):
-        print("ORRO demo blocked: Depone verdict lacks policy_conformance")
+        print("ORRO demo blocked: witnessd composition lacks policy_conformance")
         return 2
 
     print(

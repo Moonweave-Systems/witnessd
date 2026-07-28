@@ -837,18 +837,14 @@ def _phase_execute_and_review(
                     "--json",
                 ]
             _, fix_verdict_payload, fix_verdict_err = _invoke_phase(fix_proofcheck_argv)
-            try:
-                fix_verdict = json.loads(fix_verdict_path.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError, json.JSONDecodeError):
-                fix_verdict = {}
             fix_decision = (
                 fix_verdict_payload.get("decision")
                 if isinstance(fix_verdict_payload, dict)
                 else None
             )
             policy = (
-                fix_verdict.get("policy_conformance")
-                if isinstance(fix_verdict, dict)
+                fix_verdict_payload.get("policy_conformance")
+                if isinstance(fix_verdict_payload, dict)
                 else None
             )
             if (

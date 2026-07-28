@@ -652,7 +652,7 @@ def render_tidy_text(payload: dict[str, Any]) -> str:
 
 def _status_run(run_dir: Path, *, home: Path) -> dict[str, Any]:
     if (run_dir / "companion-manifest.json").is_file():
-        state, evidence_ref = _companion_status(run_dir)
+        state, evidence_ref = _companion_status(run_dir, home=home)
         try:
             binding = read_roadmap_binding(run_dir)
         except OrroRoadmapError:
@@ -684,7 +684,7 @@ def _status_run(run_dir: Path, *, home: Path) -> dict[str, Any]:
     return result
 
 
-def _companion_status(run_dir: Path) -> tuple[str, str | None]:
+def _companion_status(run_dir: Path, *, home: Path) -> tuple[str, str | None]:
     manifest_path = run_dir / "companion-manifest.json"
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -715,7 +715,12 @@ def _companion_status(run_dir: Path) -> tuple[str, str | None]:
     if not isinstance(verdict, dict):
         return "companion-unverified", None
 
-    if verdict.get("decision") == "pass":
+    from witnessd.verdict_validation import validate_stored_verdict
+
+    validation = validate_stored_verdict(run_dir, home=home)
+    if validation["validation_status"] != "validated":
+        return "companion-unrevalidated", None
+    if validation.get("effective_decision") == "pass":
         return "companion-pass", str(verdict_path)
     return "companion-blocked", None
 
@@ -1080,7 +1085,7 @@ def _classify_worktree(path: Path, *, repo: Path, home: Path) -> dict[str, Any]:
 
 def _run_state(run_dir: Path, home: Path) -> str:
     if (run_dir / "companion-manifest.json").is_file():
-        return _companion_status(run_dir)[0]
+        return _companion_status(run_dir, home=home)[0]
     try:
         return str(decide_next(run_dir, home=home)[1].get("decision", "blocked"))
     except (OSError, ValueError, RuntimeError):
