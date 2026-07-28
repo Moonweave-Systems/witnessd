@@ -12,6 +12,14 @@ import json
 from pathlib import Path
 from typing import Any
 
+from witnessd.claim import (
+    Claim,
+    ClaimEffect,
+    ClaimFreshness,
+    ClaimIntegrity,
+    ClaimObservation,
+    producer_declaration_boundary,
+)
 from witnessd.cli._output import _hash_file as _output_hash_file
 from witnessd.orro_next import decide_next, team_ledger_block_diagnostics
 from witnessd.orro_workflow import (
@@ -786,13 +794,12 @@ def _declaration_summary(run_dir: Path) -> list[dict[str, Any]]:
             payload = _load_json_object(path)
             if payload is None:
                 continue
+            claim = _stored_declaration_claim(payload)
             declarations.append(
                 {
                     "artifact": name.removesuffix(".json"),
                     "path": str(path.relative_to(run_dir)),
-                    "evidence_substrate": "producer-transcribed",
-                    "means": "producer-reported declaration; not bundle-bound or verifier-re-derived",
-                    "can_change_evidence_verdict": False,
+                    **producer_declaration_boundary(claim),
                     **{
                         f"producer_{key}": payload[key]
                         for key in ("verification_status", "conformance")
@@ -801,6 +808,33 @@ def _declaration_summary(run_dir: Path) -> list[dict[str, Any]]:
                 }
             )
     return declarations
+
+
+def _stored_declaration_claim(payload: dict[str, Any]) -> Claim:
+    requested_only = payload.get("verification_status") == "requested-unverified"
+    usage_missing = (
+        payload.get("usage_verification_status") == "enforced-only"
+        and not payload.get("observed_tool_uses")
+    )
+    observation = (
+        ClaimObservation.REQUESTED
+        if requested_only
+        else ClaimObservation.MISSING
+        if usage_missing
+        else ClaimObservation.OBSERVED
+    )
+    freshness = (
+        ClaimFreshness.CURRENT
+        if observation is ClaimObservation.OBSERVED
+        else ClaimFreshness.PENDING
+    )
+    return Claim.from_producer(
+        value=payload,
+        observation=observation,
+        integrity=ClaimIntegrity.UNBOUND,
+        effect=ClaimEffect.ADVISORY,
+        freshness=freshness,
+    )
 
 
 def _first_string(*items: Any) -> str | None:

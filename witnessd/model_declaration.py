@@ -20,6 +20,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from witnessd.claim import (
+    Claim,
+    ClaimEffect,
+    ClaimFreshness,
+    ClaimIntegrity,
+    ClaimObservation,
+    producer_declaration_boundary,
+)
+
 MODEL_DECLARATION_KIND = "moonweave-model-declaration"
 MODEL_DECLARATION_SCHEMA_VERSION = "1.0"
 
@@ -41,14 +50,57 @@ def build_model_declaration(
     verification_status: str,
     detail: str | None = None,
 ) -> dict[str, Any]:
+    return _render_model_declaration(
+        build_model_claim(
+            adapter=adapter,
+            requested_model=requested_model,
+            verification_status=verification_status,
+            detail=detail,
+        )
+    )
+
+
+def build_model_claim(
+    *,
+    adapter: str,
+    requested_model: str,
+    verification_status: str,
+    detail: str | None = None,
+) -> Claim:
+    observation = (
+        ClaimObservation.REQUESTED
+        if verification_status == VERIFICATION_REQUESTED_UNCONFIRMED
+        else ClaimObservation.OBSERVED
+    )
+    freshness = (
+        ClaimFreshness.PENDING
+        if observation is ClaimObservation.REQUESTED
+        else ClaimFreshness.CURRENT
+    )
+    return Claim.from_producer(
+        value={
+            "adapter": adapter,
+            "requested_model": requested_model,
+            "verification_status": verification_status,
+            "detail": detail,
+        },
+        observation=observation,
+        integrity=ClaimIntegrity.UNBOUND,
+        effect=ClaimEffect.ADVISORY,
+        freshness=freshness,
+    )
+
+
+def _render_model_declaration(claim: Claim) -> dict[str, Any]:
+    value = claim.value
+    if not isinstance(value, dict):
+        raise TypeError("model claim value must be a dictionary")
     return {
         "kind": MODEL_DECLARATION_KIND,
         "schema_version": MODEL_DECLARATION_SCHEMA_VERSION,
-        "can_change_evidence_verdict": False,
-        "evidence_substrate": "producer-transcribed",
-        "means": "producer-reported declaration; not bundle-bound or verifier-re-derived",
-        "adapter": adapter,
-        "requested_model": requested_model,
-        "verification_status": verification_status,
-        "detail": detail,
+        **producer_declaration_boundary(claim),
+        "adapter": value["adapter"],
+        "requested_model": value["requested_model"],
+        "verification_status": value["verification_status"],
+        "detail": value["detail"],
     }

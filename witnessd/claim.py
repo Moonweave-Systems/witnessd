@@ -11,6 +11,11 @@ from enum import Enum
 from typing import Any
 
 
+PRODUCER_DECLARATION_MEANS = (
+    "producer-reported declaration; not bundle-bound or verifier-re-derived"
+)
+
+
 class ClaimSource(str, Enum):
     OPERATOR = "operator"
     PRODUCER = "producer"
@@ -122,3 +127,17 @@ class Claim:
             effect=effect,
             freshness=freshness,
         )
+
+
+def producer_declaration_boundary(claim: Claim) -> dict[str, Any]:
+    if claim.source is not ClaimSource.PRODUCER:
+        raise ValueError("producer declaration projection requires source producer")
+    if claim.integrity is not ClaimIntegrity.UNBOUND:
+        raise ValueError("producer declaration projection requires unbound integrity")
+    if claim.evaluation is not ClaimEvaluation.UNEVALUATED:
+        raise ValueError("producer declaration projection requires unevaluated claim")
+    return {
+        "can_change_evidence_verdict": False,
+        "evidence_substrate": "producer-transcribed",
+        "means": PRODUCER_DECLARATION_MEANS,
+    }
