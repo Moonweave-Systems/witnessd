@@ -123,6 +123,7 @@ def _expected_witnessd_version() -> str:
 
 class DistributionInitTests(unittest.TestCase):
     def test_version_fallback_matches_packaged_version(self) -> None:
+        self.assertEqual(WITNESSD_PACKAGE_VERSION_FALLBACK, "2.39.0")
         setup_text = (Path(__file__).resolve().parents[1] / "setup.py").read_text(
             encoding="utf-8"
         )
