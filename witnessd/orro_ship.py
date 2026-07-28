@@ -262,12 +262,21 @@ def _evidence_blockers(run_dir: Path, home: Path, *, repo: Path) -> list[dict[st
         handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
         return [_blocker("ERR_ORRO_SHIP_EVIDENCE_INVALID", "proofcheck and handoff artifacts must be readable JSON objects", [])]
-    if not isinstance(verdict, dict) or verdict.get("decision") != "pass":
-        return [_blocker("ERR_ORRO_SHIP_PROOFCHECK_NOT_PASS", "proofcheck-verdict.json decision must be pass", [])]
-    from witnessd.cli.verify import _proofcheck_binding
+    if not isinstance(verdict, dict):
+        return [_blocker("ERR_ORRO_SHIP_EVIDENCE_INVALID", "proofcheck verdict must be a JSON object", [])]
+    from witnessd.verdict_validation import validate_stored_verdict
 
-    if verdict.get("orro_binding") != _proofcheck_binding(run_dir):
-        return [_blocker("ERR_ORRO_SHIP_PROOFCHECK_UNBOUND", "proofcheck-verdict.json is not bound to this run", [])]
+    validation = validate_stored_verdict(run_dir, home=home)
+    if validation["validation_status"] != "validated":
+        return [
+            _blocker(
+                "ERR_ORRO_SHIP_PROOFCHECK_UNREVALIDATED",
+                str(validation.get("reason") or "stored proofcheck verdict is unrevalidated"),
+                [_cmd("/usr/bin/python3", "-m", "orro", "proofcheck", run_dir, "--home", home, "--out", verdict_path)],
+            )
+        ]
+    if validation.get("effective_decision") != "pass":
+        return [_blocker("ERR_ORRO_SHIP_PROOFCHECK_NOT_PASS", "validated proofcheck composition decision must be pass", [])]
     if not isinstance(handoff, dict) or handoff.get("kind") != "orro-handoff" or handoff.get("evidence_dir") != str(run_dir):
         return [_blocker("ERR_ORRO_SHIP_HANDOFF_UNBOUND", "orro-handoff.json is not bound to this run", [])]
     expected = _hash_file(verdict_path)

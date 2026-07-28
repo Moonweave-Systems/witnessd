@@ -1210,15 +1210,18 @@ class OrroCheckVerifyTest(unittest.TestCase):
                 "ERR_ORRO_HEALTH_FIX_PROOFCHECK_BLOCKED",
             )
             self.assertFalse((repo / "outside.txt").exists())
-            fix_verdict = json.loads(
-                (run_dir / "health-fix-run" / "proofcheck-verdict.json").read_text(
-                    encoding="utf-8"
-                )
+            from witnessd.verdict_validation import validate_stored_verdict
+
+            validation = validate_stored_verdict(
+                run_dir / "health-fix-run",
+                home=root / "home",
             )
-            self.assertEqual(fix_verdict["policy_conformance"]["overall"], "fail")
+            self.assertEqual(validation["validation_status"], "validated")
+            policy = validation["composition"]["policy_conformance"]
+            self.assertEqual(policy["overall"], "fail")
             write_scope = next(
                 axis
-                for axis in fix_verdict["policy_conformance"]["axes"]
+                for axis in policy["axes"]
                 if axis["axis"] == "write_scope"
             )
             self.assertEqual(write_scope["status"], "fail")

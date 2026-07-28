@@ -148,23 +148,10 @@ def _emit_orro_engine_lock_check_error(
 def _collect_orro_artifact_hashes(
     evidence_dir: Path, *, out_path: Path | None = None
 ) -> list[dict[str, str]]:
-    generated_names = {
-        "orro-handoff.json",
-        "ship-receipt.json",
-        "proofcheck-verdict.json",
-        "team-ledger-verdict.json",
-    }
-    artifact_hashes = []
-    for path in sorted(p for p in evidence_dir.rglob("*") if p.is_file()):
-        if path.name in generated_names or (out_path is not None and path == out_path):
-            continue
-        artifact_hashes.append(
-            {
-                "path": str(path.relative_to(evidence_dir)),
-                "sha256": _hash_file(path),
-            }
-        )
-    return artifact_hashes
+    from witnessd.verdict_validation import collect_evidence_artifact_hashes
+
+    _ = out_path
+    return collect_evidence_artifact_hashes(evidence_dir)
 
 
 def _proofcheck_binding(
@@ -330,6 +317,7 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
     if out_path is not None:
         command.extend(["--out", str(out_path)])
     code, payload = _run_depone_json(command, env=env)
+    payload = dict(payload)
     command_policy: dict[str, object] | None = None
     command_policy_source: dict[str, object] | None = None
     command_health: dict[str, object] | None = None
@@ -391,19 +379,6 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
             base_errors = existing_errors if isinstance(existing_errors, list) else []
             payload["errors"] = [*base_errors, *policy_errors]
             payload["error_count"] = len(payload["errors"])
-        if out_path is not None and out_path.is_file():
-            verdict_payload = json.loads(out_path.read_text(encoding="utf-8"))
-            if not isinstance(verdict_payload, dict):
-                raise ValueError("proofcheck verdict must be a JSON object")
-            verdict_payload["decision"] = payload.get("decision", "blocked")
-            verdict_payload["policy_conformance"] = command_policy
-            verdict_payload["policy_conformance_source"] = command_policy_source
-            if payload.get("errors"):
-                verdict_payload["errors"] = payload["errors"]
-            out_path.write_text(
-                json.dumps(verdict_payload, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
     if command_health is not None:
         payload["health_conformance"] = command_health
         if command_health_source is not None:
@@ -455,19 +430,6 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
             base_errors = existing_errors if isinstance(existing_errors, list) else []
             payload["errors"] = [*base_errors, *health_errors]
             payload["error_count"] = len(payload["errors"])
-        if out_path is not None and out_path.is_file():
-            verdict_payload = json.loads(out_path.read_text(encoding="utf-8"))
-            if not isinstance(verdict_payload, dict):
-                raise ValueError("proofcheck verdict must be a JSON object")
-            verdict_payload["decision"] = payload.get("decision", "blocked")
-            verdict_payload["health_conformance"] = command_health
-            verdict_payload["health_conformance_source"] = command_health_source
-            if payload.get("errors"):
-                verdict_payload["errors"] = payload["errors"]
-            out_path.write_text(
-                json.dumps(verdict_payload, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
     advisory_result = _optional_advisory_provenance_verify(evidence_dir, home=home)
     advisory_provenance = advisory_result[1] if advisory_result is not None else None
     binding: dict[str, object] | None = None
@@ -477,41 +439,66 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
     workflow_plan_ref = workflow_plan_binding_ref(evidence_dir)
     role_lane_plan_ref = role_lane_plan_binding_ref(evidence_dir)
     workflow_role_dispatch = workflow_role_dispatch_ref(evidence_dir)
-    if out_path is not None and (
-        out_path.is_file() or (code == 0 and payload.get("decision") == "pass")
+    verdict_payload: dict[str, object] | None = None
+    if out_path is not None:
+        try:
+            loaded_verdict = json.loads(out_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            binding_error = str(exc)
+        else:
+            verdict_payload = loaded_verdict if isinstance(loaded_verdict, dict) else None
+        if verdict_payload is None and binding_error is None:
+            binding_error = "proofcheck-verdict.json must be a JSON object"
+
+    reference_markers: dict[str, object] = {}
+    if reference_warning is not None:
+        from witnessd.cli.run import _reference_adapter_markers
+
+        reference_markers = _reference_adapter_markers(reference_warning)
+
+    validation_path: Path | None = None
+    canonical_verdict_path = (evidence_dir / "proofcheck-verdict.json").resolve(
+        strict=False
+    )
+    if (
+        binding_error is None
+        and verdict_payload is not None
+        and out_path is not None
+        and out_path.resolve(strict=False) == canonical_verdict_path
     ):
         try:
-            verdict_payload = json.loads(out_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            verdict_payload = None
-            binding_error = str(exc)
-        if isinstance(verdict_payload, dict):
-            verdict_payload["trust_anchor"] = trust_anchor.trust_anchor
-            verdict_payload["independent_trust_anchor"] = trust_anchor.independent
-            verdict_payload["independent_trust_anchor_note"] = (
-                INDEPENDENT_TRUST_ANCHOR_NOTE
+            if home is None:
+                raise ValueError("--home is required to sign stored verdict validation")
+            from witnessd.verdict_validation import write_validation_artifact
+
+            composition = {
+                "trust_anchor": trust_anchor.trust_anchor,
+                "independent_trust_anchor": trust_anchor.independent,
+                "independent_trust_anchor_note": INDEPENDENT_TRUST_ANCHOR_NOTE,
+                "policy_conformance": command_policy,
+                "policy_conformance_source": command_policy_source,
+                "health_conformance": command_health,
+                "health_conformance_source": command_health_source,
+                "advisory_provenance": advisory_provenance,
+                "workflow_plan": workflow_plan_ref,
+                "role_lane_plan": role_lane_plan_ref,
+                "workflow_role_dispatch": workflow_role_dispatch,
+                "errors": payload.get("errors", []),
+                **reference_markers,
+            }
+            validation_path = write_validation_artifact(
+                run_dir=evidence_dir,
+                home=home,
+                verdict_path=out_path,
+                verifier_decision=str(
+                    verdict_payload.get("decision", "blocked")
+                ),
+                effective_decision=str(payload.get("decision", "blocked")),
+                composition=composition,
             )
-            if advisory_provenance is not None:
-                verdict_payload["advisory_provenance"] = advisory_provenance
-            if code == 0 and payload.get("decision") == "pass":
-                verdict_payload["orro_binding"] = binding
-                if workflow_plan_ref is not None:
-                    verdict_payload["workflow_plan"] = workflow_plan_ref
-                if role_lane_plan_ref is not None:
-                    verdict_payload["role_lane_plan"] = role_lane_plan_ref
-                if workflow_role_dispatch is not None:
-                    verdict_payload["workflow_role_dispatch"] = workflow_role_dispatch
-            try:
-                out_path.write_text(
-                    json.dumps(verdict_payload, indent=2, sort_keys=True) + "\n",
-                    encoding="utf-8",
-                )
-            except OSError as exc:
+        except Exception as exc:  # noqa: BLE001 - signed cache failure blocks reuse
+            if payload.get("decision") == "pass":
                 binding_error = str(exc)
-            else:
-                binding_error = None
-        elif binding_error is None:
-            binding_error = "proofcheck-verdict.json must be a JSON object"
     if binding_error is not None:
         payload = {
             "decision": "blocked",
@@ -530,9 +517,16 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         "independent_trust_anchor": trust_anchor.independent,
         "independent_trust_anchor_note": INDEPENDENT_TRUST_ANCHOR_NOTE,
         "evidence_dir": str(evidence_dir),
+        "verdict_authorship": "depone",
+        "composition_authorship": "witnessd",
         **(
             {"orro_binding": binding}
             if binding is not None and binding_error is None
+            else {}
+        ),
+        **(
+            {"validation_cache": str(validation_path)}
+            if validation_path is not None and binding_error is None
             else {}
         ),
         **(
@@ -575,6 +569,7 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
         **({"out": payload["out"]} if payload.get("out") else {}),
         **({"errors": payload["errors"]} if payload.get("errors") else {}),
         **({"error": payload["error"]} if payload.get("error") else {}),
+        **reference_markers,
     }
     workflow_contract = _proofcheck_workflow_contract(payload)
     if str(result["decision"]).startswith("blocked"):
@@ -611,15 +606,6 @@ def _cmd_proofcheck(args: argparse.Namespace) -> int:
     if untracked_diagnostic is not None:
         result["error"] = untracked_diagnostic
         result["untracked_evidence"] = untracked_diagnostic["evidence_path"]
-    if reference_warning is not None:
-        from witnessd.cli.run import (
-            _reference_adapter_markers,
-            _stamp_reference_adapter_artifact,
-        )
-
-        result.update(_reference_adapter_markers(reference_warning))
-        if out_path is not None and out_path.is_file():
-            _stamp_reference_adapter_artifact(out_path, reference_warning)
     if code != 0 or result["decision"] != "pass":
         result = _with_verify_error(
             args,
@@ -1057,17 +1043,42 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
             message="proofcheck-verdict.json must be a JSON object",
         )
         return 1
-    if proofcheck_payload.get("decision") != "pass":
+    home = (
+        Path(args.home).resolve(strict=False)
+        if args.home
+        else evidence_dir.parent.parent.resolve(strict=False)
+    )
+    from witnessd.verdict_validation import validate_stored_verdict
+
+    proofcheck_validation = validate_stored_verdict(evidence_dir, home=home)
+    if proofcheck_validation["validation_status"] != "validated":
+        _base_emit_orro_error(
+            args,
+            code="ERR_ORRO_HANDOFF_PROOFCHECK_UNREVALIDATED",
+            message="stored proofcheck verdict is unrevalidated",
+            reason=str(
+                proofcheck_validation.get("reason")
+                or "the signed proofcheck validation is missing or stale"
+            ),
+            required_input_or_grant=(
+                "an operator-signed proofcheck validation for the current evidence"
+            ),
+            next_command=_proofcheck_next_command(evidence_dir, home),
+        )
+        return 1
+    if proofcheck_validation.get("effective_decision") != "pass":
         _base_emit_orro_error(
             args,
             code="ERR_ORRO_HANDOFF_PROOFCHECK_NOT_PASS",
-            message="proofcheck-verdict.json decision must be pass",
-            reason="inspect proofcheck-verdict.json and rerun the failing proofcheck step before handoff",
-            required_input_or_grant="a passing proofcheck verdict bound to this evidence directory",
-            next_command=_proofcheck_next_command(evidence_dir, Path(args.home).resolve(strict=False) if args.home else None),
+            message="validated proofcheck composition decision must be pass",
+            reason=(
+                "inspect the verifier verdict and witnessd composition, then rerun "
+                "the failing proofcheck step before handoff"
+            ),
+            required_input_or_grant="a passing validated proofcheck result",
+            next_command=_proofcheck_next_command(evidence_dir, home),
         )
         return 1
-    home = Path(args.home).resolve(strict=False) if args.home else None
     advisory_result = _optional_advisory_provenance_verify(evidence_dir, home=home)
     advisory_provenance = advisory_result[1] if advisory_result is not None else None
     if (
@@ -1100,35 +1111,17 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
             print(error_code, file=sys.stderr)
         return 1
     out_path = Path(args.out).resolve(strict=False) if args.out else None
-    expected_binding = _proofcheck_binding(evidence_dir, out_path=out_path)
-    proofcheck_binding = proofcheck_payload.get("orro_binding")
-    if not isinstance(proofcheck_binding, dict):
-        _base_emit_orro_error(
-            args,
-            code="ERR_ORRO_HANDOFF_PROOFCHECK_UNBOUND",
-            message="proofcheck-verdict.json must include an ORRO proofcheck binding",
-            reason="rerun proofcheck against this evidence directory to create the binding",
-            required_input_or_grant="a proofcheck verdict bound to this evidence directory",
-            next_command=_proofcheck_next_command(evidence_dir, Path(args.home).resolve(strict=False) if args.home else None),
-        )
-        return 1
-    if proofcheck_binding != expected_binding:
-        _base_emit_orro_error(
-            args,
-            code="ERR_ORRO_HANDOFF_PROOFCHECK_BINDING_MISMATCH",
-            message="proofcheck-verdict.json does not match this evidence directory",
-            reason="rerun proofcheck against this evidence directory; do not bypass the binding check",
-            required_input_or_grant="a proofcheck verdict bound to this evidence directory",
-            next_command=_proofcheck_next_command(evidence_dir, Path(args.home).resolve(strict=False) if args.home else None),
-        )
-        return 1
 
     artifact_hashes = _collect_orro_artifact_hashes(evidence_dir, out_path=out_path)
     workflow_plan_ref = workflow_plan_binding_ref(evidence_dir)
     role_lane_plan_ref = role_lane_plan_binding_ref(evidence_dir)
     workflow_role_dispatch = workflow_role_dispatch_ref(evidence_dir)
     decision_refs = []
-    for name in ("proofcheck-verdict.json", "team-ledger-verdict.json"):
+    for name in (
+        "proofcheck-verdict.json",
+        "proofcheck-validation.json",
+        "team-ledger-verdict.json",
+    ):
         path = evidence_dir / name
         if not path.is_file():
             continue
@@ -1139,7 +1132,10 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
             payload = {}
         if not isinstance(payload, dict):
             payload = {}
-        if isinstance(payload.get("decision"), str):
+        if name == "proofcheck-validation.json":
+            ref["validation_status"] = proofcheck_validation["validation_status"]
+            ref["verifier_commit"] = proofcheck_validation["verifier_commit"]
+        elif isinstance(payload.get("decision"), str):
             ref["decision"] = payload["decision"]
         decision_refs.append(ref)
     if advisory_provenance is not None:
@@ -1184,11 +1180,12 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
             "raises_assurance": False,
         },
         "ship_ready": True,
-        "ship_command": f"orro ship {evidence_dir} --home {home or evidence_dir.parent.parent}",
+        "ship_command": f"orro ship {evidence_dir} --home {home}",
         "ship_message": (
-            f"Ship-ready: orro ship {evidence_dir} --home {home or evidence_dir.parent.parent}; "
+            f"Ship-ready: orro ship {evidence_dir} --home {home}; "
             "merge stays human."
         ),
+        "proofcheck_validation": proofcheck_validation,
     }
     if out_path is not None:
         out_path.parent.mkdir(parents=True, exist_ok=True)

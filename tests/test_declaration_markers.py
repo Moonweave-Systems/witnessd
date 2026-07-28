@@ -66,7 +66,12 @@ class DeclarationMarkerTests(unittest.TestCase):
                 "summary": {"state": "needs-proofcheck"},
                 "workflow": {},
                 "execution": {"proofrun_evidence_present": True, "lane_count": 1},
-                "verification": {"proofcheck_verdict_present": True, "decision": "pass"},
+                "verification": {
+                    "proofcheck_verdict_present": True,
+                    "validation_status": "validated",
+                    "verifier_decision": "pass",
+                    "decision": "pass",
+                },
                 "handoff": {},
                 "human_review": {},
                 "do_not_trust": [],

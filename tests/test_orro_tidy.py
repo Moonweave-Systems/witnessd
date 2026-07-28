@@ -72,13 +72,17 @@ class OrroTidyTests(unittest.TestCase):
 
             nested_record = next(item for item in inventory["worktrees"] if item["path"] == str(nested))
             self.assertEqual(nested_record["kind"], "nested-run")
-            self.assertEqual(nested_record["run_state"], "companion-pass")
+            self.assertEqual(nested_record["run_state"], "companion-unrevalidated")
             outside_record = next(item for item in inventory["registered_outside_runs"] if item["path"] == str(external))
             self.assertEqual(outside_record["kind"], "unknown-external")
 
             result = apply_tidy(repo=repo, inventory=inventory)
             actions = {item["path"]: item for item in result["actions"]}
-            self.assertEqual(actions[str(nested)]["action"], "removed")
+            self.assertEqual(actions[str(nested)]["action"], "kept")
+            self.assertEqual(
+                actions[str(nested)]["reason"],
+                "run state companion-unrevalidated",
+            )
             self.assertEqual(actions[str(external)]["reason"], "unknown external worktree")
             self.assertTrue(external.exists())
 
@@ -143,7 +147,7 @@ class OrroTidyTests(unittest.TestCase):
             actions = {Path(item["path"]).name: item for item in result["actions"]}
             self.assertEqual(actions["check-01"]["action"], "removed")
             self.assertEqual(actions["check-02"]["action"], "removed")
-            self.assertEqual(actions["check-00"]["reason"], "kept: item evidence")
+            self.assertIn("newest 2", actions["check-00"]["reason"])
             self.assertIn("newest 2", actions["check-03"]["reason"])
 
     def test_keep_checks_zero_one_and_two_retain_exact_newest_count(self) -> None:

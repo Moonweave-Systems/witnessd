@@ -22,6 +22,7 @@ ERR_ORRO_NEXT_ARTIFACT_LOAD_FAILED = "ERR_ORRO_NEXT_ARTIFACT_LOAD_FAILED"
 ERR_ORRO_NEXT_PROOFCHECK_NOT_PASS = "ERR_ORRO_NEXT_PROOFCHECK_NOT_PASS"
 ERR_ORRO_NEXT_PROOFCHECK_UNBOUND = "ERR_ORRO_NEXT_PROOFCHECK_UNBOUND"
 ERR_ORRO_NEXT_PROOFCHECK_BINDING_MISMATCH = "ERR_ORRO_NEXT_PROOFCHECK_BINDING_MISMATCH"
+ERR_ORRO_NEXT_PROOFCHECK_UNREVALIDATED = "ERR_ORRO_NEXT_PROOFCHECK_UNREVALIDATED"
 ERR_ORRO_NEXT_HANDOFF_LOAD_FAILED = "ERR_ORRO_NEXT_HANDOFF_LOAD_FAILED"
 ERR_ORRO_NEXT_HANDOFF_UNBOUND = "ERR_ORRO_NEXT_HANDOFF_UNBOUND"
 ERR_ORRO_NEXT_HANDOFF_BINDING_MISMATCH = "ERR_ORRO_NEXT_HANDOFF_BINDING_MISMATCH"
@@ -146,7 +147,11 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
         }
         return 1, payload
 
-    proofcheck_state = _proofcheck_state(run_dir, proofcheck_payload)
+    proofcheck_state = _proofcheck_state(
+        run_dir,
+        proofcheck_payload,
+        home=home,
+    )
     handoff_exists = observed["handoff"]
     has_run_evidence = observed["team_ledger"]
 
@@ -158,6 +163,7 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
             reasons=[str(proofcheck_state["reason"])],
             home=home,
             proofcheck_payload=proofcheck_payload,
+            proofcheck_state=proofcheck_state,
         )
         payload["error"] = proofcheck_state["error"]
         return 1, payload
@@ -176,6 +182,7 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
                 reasons=[str(handoff_state["reason"])],
                 home=home,
                 proofcheck_payload=proofcheck_payload,
+                proofcheck_state=proofcheck_state,
             )
             payload["error"] = handoff_state["error"]
             return 1, payload
@@ -186,6 +193,7 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
             reasons=[],
             home=home,
             proofcheck_payload=proofcheck_payload,
+            proofcheck_state=proofcheck_state,
         )
         payload["ship_ready"] = True
         payload["ship_command"] = f"orro ship {run_dir} --home {home}"
@@ -198,6 +206,7 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
             reasons=[],
             home=home,
             proofcheck_payload=proofcheck_payload,
+            proofcheck_state=proofcheck_state,
         )
         payload["next_allowed"] = [
             f"orro handoff {run_dir} --home {home} "
@@ -212,6 +221,7 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
             reasons=["proofcheck-verdict.json decision is not pass"],
             home=home,
             proofcheck_payload=proofcheck_payload,
+            proofcheck_state=proofcheck_state,
         )
         payload["error"] = {
             "code": ERR_ORRO_NEXT_PROOFCHECK_NOT_PASS,
@@ -226,6 +236,7 @@ def decide_next(run_dir: Path, *, home: Path | None = None) -> tuple[int, dict[s
             reasons=[],
             home=home,
             proofcheck_payload=proofcheck_payload,
+            proofcheck_state=proofcheck_state,
         )
         payload["next_allowed"] = [
             f"orro proofcheck {run_dir} --home {home} --out {run_dir / 'proofcheck-verdict.json'}"
@@ -283,8 +294,15 @@ def _base_decision(
     reasons: list[str],
     home: Path,
     proofcheck_payload: dict[str, Any] | None = None,
+    proofcheck_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     observed = _observed_artifacts(run_dir)
+    if proofcheck_state is None and proofcheck_payload is not None:
+        proofcheck_state = _proofcheck_state(
+            run_dir,
+            proofcheck_payload,
+            home=home,
+        )
     return {
         "kind": CONTINUATION_KIND,
         "schema_version": CONTINUATION_SCHEMA_VERSION,
@@ -295,7 +313,21 @@ def _base_decision(
         "blocked": blocked,
         "reasons": reasons,
         "observed_artifacts": observed,
-        "role_status": _role_status(run_dir, observed, proofcheck_payload),
+        "role_status": _role_status(
+            run_dir,
+            observed,
+            proofcheck_payload,
+            proofcheck_state,
+        ),
+        "proofcheck_validation": (
+            _public_proofcheck_validation(proofcheck_state)
+            if proofcheck_state is not None
+            else {
+                "validation_status": "missing",
+                "verifier_decision": None,
+                "effective_decision": None,
+            }
+        ),
         "boundary": {
             "executes_commands": False,
             "verifies_evidence": False,
@@ -316,6 +348,7 @@ def _role_status(
     run_dir: Path,
     observed: dict[str, bool],
     proofcheck_payload: dict[str, Any] | None,
+    proofcheck_state: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
     roles = _dispatch_roles(run_dir)
     if not roles:
@@ -332,7 +365,12 @@ def _role_status(
         record = {
             "role_id": str(role.get("role_id", phase or "role")),
             "phase": phase,
-            "status": _status_for_phase(phase, observed, proofcheck_payload),
+            "status": _status_for_phase(
+                phase,
+                observed,
+                proofcheck_payload,
+                proofcheck_state,
+            ),
             "evidence_refs": _evidence_refs_for_phase(phase, observed),
             "raises_assurance": False,
         }
@@ -354,13 +392,19 @@ def _status_for_phase(
     phase: str,
     observed: dict[str, bool],
     proofcheck_payload: dict[str, Any] | None,
+    proofcheck_state: dict[str, Any] | None,
 ) -> str:
     if phase == "proofrun":
         return "executed" if observed["team_ledger"] else "pending"
     if phase == "proofcheck":
         if proofcheck_payload is None:
             return "pending"
-        decision = proofcheck_payload.get("decision")
+        if (
+            proofcheck_state is None
+            or proofcheck_state.get("validation_status") != "validated"
+        ):
+            return "unrevalidated"
+        decision = proofcheck_state.get("decision")
         if decision == "pass":
             return "verified"
         if decision in {"fail", "refuted"}:
@@ -388,33 +432,54 @@ def _evidence_refs_for_phase(phase: str, observed: dict[str, bool]) -> list[str]
 def _proofcheck_state(
     run_dir: Path,
     proofcheck_payload: dict[str, Any] | None,
+    *,
+    home: Path,
 ) -> dict[str, Any]:
     if proofcheck_payload is None:
-        return {"decision": None, "error": None, "reason": None}
-    decision = proofcheck_payload.get("decision")
-    if decision != "pass":
-        return {"decision": decision, "error": None, "reason": None}
-    binding = proofcheck_payload.get("orro_binding")
-    if not isinstance(binding, dict):
         return {
-            "decision": decision,
-            "error": {
-                "code": ERR_ORRO_NEXT_PROOFCHECK_UNBOUND,
-                "message": "proofcheck-verdict.json must include an ORRO proofcheck binding",
-            },
-            "reason": "proofcheck-verdict.json is not bound to this run",
+            "decision": None,
+            "error": None,
+            "reason": None,
+            "validation_status": "missing",
         }
-    expected = _proofcheck_binding(run_dir)
-    if binding != expected:
+    from witnessd.verdict_validation import validate_stored_verdict
+
+    validation = validate_stored_verdict(run_dir, home=home)
+    if validation["validation_status"] != "validated":
+        reason = str(validation.get("reason") or "stored verdict is unrevalidated")
         return {
-            "decision": decision,
+            **validation,
+            "decision": None,
             "error": {
-                "code": ERR_ORRO_NEXT_PROOFCHECK_BINDING_MISMATCH,
-                "message": "proofcheck-verdict.json does not match this run directory",
+                "code": ERR_ORRO_NEXT_PROOFCHECK_UNREVALIDATED,
+                "message": reason,
             },
-            "reason": "proofcheck-verdict.json binding does not match this run directory",
+            "reason": reason,
         }
-    return {"decision": decision, "error": None, "reason": None}
+    return {
+        **validation,
+        "decision": validation["effective_decision"],
+        "error": None,
+        "reason": None,
+    }
+
+
+def _public_proofcheck_validation(state: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: state.get(key)
+        for key in (
+            "validation_status",
+            "reason",
+            "verifier_decision",
+            "effective_decision",
+            "verdict_authorship",
+            "composition_authorship",
+            "verifier_commit",
+            "validation_artifact",
+            "evidence_digest",
+        )
+        if key in state
+    }
 
 
 def _handoff_state(
@@ -467,36 +532,6 @@ def _handoff_state(
         },
         "reason": "orro-handoff.json is not bound to proofcheck-verdict.json",
     }
-
-
-def _proofcheck_binding(run_dir: Path) -> dict[str, Any]:
-    return {
-        "kind": "orro-proofcheck-binding",
-        "schema_version": "1.0",
-        "evidence_dir": str(run_dir),
-        "artifact_hashes": _collect_artifact_hashes(run_dir),
-    }
-
-
-def _collect_artifact_hashes(run_dir: Path) -> list[dict[str, str]]:
-    generated_names = {
-        "orro-continuation-decision.json",
-        "orro-handoff.json",
-        "ship-receipt.json",
-        "proofcheck-verdict.json",
-        "team-ledger-verdict.json",
-    }
-    artifact_hashes = []
-    for path in sorted(p for p in run_dir.rglob("*") if p.is_file()):
-        if path.name in generated_names:
-            continue
-        artifact_hashes.append(
-            {
-                "path": str(path.relative_to(run_dir)),
-                "sha256": _hash_file(path),
-            }
-        )
-    return artifact_hashes
 
 
 def _load_optional_json(path: Path) -> tuple[dict[str, Any] | None, str | None]:
